@@ -57,6 +57,25 @@ if [[ "$ruby_major" -lt 4 ]]; then
   exit 1
 fi
 
+expected_butler_version="$(cat "$repo_root/VERSION")"
+actual_butler_version="$(run_butler version)"
+if [[ "$actual_butler_version" != "$expected_butler_version" ]]; then
+  echo "FAIL: version command mismatch" >&2
+  echo "expected: ${expected_butler_version}" >&2
+  echo "actual:   ${actual_butler_version}" >&2
+  exit 1
+fi
+echo "PASS: version command reports ${actual_butler_version}"
+
+actual_butler_version_flag="$(run_butler --version)"
+if [[ "$actual_butler_version_flag" != "$expected_butler_version" ]]; then
+  echo "FAIL: --version flag mismatch" >&2
+  echo "expected: ${expected_butler_version}" >&2
+  echo "actual:   ${actual_butler_version_flag}" >&2
+  exit 1
+fi
+echo "PASS: --version flag reports ${actual_butler_version_flag}"
+
 cd "$work_repo"
 git switch -c main >/dev/null
 git config user.name "Butler CI"

@@ -816,7 +816,14 @@ end
 
 def parse_args( argv )
 	parser = OptionParser.new do |opts|
-		opts.banner = "Usage: bin/butler [audit|sync|prune|hook|check|template check|template apply]"
+		opts.banner = "Usage: bin/butler [audit|sync|prune|hook|check|template check|template apply|version]"
+	end
+	if [ "--help", "-h" ].include?( argv.first )
+		$stdout.puts parser
+		exit Butler::EXIT_OK
+	end
+	if [ "--version", "-v" ].include?( argv.first )
+		return [ "version", parser ]
 	end
 	if argv.empty?
 		parser.parse!( argv )
@@ -824,6 +831,10 @@ def parse_args( argv )
 	end
 
 	command = argv.shift
+	if command == "version"
+		parser.parse!( argv )
+		return [ "version", parser ]
+	end
 	if command == "template"
 		action = argv.shift
 		parser.parse!( argv )
@@ -844,9 +855,24 @@ rescue OptionParser::ParseError => e
 	exit Butler::EXIT_ERROR
 end
 
+def read_butler_version!( tool_root: )
+	version_path = File.join( tool_root, "VERSION" )
+	version_text = File.read( version_path ).to_s.strip
+	raise "version file is missing at #{version_path}" if version_text.empty?
+	version_text
+rescue Errno::ENOENT
+	raise "version file is missing at #{version_path}"
+end
+
 begin
+	tool_root = File.expand_path( "..", __dir__ )
 	command, = parse_args( ARGV )
-	butler = Butler.new( repo_root: Dir.pwd, tool_root: File.expand_path( "..", __dir__ ), out: $stdout, err: $stderr )
+	if command == "version"
+		$stdout.puts read_butler_version!( tool_root: tool_root )
+		exit Butler::EXIT_OK
+	end
+
+	butler = Butler.new( repo_root: Dir.pwd, tool_root: tool_root, out: $stdout, err: $stderr )
 
 	exit_code =
 		case command

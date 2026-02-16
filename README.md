@@ -7,6 +7,13 @@ Butler is a shared local governance tool for repository hygiene and merge readin
 - Ruby managed by `rbenv`
 - Supported Ruby versions: `>= 4.0`
 
+## Version
+
+- Current version: `0.1.0`
+- Canonical source: `VERSION`
+- CLI version output: `bin/butler version` or `bin/butler --version`
+- Release history: `RELEASE.md`
+
 ## CI
 
 - Workflow: `.github/workflows/ci.yml`
@@ -37,6 +44,7 @@ What it applies:
 - `bin/butler prune`
 - `bin/butler hook`
 - `bin/butler check`
+- `bin/butler version`
 - `bin/butler template check`
 - `bin/butler template apply`
 
