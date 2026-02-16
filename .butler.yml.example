@@ -16,7 +16,7 @@ scope:
     fix: domain
     test: test
   path_groups:
-    tool: [ 'bin/**', '.githooks/**', '.github/**', '.butler.yml', '.butler-version', '.gitignore', 'docs/butler.md' ]
+    tool: [ 'bin/**', '.githooks/**', '.github/**', '.butler.yml', '.gitignore', 'docs/butler.md' ]
     ui: [ 'app/views/**', 'app/assets/**', 'app/javascript/**', 'docs/ui_*.md' ]
     test: [ 'test/**', 'spec/**', 'features/**' ]
     domain: [ 'app/**', 'db/**', 'config/**', 'lib/**' ]

@@ -11,21 +11,71 @@ require "yaml"
 class ButlerConfigError < StandardError
 end
 
-# ButlerConfig loads and validates repository policy from /.butler.yml.
+# ButlerConfig loads optional repository overrides from /.butler.yml and merges them onto shared defaults.
 class ButlerConfig
 	attr_reader :git_remote, :main_branch, :protected_branches, :hooks_path, :required_hooks,
 		:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :report_dir, :common_managed_files
 
 	def self.load( repo_root: )
 		path = File.join( repo_root, ".butler.yml" )
-		raise ButlerConfigError, "missing config file .butler.yml" unless File.file?( path )
-
-		data = YAML.safe_load( File.read( path ), permitted_classes: [], aliases: false )
-		raise ButlerConfigError, "config file .butler.yml is empty" unless data.is_a?( Hash )
+		data = default_data
+		if File.file?( path )
+			override_data = YAML.safe_load( File.read( path ), permitted_classes: [], aliases: false )
+			raise ButlerConfigError, "config file .butler.yml is empty" unless override_data.is_a?( Hash )
+			data = deep_merge( base: data, override: override_data )
+		end
 
 		new( data: data )
 	rescue Psych::SyntaxError => e
 		raise ButlerConfigError, "invalid YAML in .butler.yml (#{e.message})"
+	end
+
+	def self.default_data
+		{
+			"git" => {
+				"remote" => "github",
+				"main_branch" => "main",
+				"protected_branches" => [ "main", "master" ]
+			},
+			"hooks" => {
+				"path" => ".githooks",
+				"required_hooks" => [ "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
+			},
+			"scope" => {
+				"branch_pattern" => "^codex/(?<lane>[^/]+)/(?<slug>.+)$",
+				"lane_group_map" => {
+					"tool" => "tool",
+					"ui" => "ui",
+					"module" => "domain",
+					"feature" => "domain",
+					"fix" => "domain",
+					"test" => "test"
+				},
+				"path_groups" => {
+					"tool" => [ "bin/**", ".githooks/**", ".github/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
+					"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
+					"test" => [ "test/**", "spec/**", "features/**" ],
+					"domain" => [ "app/**", "db/**", "config/**", "lib/**" ],
+					"docs" => [ "docs/**", "*.md" ]
+				}
+			},
+			"reports" => {
+				"dir" => "tmp/butler"
+			},
+			"common" => {
+				"managed_files" => [ ".github/copilot-instructions.md", ".github/pull_request_template.md" ]
+			}
+		}
+	end
+
+	def self.deep_merge( base:, override: )
+		base.merge( override ) do |_, base_value, override_value|
+			if base_value.is_a?( Hash ) && override_value.is_a?( Hash )
+				deep_merge( base: base_value, override: override_value )
+			else
+				override_value
+			end
+		end
 	end
 
 	def initialize( data: )
