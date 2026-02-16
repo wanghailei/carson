@@ -28,7 +28,7 @@ What it applies:
 
 - branch protection with approvals `0`, required conversation resolution, required linear history, and no force-push or delete
 - required status checks (if provided)
-- optional local `bin/butler` wrapper install plus `bin/butler hook` and `bin/butler common apply`
+- optional local `bin/butler` wrapper install plus `bin/butler hook` and `bin/butler template apply`
 
 ## Commands
 
@@ -37,6 +37,11 @@ What it applies:
 - `bin/butler prune`
 - `bin/butler hook`
 - `bin/butler check`
+- `bin/butler template check`
+- `bin/butler template apply`
+
+Compatibility aliases:
+
 - `bin/butler common check`
 - `bin/butler common apply`
 
