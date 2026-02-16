@@ -8,6 +8,7 @@ require "optparse"
 require "time"
 require "yaml"
 
+# Raised when optional Butler configuration is present but invalid.
 class ButlerConfigError < StandardError
 end
 
@@ -16,6 +17,7 @@ class ButlerConfig
 	attr_reader :git_remote, :main_branch, :protected_branches, :hooks_path, :required_hooks,
 		:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :report_dir, :common_managed_files
 
+	# Loads built-in defaults and deep-merges local /.butler.yml when present.
 	def self.load( repo_root: )
 		path = File.join( repo_root, ".butler.yml" )
 		data = default_data
@@ -30,6 +32,7 @@ class ButlerConfig
 		raise ButlerConfigError, "invalid YAML in .butler.yml (#{e.message})"
 	end
 
+	# Canonical defaults that let Butler run even when /.butler.yml is absent.
 	def self.default_data
 		{
 			"git" => {
@@ -68,6 +71,7 @@ class ButlerConfig
 		}
 	end
 
+	# Deep-merge only hash objects; scalar and array values are replaced.
 	def self.deep_merge( base:, override: )
 		base.merge( override ) do |_, base_value, override_value|
 			if base_value.is_a?( Hash ) && override_value.is_a?( Hash )
@@ -78,6 +82,7 @@ class ButlerConfig
 		end
 	end
 
+	# Materialises typed configuration values and validates required keys.
 	def initialize( data: )
 		@git_remote = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "remote" )
 		@main_branch = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "main_branch" )
@@ -99,7 +104,8 @@ class ButlerConfig
 
 	private
 
-		def validate!
+			# Fails fast on invalid policy shape so command behaviour stays deterministic.
+			def validate!
 			raise ButlerConfigError, "git.remote cannot be empty" if git_remote.empty?
 			raise ButlerConfigError, "git.main_branch cannot be empty" if main_branch.empty?
 			raise ButlerConfigError, "git.protected_branches must include #{main_branch}" unless protected_branches.include?( main_branch )
@@ -110,13 +116,15 @@ class ButlerConfig
 			raise ButlerConfigError, "reports.dir cannot be empty" if report_dir.empty?
 		end
 
-		def fetch_hash( hash:, key: )
+			# Fetches a required hash node and validates type.
+			def fetch_hash( hash:, key: )
 			value = hash[ key ]
 			raise ButlerConfigError, "missing config key #{key}" unless value.is_a?( Hash )
 			value
 		end
 
-		def fetch_string( hash:, key: )
+			# Fetches a required string-like value and strips whitespace.
+			def fetch_string( hash:, key: )
 			value = hash[ key ]
 			raise ButlerConfigError, "missing config key #{key}" if value.nil?
 			text = value.to_s.strip
@@ -124,7 +132,8 @@ class ButlerConfig
 			text
 		end
 
-		def fetch_string_array( hash:, key: )
+			# Fetches a required array and normalises each entry into a non-empty string.
+			def fetch_string_array( hash:, key: )
 			value = hash[ key ]
 			raise ButlerConfigError, "missing config key #{key}" unless value.is_a?( Array )
 			array = value.map { |entry| entry.to_s.strip }.reject( &:empty? )
@@ -132,13 +141,15 @@ class ButlerConfig
 			array
 		end
 
-		def normalize_patterns( value: )
+			# Path groups always expect one or more glob patterns.
+			def normalize_patterns( value: )
 			patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
 			raise ButlerConfigError, "scope.path_groups entries must contain at least one glob" if patterns.empty?
 			patterns
 		end
 
-		def compile_branch_regex( pattern: )
+			# Compiles branch regex once so branch checks are fast and consistent.
+			def compile_branch_regex( pattern: )
 			Regexp.new( pattern )
 		rescue RegexpError => e
 			raise ButlerConfigError, "invalid scope.branch_pattern (#{e.message})"
@@ -147,6 +158,7 @@ end
 
 # Butler is a thin local orchestrator for local policy, review visibility, and shared template syncing.
 class Butler
+	# Shared exit-code contract used by all commands and CI smoke assertions.
 	EXIT_OK = 0
 	EXIT_ERROR = 1
 	EXIT_BLOCK = 2
@@ -154,6 +166,7 @@ class Butler
 	REPORT_MD = "pr_report_latest.md".freeze
 	REPORT_JSON = "pr_report_latest.json".freeze
 
+	# Runtime wiring for repository context, tool paths, and output streams.
 	def initialize( repo_root:, tool_root:, out:, err: )
 		@repo_root = repo_root
 		@tool_root = tool_root
@@ -162,6 +175,7 @@ class Butler
 		@config = ButlerConfig.load( repo_root: repo_root )
 	end
 
+	# Produces a single local-governance report and returns hard-block status when needed.
 	def audit!
 		audit_state = "ok"
 		print_header "Repository"
@@ -205,6 +219,7 @@ class Butler
 		audit_state == "block" ? EXIT_BLOCK : EXIT_OK
 	end
 
+	# Fast-forwards local main from remote main and blocks if the working tree is dirty.
 	def sync!
 		unless working_tree_clean?
 			puts_line "BLOCK: working tree is dirty; commit/stash first, then run bin/butler sync."
@@ -233,6 +248,7 @@ class Butler
 		git_system!( "switch", start_branch ) if switched && branch_exists?( branch_name: start_branch )
 	end
 
+	# Removes stale local branches that track remote refs already deleted upstream.
 	def prune!
 		git_system!( "fetch", config.git_remote, "--prune" )
 		active_branch = current_branch
@@ -272,6 +288,7 @@ class Butler
 		EXIT_OK
 	end
 
+	# Installs required hook files and enforces repository hook path.
 	def hook!
 		FileUtils.mkdir_p( hooks_dir )
 		missing_templates = config.required_hooks.reject { |name| File.file?( hook_template_path( hook_name: name ) ) }
@@ -298,6 +315,7 @@ class Butler
 		check!
 	end
 
+	# Strict hook health check used by humans, hooks, and CI paths.
 	def check!
 		print_header "Hooks Check"
 		ok = hooks_health_report( strict: true )
@@ -305,6 +323,7 @@ class Butler
 		ok ? EXIT_OK : EXIT_BLOCK
 	end
 
+	# Read-only template drift check; returns block when managed files are out of sync.
 	def common_check!
 		print_header "Template Sync Check"
 		results = common_results
@@ -318,6 +337,7 @@ class Butler
 		drift_count.positive? ? EXIT_BLOCK : EXIT_OK
 	end
 
+	# Applies managed template blocks without overwriting repo-specific content outside markers.
 	def common_apply!
 		print_header "Template Sync Apply"
 		results = common_results
@@ -345,10 +365,12 @@ class Butler
 		error_count.positive? ? EXIT_ERROR : EXIT_OK
 	end
 
+	# Preferred command family for template drift checks.
 	def template_check!
 		common_check!
 	end
 
+	# Preferred command family for template apply.
 	def template_apply!
 		common_apply!
 	end
@@ -357,11 +379,13 @@ class Butler
 
 		attr_reader :repo_root, :tool_root, :out, :err, :config
 
-		def common_results
-			config.common_managed_files.map { |managed_file| common_result_for_file( managed_file: managed_file ) }
-		end
+			# Builds per-file drift results for all managed template targets.
+			def common_results
+				config.common_managed_files.map { |managed_file| common_result_for_file( managed_file: managed_file ) }
+			end
 
-		def common_result_for_file( managed_file: )
+			# Calculates expected marker block and returns file sync status plus applied output.
+			def common_result_for_file( managed_file: )
 			template_path = File.join( common_templates_dir, File.basename( managed_file ) )
 			unless File.file?( template_path )
 				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil }
@@ -403,24 +427,29 @@ class Butler
 			{ file: managed_file, status: "drift", reason: "content_mismatch", applied_content: applied_content }
 		end
 
-		def managed_section_id( file_path: )
+			# Marker identifier is derived from basename and normalised to kebab-case.
+			def managed_section_id( file_path: )
 			name = File.basename( file_path, File.extname( file_path ) )
 			name.downcase.gsub( /[^a-z0-9]+/, "-" ).gsub( /\A-|\-\z/, "" )
 		end
 
-		def normalize_text( text: )
+			# Uses LF-only normalisation so platform newlines do not cause false drift.
+			def normalize_text( text: )
 			text.to_s.gsub( "\r\n", "\n" ).rstrip + "\n"
 		end
 
-		def common_templates_dir
+			# Shared template source directory inside Butler repository.
+			def common_templates_dir
 			File.join( tool_root, "templates", "common" )
 		end
 
-		def hook_template_path( hook_name: )
+			# Canonical hook template location inside Butler repository.
+			def hook_template_path( hook_name: )
 			File.join( tool_root, "templates", "hooks", hook_name )
 		end
 
-		def hooks_health_report( strict: false )
+			# Reports full hook health and can enforce stricter action messaging in `check`.
+			def hooks_health_report( strict: false )
 			configured = configured_hooks_path
 			expected = config.hooks_path
 			expected_abs = File.expand_path( expected, repo_root )
@@ -446,7 +475,8 @@ class Butler
 			hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
 		end
 
-		def main_sync_counts
+			# Returns ahead/behind counts for local main versus configured remote main.
+			def main_sync_counts
 			target = "#{config.main_branch}...#{config.git_remote}/#{config.main_branch}"
 			stdout_text, stderr_text, success, = git_run( "rev-list", "--left-right", "--count", target )
 			unless success
@@ -459,34 +489,44 @@ class Butler
 			[ counts[ 0 ].to_i, counts[ 1 ].to_i, nil ]
 		end
 
-		def configured_hooks_path
+			# Reads configured core.hooksPath and normalises empty values to nil.
+			def configured_hooks_path
 			stdout_text, = git_capture_soft( "config", "--get", "core.hooksPath" )
 			value = stdout_text.to_s.strip
 			value.empty? ? nil : value
 		end
 
-		def required_hook_paths
+			# Fully-qualified required hook file locations in the target repository.
+			def required_hook_paths
 			config.required_hooks.map { |name| File.join( hooks_dir, name ) }
 		end
 
-		def missing_hook_files
+			# Missing required hook files.
+			def missing_hook_files
 			required_hook_paths.select { |path| !File.file?( path ) }.map { |path| relative_path( path ) }
 		end
 
-		def non_executable_hook_files
+			# Required hook files that exist but are not executable.
+			def non_executable_hook_files
 			required_hook_paths.select { |path| File.file?( path ) && !File.executable?( path ) }.map { |path| relative_path( path ) }
 		end
 
-		def symlink_hook_files
+			# Symlink hooks are disallowed to prevent bypassing managed hook content.
+			def symlink_hook_files
 			required_hook_paths.select { |path| File.symlink?( path ) }.map { |path| relative_path( path ) }
 		end
 
-		def hooks_dir
-			File.join( repo_root, config.hooks_path )
-		end
+			# Local directory where managed hooks are installed.
+			def hooks_dir
+				File.join( repo_root, config.hooks_path )
+			end
 
-		def stale_local_branches
-			git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
+			# NOTE: prune only targets local branches that meet both conditions:
+			# 1) branch tracks configured remote (`github/*` by default), and
+			# 2) upstream tracking state is marked as gone after fetch --prune.
+			# Branches without upstream tracking are intentionally excluded.
+			def stale_local_branches
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
 				branch, upstream, track = line.strip.split( "\t", 3 )
 				upstream = upstream.to_s
 				track = track.to_s
@@ -496,7 +536,8 @@ class Butler
 			end
 		end
 
-		def pr_and_check_report
+			# Thin `gh` monitor for PR and required checks; local audit continues on API gaps.
+			def pr_and_check_report
 			report = {
 				generated_at: Time.now.utc.iso8601,
 				branch: current_branch,
@@ -570,7 +611,8 @@ class Butler
 			report
 		end
 
-		def write_and_print_pr_monitor_report( report: )
+			# Writes monitor report artefacts and prints their locations.
+			def write_and_print_pr_monitor_report( report: )
 			markdown_path, json_path = write_pr_monitor_report( report: report )
 			puts_line "report_markdown: #{markdown_path}"
 			puts_line "report_json: #{json_path}"
@@ -578,7 +620,8 @@ class Butler
 			puts_line "report_write: SKIP (#{e.message})"
 		end
 
-		def write_pr_monitor_report( report: )
+			# Persists report in both machine-readable JSON and human-readable Markdown.
+			def write_pr_monitor_report( report: )
 			report_dir = File.join( repo_root, config.report_dir )
 			FileUtils.mkdir_p( report_dir )
 			markdown_path = File.join( report_dir, REPORT_MD )
@@ -588,7 +631,8 @@ class Butler
 			[ markdown_path, json_path ]
 		end
 
-		def render_pr_monitor_markdown( report: )
+			# Renders Markdown summary used by humans during merge-readiness reviews.
+			def render_pr_monitor_markdown( report: )
 			lines = []
 			lines << "# Butler PR Monitor Report"
 			lines << ""
@@ -635,7 +679,8 @@ class Butler
 			lines.join( "\n" )
 		end
 
-		def print_scope_integrity_guard
+			# Prints scope guard diagnostics and returns machine-usable attention flags.
+			def print_scope_integrity_guard
 			files = changed_files
 			return { status: "ok", split_required: false, unknown_lane: false } if files.empty?
 
@@ -660,7 +705,8 @@ class Butler
 			{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ), unknown_lane: false }
 		end
 
-		def scope_integrity_status( files:, branch: )
+			# Evaluates whether changed files stay within one non-doc scope boundary.
+			def scope_integrity_status( files:, branch: )
 			lane = branch_lane( branch_name: branch )
 			primary_group = config.lane_group_map[ lane ]
 			grouped_paths = files.map { |path| [ path, scope_group_for_path( path: path ) ] }.to_h
@@ -696,14 +742,16 @@ class Butler
 			}
 		end
 
-		def scope_group_for_path( path: )
+			# Resolves a path to configured scope group; unmatched paths become misc.
+			def scope_group_for_path( path: )
 			config.path_groups.each do |group, patterns|
 				return group if patterns.any? { |pattern| pattern_matches_path?( pattern: pattern, path: path ) }
 			end
 			"misc"
 		end
 
-		def pattern_matches_path?( pattern:, path: )
+			# Supports directory-wide /** prefixes and fnmatch for other patterns.
+			def pattern_matches_path?( pattern:, path: )
 			if pattern.end_with?( "/**" )
 				prefix = pattern.delete_suffix( "/**" )
 				return path == prefix || path.start_with?( "#{prefix}/" )
@@ -711,14 +759,16 @@ class Butler
 			File.fnmatch?( pattern, path, File::FNM_PATHNAME | File::FNM_DOTMATCH )
 		end
 
-		def branch_lane( branch_name: )
+			# Extracts lane from configured branch naming pattern.
+			def branch_lane( branch_name: )
 			match = config.branch_regex.match( branch_name.to_s )
 			return nil if match.nil?
 			return match[ "lane" ] if match.names.include?( "lane" )
 			match[ 1 ]
 		end
 
-		def changed_files
+			# Parses `git status --porcelain` and normalises rename targets.
+			def changed_files
 			git_capture!( "status", "--porcelain" ).lines.filter_map do |line|
 				raw_path = line[ 3.. ].to_s.strip
 				next if raw_path.empty?
@@ -726,42 +776,51 @@ class Butler
 			end
 		end
 
-		def working_tree_clean?
+			# True when there are no staged/unstaged/untracked file changes.
+			def working_tree_clean?
 			git_capture!( "status", "--porcelain" ).strip.empty?
 		end
 
-		def current_branch
+			# Current local branch name.
+			def current_branch
 			git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
 		end
 
-		def branch_exists?( branch_name: )
+			# Checks local branch existence before restore attempts in ensure blocks.
+			def branch_exists?( branch_name: )
 			_, _, success, = git_run( "show-ref", "--verify", "--quiet", "refs/heads/#{branch_name}" )
 			success
 		end
 
-		def plural_suffix( count: )
+			# Human-readable plural suffix helper for audit messaging.
+			def plural_suffix( count: )
 			count.to_i == 1 ? "" : "s"
 		end
 
-		def print_header( title )
+			# Section heading printer for command output.
+			def print_header( title )
 			puts_line ""
 			puts_line "[#{title}]"
 		end
 
-		def puts_line( message )
+			# Single output funnel to keep messaging style consistent.
+			def puts_line( message )
 			out.puts message
 		end
 
-		def relative_path( absolute_path )
+			# Converts absolute paths into repo-relative output paths.
+			def relative_path( absolute_path )
 			absolute_path.sub( "#{repo_root}/", "" )
 		end
 
-		def gh_available?
+			# Soft capability check for GitHub CLI presence.
+			def gh_available?
 			_, _, success, = gh_run( "--version" )
 			success
 		end
 
-		def normalise_check_entries( entries: )
+			# Keeps check output fields stable even when gh returns blanks.
+			def normalise_check_entries( entries: )
 			Array( entries ).map do |entry|
 				{
 					workflow: blank_to( value: entry[ "workflow" ], default: "workflow" ),
@@ -772,24 +831,28 @@ class Butler
 			end
 		end
 
-		def blank_to( value:, default: )
+			# Coalesces blank strings to explicit defaults.
+			def blank_to( value:, default: )
 			text = value.to_s.strip
 			text.empty? ? default : text
 		end
 
-		def gh_error_text( stdout_text:, stderr_text:, fallback: )
+			# Chooses best available error text from gh stderr/stdout.
+			def gh_error_text( stdout_text:, stderr_text:, fallback: )
 			combined = [ stderr_text.to_s.strip, stdout_text.to_s.strip ].reject( &:empty? ).join( " | " )
 			combined.empty? ? fallback : combined
 		end
 
-		def git_system!( *args )
+			# Runs git command, streams outputs, and raises on non-zero exit.
+			def git_system!( *args )
 			stdout_text, stderr_text, success, = git_run( *args )
 			out.print stdout_text unless stdout_text.empty?
 			err.print stderr_text unless stderr_text.empty?
 			raise "git #{args.join( ' ' )} failed" unless success
 		end
 
-		def git_capture!( *args )
+			# Captures git stdout and raises on non-zero exit.
+			def git_capture!( *args )
 			stdout_text, stderr_text, success, = git_run( *args )
 			unless success
 				err.print stderr_text unless stderr_text.empty?
@@ -798,22 +861,26 @@ class Butler
 			stdout_text
 		end
 
-		def git_capture_soft( *args )
+			# Captures git output without raising so caller can decide behaviour.
+			def git_capture_soft( *args )
 			stdout_text, stderr_text, success, = git_run( *args )
 			[ stdout_text, stderr_text, success ]
 		end
 
-		def git_run( *args )
+			# Low-level git invocation wrapper.
+			def git_run( *args )
 			stdout_text, stderr_text, status = Open3.capture3( "git", *args, chdir: repo_root )
 			[ stdout_text, stderr_text, status.success?, status.exitstatus ]
 		end
 
-		def gh_run( *args )
+			# Low-level gh invocation wrapper.
+			def gh_run( *args )
 			stdout_text, stderr_text, status = Open3.capture3( "gh", *args, chdir: repo_root )
 			[ stdout_text, stderr_text, status.success?, status.exitstatus ]
 		end
 end
 
+# Parses CLI input into canonical command identifiers.
 def parse_args( argv )
 	parser = OptionParser.new do |opts|
 		opts.banner = "Usage: bin/butler [audit|sync|prune|hook|check|template check|template apply|version]"
@@ -822,6 +889,7 @@ def parse_args( argv )
 		$stdout.puts parser
 		exit Butler::EXIT_OK
 	end
+	# Supports short direct version flags without requiring subcommand parsing.
 	if [ "--version", "-v" ].include?( argv.first )
 		return [ "version", parser ]
 	end
@@ -840,6 +908,7 @@ def parse_args( argv )
 		parser.parse!( argv )
 		return [ "template:#{action}", parser ]
 	end
+	# Backward-compatible command alias handling is normalised here.
 	if command == "common"
 		# Backward-compatible alias: map legacy `common` commands onto the `template` command family.
 		action = argv.shift
@@ -849,12 +918,14 @@ def parse_args( argv )
 
 	parser.parse!( argv )
 	[ command, parser ]
+	# Invalid CLI args map to shared runtime/config error exit code.
 rescue OptionParser::ParseError => e
 	$stderr.puts e.message
 	$stderr.puts parser
 	exit Butler::EXIT_ERROR
 end
 
+# Reads Butler semantic version from root VERSION file.
 def read_butler_version!( tool_root: )
 	version_path = File.join( tool_root, "VERSION" )
 	version_text = File.read( version_path ).strip
@@ -865,6 +936,7 @@ rescue Errno::ENOENT
 end
 
 begin
+	# tool_root is used both by Butler runtime and direct version output.
 	tool_root = File.expand_path( "..", __dir__ )
 	command, = parse_args( ARGV )
 	if command == "version"
