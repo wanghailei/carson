@@ -125,6 +125,8 @@ if [[ -n "${local_path}" ]]; then
 		echo "Local path does not exist: ${local_path}" >&2
 		exit 1
 	fi
+	# Local bootstrap is optional and only handles repo-local setup.
+	# GitHub branch protection is already applied above via API.
 	absolute_local_path="$(cd "${local_path}" && pwd)"
 	template_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/templates/project/bin/butler"
 	mkdir -p "${absolute_local_path}/bin"
