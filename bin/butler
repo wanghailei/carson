@@ -367,6 +367,7 @@ class Butler
 				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil }
 			end
 
+			# Marker blocks let Butler update shared sections while leaving repo-specific addendum outside markers untouched.
 			section_id = managed_section_id( file_path: managed_file )
 			start_marker = "<!-- butler:common:start #{section_id} -->"
 			end_marker = "<!-- butler:common:end #{section_id} -->"
@@ -829,6 +830,7 @@ def parse_args( argv )
 		return [ "template:#{action}", parser ]
 	end
 	if command == "common"
+		# Backward-compatible alias: map legacy `common` commands onto the `template` command family.
 		action = argv.shift
 		parser.parse!( argv )
 		return [ "template:#{action}", parser ]

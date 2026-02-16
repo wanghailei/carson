@@ -67,3 +67,10 @@ Butler can manage shared `.github` sections with explicit markers:
 ...common managed content...
 <!-- butler:common:end <section-id> -->
 ```
+
+Template sync behaviour:
+
+- `template check` reads managed files and reports drift only; it does not write files.
+- `template apply` writes only the managed marker block content.
+- Repo-specific content outside marker blocks is preserved.
+- If markers are missing, Butler prepends the managed block and keeps existing content below it.
