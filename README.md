@@ -15,6 +15,21 @@ Butler is a shared local governance tool for repository hygiene and merge readin
 - Job step: `bash script/ci_smoke.sh`
 - Smoke logs always print both numeric and text status, for example `0 - OK`.
 
+## New Project Defaults
+
+Use the bootstrap helper so new repositories start with the same integration workflow defaults:
+
+- `script/bootstrap_repo_defaults.sh <owner/repo>`
+- Optional checks: `--checks "check_one,check_two"`
+- Optional local setup: `--local-path ~/Studio/<repo>`
+- Optional Butler read secret setup: `--set-butler-read-token`
+
+What it applies:
+
+- branch protection with approvals `0`, required conversation resolution, required linear history, and no force-push or delete
+- required status checks (if provided)
+- optional local `bin/butler` wrapper install plus `bin/butler hook` and `bin/butler common apply`
+
 ## Commands
 
 - `bin/butler audit`
