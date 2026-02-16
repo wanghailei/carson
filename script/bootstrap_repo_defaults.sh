@@ -133,7 +133,7 @@ if [[ -n "${local_path}" ]]; then
 	(
 		cd "${absolute_local_path}"
 		bin/butler hook
-		bin/butler common apply
+		bin/butler template apply
 	)
 	echo "Installed bin/butler and applied local Butler bootstrap in ${absolute_local_path}"
 fi

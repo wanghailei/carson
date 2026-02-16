@@ -73,9 +73,10 @@ expect_exit 0 "sync keeps local main aligned to github/main" run_butler sync
 expect_exit 0 "hook installs required hooks" run_butler hook
 expect_exit 0 "check passes after hook install" run_butler check
 
-expect_exit 2 "common check reports drift when shared blocks are missing" run_butler common check
-expect_exit 0 "common apply writes managed shared blocks" run_butler common apply
-expect_exit 0 "common check passes after apply" run_butler common check
+expect_exit 2 "template check reports drift when shared blocks are missing" run_butler template check
+expect_exit 0 "template apply writes managed shared blocks" run_butler template apply
+expect_exit 0 "template check passes after apply" run_butler template check
+expect_exit 0 "common alias remains compatible (check)" run_butler common check
 
 git switch -c codex/tool/stale-prune >/dev/null
 git push -u github codex/tool/stale-prune >/dev/null
