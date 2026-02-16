@@ -25,7 +25,10 @@ Butler is a shared local governance tool for repository hygiene and merge readin
 
 ## Configuration
 
-Each consumer repository must provide `/.butler.yml`.
+`/.butler.yml` is optional.
+
+- If absent, Butler uses shared built-in defaults.
+- If present, Butler deep-merges your overrides onto those defaults.
 
 ## Common Templates
 
