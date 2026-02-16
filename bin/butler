@@ -1,0 +1,805 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "json"
+require "open3"
+require "optparse"
+require "time"
+require "yaml"
+
+class ButlerConfigError < StandardError
+end
+
+# ButlerConfig loads and validates repository policy from /.butler.yml.
+class ButlerConfig
+	attr_reader :git_remote, :main_branch, :protected_branches, :hooks_path, :required_hooks,
+		:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :report_dir, :common_managed_files
+
+	def self.load( repo_root: )
+		path = File.join( repo_root, ".butler.yml" )
+		raise ButlerConfigError, "missing config file .butler.yml" unless File.file?( path )
+
+		data = YAML.safe_load( File.read( path ), permitted_classes: [], aliases: false )
+		raise ButlerConfigError, "config file .butler.yml is empty" unless data.is_a?( Hash )
+
+		new( data: data )
+	rescue Psych::SyntaxError => e
+		raise ButlerConfigError, "invalid YAML in .butler.yml (#{e.message})"
+	end
+
+	def initialize( data: )
+		@git_remote = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "remote" )
+		@main_branch = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "main_branch" )
+		@protected_branches = fetch_string_array( hash: fetch_hash( hash: data, key: "git" ), key: "protected_branches" )
+
+		@hooks_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" )
+		@required_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "required_hooks" )
+
+		@branch_pattern = fetch_string( hash: fetch_hash( hash: data, key: "scope" ), key: "branch_pattern" )
+		@branch_regex = compile_branch_regex( pattern: @branch_pattern )
+		@lane_group_map = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "lane_group_map" ).transform_values { |value| value.to_s }
+		@path_groups = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "path_groups" ).transform_values { |value| normalize_patterns( value: value ) }
+
+		@report_dir = fetch_string( hash: fetch_hash( hash: data, key: "reports" ), key: "dir" )
+		@common_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "common" ), key: "managed_files" )
+
+		validate!
+	end
+
+	private
+
+		def validate!
+			raise ButlerConfigError, "git.remote cannot be empty" if git_remote.empty?
+			raise ButlerConfigError, "git.main_branch cannot be empty" if main_branch.empty?
+			raise ButlerConfigError, "git.protected_branches must include #{main_branch}" unless protected_branches.include?( main_branch )
+			raise ButlerConfigError, "hooks.path cannot be empty" if hooks_path.empty?
+			raise ButlerConfigError, "hooks.required_hooks cannot be empty" if required_hooks.empty?
+			raise ButlerConfigError, "scope.lane_group_map cannot be empty" if lane_group_map.empty?
+			raise ButlerConfigError, "scope.path_groups cannot be empty" if path_groups.empty?
+			raise ButlerConfigError, "reports.dir cannot be empty" if report_dir.empty?
+		end
+
+		def fetch_hash( hash:, key: )
+			value = hash[ key ]
+			raise ButlerConfigError, "missing config key #{key}" unless value.is_a?( Hash )
+			value
+		end
+
+		def fetch_string( hash:, key: )
+			value = hash[ key ]
+			raise ButlerConfigError, "missing config key #{key}" if value.nil?
+			text = value.to_s.strip
+			raise ButlerConfigError, "config key #{key} cannot be blank" if text.empty?
+			text
+		end
+
+		def fetch_string_array( hash:, key: )
+			value = hash[ key ]
+			raise ButlerConfigError, "missing config key #{key}" unless value.is_a?( Array )
+			array = value.map { |entry| entry.to_s.strip }.reject( &:empty? )
+			raise ButlerConfigError, "config key #{key} cannot be empty" if array.empty?
+			array
+		end
+
+		def normalize_patterns( value: )
+			patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
+			raise ButlerConfigError, "scope.path_groups entries must contain at least one glob" if patterns.empty?
+			patterns
+		end
+
+		def compile_branch_regex( pattern: )
+			Regexp.new( pattern )
+		rescue RegexpError => e
+			raise ButlerConfigError, "invalid scope.branch_pattern (#{e.message})"
+		end
+end
+
+# Butler is a thin local orchestrator for local policy, review visibility, and shared template syncing.
+class Butler
+	EXIT_OK = 0
+	EXIT_ERROR = 1
+	EXIT_BLOCK = 2
+
+	REPORT_MD = "pr_report_latest.md".freeze
+	REPORT_JSON = "pr_report_latest.json".freeze
+
+	def initialize( repo_root:, tool_root:, out:, err: )
+		@repo_root = repo_root
+		@tool_root = tool_root
+		@out = out
+		@err = err
+		@config = ButlerConfig.load( repo_root: repo_root )
+	end
+
+	def audit!
+		audit_state = "ok"
+		print_header "Repository"
+		puts_line "root: #{repo_root}"
+		puts_line "current_branch: #{current_branch}"
+		print_header "Working Tree"
+		puts_line git_capture!( "status", "--short", "--branch" ).strip
+		print_header "Hooks"
+		hooks_ok = hooks_health_report
+		audit_state = "block" unless hooks_ok
+		print_header "Main Sync Status"
+		ahead_count, behind_count, main_error = main_sync_counts
+		if main_error
+			puts_line "main_vs_remote_main: unknown"
+			puts_line "WARN: unable to calculate main sync status (#{main_error})."
+			audit_state = "attention" if audit_state == "ok"
+		elsif ahead_count.positive?
+			puts_line "main_vs_remote_main_ahead: #{ahead_count}"
+			puts_line "main_vs_remote_main_behind: #{behind_count}"
+			puts_line "ACTION: local #{config.main_branch} is ahead of #{config.git_remote}/#{config.main_branch} by #{ahead_count} commit#{plural_suffix( count: ahead_count )}; reset local drift before commit/push workflows."
+			audit_state = "block"
+		elsif behind_count.positive?
+			puts_line "main_vs_remote_main_ahead: #{ahead_count}"
+			puts_line "main_vs_remote_main_behind: #{behind_count}"
+			puts_line "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run bin/butler sync."
+			audit_state = "attention" if audit_state == "ok"
+		else
+			puts_line "main_vs_remote_main_ahead: 0"
+			puts_line "main_vs_remote_main_behind: 0"
+			puts_line "ACTION: local #{config.main_branch} is in sync with #{config.git_remote}/#{config.main_branch}."
+		end
+		print_header "PR and Required Checks (gh)"
+		monitor_report = pr_and_check_report
+		audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
+		scope_guard = print_scope_integrity_guard
+		audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
+		write_and_print_pr_monitor_report( report: monitor_report.merge( audit_status: audit_state ) )
+		print_header "Audit Result"
+		puts_line "status: #{audit_state}"
+		puts_line( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
+		audit_state == "block" ? EXIT_BLOCK : EXIT_OK
+	end
+
+	def sync!
+		unless working_tree_clean?
+			puts_line "BLOCK: working tree is dirty; commit/stash first, then run bin/butler sync."
+			return EXIT_BLOCK
+		end
+		start_branch = current_branch
+		switched = false
+		git_system!( "fetch", config.git_remote, "--prune" )
+		if start_branch != config.main_branch
+			git_system!( "switch", config.main_branch )
+			switched = true
+		end
+		git_system!( "pull", "--ff-only", config.git_remote, config.main_branch )
+		ahead_count, behind_count, error_text = main_sync_counts
+		if error_text
+			puts_line "BLOCK: unable to verify main sync state (#{error_text})."
+			return EXIT_BLOCK
+		end
+		if ahead_count.zero? && behind_count.zero?
+			puts_line "OK: local #{config.main_branch} is now in sync with #{config.git_remote}/#{config.main_branch}."
+			return EXIT_OK
+		end
+		puts_line "BLOCK: local #{config.main_branch} still diverges (ahead=#{ahead_count}, behind=#{behind_count})."
+		EXIT_BLOCK
+	ensure
+		git_system!( "switch", start_branch ) if switched && branch_exists?( branch_name: start_branch )
+	end
+
+	def prune!
+		git_system!( "fetch", config.git_remote, "--prune" )
+		active_branch = current_branch
+		stale_branches = stale_local_branches
+		if stale_branches.empty?
+			puts_line "OK: no stale local branches tracking deleted #{config.git_remote} branches."
+			return EXIT_OK
+		end
+		deleted_count = 0
+		skipped_count = 0
+		stale_branches.each do |entry|
+			branch = entry.fetch( :branch )
+			upstream = entry.fetch( :upstream )
+			if config.protected_branches.include?( branch )
+				puts_line "skip_protected_branch: #{branch} (upstream=#{upstream})"
+				skipped_count += 1
+				next
+			end
+			if branch == active_branch
+				puts_line "skip_current_branch: #{branch} (upstream=#{upstream})"
+				skipped_count += 1
+				next
+			end
+			stdout_text, stderr_text, success, = git_run( "branch", "-d", branch )
+			if success
+				out.print stdout_text unless stdout_text.empty?
+				puts_line "deleted_local_branch: #{branch} (upstream=#{upstream})"
+				deleted_count += 1
+				next
+			end
+			error_text = stderr_text.to_s.strip
+			error_text = "unknown error" if error_text.empty?
+			puts_line "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{error_text}"
+			skipped_count += 1
+		end
+		puts_line "prune_summary: deleted=#{deleted_count} skipped=#{skipped_count}"
+		EXIT_OK
+	end
+
+	def hook!
+		FileUtils.mkdir_p( hooks_dir )
+		missing_templates = config.required_hooks.reject { |name| File.file?( hook_template_path( hook_name: name ) ) }
+		unless missing_templates.empty?
+			puts_line "BLOCK: missing hook templates in Butler: #{missing_templates.join( ', ' )}."
+			return EXIT_BLOCK
+		end
+
+		symlinked = symlink_hook_files
+		unless symlinked.empty?
+			puts_line "BLOCK: symlink hook files are not allowed: #{symlinked.join( ', ' )}."
+			return EXIT_BLOCK
+		end
+
+		config.required_hooks.each do |hook_name|
+			source_path = hook_template_path( hook_name: hook_name )
+			target_path = File.join( hooks_dir, hook_name )
+			FileUtils.cp( source_path, target_path )
+			FileUtils.chmod( 0o755, target_path )
+			puts_line "hook_written: #{relative_path( target_path )}"
+		end
+		git_system!( "config", "core.hooksPath", config.hooks_path )
+		puts_line "configured_hooks_path: #{config.hooks_path}"
+		check!
+	end
+
+	def check!
+		print_header "Hooks Check"
+		ok = hooks_health_report( strict: true )
+		puts_line( ok ? "status: ok" : "status: block" )
+		ok ? EXIT_OK : EXIT_BLOCK
+	end
+
+	def common_check!
+		print_header "Common Templates Check"
+		results = common_results
+		drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
+		error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+		results.each do |entry|
+			puts_line "common_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
+		end
+		puts_line "common_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
+		return EXIT_ERROR if error_count.positive?
+		drift_count.positive? ? EXIT_BLOCK : EXIT_OK
+	end
+
+	def common_apply!
+		print_header "Common Templates Apply"
+		results = common_results
+		applied = 0
+		results.each do |entry|
+			if entry.fetch( :status ) == "error"
+				puts_line "common_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}"
+				next
+			end
+
+			file_path = File.join( repo_root, entry.fetch( :file ) )
+			if entry.fetch( :status ) == "ok"
+				puts_line "common_file: #{entry.fetch( :file )} status=ok reason=in_sync"
+				next
+			end
+
+			FileUtils.mkdir_p( File.dirname( file_path ) )
+			File.write( file_path, entry.fetch( :applied_content ) )
+			puts_line "common_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}"
+			applied += 1
+		end
+
+		error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+		puts_line "common_apply_summary: updated=#{applied} error=#{error_count}"
+		error_count.positive? ? EXIT_ERROR : EXIT_OK
+	end
+
+	private
+
+		attr_reader :repo_root, :tool_root, :out, :err, :config
+
+		def common_results
+			config.common_managed_files.map { |managed_file| common_result_for_file( managed_file: managed_file ) }
+		end
+
+		def common_result_for_file( managed_file: )
+			template_path = File.join( common_templates_dir, File.basename( managed_file ) )
+			unless File.file?( template_path )
+				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil }
+			end
+
+			section_id = managed_section_id( file_path: managed_file )
+			start_marker = "<!-- butler:common:start #{section_id} -->"
+			end_marker = "<!-- butler:common:end #{section_id} -->"
+			template_body = File.read( template_path ).rstrip
+			expected_block = "#{start_marker}\n#{template_body}\n#{end_marker}\n"
+			file_path = File.join( repo_root, managed_file )
+			current_content = File.file?( file_path ) ? File.read( file_path ) : ""
+
+			start_index = current_content.index( start_marker )
+			end_index = current_content.index( end_marker )
+
+			if current_content.empty?
+				return { file: managed_file, status: "drift", reason: "missing_file", applied_content: expected_block }
+			end
+
+			if start_index.nil? || end_index.nil? || end_index < start_index
+				applied_content = "#{expected_block}\n#{current_content}"
+				return { file: managed_file, status: "drift", reason: "missing_markers", applied_content: applied_content }
+			end
+
+			current_block_end = end_index + end_marker.length
+			current_block_end += 1 if current_content[ current_block_end ] == "\n"
+			current_block = current_content[ start_index...current_block_end ]
+			normalized_current = normalize_text( text: current_block )
+			normalized_expected = normalize_text( text: expected_block )
+
+			if normalized_current == normalized_expected
+				return { file: managed_file, status: "ok", reason: "in_sync", applied_content: current_content }
+			end
+
+			applied_content = current_content.dup
+			applied_content[ start_index...current_block_end ] = expected_block
+			{ file: managed_file, status: "drift", reason: "content_mismatch", applied_content: applied_content }
+		end
+
+		def managed_section_id( file_path: )
+			name = File.basename( file_path, File.extname( file_path ) )
+			name.downcase.gsub( /[^a-z0-9]+/, "-" ).gsub( /\A-|\-\z/, "" )
+		end
+
+		def normalize_text( text: )
+			text.to_s.gsub( "\r\n", "\n" ).rstrip + "\n"
+		end
+
+		def common_templates_dir
+			File.join( tool_root, "templates", "common" )
+		end
+
+		def hook_template_path( hook_name: )
+			File.join( tool_root, "templates", "hooks", hook_name )
+		end
+
+		def hooks_health_report( strict: false )
+			configured = configured_hooks_path
+			expected = config.hooks_path
+			expected_abs = File.expand_path( expected, repo_root )
+			configured_abs = configured.nil? ? nil : File.expand_path( configured, repo_root )
+			hooks_path_ok = configured == expected || configured_abs == expected_abs
+			puts_line "hooks_path: #{configured || '(unset)'}"
+			puts_line "hooks_path_expected: #{expected}"
+			puts_line( hooks_path_ok ? "hooks_path_status: ok" : "hooks_path_status: attention" )
+			required_hook_paths.each do |path|
+				exists = File.file?( path )
+				symlink = File.symlink?( path )
+				executable = exists && !symlink && File.executable?( path )
+				puts_line "hook_file: #{relative_path( path )} exists=#{exists} symlink=#{symlink} executable=#{executable}"
+			end
+			missing = missing_hook_files
+			non_exec = non_executable_hook_files
+			symlinked = symlink_hook_files
+			if strict
+				puts_line "ACTION: run bin/butler hook." unless hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
+			else
+				puts_line "ACTION: run bin/butler hook to enforce local main protections." unless hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
+			end
+			hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
+		end
+
+		def main_sync_counts
+			target = "#{config.main_branch}...#{config.git_remote}/#{config.main_branch}"
+			stdout_text, stderr_text, success, = git_run( "rev-list", "--left-right", "--count", target )
+			unless success
+				error_text = stderr_text.to_s.strip
+				error_text = "git rev-list failed" if error_text.empty?
+				return [ 0, 0, error_text ]
+			end
+			counts = stdout_text.to_s.strip.split( /\s+/ )
+			return [ 0, 0, "unexpected rev-list output: #{stdout_text.to_s.strip}" ] if counts.length < 2
+			[ counts[ 0 ].to_i, counts[ 1 ].to_i, nil ]
+		end
+
+		def configured_hooks_path
+			stdout_text, = git_capture_soft( "config", "--get", "core.hooksPath" )
+			value = stdout_text.to_s.strip
+			value.empty? ? nil : value
+		end
+
+		def required_hook_paths
+			config.required_hooks.map { |name| File.join( hooks_dir, name ) }
+		end
+
+		def missing_hook_files
+			required_hook_paths.select { |path| !File.file?( path ) }.map { |path| relative_path( path ) }
+		end
+
+		def non_executable_hook_files
+			required_hook_paths.select { |path| File.file?( path ) && !File.executable?( path ) }.map { |path| relative_path( path ) }
+		end
+
+		def symlink_hook_files
+			required_hook_paths.select { |path| File.symlink?( path ) }.map { |path| relative_path( path ) }
+		end
+
+		def hooks_dir
+			File.join( repo_root, config.hooks_path )
+		end
+
+		def stale_local_branches
+			git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
+				branch, upstream, track = line.strip.split( "\t", 3 )
+				upstream = upstream.to_s
+				track = track.to_s
+				next if branch.to_s.empty? || upstream.empty?
+				next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
+				{ branch: branch, upstream: upstream, track: track }
+			end
+		end
+
+		def pr_and_check_report
+			report = {
+				generated_at: Time.now.utc.iso8601,
+				branch: current_branch,
+				status: "ok",
+				skip_reason: nil,
+				pr: nil,
+				checks: {
+					status: "unknown",
+					skip_reason: nil,
+					required_total: 0,
+					failing_count: 0,
+					pending_count: 0,
+					failing: [],
+					pending: []
+				}
+			}
+			unless gh_available?
+				report[ :status ] = "skipped"
+				report[ :skip_reason ] = "gh CLI not available in PATH"
+				puts_line "SKIP: #{report.fetch( :skip_reason )}"
+				return report
+			end
+			pr_stdout, pr_stderr, pr_success, = gh_run( "pr", "view", current_branch, "--json", "number,title,url,state,reviewDecision" )
+			unless pr_success
+				error_text = gh_error_text( stdout_text: pr_stdout, stderr_text: pr_stderr, fallback: "unable to read PR for branch #{current_branch}" )
+				report[ :status ] = "skipped"
+				report[ :skip_reason ] = error_text
+				puts_line "SKIP: #{error_text}"
+				return report
+			end
+			pr_data = JSON.parse( pr_stdout )
+			report[ :pr ] = {
+				number: pr_data[ "number" ],
+				title: pr_data[ "title" ].to_s,
+				url: pr_data[ "url" ].to_s,
+				state: pr_data[ "state" ].to_s,
+				review_decision: blank_to( value: pr_data[ "reviewDecision" ], default: "NONE" )
+			}
+			puts_line "pr: ##{report.dig( :pr, :number )} #{report.dig( :pr, :title )}"
+			puts_line "url: #{report.dig( :pr, :url )}"
+			puts_line "review_decision: #{report.dig( :pr, :review_decision )}"
+			checks_stdout, checks_stderr, checks_success, checks_exit = gh_run( "pr", "checks", report.dig( :pr, :number ).to_s, "--required", "--json", "name,state,bucket,workflow,link" )
+			if checks_stdout.to_s.strip.empty?
+				error_text = gh_error_text( stdout_text: checks_stdout, stderr_text: checks_stderr, fallback: "required checks unavailable" )
+				report[ :checks ][ :status ] = "skipped"
+				report[ :checks ][ :skip_reason ] = error_text
+				report[ :status ] = "attention"
+				puts_line "checks: SKIP (#{error_text})"
+				return report
+			end
+			checks_data = JSON.parse( checks_stdout )
+			failing = checks_data.select { |entry| entry[ "bucket" ].to_s == "fail" || entry[ "state" ].to_s.upcase == "FAILURE" }
+			pending = checks_data.select { |entry| entry[ "bucket" ].to_s == "pending" }
+			report[ :checks ][ :status ] = checks_success ? "ok" : ( checks_exit == 8 ? "pending" : "attention" )
+			report[ :checks ][ :required_total ] = checks_data.count
+			report[ :checks ][ :failing_count ] = failing.count
+			report[ :checks ][ :pending_count ] = pending.count
+			report[ :checks ][ :failing ] = normalise_check_entries( entries: failing )
+			report[ :checks ][ :pending ] = normalise_check_entries( entries: pending )
+			puts_line "required_checks_total: #{report.dig( :checks, :required_total )}"
+			puts_line "required_checks_failing: #{report.dig( :checks, :failing_count )}"
+			puts_line "required_checks_pending: #{report.dig( :checks, :pending_count )}"
+			report.dig( :checks, :failing ).each { |entry| puts_line "check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+			report.dig( :checks, :pending ).each { |entry| puts_line "check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+			report[ :status ] = "attention" if report.dig( :checks, :failing_count ).positive? || report.dig( :checks, :pending_count ).positive?
+			report
+		rescue JSON::ParserError => e
+			report[ :status ] = "skipped"
+			report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
+			puts_line "SKIP: #{report.fetch( :skip_reason )}"
+			report
+		end
+
+		def write_and_print_pr_monitor_report( report: )
+			markdown_path, json_path = write_pr_monitor_report( report: report )
+			puts_line "report_markdown: #{markdown_path}"
+			puts_line "report_json: #{json_path}"
+		rescue StandardError => e
+			puts_line "report_write: SKIP (#{e.message})"
+		end
+
+		def write_pr_monitor_report( report: )
+			report_dir = File.join( repo_root, config.report_dir )
+			FileUtils.mkdir_p( report_dir )
+			markdown_path = File.join( report_dir, REPORT_MD )
+			json_path = File.join( report_dir, REPORT_JSON )
+			File.write( json_path, JSON.pretty_generate( report ) )
+			File.write( markdown_path, render_pr_monitor_markdown( report: report ) )
+			[ markdown_path, json_path ]
+		end
+
+		def render_pr_monitor_markdown( report: )
+			lines = []
+			lines << "# Butler PR Monitor Report"
+			lines << ""
+			lines << "- Generated at: #{report.fetch( :generated_at )}"
+			lines << "- Branch: #{report.fetch( :branch )}"
+			lines << "- Audit status: #{report.fetch( :audit_status, 'unknown' )}"
+			lines << "- Monitor status: #{report.fetch( :status )}"
+			lines << "- Skip reason: #{report.fetch( :skip_reason )}" unless report.fetch( :skip_reason ).nil?
+			lines << ""
+			lines << "## PR"
+			pr = report[ :pr ]
+			if pr.nil?
+				lines << "- not available"
+			else
+				lines << "- Number: ##{pr.fetch( :number )}"
+				lines << "- Title: #{pr.fetch( :title )}"
+				lines << "- URL: #{pr.fetch( :url )}"
+				lines << "- State: #{pr.fetch( :state )}"
+				lines << "- Review decision: #{pr.fetch( :review_decision )}"
+			end
+			lines << ""
+			lines << "## Required Checks"
+			checks = report.fetch( :checks )
+			lines << "- Status: #{checks.fetch( :status )}"
+			lines << "- Skip reason: #{checks.fetch( :skip_reason )}" unless checks.fetch( :skip_reason ).nil?
+			lines << "- Total: #{checks.fetch( :required_total )}"
+			lines << "- Failing: #{checks.fetch( :failing_count )}"
+			lines << "- Pending: #{checks.fetch( :pending_count )}"
+			lines << ""
+			lines << "### Failing"
+			if checks.fetch( :failing ).empty?
+				lines << "- none"
+			else
+				checks.fetch( :failing ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+			end
+			lines << ""
+			lines << "### Pending"
+			if checks.fetch( :pending ).empty?
+				lines << "- none"
+			else
+				checks.fetch( :pending ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+			end
+			lines << ""
+			lines.join( "\n" )
+		end
+
+		def print_scope_integrity_guard
+			files = changed_files
+			return { status: "ok", split_required: false, unknown_lane: false } if files.empty?
+
+			scope = scope_integrity_status( files: files, branch: current_branch )
+			print_header "Scope Integrity Guard"
+			puts_line "branch: #{scope.fetch( :branch )}"
+			puts_line "branch_lane: #{scope.fetch( :lane ) || 'unknown'}"
+			puts_line "primary_group: #{scope.fetch( :primary_group ) || 'unknown'}"
+			puts_line "detected_groups: #{scope.fetch( :detected_groups ).sort.join( ', ' )}"
+			puts_line "non_doc_groups: #{scope.fetch( :non_doc_groups ).empty? ? 'none' : scope.fetch( :non_doc_groups ).sort.join( ', ' )}"
+			puts_line "docs_only_changes: #{scope.fetch( :docs_only )}"
+			puts_line "violating_files_count: #{scope.fetch( :violating_files ).count}"
+			scope.fetch( :violating_files ).each { |path| puts_line "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
+			puts_line "checklist_single_business_intent: #{scope.fetch( :split_required ) ? 'needs_review' : 'pass'}"
+			puts_line "checklist_single_scope_group: #{( scope.fetch( :mixed_non_doc ) || scope.fetch( :misc_present ) ) ? 'needs_split' : 'pass'}"
+			puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :mismatched_lane_scope ) || scope.fetch( :unknown_lane ) ) ? 'needs_explanation' : 'pass'}"
+			if scope.fetch( :unknown_lane )
+				puts_line "ACTION: branch naming must match #{config.branch_pattern}; supported lanes: #{config.lane_group_map.keys.join( ', ' )}."
+				return { status: "attention", split_required: scope.fetch( :split_required ), unknown_lane: true }
+			end
+			puts_line( scope.fetch( :split_required ) ? "ACTION: split/re-branch is required before commit." : "ACTION: scope integrity is within commit policy." )
+			{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ), unknown_lane: false }
+		end
+
+		def scope_integrity_status( files:, branch: )
+			lane = branch_lane( branch_name: branch )
+			primary_group = config.lane_group_map[ lane ]
+			grouped_paths = files.map { |path| [ path, scope_group_for_path( path: path ) ] }.to_h
+			detected_groups = grouped_paths.values.uniq
+			non_doc_groups = detected_groups - [ "docs" ]
+			unknown_lane = lane.nil? || primary_group.nil?
+			mixed_non_doc = non_doc_groups.length > 1
+			mismatched_lane_scope = !unknown_lane && non_doc_groups.length == 1 && non_doc_groups.first != primary_group
+			misc_present = non_doc_groups.include?( "misc" )
+			split_required = mixed_non_doc || mismatched_lane_scope || misc_present
+			violating_files = files.select do |path|
+				group = grouped_paths.fetch( path )
+				next true if group == "misc"
+				next false if group == "docs"
+				next true if unknown_lane || mixed_non_doc
+				group != primary_group
+			end
+			{
+				branch: branch,
+				lane: lane,
+				primary_group: primary_group,
+				grouped_paths: grouped_paths,
+				detected_groups: detected_groups,
+				non_doc_groups: non_doc_groups,
+				docs_only: non_doc_groups.empty?,
+				unknown_lane: unknown_lane,
+				mixed_non_doc: mixed_non_doc,
+				mismatched_lane_scope: mismatched_lane_scope,
+				misc_present: misc_present,
+				split_required: split_required,
+				violating_files: violating_files,
+				status: ( unknown_lane || split_required ) ? "attention" : "ok"
+			}
+		end
+
+		def scope_group_for_path( path: )
+			config.path_groups.each do |group, patterns|
+				return group if patterns.any? { |pattern| File.fnmatch?( pattern, path, File::FNM_PATHNAME | File::FNM_DOTMATCH ) }
+			end
+			"misc"
+		end
+
+		def branch_lane( branch_name: )
+			match = config.branch_regex.match( branch_name.to_s )
+			return nil if match.nil?
+			return match[ "lane" ] if match.names.include?( "lane" )
+			match[ 1 ]
+		end
+
+		def changed_files
+			git_capture!( "status", "--porcelain" ).lines.filter_map do |line|
+				raw_path = line[ 3.. ].to_s.strip
+				next if raw_path.empty?
+				raw_path.split( " -> " ).last
+			end
+		end
+
+		def working_tree_clean?
+			git_capture!( "status", "--porcelain" ).strip.empty?
+		end
+
+		def current_branch
+			git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
+		end
+
+		def branch_exists?( branch_name: )
+			_, _, success, = git_run( "show-ref", "--verify", "--quiet", "refs/heads/#{branch_name}" )
+			success
+		end
+
+		def plural_suffix( count: )
+			count.to_i == 1 ? "" : "s"
+		end
+
+		def print_header( title )
+			puts_line ""
+			puts_line "[#{title}]"
+		end
+
+		def puts_line( message )
+			out.puts message
+		end
+
+		def relative_path( absolute_path )
+			absolute_path.sub( "#{repo_root}/", "" )
+		end
+
+		def gh_available?
+			_, _, success, = gh_run( "--version" )
+			success
+		end
+
+		def normalise_check_entries( entries: )
+			Array( entries ).map do |entry|
+				{
+					workflow: blank_to( value: entry[ "workflow" ], default: "workflow" ),
+					name: blank_to( value: entry[ "name" ], default: "check" ),
+					state: blank_to( value: entry[ "state" ], default: "UNKNOWN" ),
+					link: entry[ "link" ].to_s
+				}
+			end
+		end
+
+		def blank_to( value:, default: )
+			text = value.to_s.strip
+			text.empty? ? default : text
+		end
+
+		def gh_error_text( stdout_text:, stderr_text:, fallback: )
+			combined = [ stderr_text.to_s.strip, stdout_text.to_s.strip ].reject( &:empty? ).join( " | " )
+			combined.empty? ? fallback : combined
+		end
+
+		def git_system!( *args )
+			stdout_text, stderr_text, success, = git_run( *args )
+			out.print stdout_text unless stdout_text.empty?
+			err.print stderr_text unless stderr_text.empty?
+			raise "git #{args.join( ' ' )} failed" unless success
+		end
+
+		def git_capture!( *args )
+			stdout_text, stderr_text, success, = git_run( *args )
+			unless success
+				err.print stderr_text unless stderr_text.empty?
+				raise "git #{args.join( ' ' )} failed"
+			end
+			stdout_text
+		end
+
+		def git_capture_soft( *args )
+			stdout_text, stderr_text, success, = git_run( *args )
+			[ stdout_text, stderr_text, success ]
+		end
+
+		def git_run( *args )
+			stdout_text, stderr_text, status = Open3.capture3( "git", *args, chdir: repo_root )
+			[ stdout_text, stderr_text, status.success?, status.exitstatus ]
+		end
+
+		def gh_run( *args )
+			stdout_text, stderr_text, status = Open3.capture3( "gh", *args, chdir: repo_root )
+			[ stdout_text, stderr_text, status.success?, status.exitstatus ]
+		end
+end
+
+def parse_args( argv )
+	parser = OptionParser.new do |opts|
+		opts.banner = "Usage: bin/butler [audit|sync|prune|hook|check|common check|common apply]"
+	end
+	if argv.empty?
+		parser.parse!( argv )
+		return [ "audit", parser ]
+	end
+
+	command = argv.shift
+	if command == "common"
+		action = argv.shift
+		parser.parse!( argv )
+		return [ "common:#{action}", parser ]
+	end
+
+	parser.parse!( argv )
+	[ command, parser ]
+rescue OptionParser::ParseError => e
+	$stderr.puts e.message
+	$stderr.puts parser
+	exit Butler::EXIT_ERROR
+end
+
+begin
+	command, = parse_args( ARGV )
+	butler = Butler.new( repo_root: Dir.pwd, tool_root: File.expand_path( "..", __dir__ ), out: $stdout, err: $stderr )
+
+	exit_code =
+		case command
+		when "audit"
+			butler.audit!
+		when "sync"
+			butler.sync!
+		when "prune"
+			butler.prune!
+		when "hook"
+			butler.hook!
+		when "check"
+			butler.check!
+		when "common:check"
+			butler.common_check!
+		when "common:apply"
+			butler.common_apply!
+		else
+			$stderr.puts "Unknown command: #{command}"
+			Butler::EXIT_ERROR
+		end
+	exit exit_code
+rescue ButlerConfigError => e
+	$stderr.puts "CONFIG ERROR: #{e.message}"
+	exit Butler::EXIT_ERROR
+rescue StandardError => e
+	$stderr.puts "ERROR: #{e.message}"
+	exit Butler::EXIT_ERROR
+end

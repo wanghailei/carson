@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+branch_name="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$branch_name" == "main" || "$branch_name" == "master" ]]; then
+	echo "Butler policy: direct commits on ${branch_name} are blocked. Work on a feature branch and merge via PR." >&2
+	exit 1
+fi
