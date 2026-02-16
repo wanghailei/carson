@@ -306,43 +306,51 @@ class Butler
 	end
 
 	def common_check!
-		print_header "Common Templates Check"
+		print_header "Template Sync Check"
 		results = common_results
 		drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
 		error_count = results.count { |entry| entry.fetch( :status ) == "error" }
 		results.each do |entry|
-			puts_line "common_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
+			puts_line "template_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
 		end
-		puts_line "common_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
+		puts_line "template_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
 		return EXIT_ERROR if error_count.positive?
 		drift_count.positive? ? EXIT_BLOCK : EXIT_OK
 	end
 
 	def common_apply!
-		print_header "Common Templates Apply"
+		print_header "Template Sync Apply"
 		results = common_results
 		applied = 0
 		results.each do |entry|
 			if entry.fetch( :status ) == "error"
-				puts_line "common_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}"
+				puts_line "template_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}"
 				next
 			end
 
 			file_path = File.join( repo_root, entry.fetch( :file ) )
 			if entry.fetch( :status ) == "ok"
-				puts_line "common_file: #{entry.fetch( :file )} status=ok reason=in_sync"
+				puts_line "template_file: #{entry.fetch( :file )} status=ok reason=in_sync"
 				next
 			end
 
 			FileUtils.mkdir_p( File.dirname( file_path ) )
 			File.write( file_path, entry.fetch( :applied_content ) )
-			puts_line "common_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}"
+			puts_line "template_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}"
 			applied += 1
 		end
 
 		error_count = results.count { |entry| entry.fetch( :status ) == "error" }
-		puts_line "common_apply_summary: updated=#{applied} error=#{error_count}"
+		puts_line "template_apply_summary: updated=#{applied} error=#{error_count}"
 		error_count.positive? ? EXIT_ERROR : EXIT_OK
+	end
+
+	def template_check!
+		common_check!
+	end
+
+	def template_apply!
+		common_apply!
 	end
 
 	private
@@ -807,7 +815,7 @@ end
 
 def parse_args( argv )
 	parser = OptionParser.new do |opts|
-		opts.banner = "Usage: bin/butler [audit|sync|prune|hook|check|common check|common apply]"
+		opts.banner = "Usage: bin/butler [audit|sync|prune|hook|check|template check|template apply]"
 	end
 	if argv.empty?
 		parser.parse!( argv )
@@ -815,10 +823,15 @@ def parse_args( argv )
 	end
 
 	command = argv.shift
+	if command == "template"
+		action = argv.shift
+		parser.parse!( argv )
+		return [ "template:#{action}", parser ]
+	end
 	if command == "common"
 		action = argv.shift
 		parser.parse!( argv )
-		return [ "common:#{action}", parser ]
+		return [ "template:#{action}", parser ]
 	end
 
 	parser.parse!( argv )
@@ -845,10 +858,10 @@ begin
 			butler.hook!
 		when "check"
 			butler.check!
-		when "common:check"
-			butler.common_check!
-		when "common:apply"
-			butler.common_apply!
+		when "template:check"
+			butler.template_check!
+		when "template:apply"
+			butler.template_apply!
 		else
 			$stderr.puts "Unknown command: #{command}"
 			Butler::EXIT_ERROR
