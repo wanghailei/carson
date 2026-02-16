@@ -9,8 +9,8 @@ Butler is a shared local governance tool for repository hygiene and merge readin
 
 ## Version
 
-- Current version: `0.1.0`
 - Canonical source: `VERSION`
+- Current release value is read from `VERSION` (for example `cat VERSION` or `bin/butler version`)
 - CLI version output: `bin/butler version` or `bin/butler --version`
 - Release history: `RELEASE.md`
 

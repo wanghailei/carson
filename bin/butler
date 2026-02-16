@@ -857,11 +857,11 @@ end
 
 def read_butler_version!( tool_root: )
 	version_path = File.join( tool_root, "VERSION" )
-	version_text = File.read( version_path ).to_s.strip
-	raise "version file is missing at #{version_path}" if version_text.empty?
+	version_text = File.read( version_path ).strip
+	raise "VERSION file is empty at #{version_path}" if version_text.empty?
 	version_text
 rescue Errno::ENOENT
-	raise "version file is missing at #{version_path}"
+	raise "VERSION file not found at #{version_path}"
 end
 
 begin
