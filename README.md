@@ -7,6 +7,14 @@ Butler is a shared local governance tool for repository hygiene and merge readin
 - Ruby managed by `rbenv`
 - Supported Ruby versions: `>= 4.0`
 
+## CI
+
+- Workflow: `.github/workflows/ci.yml`
+- Trigger: pull requests (and manual dispatch)
+- Job step: `ruby -c bin/butler`
+- Job step: `bash script/ci_smoke.sh`
+- Smoke logs always print both numeric and text status, for example `0 - OK`.
+
 ## Commands
 
 - `bin/butler audit`
