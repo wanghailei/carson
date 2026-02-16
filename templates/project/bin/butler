@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+install_root="${repo_root}/.tools/butler"
+install_dir="${install_root}/repo"
+butler_repo_url="${BUTLER_REPO_URL:-git@github.com:wanghailei/butler.git}"
+butler_ref="${BUTLER_REF:-main}"
+
+if ! command -v rbenv >/dev/null 2>&1; then
+	echo "Butler bootstrap error: rbenv is required." >&2
+	exit 1
+fi
+
+if ! command -v ruby >/dev/null 2>&1; then
+	echo "Butler bootstrap error: Ruby runtime is unavailable." >&2
+	exit 1
+fi
+
+if [[ "$(command -v ruby)" != *"/.rbenv/shims/ruby" ]]; then
+	echo "Butler bootstrap error: Ruby must come from rbenv shims." >&2
+	exit 1
+fi
+
+if ! ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (major > 4 || ( major == 4 && minor >= 0 )) ? 0 : 1 )'; then
+	echo "Butler bootstrap error: Ruby >= 4.0 is required (current: $(ruby -e 'print RUBY_VERSION'))." >&2
+	exit 1
+fi
+
+butler_script="${install_dir}/bin/butler"
+
+if [[ ! -d "${install_dir}/.git" ]]; then
+	mkdir -p "${install_root}"
+	git clone --quiet "${butler_repo_url}" "${install_dir}"
+fi
+
+if [[ "${butler_ref}" == "main" ]]; then
+	git -C "${install_dir}" checkout --quiet main
+	git -C "${install_dir}" pull --ff-only --quiet origin main
+else
+	git -C "${install_dir}" fetch --quiet --tags origin
+	git -C "${install_dir}" checkout --quiet --detach "${butler_ref}"
+fi
+
+if [[ ! -x "${butler_script}" ]]; then
+	echo "Butler bootstrap error: installed script missing at ${butler_script} (ref=${butler_ref})." >&2
+	exit 1
+fi
+
+cd "${repo_root}"
+exec "${butler_script}" "$@"
