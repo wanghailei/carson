@@ -12,12 +12,12 @@ require "yaml"
 class ButlerConfigError < StandardError
 end
 
-# ButlerConfig loads optional repository overrides from /.butler.yml and merges them onto shared defaults.
+# ButlerConfig loads optional repository overrides from .butler.yml and merges them onto shared defaults.
 class ButlerConfig
 	attr_reader :git_remote, :main_branch, :protected_branches, :hooks_path, :required_hooks,
 		:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :report_dir, :common_managed_files
 
-	# Loads built-in defaults and deep-merges local /.butler.yml when present.
+	# Loads built-in defaults and deep-merges local .butler.yml when present.
 	def self.load( repo_root: )
 		path = File.join( repo_root, ".butler.yml" )
 		data = default_data
@@ -397,7 +397,7 @@ class Butler
 			end_marker = "<!-- butler:common:end #{section_id} -->"
 			template_body = File.read( template_path ).rstrip
 			expected_block = "#{start_marker}\n#{template_body}\n#{end_marker}\n"
-			file_path = File.join( repo_root, managed_file )
+			file_path = resolve_repo_path!( relative_path: managed_file, label: "common.managed_files entry #{managed_file}" )
 			current_content = File.file?( file_path ) ? File.read( file_path ) : ""
 
 			start_index = current_content.index( start_marker )
@@ -518,7 +518,7 @@ class Butler
 
 			# Local directory where managed hooks are installed.
 			def hooks_dir
-				File.join( repo_root, config.hooks_path )
+				resolve_repo_path!( relative_path: config.hooks_path, label: "hooks.path" )
 			end
 
 			# NOTE: prune only targets local branches that meet both conditions:
@@ -810,8 +810,16 @@ class Butler
 
 			# Converts absolute paths into repo-relative output paths.
 			def relative_path( absolute_path )
-			absolute_path.sub( "#{repo_root}/", "" )
-		end
+				absolute_path.sub( "#{repo_root}/", "" )
+			end
+
+			# Resolves a repo-relative path and blocks traversal outside repository root.
+			def resolve_repo_path!( relative_path:, label: )
+				path = File.expand_path( relative_path.to_s, repo_root )
+				repo_root_prefix = File.join( repo_root, "" )
+				raise ButlerConfigError, "#{label} must stay within repository root" unless path.start_with?( repo_root_prefix )
+				path
+			end
 
 			# Soft capability check for GitHub CLI presence.
 			def gh_available?
