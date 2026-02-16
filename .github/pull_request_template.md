@@ -7,5 +7,6 @@
 - [ ] `bin/butler audit` before commit.
 - [ ] `bin/butler audit` before push.
 - [ ] Required CI checks are passing.
+- [ ] At least 60 seconds passed to allow AI reviewers to post.
 - [ ] No unresolved required conversation threads at merge time.
 <!-- butler:common:end pull-request-template -->
