@@ -8,3 +8,4 @@
 - [ ] Required CI checks are passing.
 - [ ] At least 60 seconds passed since the last push to allow AI reviewers to post.
 - [ ] No unresolved required conversation threads at merge time.
+- [ ] Top-level AI review comments have disposition (`accepted`, `rejected`, `deferred`) and `Codex:` acknowledgement where needed.
