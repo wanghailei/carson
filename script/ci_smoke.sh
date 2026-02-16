@@ -108,4 +108,7 @@ expect_exit 0 "audit completes without a local hard block" run_butler audit
 printf 'git: [\n' > .butler.yml
 expect_exit 1 "invalid YAML returns configuration/runtime error" run_butler check
 
+cd "$repo_root"
+bash script/review_smoke.sh
+
 echo "Butler smoke tests passed."
