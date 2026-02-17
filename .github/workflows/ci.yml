@@ -30,6 +30,7 @@ jobs:
       - name: Review gate
         env:
           GH_TOKEN: ${{ github.token }}
+          BUTLER_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: ruby bin/butler review gate
 
   smoke:
