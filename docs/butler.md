@@ -39,14 +39,14 @@ Out of scope:
 
 - `bin/butler`: main runtime, command parser, and all core command implementations.
 - `templates/hooks/*`: canonical local hard-protection hooks installed by `bin/butler hook`.
-- `templates/common/*`: canonical managed template blocks for `.github` files.
+- `templates/github/*`: canonical managed GitHub template blocks for `.github` files.
 - `templates/project/bin/butler`: consumer-repository bootstrap wrapper, with optional `BUTLER_REF`.
 - `script/bootstrap_repo_defaults.sh`: day-0 bootstrap helper for new repositories.
 - `script/ci_smoke.sh`: smoke tests for command behaviour and exit-code contract.
 - `.github/workflows/review-sweep.yml`: scheduled review sweep every 8 hours.
 - `VERSION`: canonical Butler version source.
 - `RELEASE.md`: release history and noteworthy changes.
-- `docs/common_templates.md`: dedicated template-block behaviour reference.
+- `docs/github_templates.md`: dedicated template-block behaviour reference.
 
 ## Core Flow
 
@@ -167,7 +167,7 @@ Key code segments:
 
 Related reference:
 
-- `docs/common_templates.md`
+- `docs/github_templates.md`
 
 ## Feature: Configuration Model
 
@@ -256,7 +256,7 @@ A: In Butler templates/scripts, then rolled out to consumer repositories through
 - `bin/butler`
 - `script/bootstrap_repo_defaults.sh`
 - `script/ci_smoke.sh`
-- `docs/common_templates.md`
+- `docs/github_templates.md`
 - `templates/project/bin/butler`
 - `templates/hooks/prepare-commit-msg`
 - `templates/hooks/pre-merge-commit`

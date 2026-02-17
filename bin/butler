@@ -59,7 +59,7 @@ class ButlerConfig
 				},
 				"path_groups" => {
 					# Shared governance templates and repository scripts are part of the Butler tooling boundary.
-					"tool" => [ "bin/**", "script/**", ".githooks/**", ".github/**", "templates/common/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
+					"tool" => [ "bin/**", "script/**", ".githooks/**", ".github/**", "templates/github/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
 					"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
 					"test" => [ "test/**", "spec/**", "features/**" ],
 					"domain" => [ "app/**", "db/**", "config/**", "lib/**" ],
@@ -631,7 +631,7 @@ class Butler
 
 			# Calculates expected marker block and returns file sync status plus applied output.
 			def common_result_for_file( managed_file: )
-			template_path = File.join( common_templates_dir, File.basename( managed_file ) )
+			template_path = File.join( github_templates_dir, File.basename( managed_file ) )
 			unless File.file?( template_path )
 				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil }
 			end
@@ -683,9 +683,9 @@ class Butler
 			text.to_s.gsub( "\r\n", "\n" ).rstrip + "\n"
 		end
 
-			# Shared template source directory inside Butler repository.
-			def common_templates_dir
-			File.join( tool_root, "templates", "common" )
+			# GitHub managed template source directory inside Butler repository.
+			def github_templates_dir
+			File.join( tool_root, "templates", "github" )
 		end
 
 			# Canonical hook template location inside Butler repository.
