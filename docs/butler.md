@@ -2,64 +2,57 @@
 
 ## Purpose
 
-Butler is a shared local governance tool for repository hygiene and merge-readiness support.
+Butler is an outsider governance runtime for repository hygiene and merge-readiness controls.
 
-Its purpose is to keep local workflows safe, deterministic, and lightweight by:
+Its design goal is operational discipline with minimal host-repository footprint.
 
-- enforcing local hard protections before unsafe Git actions can happen,
-- keeping local `main` aligned with `github/main`,
-- surfacing practical scope-integrity signals for branch hygiene,
-- checking and applying shared `.github` template blocks,
-- exposing deterministic command outcomes through stable exit statuses.
-
-==Butler blocks unsafe local actions; GitHub remains the merge authority.==
+==Butler carries its own runtime assets and does not rely on Butler-owned files inside host repositories.==
 
 ## Scope and Boundaries
 
 In scope:
 
-- local hook installation and health checks,
-- local `main` synchronisation and stale branch pruning,
-- scope-integrity checks based on branch lane plus changed path groups,
-- merge-readiness review gate and scheduled late-review sweep through `gh`,
-- shared marker-block template drift detection and application,
-- optional repository override loading from `.butler.yml`.
+- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `template`, `review`)
+- deterministic review gating and scheduled late-review sweeps through GitHub CLI
+- whole-file management of selected GitHub-native files (`.github/*`)
+- global hook installation under Butler runtime home
+- exact exit-status contract for automation use
 
 Out of scope:
 
-- replacing GitHub branch protection, rulesets, or required checks,
-- deciding merge approval policy on behalf of maintainers,
-- auto-merging pull requests,
-- broad CI orchestration, retry logic, or network diagnostics,
-- repository-specific business policy outside configured local rules.
+- replacing GitHub as merge authority
+- host-repository business logic policy
+- merge execution or force merge decisions
+- host-repository Butler-specific configuration files
 
-==`main` is pull-only from GitHub and must not drift through local direct commits.==
+Boundary rules:
+
+- host repository must not contain Butler-owned artefacts (`.butler.yml`, `bin/butler`, `.tools/butler/*`)
+- host repository may contain GitHub-native policy files managed by Butler
 
 ## Module Relationships
 
-- `bin/butler`: main runtime, command parser, and all core command implementations.
-- `templates/hooks/*`: canonical local hard-protection hooks installed by `bin/butler hook`.
-- `templates/github/*`: canonical managed GitHub template blocks for `.github` files.
-- `templates/project/bin/butler`: consumer-repository bootstrap wrapper, with optional `BUTLER_REF`.
-- `script/bootstrap_repo_defaults.sh`: day-0 bootstrap helper for new repositories.
-- `script/ci_smoke.sh`: smoke tests for command behaviour and exit-code contract.
-- `.github/workflows/review-sweep.yml`: scheduled review sweep every 8 hours.
-- `VERSION`: canonical Butler version source.
-- `RELEASE.md`: release history and noteworthy changes.
-- `docs/github_templates.md`: dedicated template-block behaviour reference.
+- `exe/butler`: primary executable entrypoint
+- `bin/butler`: developer shim for this repository
+- `lib/butler/cli.rb`: command parsing and dispatch
+- `lib/butler/config.rb`: built-in runtime defaults and environment override handling
+- `lib/butler/runtime.rb`: orchestration and core domain behaviour
+- `lib/butler/commands/*`: command classes mapped from CLI routes
+- `lib/butler/adapters/git.rb`: git process adapter
+- `lib/butler/adapters/github.rb`: GitHub CLI process adapter
+- `templates/.github/*`: canonical managed GitHub-native files
+- `assets/hooks/*`: canonical hook assets
+- `script/bootstrap_repo_defaults.sh`: branch-protection and secret bootstrap helper
 
 ## Core Flow
 
-1. Bootstrap local protections with `bin/butler hook`.
-2. Verify local hard guards with `bin/butler check`.
-3. Keep local `main` current using `bin/butler sync`.
-4. Remove stale local branches with `bin/butler prune`.
-5. Run `gh pr list --state open --limit 50` at session start and map current active PR priorities.
-6. Run `bin/butler audit` for local policy status, scope guard, and thin PR/check visibility.
-7. Use `bin/butler template check` and `bin/butler template apply` for shared `.github` marker blocks.
-8. Re-run `gh pr list --state open --limit 50` immediately before merge decision.
-9. Run `bin/butler review gate` before merge recommendation.
-10. Let scheduled workflow run `bin/butler review sweep` for late actionable review activity.
+1. Run `butler audit` to evaluate local policy state.
+2. If required, run `butler hook` then `butler check`.
+3. Keep local `main` aligned using `butler sync`.
+4. Remove stale local branches using `butler prune`.
+5. Keep managed `.github/*` files aligned using `butler template check` and `butler template apply`.
+6. Before merge recommendation, run `gh pr list --state open --limit 50` and `butler review gate`.
+7. Scheduled automation runs `butler review sweep` for late actionable review activity.
 
 Exit status contract:
 
@@ -67,197 +60,153 @@ Exit status contract:
 - `1 - runtime/configuration error`
 - `2 - policy blocked (hard stop)`
 
-## Feature: Local Hard Protection
+## Feature: Outsider Boundary Enforcement
 
 Mechanism:
 
-- `hook` copies canonical hooks into `.githooks`, sets executable bit, and writes `core.hooksPath`.
-- `check` validates configured hooks path, required hook files, and executable status.
-- Symlinked hook files are treated as a hard block.
+- Runtime checks host repository for forbidden Butler fingerprints.
+- Violations are reported as hard blocks before governance execution proceeds.
+
+Blocked host artefacts:
+
+- `.butler.yml`
+- `bin/butler`
+- `.tools/butler/*`
+- legacy marker artefacts from older template strategy
 
 Key code segments:
 
-- `Butler#hook!` in `bin/butler` writes hook files from `templates/hooks`.
-- `Butler#hooks_health_report` in `bin/butler` verifies path, missing hooks, symlinks, and executability.
-- `templates/hooks/prepare-commit-msg`, `templates/hooks/pre-merge-commit`, and `templates/hooks/pre-push` implement local branch protections for `main`/`master`.
+- `block_if_outsider_fingerprints!` in `lib/butler/runtime.rb`
+- `outsider_fingerprint_violations` in `lib/butler/runtime.rb`
+- `legacy_marker_violations` in `lib/butler/runtime.rb`
 
 Boundary:
 
-- Butler prevents unsafe local commit/merge/push paths.
-- GitHub remains responsible for server-side protection and merge policy.
+- Butler repository itself is exempt from this check so Butler can evolve its own codebase.
 
-## Feature: Main Synchronisation and Branch Hygiene
+## Feature: Global Hook Runtime
 
 Mechanism:
 
-- `sync` requires a clean working tree, fetches from remote, fast-forwards local `main`, and checks divergence.
-- `prune` fetches with prune, finds local branches whose upstream refs are gone, and attempts safe delete with `git branch -d`.
-- If safe delete fails only because the branch is not fully merged (typical after squash merge), Butler may force-delete with `git branch -D` only when GitHub confirms merged PR evidence for that exact branch tip (`head.sha`) into configured `main`.
-- Branches without upstream tracking remain excluded from prune targeting.
+- Hook assets are read from `assets/hooks/*`.
+- Hooks are installed to `~/.butler/hooks/<version>/`.
+- Repository `core.hooksPath` is set to that global path.
 
 Key code segments:
 
-- `Butler#sync!` and `Butler#main_sync_counts` in `bin/butler`.
-- `Butler#prune!`, `Butler#stale_local_branches`, and `Butler#force_delete_evidence_for_stale_branch` in `bin/butler`.
+- `hook!` in `lib/butler/runtime.rb`
+- `hooks_dir` in `lib/butler/runtime.rb`
+- `hook_template_path` in `lib/butler/runtime.rb`
+- `hooks_health_report` in `lib/butler/runtime.rb`
 
 Boundary:
 
-- Butler performs local maintenance only.
-- It does not bypass protected branches.
-- Force-delete is guarded: only stale tracked branches, only merge-related safe-delete failures, and only with merged PR evidence for the exact local tip.
+- Butler does not create `.githooks/*` inside host repositories.
 
-## Feature: Scope Integrity Guard
+## Feature: GitHub Template Management
 
 Mechanism:
 
-- Scope is inferred from branch lane (`codex/<lane>/<slug>`) plus changed path groups.
-- Docs-only changes pass.
-- Mixed non-doc groups, unknown lane, or mismatched lane/group raises attention and split guidance.
+- Template sources live in `templates/.github/*`.
+- Drift checks compare full file content (normalised line endings).
+- Apply writes full managed file content.
 
 Key code segments:
 
-- `ButlerConfig.default_data` in `bin/butler` defines lane-to-group map and path groups.
-- `Butler#print_scope_integrity_guard` and `Butler#scope_integrity_status` in `bin/butler` enforce guard behaviour.
+- `template_results` in `lib/butler/runtime.rb`
+- `template_result_for_file` in `lib/butler/runtime.rb`
+- `template_check!` in `lib/butler/runtime.rb`
+- `template_apply!` in `lib/butler/runtime.rb`
+
+Boundary:
+
+- Managed files are GitHub-native host files.
+- Butler-specific marker syntax is not used.
+
+## Feature: Review Gate and Review Sweep
+
+Mechanism:
+
+- `review gate` waits for warm-up, polls for convergence, and blocks on unresolved actionable findings.
+- Actionable findings include unresolved threads, non-author `CHANGES_REQUESTED`, and risk-keyword top-level comments/reviews.
+- `review sweep` scans recent open/closed pull requests and upserts one rolling tracking issue.
+
+Key code segments:
+
+- `review_gate!` in `lib/butler/runtime.rb`
+- `review_gate_snapshot` in `lib/butler/runtime.rb`
+- `review_sweep!` in `lib/butler/runtime.rb`
+- `upsert_review_sweep_tracking_issue` in `lib/butler/runtime.rb`
+
+Boundary:
+
+- Butler provides deterministic governance signals.
+- Merge authority remains GitHub plus human judgement.
+
+## Feature: Branch Hygiene and Main Sync
+
+Mechanism:
+
+- `sync` requires clean tree and fast-forwards local `main` from configured remote.
+- `prune` targets only local branches tracking deleted upstream refs.
+- Force-delete path is gated by merged-PR evidence for exact branch tip.
+
+Key code segments:
+
+- `sync!` in `lib/butler/runtime.rb`
+- `prune!` in `lib/butler/runtime.rb`
+- `stale_local_branches` in `lib/butler/runtime.rb`
+- `force_delete_evidence_for_stale_branch` in `lib/butler/runtime.rb`
 
 Insight:
 
-==Scope integrity is intent- and boundary-based (lane plus path groups), not file-count or line-count based.==
+==Prune targets only branches whose tracked upstream ref is gone; untracked local branches are intentionally excluded.==
 
-## Feature: PR Visibility, Review Gate, and Scheduled Sweep
+## Feature: Runtime Configuration
 
 Mechanism:
 
-- `audit` calls `gh pr view` and `gh pr checks --required`.
-- Session discipline rule: run `gh pr list --state open --limit 50` at session start and immediately before merge decisions.
-- Reports are written to `tmp/butler/pr_report_latest.md` and `tmp/butler/pr_report_latest.json`.
-- If GitHub data is unavailable, Butler marks monitor results as skipped/attention without pretending checks are green.
-- `review gate` waits for configured warm-up, polls snapshots until convergence, then blocks on unresolved review threads or missing `Codex:` dispositions for actionable top-level comments/reviews.
-- Actionable findings are defined as unresolved threads, any non-author `CHANGES_REQUESTED` review, or non-author comments/reviews with configured risk keywords (`bug`, `security`, `incorrect`, `block`, `fail`, `regression`).
-- `review sweep` scans recent open/closed PRs (default 3 days), records late actionable findings, and upserts one rolling tracking issue.
-- Review reports are written to `tmp/butler/review_gate_latest.{md,json}` and `tmp/butler/review_sweep_latest.{md,json}`.
+- Runtime uses built-in defaults from `lib/butler/config.rb`.
+- Environment overrides exist for review timing and sweep window/states.
+- Host repository configuration file loading is intentionally disabled.
 
 Key code segments:
 
-- `Butler#pr_and_check_report`
-- `Butler#write_pr_monitor_report`
-- `Butler#render_pr_monitor_markdown`
-- `Butler#review_gate!`
-- `Butler#review_sweep!`
-- `Butler#upsert_review_sweep_tracking_issue`
+- `Butler::Config.default_data` in `lib/butler/config.rb`
+- `Butler::Config.apply_env_overrides` in `lib/butler/config.rb`
+- `Butler::Config#validate!` in `lib/butler/config.rb`
 
 Boundary:
 
-- Butler offers deterministic local governance signals and artefacts.
-- Final merge readiness remains a GitHub and human judgement concern.
-
-## Feature: Shared Template Synchronisation
-
-Mechanism:
-
-- Managed `.github` files are synced via explicit marker blocks.
-- `template check` reports drift only.
-- `template apply` updates managed marker content while preserving repository-specific addendum outside markers.
-- Compatibility aliases remain available through `common check` and `common apply`.
-
-Key code segments:
-
-- `Butler#common_result_for_file`
-- `Butler#template_check!`
-- `Butler#template_apply!`
-
-Related reference:
-
-- `docs/github_templates.md`
-
-## Feature: Configuration Model
-
-Mechanism:
-
-- `.butler.yml` is optional.
-- If absent, Butler runs on built-in defaults.
-- If present, overrides are deep-merged on top of defaults.
-- Configuration keys are validated, with clear configuration errors for missing/blank/invalid structures.
-- `review.*` keys control warm-up/poll cadence, sweep window/states, risk keywords, disposition prefix, and rolling issue title/label.
-
-Key code segments:
-
-- `ButlerConfig.load`
-- `ButlerConfig.default_data`
-- `ButlerConfig.deep_merge`
-- `ButlerConfig#validate!`
-
-Boundary:
-
-- Butler supports local override needs.
-- It does not require repository-specific configuration to function.
-
-## Feature: Versioning and Release
-
-Mechanism:
-
-- `VERSION` is the canonical version source.
-- `bin/butler version` and `bin/butler --version` print the current version.
-- Smoke tests verify CLI version output against `VERSION`.
-- `RELEASE.md` records release history.
-
-Key code segments:
-
-- `parse_args` in `bin/butler` handles `version` command and flags.
-- `read_butler_version!` in `bin/butler` reads and validates `VERSION`.
-- version assertions in `script/ci_smoke.sh`.
-
-## Feature: Operational Insights
-
-1. Butler should stay thin and local-first; GitHub is merge authority.
-2. Local hard protection is mandatory for `main`/`master` commit, merge, and push paths.
-3. `main` update policy is pull-only from GitHub.
-4. Branch hygiene is first-class, including stale-branch prune.
-5. Scope integrity should trigger split decisions, not arbitrary numeric thresholds.
-6. Exit status texts must stay stable and explicit.
-7. Runtime baseline is `rbenv` Ruby `>= 4.0`.
-8. Template command naming (`template check/apply`) is primary, with `common` aliases kept for compatibility.
-9. Review convergence is deterministic and URL-linked dispositions are mandatory for actionable top-level findings.
-10. Scheduled sweep catches late review activity after PR close/merge.
+- Customisation remains centralised in Butler runtime, not in host repositories.
 
 ## Feature: FAQ
 
-Q: Why enforce local hooks if GitHub already protects `main`?  
-A: GitHub protects server-side merges, while hooks prevent unsafe local actions before they become remote issues.
+Q: Why keep Butler outside host repositories?  
+A: It keeps host repositories clean and avoids Butler-specific operational drift.
 
-Q: Why does Butler keep `common` aliases if `template` is preferred?  
-A: Aliases preserve backward compatibility while consumers migrate to primary `template` commands.
+Q: Why still write `.github/*` files in host repositories?  
+A: Those files are GitHub-native policy inputs required by GitHub workflows and review tooling.
 
-Q: Why can `audit` show attention even when no hard block exists?  
-A: Attention indicates non-blocking follow-up (for example scope clarification, lagging `main`, or incomplete `gh` visibility), while hard block remains reserved for policy stops.
+Q: Why does Butler block on `.butler.yml` now?  
+A: Outsider mode forbids host Butler configuration artefacts to preserve boundary clarity.
 
-Q: What counts as an actionable review finding for `review gate` and `review sweep`?  
-A: Unresolved review threads, any non-author `CHANGES_REQUESTED` review, plus non-author comments/reviews containing configured risk keywords.
+Q: Why install hooks globally instead of inside each repository?  
+A: It keeps Butler-owned hook assets outside host repositories while still enforcing local protections.
 
-Q: What must a valid `Codex:` disposition include?  
-A: Prefix `Codex:`, one disposition token (`accepted`, `rejected`, `deferred`), and the target review URL.
-
-Q: Why does sweep use one rolling issue instead of one issue per finding?  
-A: It keeps follow-up noise low while preserving all current findings in a single tracked place.
-
-Q: Where should repository-specific behaviour be customised?  
-A: In optional `.butler.yml` overrides; default operation works without local configuration.
-
-Q: What does exit code `2` mean in practice?  
-A: A policy hard stop. Resolve the blocker before commit/push workflows continue.
-
-Q: Where should shared governance defaults be introduced first?  
-A: In Butler templates/scripts, then rolled out to consumer repositories through bootstrap/template sync.
+Q: Can Butler still support deterministic CI behaviour?  
+A: Yes. CI pins exact Butler version and runs the same exit-status contract.
 
 ## References
 
 - `README.md`
 - `RELEASE.md`
 - `VERSION`
-- `bin/butler`
-- `script/bootstrap_repo_defaults.sh`
-- `script/ci_smoke.sh`
+- `butler.gemspec`
+- `lib/butler/cli.rb`
+- `lib/butler/config.rb`
+- `lib/butler/runtime.rb`
 - `docs/github_templates.md`
-- `templates/project/bin/butler`
-- `templates/hooks/prepare-commit-msg`
-- `templates/hooks/pre-merge-commit`
-- `templates/hooks/pre-push`
+- `assets/hooks/pre-push`
+- `assets/hooks/pre-merge-commit`
+- `assets/hooks/prepare-commit-msg`

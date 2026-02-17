@@ -2,14 +2,14 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-butler_bin="$repo_root/bin/butler"
+butler_bin="$repo_root/exe/butler"
 
 run_butler() {
-	ruby "$butler_bin" "$@"
+	BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
 }
 
 run_butler_with_mock_gh() {
-	PATH="$mock_bin:$PATH" ruby "$butler_bin" "$@"
+	PATH="$mock_bin:$PATH" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
 }
 
 exit_text() {
@@ -143,13 +143,13 @@ git push -u github main >/dev/null
 
 expect_exit 2 "check blocks before hooks are installed" run_butler check
 expect_exit 0 "sync keeps local main aligned to github/main" run_butler sync
-expect_exit 0 "hook installs required hooks" run_butler hook
+expect_exit 0 "hook installs required hooks to global runtime path" run_butler hook
 expect_exit 0 "check passes after hook install" run_butler check
 
-expect_exit 2 "template check reports drift when shared blocks are missing" run_butler template check
-expect_exit 0 "template apply writes managed shared blocks" run_butler template apply
+expect_exit 2 "template check reports drift when managed github files are missing" run_butler template check
+expect_exit 0 "template apply writes managed github files" run_butler template apply
 expect_exit 0 "template check passes after apply" run_butler template check
-expect_exit 0 "common alias remains compatible (check)" run_butler common check
+expect_exit 1 "unknown command returns runtime/configuration error" run_butler template lint
 
 git switch -c codex/tool/stale-prune >/dev/null
 git push -u github codex/tool/stale-prune >/dev/null
@@ -205,8 +205,27 @@ echo "PASS: no-evidence branch retained when merged PR evidence does not match b
 
 expect_exit 0 "audit completes without a local hard block" run_butler audit
 
-printf 'git: [\n' > .butler.yml
-expect_exit 1 "invalid YAML returns configuration/runtime error" run_butler check
+printf 'review: {}\n' > .butler.yml
+expect_exit 2 "outsider boundary blocks host repo .butler.yml" run_butler audit
+rm -f .butler.yml
+
+mkdir -p bin
+printf '#!/usr/bin/env bash\n' > bin/butler
+chmod +x bin/butler
+expect_exit 2 "outsider boundary blocks host repo bin/butler" run_butler audit
+rm -f bin/butler
+rmdir bin
+
+mkdir -p .tools/butler
+printf 'runtime\n' > .tools/butler/README
+expect_exit 2 "outsider boundary blocks host repo .tools/butler" run_butler audit
+rm -rf .tools
+
+mkdir -p .github
+marker_word="$(printf '%s' c o m m o n)"
+printf "<!-- butler:${marker_word}:start old -->\nlegacy\n<!-- butler:${marker_word}:end old -->\n" > .github/copilot-instructions.md
+expect_exit 2 "outsider boundary blocks legacy marker artefacts" run_butler audit
+rm -rf .github
 
 cd "$repo_root"
 bash script/review_smoke.sh

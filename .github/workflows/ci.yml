@@ -31,7 +31,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUTLER_PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: ruby bin/butler review gate
+        run: ruby exe/butler review gate
 
   smoke:
     name: Syntax and smoke tests
@@ -47,7 +47,17 @@ jobs:
           ruby-version: "4.0"
 
       - name: Ruby syntax check
-        run: ruby -c bin/butler
+        run: |
+          ruby -c exe/butler
+          ruby -c bin/butler
+          ruby -c lib/butler.rb
+
+      - name: Legacy naming guard
+        run: |
+          if rg -n '\bcommon\b' README.md docs lib script templates .github bin exe RELEASE.md; then
+            echo "legacy naming token detected" >&2
+            exit 1
+          fi
 
       - name: Butler smoke tests
         run: bash script/ci_smoke.sh

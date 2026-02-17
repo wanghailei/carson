@@ -9,12 +9,11 @@ Usage:
 Options:
   --branch <name>             Branch to protect (default: main)
   --checks <csv>              Required status checks, comma-separated (default: "Syntax and smoke tests,Butler governance")
-  --local-path <path>         Local repository path for wrapper and Butler setup
   --set-butler-read-token     Set BUTLER_REPO_READ_TOKEN from current gh auth token
 
 Examples:
   script/bootstrap_repo_defaults.sh wanghailei/new-project --checks "Syntax and smoke tests,Butler governance,lint,test"
-  script/bootstrap_repo_defaults.sh wanghailei/new-project --local-path ~/Studio/new-project --set-butler-read-token
+  script/bootstrap_repo_defaults.sh wanghailei/new-project --set-butler-read-token
 USAGE
 }
 
@@ -42,7 +41,6 @@ shift || true
 
 branch="main"
 checks_csv="Syntax and smoke tests,Butler governance"
-local_path=""
 set_butler_read_token=0
 
 while [[ $# -gt 0 ]]; do
@@ -53,10 +51,6 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--checks)
 			checks_csv="${2:-}"
-			shift 2
-			;;
-		--local-path)
-			local_path="${2:-}"
 			shift 2
 			;;
 		--set-butler-read-token)
@@ -118,24 +112,4 @@ echo "allow deletion: false"
 if [[ "${set_butler_read_token}" -eq 1 ]]; then
 	gh auth token | gh secret set BUTLER_REPO_READ_TOKEN --repo "${repo_slug}"
 	echo "Set secret BUTLER_REPO_READ_TOKEN on ${repo_slug}"
-fi
-
-if [[ -n "${local_path}" ]]; then
-	if [[ ! -d "${local_path}" ]]; then
-		echo "Local path does not exist: ${local_path}" >&2
-		exit 1
-	fi
-	# Local bootstrap is optional and only handles repo-local setup.
-	# GitHub branch protection is already applied above via API.
-	absolute_local_path="$(cd "${local_path}" && pwd)"
-	template_bin="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/templates/project/bin/butler"
-	mkdir -p "${absolute_local_path}/bin"
-	cp "${template_bin}" "${absolute_local_path}/bin/butler"
-	chmod +x "${absolute_local_path}/bin/butler"
-	(
-		cd "${absolute_local_path}"
-		bin/butler hook
-		bin/butler template apply
-	)
-	echo "Installed bin/butler and applied local Butler bootstrap in ${absolute_local_path}"
 fi
