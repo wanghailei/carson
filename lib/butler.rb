@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require_relative "butler/version"
 require_relative "butler/config"
 require_relative "butler/adapters/git"
