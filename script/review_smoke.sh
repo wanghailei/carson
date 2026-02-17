@@ -5,43 +5,43 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 butler_bin="$repo_root/bin/butler"
 
 run_butler() {
-  ruby "$butler_bin" "$@"
+	ruby "$butler_bin" "$@"
 }
 
 exit_text() {
-  case "${1:-}" in
-    0) echo "OK" ;;
-    1) echo "runtime/configuration error" ;;
-    2) echo "policy blocked (hard stop)" ;;
-    *) echo "unknown" ;;
-  esac
+	case "${1:-}" in
+		0) echo "OK" ;;
+		1) echo "runtime/configuration error" ;;
+		2) echo "policy blocked (hard stop)" ;;
+		*) echo "unknown" ;;
+	esac
 }
 
 expect_exit() {
-  expected="$1"
-  description="$2"
-  shift 2
+	expected="$1"
+	description="$2"
+	shift 2
 
-  set +e
-  "$@"
-  actual="$?"
-  set -e
+	set +e
+	"$@"
+	actual="$?"
+	set -e
 
-  if [[ "$actual" -ne "$expected" ]]; then
-    echo "FAIL: $description" >&2
-    echo "expected: $expected - $(exit_text "$expected")" >&2
-    echo "actual:   $actual - $(exit_text "$actual")" >&2
-    exit 1
-  fi
+	if [[ "$actual" -ne "$expected" ]]; then
+		echo "FAIL: $description" >&2
+		echo "expected: $expected - $(exit_text "$expected")" >&2
+		echo "actual:   $actual - $(exit_text "$actual")" >&2
+		exit 1
+	fi
 
-  echo "PASS: $description ($actual - $(exit_text "$actual"))"
+	echo "PASS: $description ($actual - $(exit_text "$actual"))"
 }
 
 tmp_base="$repo_root/tmp"
 mkdir -p "$tmp_base"
 tmp_root="$(mktemp -d "$tmp_base/butler-review-smoke.XXXXXX")"
 cleanup() {
-  rm -rf "$tmp_root"
+	rm -rf "$tmp_root"
 }
 trap cleanup EXIT
 
@@ -261,16 +261,16 @@ review:
 YAML
 
 run_with_mock() {
-  scenario="$1"
-  shift
-  rm -rf "$mock_state"
-  mkdir -p "$mock_state"
-  : > "$mock_log"
-  PATH="$mock_bin:$PATH" \
-    BUTLER_MOCK_GH_SCENARIO="$scenario" \
-    BUTLER_MOCK_GH_STATE_DIR="$mock_state" \
-    BUTLER_MOCK_GH_LOG_FILE="$mock_log" \
-    run_butler "$@"
+	scenario="$1"
+	shift
+	rm -rf "$mock_state"
+	mkdir -p "$mock_state"
+	: > "$mock_log"
+	PATH="$mock_bin:$PATH" \
+		BUTLER_MOCK_GH_SCENARIO="$scenario" \
+		BUTLER_MOCK_GH_STATE_DIR="$mock_state" \
+		BUTLER_MOCK_GH_LOG_FILE="$mock_log" \
+		run_butler "$@"
 }
 
 expect_exit 2 "review gate blocks unresolved threads" run_with_mock gate_unresolved review gate
@@ -283,15 +283,15 @@ expect_exit 1 "review gate returns runtime/configuration error when gh is unavai
 
 expect_exit 2 "review sweep blocks and upserts tracking issue on late actionable comments" run_with_mock sweep_findings review sweep
 if ! grep -q "issue create" "$mock_log"; then
-  echo "FAIL: review sweep expected to create tracking issue for findings" >&2
-  exit 1
+	echo "FAIL: review sweep expected to create tracking issue for findings" >&2
+	exit 1
 fi
 echo "PASS: review sweep created tracking issue for findings"
 
 expect_exit 0 "review sweep returns OK and closes open tracking issue when clear" run_with_mock sweep_clear review sweep
 if ! grep -q "issue close" "$mock_log"; then
-  echo "FAIL: review sweep expected to close tracking issue on clear run" >&2
-  exit 1
+	echo "FAIL: review sweep expected to close tracking issue on clear run" >&2
+	exit 1
 fi
 echo "PASS: review sweep closed tracking issue on clear run"
 
