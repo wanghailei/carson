@@ -126,7 +126,7 @@ Mechanism:
 - Reports are written to `tmp/butler/pr_report_latest.md` and `tmp/butler/pr_report_latest.json`.
 - If GitHub data is unavailable, Butler marks monitor results as skipped/attention without pretending checks are green.
 - `review gate` waits for configured warm-up, polls snapshots until convergence, then blocks on unresolved review threads or missing `Codex:` dispositions for actionable top-level comments/reviews.
-- Actionable findings are defined as unresolved threads or non-author comments/reviews with configured risk keywords (`bug`, `security`, `incorrect`, `block`, `fail`, `regression`).
+- Actionable findings are defined as unresolved threads, any non-author `CHANGES_REQUESTED` review, or non-author comments/reviews with configured risk keywords (`bug`, `security`, `incorrect`, `block`, `fail`, `regression`).
 - `review sweep` scans recent open/closed PRs (default 3 days), records late actionable findings, and upserts one rolling tracking issue.
 - Review reports are written to `tmp/butler/review_gate_latest.{md,json}` and `tmp/butler/review_sweep_latest.{md,json}`.
 
@@ -225,7 +225,7 @@ Q: Why can `audit` show attention even when no hard block exists?
 A: Attention indicates non-blocking follow-up (for example scope clarification, lagging `main`, or incomplete `gh` visibility), while hard block remains reserved for policy stops.
 
 Q: What counts as an actionable review finding for `review gate` and `review sweep`?  
-A: Unresolved review threads, plus non-author comments/reviews containing configured risk keywords.
+A: Unresolved review threads, any non-author `CHANGES_REQUESTED` review, plus non-author comments/reviews containing configured risk keywords.
 
 Q: What must a valid `Codex:` disposition include?  
 A: Prefix `Codex:`, one disposition token (`accepted`, `rejected`, `deferred`), and the target review URL.

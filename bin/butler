@@ -58,7 +58,8 @@ class ButlerConfig
 					"test" => "test"
 				},
 				"path_groups" => {
-					"tool" => [ "bin/**", ".githooks/**", ".github/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
+					# Shared governance templates are part of the Butler tooling boundary.
+					"tool" => [ "bin/**", ".githooks/**", ".github/**", "templates/common/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
 					"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
 					"test" => [ "test/**", "spec/**", "features/**" ],
 					"domain" => [ "app/**", "db/**", "config/**", "lib/**" ],
@@ -506,7 +507,6 @@ class Butler
 			wait_for_review_poll if index < config.review_max_polls - 1
 		end
 
-		last_snapshot ||= review_gate_snapshot( owner: owner, repo: repo, pr_number: pr_summary.fetch( :number ) )
 		block_reasons = []
 		block_reasons << "review snapshot did not converge within #{config.review_max_polls} polls" unless converged
 		if last_snapshot.fetch( :unresolved_threads ).any?
@@ -947,7 +947,7 @@ class Butler
 
 			# Pull request selected by current branch; nil is returned when no PR exists.
 			def current_pull_request_for_branch( branch_name: )
-			stdout_text, stderr_text, success, = gh_run( "pr", "view", branch_name, "--json", "number,title,url,state" )
+			stdout_text, stderr_text, success, = gh_run( "pr", "view", "--", branch_name, "--json", "number,title,url,state" )
 			unless success
 				error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to read PR for branch #{branch_name}" )
 				return nil if error_text.downcase.include?( "no pull requests found" )
@@ -1514,7 +1514,7 @@ class Butler
 
 			# Shared report writer for JSON plus Markdown pairs in reports.dir.
 			def write_report( report:, markdown_name:, json_name:, renderer: )
-			report_dir = File.join( repo_root, config.report_dir )
+			report_dir = resolve_repo_path!( relative_path: config.report_dir, label: "reports.dir" )
 			FileUtils.mkdir_p( report_dir )
 			markdown_path = File.join( report_dir, markdown_name )
 			json_path = File.join( report_dir, json_name )
