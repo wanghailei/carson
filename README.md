@@ -1,94 +1,72 @@
 # Butler
 
-Butler is a shared local governance tool for repository hygiene and merge readiness support.
+Butler is an outsider governance runtime.
+
+It runs against a repository without placing Butler-owned artefacts into that repository.
 
 ## Runtime
 
 - Ruby managed by `rbenv`
 - Supported Ruby versions: `>= 4.0`
+- Gem executable: `butler`
+- Developer shim in this repository: `bin/butler` -> `exe/butler`
 
 ## Version
 
 - Canonical source: `VERSION`
-- Current release value is read from `VERSION` (for example `cat VERSION` or `bin/butler version`)
-- CLI version output: `bin/butler version` or `bin/butler --version`
-- Release history: `RELEASE.md`
-
-## CI
-
-- Workflow: `.github/workflows/ci.yml`
-- Trigger: pull requests (and manual dispatch)
-- Required job: `Butler governance` (`bin/butler review gate`)
-- Job step: `ruby -c bin/butler`
-- Job step: `bash script/ci_smoke.sh`
-- Smoke logs always print both numeric and text status, for example `0 - OK`.
-- Scheduled sweep workflow: `.github/workflows/review-sweep.yml` (every 8 hours)
-
-## New Project Defaults
-
-Use the bootstrap helper so new repositories start with the same integration workflow defaults:
-
-- `script/bootstrap_repo_defaults.sh <owner/repo>`
-- Optional checks: `--checks "check_one,check_two"`
-- Optional local setup: `--local-path ~/Studio/<repo>`
-- Optional Butler read secret setup: `--set-butler-read-token`
-
-What it applies:
-
-- branch protection with approvals `0`, required conversation resolution, required linear history, and no force-push or delete
-- required status checks (if provided)
-- optional local `bin/butler` wrapper install plus `bin/butler hook` and `bin/butler template apply`
+- CLI version output: `butler version` or `butler --version`
+- Release notes: `RELEASE.md`
 
 ## Commands
 
-- `bin/butler audit`
-- `bin/butler sync`
-- `bin/butler prune`
-- `bin/butler hook`
-- `bin/butler check`
-- `bin/butler version`
-- `bin/butler template check`
-- `bin/butler template apply`
-- `bin/butler review gate`
-- `bin/butler review sweep`
+- `butler audit`
+- `butler sync`
+- `butler prune`
+- `butler hook`
+- `butler check`
+- `butler template check`
+- `butler template apply`
+- `butler review gate`
+- `butler review sweep`
+- `butler version`
 
-Compatibility aliases:
+## Outsider Boundary
 
-- `bin/butler common check`
-- `bin/butler common apply`
+In host repositories, Butler blocks on:
 
-## Exit Statuses
+- `.butler.yml`
+- `bin/butler`
+- `.tools/butler/*`
+- legacy marker artefacts from earlier template model
 
-- `0 - OK`
-- `1 - runtime/configuration error`
-- `2 - policy blocked (hard stop)`
+Allowed persistence in host repositories:
 
-## Configuration
+- GitHub-native files that Butler manages, currently under `.github/*`
 
-`.butler.yml` is optional.
+## Hook Model
 
-- If absent, Butler uses shared built-in defaults.
-- If present, Butler deep-merges your overrides onto those defaults.
+- Hook assets are carried by Butler in `assets/hooks/*`
+- `butler hook` installs hooks under `~/.butler/hooks/<version>/`
+- Repo `core.hooksPath` points to that global hook path
 
-## Common Templates
+## Template Model
 
-Butler can manage shared `.github` sections with explicit markers:
+- Template sources are carried by Butler in `templates/.github/*`
+- `butler template check` performs whole-file drift checks
+- `butler template apply` writes full managed file content
 
-```md
-<!-- butler:common:start <section-id> -->
-...common managed content...
-<!-- butler:common:end <section-id> -->
-```
+## CI
 
-Template sync behaviour:
+- Butler repository CI workflow: `.github/workflows/ci.yml`
+- Review sweep workflow: `.github/workflows/review-sweep.yml`
+- Reusable host-repository governance workflow: `.github/workflows/governance-reusable.yml`
 
-- `template check` reads managed files and reports drift only; it does not write files.
-- `template apply` writes only the managed marker block content.
-- Repo-specific content outside marker blocks is preserved.
-- If markers are missing, Butler prepends the managed block and keeps existing content below it.
+## Bootstrap Defaults
 
-## Review Governance
+Use:
 
-- `review gate` enforces deterministic unresolved-thread convergence before merge recommendation.
-- Actionable top-level comments/reviews require `Codex:` disposition with one token (`accepted`, `rejected`, `deferred`) and the target review URL.
-- `review sweep` scans recent open/closed PRs and upserts one rolling issue for late actionable review activity.
+- `script/bootstrap_repo_defaults.sh <owner/repo>`
+- Optional checks override: `--checks "check_one,check_two"`
+- Optional token setup: `--set-butler-read-token`
+
+Bootstrap script now configures GitHub branch protection and secrets only.

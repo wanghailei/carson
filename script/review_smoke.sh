@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-butler_bin="$repo_root/bin/butler"
+butler_bin="$repo_root/exe/butler"
 
 run_butler() {
 	ruby "$butler_bin" "$@"
@@ -279,17 +279,6 @@ git add README.md
 git commit -m "initial commit" >/dev/null
 git push -u github main >/dev/null
 git switch -c codex/tool/review-smoke >/dev/null
-cat > .butler.yml <<'YAML'
-review:
-  wait_seconds: 0
-  poll_seconds: 0
-  max_polls: 3
-  sweep:
-    window_days: 3
-    states:
-      - open
-      - closed
-YAML
 
 run_with_mock() {
 	scenario="$1"
@@ -301,6 +290,11 @@ run_with_mock() {
 		BUTLER_MOCK_GH_SCENARIO="$scenario" \
 		BUTLER_MOCK_GH_STATE_DIR="$mock_state" \
 		BUTLER_MOCK_GH_LOG_FILE="$mock_log" \
+		BUTLER_REVIEW_WAIT_SECONDS="0" \
+		BUTLER_REVIEW_POLL_SECONDS="0" \
+		BUTLER_REVIEW_MAX_POLLS="3" \
+		BUTLER_REVIEW_SWEEP_WINDOW_DAYS="3" \
+		BUTLER_REVIEW_SWEEP_STATES="open,closed" \
 		run_butler "$@"
 }
 

@@ -1,0 +1,1918 @@
+# frozen_string_literal: true
+
+require "fileutils"
+require "json"
+require "time"
+
+module Butler
+	class Runtime
+	# Shared exit-code contract used by all commands and CI smoke assertions.
+	EXIT_OK = 0
+	EXIT_ERROR = 1
+	EXIT_BLOCK = 2
+
+	REPORT_MD = "pr_report_latest.md".freeze
+	REPORT_JSON = "pr_report_latest.json".freeze
+	REVIEW_GATE_REPORT_MD = "review_gate_latest.md".freeze
+	REVIEW_GATE_REPORT_JSON = "review_gate_latest.json".freeze
+	REVIEW_SWEEP_REPORT_MD = "review_sweep_latest.md".freeze
+	REVIEW_SWEEP_REPORT_JSON = "review_sweep_latest.json".freeze
+	DISPOSITION_TOKENS = %w[accepted rejected deferred].freeze
+
+	# Runtime wiring for repository context, tool paths, and output streams.
+	def initialize( repo_root:, tool_root:, out:, err: )
+		@repo_root = repo_root
+		@tool_root = tool_root
+		@out = out
+		@err = err
+		@config = Config.load( repo_root: repo_root )
+		@git_adapter = Adapters::Git.new( repo_root: repo_root, out: out, err: err )
+		@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
+	end
+
+	# Produces a single local-governance report and returns hard-block status when needed.
+	def audit!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		audit_state = "ok"
+		print_header "Repository"
+		puts_line "root: #{repo_root}"
+		puts_line "current_branch: #{current_branch}"
+		print_header "Working Tree"
+		puts_line git_capture!( "status", "--short", "--branch" ).strip
+		print_header "Hooks"
+		hooks_ok = hooks_health_report
+		audit_state = "block" unless hooks_ok
+		print_header "Main Sync Status"
+		ahead_count, behind_count, main_error = main_sync_counts
+		if main_error
+			puts_line "main_vs_remote_main: unknown"
+			puts_line "WARN: unable to calculate main sync status (#{main_error})."
+			audit_state = "attention" if audit_state == "ok"
+		elsif ahead_count.positive?
+			puts_line "main_vs_remote_main_ahead: #{ahead_count}"
+			puts_line "main_vs_remote_main_behind: #{behind_count}"
+			puts_line "ACTION: local #{config.main_branch} is ahead of #{config.git_remote}/#{config.main_branch} by #{ahead_count} commit#{plural_suffix( count: ahead_count )}; reset local drift before commit/push workflows."
+			audit_state = "block"
+		elsif behind_count.positive?
+			puts_line "main_vs_remote_main_ahead: #{ahead_count}"
+			puts_line "main_vs_remote_main_behind: #{behind_count}"
+			puts_line "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run butler sync."
+			audit_state = "attention" if audit_state == "ok"
+		else
+			puts_line "main_vs_remote_main_ahead: 0"
+			puts_line "main_vs_remote_main_behind: 0"
+			puts_line "ACTION: local #{config.main_branch} is in sync with #{config.git_remote}/#{config.main_branch}."
+		end
+		print_header "PR and Required Checks (gh)"
+		monitor_report = pr_and_check_report
+		audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
+		scope_guard = print_scope_integrity_guard
+		audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
+		write_and_print_pr_monitor_report( report: monitor_report.merge( audit_status: audit_state ) )
+		print_header "Audit Result"
+		puts_line "status: #{audit_state}"
+		puts_line( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
+		audit_state == "block" ? EXIT_BLOCK : EXIT_OK
+	end
+
+	# Fast-forwards local main from remote main and blocks if the working tree is dirty.
+	def sync!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		unless working_tree_clean?
+			puts_line "BLOCK: working tree is dirty; commit/stash first, then run butler sync."
+			return EXIT_BLOCK
+		end
+		start_branch = current_branch
+		switched = false
+		git_system!( "fetch", config.git_remote, "--prune" )
+		if start_branch != config.main_branch
+			git_system!( "switch", config.main_branch )
+			switched = true
+		end
+		git_system!( "pull", "--ff-only", config.git_remote, config.main_branch )
+		ahead_count, behind_count, error_text = main_sync_counts
+		if error_text
+			puts_line "BLOCK: unable to verify main sync state (#{error_text})."
+			return EXIT_BLOCK
+		end
+		if ahead_count.zero? && behind_count.zero?
+			puts_line "OK: local #{config.main_branch} is now in sync with #{config.git_remote}/#{config.main_branch}."
+			return EXIT_OK
+		end
+		puts_line "BLOCK: local #{config.main_branch} still diverges (ahead=#{ahead_count}, behind=#{behind_count})."
+		EXIT_BLOCK
+	ensure
+		git_system!( "switch", start_branch ) if switched && branch_exists?( branch_name: start_branch )
+	end
+
+	# Removes stale local branches that track remote refs already deleted upstream.
+	def prune!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		git_system!( "fetch", config.git_remote, "--prune" )
+		active_branch = current_branch
+		stale_branches = stale_local_branches
+		if stale_branches.empty?
+			puts_line "OK: no stale local branches tracking deleted #{config.git_remote} branches."
+			return EXIT_OK
+		end
+		deleted_count = 0
+		skipped_count = 0
+		stale_branches.each do |entry|
+			branch = entry.fetch( :branch )
+			upstream = entry.fetch( :upstream )
+			if config.protected_branches.include?( branch )
+				puts_line "skip_protected_branch: #{branch} (upstream=#{upstream})"
+				skipped_count += 1
+				next
+			end
+			if branch == active_branch
+				puts_line "skip_current_branch: #{branch} (upstream=#{upstream})"
+				skipped_count += 1
+				next
+			end
+			stdout_text, stderr_text, success, = git_run( "branch", "-d", branch )
+			if success
+				out.print stdout_text unless stdout_text.empty?
+				puts_line "deleted_local_branch: #{branch} (upstream=#{upstream})"
+				deleted_count += 1
+				next
+			end
+			error_text = stderr_text.to_s.strip
+			error_text = "unknown error" if error_text.empty?
+			merged_pr, force_error = force_delete_evidence_for_stale_branch(
+				branch: branch,
+				delete_error_text: error_text
+			)
+			unless merged_pr.nil?
+				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				if force_success
+					out.print force_stdout unless force_stdout.empty?
+					puts_line "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
+					deleted_count += 1
+					next
+				end
+				force_text = force_stderr.to_s.strip
+				force_text = "unknown error" if force_text.empty?
+				puts_line "fail_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_text}"
+				skipped_count += 1
+				next
+			end
+			puts_line "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{error_text}"
+			puts_line "skip_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error}" unless force_error.nil? || force_error.empty?
+			skipped_count += 1
+		end
+		puts_line "prune_summary: deleted=#{deleted_count} skipped=#{skipped_count}"
+		EXIT_OK
+	end
+
+	# Installs required hook files and enforces repository hook path.
+	def hook!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		FileUtils.mkdir_p( hooks_dir )
+		missing_templates = config.required_hooks.reject { |name| File.file?( hook_template_path( hook_name: name ) ) }
+		unless missing_templates.empty?
+			puts_line "BLOCK: missing hook templates in Butler: #{missing_templates.join( ', ' )}."
+			return EXIT_BLOCK
+		end
+
+		symlinked = symlink_hook_files
+		unless symlinked.empty?
+			puts_line "BLOCK: symlink hook files are not allowed: #{symlinked.join( ', ' )}."
+			return EXIT_BLOCK
+		end
+
+		config.required_hooks.each do |hook_name|
+			source_path = hook_template_path( hook_name: hook_name )
+			target_path = File.join( hooks_dir, hook_name )
+			FileUtils.cp( source_path, target_path )
+			FileUtils.chmod( 0o755, target_path )
+			puts_line "hook_written: #{relative_path( target_path )}"
+		end
+		git_system!( "config", "core.hooksPath", hooks_dir )
+		puts_line "configured_hooks_path: #{hooks_dir}"
+		check!
+	end
+
+	# Strict hook health check used by humans, hooks, and CI paths.
+	def check!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		print_header "Hooks Check"
+		ok = hooks_health_report( strict: true )
+		puts_line( ok ? "status: ok" : "status: block" )
+		ok ? EXIT_OK : EXIT_BLOCK
+	end
+
+	# Read-only template drift check; returns block when managed files are out of sync.
+	def template_check!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		print_header "Template Sync Check"
+		results = template_results
+		drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
+		error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+		results.each do |entry|
+			puts_line "template_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
+		end
+		puts_line "template_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
+		return EXIT_ERROR if error_count.positive?
+		drift_count.positive? ? EXIT_BLOCK : EXIT_OK
+	end
+
+	# Applies managed template files as full-file writes from Butler sources.
+	def template_apply!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		print_header "Template Sync Apply"
+		results = template_results
+		applied = 0
+		results.each do |entry|
+			if entry.fetch( :status ) == "error"
+				puts_line "template_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}"
+				next
+			end
+
+			file_path = File.join( repo_root, entry.fetch( :file ) )
+			if entry.fetch( :status ) == "ok"
+				puts_line "template_file: #{entry.fetch( :file )} status=ok reason=in_sync"
+				next
+			end
+
+			FileUtils.mkdir_p( File.dirname( file_path ) )
+			File.write( file_path, entry.fetch( :applied_content ) )
+			puts_line "template_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}"
+			applied += 1
+		end
+
+		error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+		puts_line "template_apply_summary: updated=#{applied} error=#{error_count}"
+		error_count.positive? ? EXIT_ERROR : EXIT_OK
+	end
+
+	# Merge-readiness gate for unresolved review threads and actionable comment dispositions.
+	def review_gate!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		print_header "Review Gate"
+		unless gh_available?
+			puts_line "ERROR: gh CLI not available in PATH."
+			return EXIT_ERROR
+		end
+
+		owner, repo = repository_coordinates
+		pr_number_override = butler_pr_number_override
+		pr_summary =
+			if pr_number_override.nil?
+				current_pull_request_for_branch( branch_name: current_branch )
+			else
+				details = pull_request_details( owner: owner, repo: repo, pr_number: pr_number_override )
+				{
+					number: details.fetch( :number ),
+					title: details.fetch( :title ),
+					url: details.fetch( :url ),
+					state: details.fetch( :state )
+				}
+			end
+		if pr_summary.nil?
+			puts_line "BLOCK: no pull request found for branch #{current_branch}."
+			report = {
+				generated_at: Time.now.utc.iso8601,
+				branch: current_branch,
+				status: "block",
+				converged: false,
+				wait_seconds: config.review_wait_seconds,
+				poll_seconds: config.review_poll_seconds,
+				max_polls: config.review_max_polls,
+				block_reasons: [ "no pull request found for current branch" ],
+				pr: nil,
+				unresolved_threads: [],
+				actionable_top_level: [],
+				unacknowledged_actionable: []
+			}
+			write_review_gate_report( report: report )
+			return EXIT_BLOCK
+		end
+
+		wait_for_review_warmup
+		converged = false
+		last_snapshot = nil
+		last_signature = nil
+		poll_attempts = 0
+
+		config.review_max_polls.times do |index|
+			poll_attempts = index + 1
+			snapshot = review_gate_snapshot( owner: owner, repo: repo, pr_number: pr_summary.fetch( :number ) )
+			last_snapshot = snapshot
+			signature = review_gate_signature( snapshot: snapshot )
+			puts_line "poll_attempt: #{poll_attempts}/#{config.review_max_polls}"
+			puts_line "latest_activity: #{snapshot.fetch( :latest_activity ) || 'unknown'}"
+			puts_line "unresolved_threads: #{snapshot.fetch( :unresolved_threads ).count}"
+			puts_line "unacknowledged_actionable: #{snapshot.fetch( :unacknowledged_actionable ).count}"
+			if !last_signature.nil? && signature == last_signature
+				converged = true
+				puts_line "convergence: stable"
+				break
+			end
+			last_signature = signature
+			wait_for_review_poll if index < config.review_max_polls - 1
+		end
+
+		block_reasons = []
+		block_reasons << "review snapshot did not converge within #{config.review_max_polls} polls" unless converged
+		if last_snapshot.fetch( :unresolved_threads ).any?
+			block_reasons << "unresolved review threads remain (#{last_snapshot.fetch( :unresolved_threads ).count})"
+		end
+		if last_snapshot.fetch( :unacknowledged_actionable ).any?
+			block_reasons << "actionable top-level comments/reviews without Codex disposition (#{last_snapshot.fetch( :unacknowledged_actionable ).count})"
+		end
+
+		report = {
+			generated_at: Time.now.utc.iso8601,
+			branch: current_branch,
+			status: block_reasons.empty? ? "ok" : "block",
+			converged: converged,
+			wait_seconds: config.review_wait_seconds,
+			poll_seconds: config.review_poll_seconds,
+			max_polls: config.review_max_polls,
+			poll_attempts: poll_attempts,
+			block_reasons: block_reasons,
+			pr: {
+				number: pr_summary.fetch( :number ),
+				title: pr_summary.fetch( :title ),
+				url: pr_summary.fetch( :url ),
+				state: pr_summary.fetch( :state )
+			},
+			unresolved_threads: last_snapshot.fetch( :unresolved_threads ),
+			actionable_top_level: last_snapshot.fetch( :actionable_top_level ),
+			unacknowledged_actionable: last_snapshot.fetch( :unacknowledged_actionable )
+		}
+		write_review_gate_report( report: report )
+		if block_reasons.empty?
+			puts_line "OK: review gate passed."
+			return EXIT_OK
+		end
+		block_reasons.each { |reason| puts_line "BLOCK: #{reason}" }
+		EXIT_BLOCK
+	rescue JSON::ParserError => e
+		puts_line "ERROR: invalid gh JSON response (#{e.message})."
+		EXIT_ERROR
+	rescue StandardError => e
+		puts_line "ERROR: #{e.message}"
+		EXIT_ERROR
+	end
+
+	# Scheduled sweep for late actionable review activity across recent pull requests.
+	def review_sweep!
+		fingerprint_status = block_if_outsider_fingerprints!
+		return fingerprint_status unless fingerprint_status.nil?
+		print_header "Review Sweep"
+		unless gh_available?
+			puts_line "ERROR: gh CLI not available in PATH."
+			return EXIT_ERROR
+		end
+
+		owner, repo = repository_coordinates
+		cutoff_time = Time.now.utc - ( config.review_sweep_window_days * 86_400 )
+		pull_requests = recent_pull_requests_for_sweep( owner: owner, repo: repo, cutoff_time: cutoff_time )
+		puts_line "window_days: #{config.review_sweep_window_days}"
+		puts_line "candidate_prs: #{pull_requests.count}"
+		findings = []
+
+		pull_requests.each do |entry|
+			next unless config.review_sweep_states.include?( sweep_state_for( pr_state: entry.fetch( :state ) ) )
+			details = pull_request_details( owner: owner, repo: repo, pr_number: entry.fetch( :number ) )
+			findings.concat( sweep_findings_for_pull_request( details: details ) )
+		end
+
+		findings.sort_by! { |item| [ item.fetch( :pr_number ), item.fetch( :created_at ).to_s, item.fetch( :url ) ] }
+		issue_result = upsert_review_sweep_tracking_issue( owner: owner, repo: repo, findings: findings )
+		report = {
+			generated_at: Time.now.utc.iso8601,
+			status: findings.empty? ? "ok" : "block",
+			window_days: config.review_sweep_window_days,
+			states: config.review_sweep_states,
+			cutoff_time: cutoff_time.utc.iso8601,
+			candidate_count: pull_requests.count,
+			finding_count: findings.count,
+			findings: findings,
+			tracking_issue: issue_result
+		}
+		write_review_sweep_report( report: report )
+		puts_line "finding_count: #{findings.count}"
+		if findings.empty?
+			puts_line "OK: no actionable late review activity detected."
+			return EXIT_OK
+		end
+		puts_line "BLOCK: actionable late review activity detected."
+		EXIT_BLOCK
+	rescue JSON::ParserError => e
+		puts_line "ERROR: invalid gh JSON response (#{e.message})."
+		EXIT_ERROR
+	rescue StandardError => e
+		puts_line "ERROR: #{e.message}"
+		EXIT_ERROR
+	end
+
+	private
+
+			attr_reader :repo_root, :tool_root, :out, :err, :config, :git_adapter, :github_adapter
+
+			# Builds per-file drift results for all managed template targets.
+			def template_results
+				config.template_managed_files.map { |managed_file| template_result_for_file( managed_file: managed_file ) }
+			end
+
+			# Calculates whole-file expected content and returns sync status plus apply payload.
+			def template_result_for_file( managed_file: )
+			template_path = File.join( github_templates_dir, File.basename( managed_file ) )
+			unless File.file?( template_path )
+				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil }
+			end
+
+			expected_content = normalize_text( text: File.read( template_path ) )
+			file_path = resolve_repo_path!( relative_path: managed_file, label: "template.managed_files entry #{managed_file}" )
+			return { file: managed_file, status: "drift", reason: "missing_file", applied_content: expected_content } unless File.file?( file_path )
+
+			current_content = normalize_text( text: File.read( file_path ) )
+			return { file: managed_file, status: "ok", reason: "in_sync", applied_content: current_content } if current_content == expected_content
+
+			{ file: managed_file, status: "drift", reason: "content_mismatch", applied_content: expected_content }
+		end
+
+			# Uses LF-only normalisation so platform newlines do not cause false drift.
+			def normalize_text( text: )
+			text.to_s.gsub( "\r\n", "\n" ).rstrip + "\n"
+		end
+
+			# GitHub managed template source directory inside Butler repository.
+			def github_templates_dir
+			File.join( tool_root, "templates", ".github" )
+		end
+
+			# Canonical hook template location inside Butler repository.
+			def hook_template_path( hook_name: )
+			File.join( tool_root, "assets", "hooks", hook_name )
+		end
+
+			# Reports full hook health and can enforce stricter action messaging in `check`.
+			def hooks_health_report( strict: false )
+			configured = configured_hooks_path
+			expected = hooks_dir
+			configured_abs = configured.nil? ? nil : File.expand_path( configured )
+			hooks_path_ok = configured_abs == expected
+			puts_line "hooks_path: #{configured || '(unset)'}"
+			puts_line "hooks_path_expected: #{expected}"
+			puts_line( hooks_path_ok ? "hooks_path_status: ok" : "hooks_path_status: attention" )
+			required_hook_paths.each do |path|
+				exists = File.file?( path )
+				symlink = File.symlink?( path )
+				executable = exists && !symlink && File.executable?( path )
+				puts_line "hook_file: #{relative_path( path )} exists=#{exists} symlink=#{symlink} executable=#{executable}"
+			end
+			missing = missing_hook_files
+			non_exec = non_executable_hook_files
+			symlinked = symlink_hook_files
+			if strict
+				puts_line "ACTION: run butler hook." unless hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
+			else
+				puts_line "ACTION: run butler hook to enforce local main protections." unless hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
+			end
+			hooks_path_ok && missing.empty? && non_exec.empty? && symlinked.empty?
+		end
+
+			# Returns ahead/behind counts for local main versus configured remote main.
+			def main_sync_counts
+			target = "#{config.main_branch}...#{config.git_remote}/#{config.main_branch}"
+			stdout_text, stderr_text, success, = git_run( "rev-list", "--left-right", "--count", target )
+			unless success
+				error_text = stderr_text.to_s.strip
+				error_text = "git rev-list failed" if error_text.empty?
+				return [ 0, 0, error_text ]
+			end
+			counts = stdout_text.to_s.strip.split( /\s+/ )
+			return [ 0, 0, "unexpected rev-list output: #{stdout_text.to_s.strip}" ] if counts.length < 2
+			[ counts[ 0 ].to_i, counts[ 1 ].to_i, nil ]
+		end
+
+			# Reads configured core.hooksPath and normalises empty values to nil.
+			def configured_hooks_path
+			stdout_text, = git_capture_soft( "config", "--get", "core.hooksPath" )
+			value = stdout_text.to_s.strip
+			value.empty? ? nil : value
+		end
+
+			# Fully-qualified required hook file locations in the target repository.
+			def required_hook_paths
+			config.required_hooks.map { |name| File.join( hooks_dir, name ) }
+		end
+
+			# Missing required hook files.
+			def missing_hook_files
+			required_hook_paths.select { |path| !File.file?( path ) }.map { |path| relative_path( path ) }
+		end
+
+			# Required hook files that exist but are not executable.
+			def non_executable_hook_files
+			required_hook_paths.select { |path| File.file?( path ) && !File.executable?( path ) }.map { |path| relative_path( path ) }
+		end
+
+			# Symlink hooks are disallowed to prevent bypassing managed hook content.
+			def symlink_hook_files
+			required_hook_paths.select { |path| File.symlink?( path ) }.map { |path| relative_path( path ) }
+		end
+
+			# Local directory where managed hooks are installed.
+			def hooks_dir
+				File.expand_path( File.join( config.hooks_base_path, Butler::VERSION ) )
+			end
+
+			# In outsider mode, Butler must not leave Butler-owned fingerprints in host repositories.
+			def block_if_outsider_fingerprints!
+				return nil unless outsider_mode?
+				violations = outsider_fingerprint_violations
+				return nil if violations.empty?
+				violations.each { |entry| puts_line "BLOCK: #{entry}" }
+				EXIT_BLOCK
+			end
+
+			# Butler source repository itself is excluded from host-repository fingerprint checks.
+			def outsider_mode?
+				File.expand_path( repo_root ) != File.expand_path( tool_root )
+			end
+
+			# Detects Butler-owned host artefacts that violate outsider boundary.
+			def outsider_fingerprint_violations
+				violations = []
+				violations << "forbidden file .butler.yml detected" if File.file?( File.join( repo_root, ".butler.yml" ) )
+				violations << "forbidden file bin/butler detected" if File.file?( File.join( repo_root, "bin", "butler" ) )
+				violations << "forbidden directory .tools/butler detected" if Dir.exist?( File.join( repo_root, ".tools", "butler" ) )
+				violations.concat( legacy_marker_violations )
+				violations
+			end
+
+			# Legacy template markers are disallowed in outsider mode.
+			def legacy_marker_violations
+				files = []
+				legacy_marker_token = "butler:#{%w[c o m m o n].join}:"
+				Dir.glob( File.join( repo_root, "**", "*" ), File::FNM_DOTMATCH ).each do |absolute|
+					next if absolute.include?( "/.git/" )
+					next unless File.file?( absolute )
+					next unless File.read( absolute ).include?( legacy_marker_token )
+					relative = absolute.sub( "#{repo_root}/", "" )
+					files << "forbidden legacy marker detected in #{relative}"
+				end
+				files
+			end
+
+			# NOTE: prune only targets local branches that meet both conditions:
+			# 1) branch tracks configured remote (`github/*` by default), and
+			# 2) upstream tracking state is marked as gone after fetch --prune.
+			# Branches without upstream tracking are intentionally excluded.
+			def stale_local_branches
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
+				branch, upstream, track = line.strip.split( "\t", 3 )
+				upstream = upstream.to_s
+				track = track.to_s
+				next if branch.to_s.empty? || upstream.empty?
+				next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
+				{ branch: branch, upstream: upstream, track: track }
+			end
+		end
+
+			# Safe delete can fail after squash merges because branch tip is no longer an ancestor.
+			def non_merged_delete_error?( error_text: )
+			error_text.to_s.downcase.include?( "not fully merged" )
+		end
+
+			# Guarded force-delete policy for stale branches:
+			# 1) branch must match managed codex lane pattern,
+			# 2) safe delete failure must be merge-related (`not fully merged`),
+			# 3) gh must confirm at least one merged PR for this exact branch into configured main.
+			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
+			return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
+			return [ nil, "branch does not match managed pattern #{config.branch_pattern}" ] if config.branch_regex.match( branch.to_s ).nil?
+			return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
+			tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+			unless tip_sha_success
+				error_text = tip_sha_error.to_s.strip
+				error_text = "unable to read local branch tip sha" if error_text.empty?
+				return [ nil, error_text ]
+			end
+			branch_tip_sha = tip_sha_text.to_s.strip
+			return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
+			merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+		end
+
+			# Finds merged PR evidence for the exact local branch tip; this blocks old-PR false positives.
+			def merged_pr_for_branch( branch:, branch_tip_sha: )
+			owner, repo = repository_coordinates
+			results = []
+			page = 1
+			loop do
+				stdout_text, stderr_text, success, = gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=closed",
+					"-f", "base=#{config.main_branch}",
+					"-f", "head=#{owner}:#{branch}",
+					"-f", "sort=updated",
+					"-f", "direction=desc",
+					"-f", "per_page=100",
+					"-f", "page=#{page}"
+				)
+				unless success
+					error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
+					return [ nil, error_text ]
+				end
+				page_nodes = Array( JSON.parse( stdout_text ) )
+				break if page_nodes.empty?
+				page_nodes.each do |entry|
+					next unless entry.dig( "head", "ref" ).to_s == branch.to_s
+					next unless entry.dig( "base", "ref" ).to_s == config.main_branch
+					next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
+					merged_at = parse_time_or_nil( text: entry[ "merged_at" ] )
+					next if merged_at.nil?
+					results << {
+						number: entry[ "number" ],
+						url: entry[ "html_url" ].to_s,
+						merged_at: merged_at.utc.iso8601,
+						head_sha: entry.dig( "head", "sha" ).to_s
+					}
+				end
+				page += 1
+			end
+			latest = results.max_by { |item| item.fetch( :merged_at ) }
+			return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
+			[ latest, nil ]
+		rescue JSON::ParserError => e
+			[ nil, "invalid gh JSON response (#{e.message})" ]
+		rescue StandardError => e
+			[ nil, e.message ]
+		end
+
+			# Thin `gh` monitor for PR and required checks; local audit continues on API gaps.
+			def pr_and_check_report
+			report = {
+				generated_at: Time.now.utc.iso8601,
+				branch: current_branch,
+				status: "ok",
+				skip_reason: nil,
+				pr: nil,
+				checks: {
+					status: "unknown",
+					skip_reason: nil,
+					required_total: 0,
+					failing_count: 0,
+					pending_count: 0,
+					failing: [],
+					pending: []
+				}
+			}
+			unless gh_available?
+				report[ :status ] = "skipped"
+				report[ :skip_reason ] = "gh CLI not available in PATH"
+				puts_line "SKIP: #{report.fetch( :skip_reason )}"
+				return report
+			end
+			pr_stdout, pr_stderr, pr_success, = gh_run( "pr", "view", current_branch, "--json", "number,title,url,state,reviewDecision" )
+			unless pr_success
+				error_text = gh_error_text( stdout_text: pr_stdout, stderr_text: pr_stderr, fallback: "unable to read PR for branch #{current_branch}" )
+				report[ :status ] = "skipped"
+				report[ :skip_reason ] = error_text
+				puts_line "SKIP: #{error_text}"
+				return report
+			end
+			pr_data = JSON.parse( pr_stdout )
+			report[ :pr ] = {
+				number: pr_data[ "number" ],
+				title: pr_data[ "title" ].to_s,
+				url: pr_data[ "url" ].to_s,
+				state: pr_data[ "state" ].to_s,
+				review_decision: blank_to( value: pr_data[ "reviewDecision" ], default: "NONE" )
+			}
+			puts_line "pr: ##{report.dig( :pr, :number )} #{report.dig( :pr, :title )}"
+			puts_line "url: #{report.dig( :pr, :url )}"
+			puts_line "review_decision: #{report.dig( :pr, :review_decision )}"
+			checks_stdout, checks_stderr, checks_success, checks_exit = gh_run( "pr", "checks", report.dig( :pr, :number ).to_s, "--required", "--json", "name,state,bucket,workflow,link" )
+			if checks_stdout.to_s.strip.empty?
+				error_text = gh_error_text( stdout_text: checks_stdout, stderr_text: checks_stderr, fallback: "required checks unavailable" )
+				report[ :checks ][ :status ] = "skipped"
+				report[ :checks ][ :skip_reason ] = error_text
+				report[ :status ] = "attention"
+				puts_line "checks: SKIP (#{error_text})"
+				return report
+			end
+			checks_data = JSON.parse( checks_stdout )
+			failing = checks_data.select { |entry| entry[ "bucket" ].to_s == "fail" || entry[ "state" ].to_s.upcase == "FAILURE" }
+			pending = checks_data.select { |entry| entry[ "bucket" ].to_s == "pending" }
+			report[ :checks ][ :status ] = checks_success ? "ok" : ( checks_exit == 8 ? "pending" : "attention" )
+			report[ :checks ][ :required_total ] = checks_data.count
+			report[ :checks ][ :failing_count ] = failing.count
+			report[ :checks ][ :pending_count ] = pending.count
+			report[ :checks ][ :failing ] = normalise_check_entries( entries: failing )
+			report[ :checks ][ :pending ] = normalise_check_entries( entries: pending )
+			puts_line "required_checks_total: #{report.dig( :checks, :required_total )}"
+			puts_line "required_checks_failing: #{report.dig( :checks, :failing_count )}"
+			puts_line "required_checks_pending: #{report.dig( :checks, :pending_count )}"
+			report.dig( :checks, :failing ).each { |entry| puts_line "check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+			report.dig( :checks, :pending ).each { |entry| puts_line "check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+			report[ :status ] = "attention" if report.dig( :checks, :failing_count ).positive? || report.dig( :checks, :pending_count ).positive?
+			report
+		rescue JSON::ParserError => e
+			report[ :status ] = "skipped"
+			report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
+			puts_line "SKIP: #{report.fetch( :skip_reason )}"
+			report
+		end
+
+			# Writes monitor report artefacts and prints their locations.
+			def write_and_print_pr_monitor_report( report: )
+			markdown_path, json_path = write_pr_monitor_report( report: report )
+			puts_line "report_markdown: #{markdown_path}"
+			puts_line "report_json: #{json_path}"
+		rescue StandardError => e
+			puts_line "report_write: SKIP (#{e.message})"
+		end
+
+			# Persists report in both machine-readable JSON and human-readable Markdown.
+			def write_pr_monitor_report( report: )
+			report_dir = File.join( repo_root, config.report_dir )
+			FileUtils.mkdir_p( report_dir )
+			markdown_path = File.join( report_dir, REPORT_MD )
+			json_path = File.join( report_dir, REPORT_JSON )
+			File.write( json_path, JSON.pretty_generate( report ) )
+			File.write( markdown_path, render_pr_monitor_markdown( report: report ) )
+			[ markdown_path, json_path ]
+		end
+
+			# Renders Markdown summary used by humans during merge-readiness reviews.
+			def render_pr_monitor_markdown( report: )
+			lines = []
+			lines << "# Butler PR Monitor Report"
+			lines << ""
+			lines << "- Generated at: #{report.fetch( :generated_at )}"
+			lines << "- Branch: #{report.fetch( :branch )}"
+			lines << "- Audit status: #{report.fetch( :audit_status, 'unknown' )}"
+			lines << "- Monitor status: #{report.fetch( :status )}"
+			lines << "- Skip reason: #{report.fetch( :skip_reason )}" unless report.fetch( :skip_reason ).nil?
+			lines << ""
+			lines << "## PR"
+			pr = report[ :pr ]
+			if pr.nil?
+				lines << "- not available"
+			else
+				lines << "- Number: ##{pr.fetch( :number )}"
+				lines << "- Title: #{pr.fetch( :title )}"
+				lines << "- URL: #{pr.fetch( :url )}"
+				lines << "- State: #{pr.fetch( :state )}"
+				lines << "- Review decision: #{pr.fetch( :review_decision )}"
+			end
+			lines << ""
+			lines << "## Required Checks"
+			checks = report.fetch( :checks )
+			lines << "- Status: #{checks.fetch( :status )}"
+			lines << "- Skip reason: #{checks.fetch( :skip_reason )}" unless checks.fetch( :skip_reason ).nil?
+			lines << "- Total: #{checks.fetch( :required_total )}"
+			lines << "- Failing: #{checks.fetch( :failing_count )}"
+			lines << "- Pending: #{checks.fetch( :pending_count )}"
+			lines << ""
+			lines << "### Failing"
+			if checks.fetch( :failing ).empty?
+				lines << "- none"
+			else
+				checks.fetch( :failing ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+			end
+			lines << ""
+			lines << "### Pending"
+			if checks.fetch( :pending ).empty?
+				lines << "- none"
+			else
+				checks.fetch( :pending ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+			end
+			lines << ""
+			lines.join( "\n" )
+		end
+
+			# Waits once before polling so asynchronous AI reviewers have time to post feedback.
+			def wait_for_review_warmup
+			return unless config.review_wait_seconds.positive?
+			puts_line "warmup_wait_seconds: #{config.review_wait_seconds}"
+			sleep config.review_wait_seconds
+		end
+
+			# Poll delay between consecutive snapshot reads during convergence checks.
+			def wait_for_review_poll
+			return unless config.review_poll_seconds.positive?
+			puts_line "poll_wait_seconds: #{config.review_poll_seconds}"
+			sleep config.review_poll_seconds
+		end
+
+			# Fetches live PR review state and derives unresolved-thread plus disposition-ack summary.
+			def review_gate_snapshot( owner:, repo:, pr_number: )
+			details = pull_request_details( owner: owner, repo: repo, pr_number: pr_number )
+			pr_author = details.dig( :author, :login ).to_s
+			unresolved_threads = unresolved_thread_entries( details: details )
+			actionable_top_level = actionable_top_level_items( details: details, pr_author: pr_author )
+			acknowledgements = disposition_acknowledgements( details: details, pr_author: pr_author )
+			unacknowledged_actionable = actionable_top_level.reject { |item| acknowledged_by_codex?( item: item, acknowledgements: acknowledgements ) }
+			{
+				latest_activity: latest_review_activity( details: details ),
+				unresolved_threads: unresolved_threads,
+				actionable_top_level: actionable_top_level,
+				unacknowledged_actionable: unacknowledged_actionable,
+				acknowledgements: acknowledgements
+			}
+		end
+
+			# Deterministic signature used to compare two review snapshots for convergence.
+			def review_gate_signature( snapshot: )
+			{
+				latest_activity: snapshot.fetch( :latest_activity ).to_s,
+				unresolved_urls: snapshot.fetch( :unresolved_threads ).map { |entry| entry.fetch( :url ) }.sort,
+				unacknowledged_urls: snapshot.fetch( :unacknowledged_actionable ).map { |entry| entry.fetch( :url ) }.sort
+			}
+		end
+
+			# Pull request selected by current branch; nil is returned when no PR exists.
+			def current_pull_request_for_branch( branch_name: )
+			stdout_text, stderr_text, success, = gh_run( "pr", "view", "--", branch_name, "--json", "number,title,url,state" )
+			unless success
+				error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to read PR for branch #{branch_name}" )
+				return nil if error_text.downcase.include?( "no pull requests found" )
+				raise error_text
+			end
+			data = JSON.parse( stdout_text )
+			{
+				number: data.fetch( "number" ),
+				title: data.fetch( "title" ).to_s,
+				url: data.fetch( "url" ).to_s,
+				state: data.fetch( "state" ).to_s
+			}
+		end
+
+			# Pull request details used by both review gate and scheduled review sweep.
+			def pull_request_details( owner:, repo:, pr_number: )
+			node = pull_request_details_node( owner: owner, repo: repo, pr_number: pr_number )
+			paginate_pull_request_connections!( owner: owner, repo: repo, pr_number: pr_number, node: node )
+			normalise_pull_request_details( node: node )
+		end
+
+			# Base PR payload with first page of each connection; remaining pages are fetched separately.
+			def pull_request_details_node( owner:, repo:, pr_number: )
+			stdout_text, stderr_text, success, = gh_run(
+				"api", "graphql",
+				"-f", "query=#{pull_request_details_query}",
+				"-F", "owner=#{owner}",
+				"-F", "repo=#{repo}",
+				"-F", "number=#{pr_number}"
+			)
+			unless success
+				error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to read pull request ##{pr_number}" )
+				raise error_text
+			end
+			payload = JSON.parse( stdout_text )
+			node = payload.dig( "data", "repository", "pullRequest" )
+			raise "pull request ##{pr_number} not found" unless node.is_a?( Hash )
+			node
+		end
+
+			# Paginates every relevant PR connection so gate/sweep decisions are based on complete data.
+			def paginate_pull_request_connections!( owner:, repo:, pr_number:, node: )
+			paginate_pull_request_connection!( owner: owner, repo: repo, pr_number: pr_number, node: node, connection_name: "reviewThreads" )
+			paginate_pull_request_connection!( owner: owner, repo: repo, pr_number: pr_number, node: node, connection_name: "comments" )
+			paginate_pull_request_connection!( owner: owner, repo: repo, pr_number: pr_number, node: node, connection_name: "reviews" )
+		end
+
+			# Fetches remaining connection pages using pageInfo; missing pageInfo defaults to one-page behaviour.
+			def paginate_pull_request_connection!( owner:, repo:, pr_number:, node:, connection_name: )
+			connection = node[ connection_name ]
+			return unless connection.is_a?( Hash )
+			nodes = Array( connection[ "nodes" ] )
+			page_info = connection[ "pageInfo" ].is_a?( Hash ) ? connection[ "pageInfo" ] : {}
+			while page_info[ "hasNextPage" ] == true
+				cursor = page_info[ "endCursor" ].to_s
+				break if cursor.empty?
+				page_connection = pull_request_connection_page(
+					owner: owner,
+					repo: repo,
+					pr_number: pr_number,
+					connection_name: connection_name,
+					after_cursor: cursor
+				)
+				nodes.concat( Array( page_connection[ "nodes" ] ) )
+				page_info = page_connection[ "pageInfo" ].is_a?( Hash ) ? page_connection[ "pageInfo" ] : {}
+			end
+			connection[ "nodes" ] = nodes
+			connection[ "pageInfo" ] = page_info
+		end
+
+			# Requests one additional page for the chosen PR connection.
+			def pull_request_connection_page( owner:, repo:, pr_number:, connection_name:, after_cursor: )
+			query = pull_request_connection_page_query( connection_name: connection_name )
+			stdout_text, stderr_text, success, = gh_run(
+				"api", "graphql",
+				"-f", "query=#{query}",
+				"-F", "owner=#{owner}",
+				"-F", "repo=#{repo}",
+				"-F", "number=#{pr_number}",
+				"-F", "after=#{after_cursor}"
+			)
+			unless success
+				error_text = gh_error_text(
+					stdout_text: stdout_text,
+					stderr_text: stderr_text,
+					fallback: "unable to paginate pull request ##{pr_number} #{connection_name}"
+				)
+				raise error_text
+			end
+			payload = JSON.parse( stdout_text )
+			node = payload.dig( "data", "repository", "pullRequest" )
+			raise "pull request ##{pr_number} not found during #{connection_name} pagination" unless node.is_a?( Hash )
+			connection = node[ connection_name ]
+			raise "missing #{connection_name} payload during pagination" unless connection.is_a?( Hash )
+			connection
+		end
+
+			# Returns GraphQL query text for one paginated PR connection.
+			def pull_request_connection_page_query( connection_name: )
+			case connection_name
+			when "comments"
+				pull_request_comments_page_query
+			when "reviews"
+				pull_request_reviews_page_query
+			when "reviewThreads"
+				pull_request_review_threads_page_query
+			else
+				raise "unsupported pull request connection #{connection_name}"
+			end
+		end
+
+			# GraphQL query kept in one place so gate/sweep consume the same PR payload schema.
+			def pull_request_details_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      number
+				      title
+				      url
+				      state
+				      updatedAt
+				      mergedAt
+				      closedAt
+				      author { login }
+				      reviewThreads(first:100) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          isResolved
+				          isOutdated
+				          comments(first:100) {
+				            nodes {
+				              author { login }
+				              body
+				              url
+				              createdAt
+				            }
+				          }
+				        }
+				      }
+				      comments(first:100) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          author { login }
+				          body
+				          url
+				          createdAt
+				        }
+				      }
+				      reviews(first:100) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          author { login }
+				          state
+				          body
+				          url
+				          submittedAt
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Additional page query for top-level issue comments.
+			def pull_request_comments_page_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!, $after:String!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      comments(first:100, after:$after) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          author { login }
+				          body
+				          url
+				          createdAt
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Additional page query for top-level reviews.
+			def pull_request_reviews_page_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!, $after:String!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      reviews(first:100, after:$after) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          author { login }
+				          state
+				          body
+				          url
+				          submittedAt
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Additional page query for review threads.
+			def pull_request_review_threads_page_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!, $after:String!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      reviewThreads(first:100, after:$after) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          isResolved
+				          isOutdated
+				          comments(first:100) {
+				            nodes {
+				              author { login }
+				              body
+				              url
+				              createdAt
+				            }
+				          }
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Normalises pull request payload into symbol-key hash for predictable downstream processing.
+			def normalise_pull_request_details( node: )
+			{
+				number: node.fetch( "number" ),
+				title: node.fetch( "title" ).to_s,
+				url: node.fetch( "url" ).to_s,
+				state: node.fetch( "state" ).to_s.upcase,
+				updated_at: node.fetch( "updatedAt" ).to_s,
+				merged_at: node[ "mergedAt" ].to_s,
+				closed_at: node[ "closedAt" ].to_s,
+				author: { login: node.dig( "author", "login" ).to_s },
+				comments: normalise_issue_comments( nodes: node.dig( "comments", "nodes" ) ),
+				reviews: normalise_reviews( nodes: node.dig( "reviews", "nodes" ) ),
+				review_threads: normalise_review_threads( nodes: node.dig( "reviewThreads", "nodes" ) )
+			}
+		end
+
+			# Converts GraphQL issue comment nodes into a stable internal format.
+			def normalise_issue_comments( nodes: )
+			Array( nodes ).map do |entry|
+				{
+					author: entry.dig( "author", "login" ).to_s,
+					body: entry[ "body" ].to_s,
+					url: entry[ "url" ].to_s,
+					created_at: entry[ "createdAt" ].to_s
+				}
+			end
+		end
+
+			# Converts GraphQL review nodes into a stable internal format.
+			def normalise_reviews( nodes: )
+			Array( nodes ).map do |entry|
+				{
+					author: entry.dig( "author", "login" ).to_s,
+					state: entry[ "state" ].to_s.upcase,
+					body: entry[ "body" ].to_s,
+					url: entry[ "url" ].to_s,
+					created_at: entry[ "submittedAt" ].to_s
+				}
+			end
+		end
+
+			# Converts GraphQL review-thread nodes into a stable internal format.
+			def normalise_review_threads( nodes: )
+			Array( nodes ).map do |entry|
+				{
+					is_resolved: entry[ "isResolved" ] == true,
+					is_outdated: entry[ "isOutdated" ] == true,
+					comments: Array( entry.dig( "comments", "nodes" ) ).map do |comment|
+						{
+							author: comment.dig( "author", "login" ).to_s,
+							body: comment[ "body" ].to_s,
+							url: comment[ "url" ].to_s,
+							created_at: comment[ "createdAt" ].to_s
+						}
+					end
+				}
+			end
+		end
+
+			# Unresolved review threads are always actionable until explicitly resolved.
+			def unresolved_thread_entries( details: )
+			Array( details.fetch( :review_threads ) ).each_with_index.filter_map do |thread, index|
+				next if thread.fetch( :is_resolved )
+				# Outdated threads belong to superseded diffs and should not block current merge readiness.
+				next if thread.fetch( :is_outdated )
+				comments = thread.fetch( :comments )
+				first_comment = comments.first || {}
+				latest_time = comments.map { |entry| entry.fetch( :created_at ) }.max.to_s
+				{
+					url: blank_to( value: first_comment.fetch( :url, "" ), default: "#{details.fetch( :url )}#thread-#{index + 1}" ),
+					author: first_comment.fetch( :author, "" ),
+					created_at: latest_time,
+					outdated: thread.fetch( :is_outdated ),
+					reason: "unresolved_thread"
+				}
+			end
+		end
+
+			# Actionable top-level findings include CHANGES_REQUESTED reviews or risk-keyword findings.
+			def actionable_top_level_items( details:, pr_author: )
+			items = []
+			Array( details.fetch( :comments ) ).each do |comment|
+				next if comment.fetch( :author ) == pr_author
+				next if codex_prefixed?( text: comment.fetch( :body ) )
+				hits = matched_risk_keywords( text: comment.fetch( :body ) )
+				next if hits.empty?
+				items << {
+					kind: "issue_comment",
+					url: comment.fetch( :url ),
+					author: comment.fetch( :author ),
+					created_at: comment.fetch( :created_at ),
+					reason: "risk_keywords: #{hits.join( ', ' )}"
+				}
+			end
+			Array( details.fetch( :reviews ) ).each do |review|
+				next if review.fetch( :author ) == pr_author
+				next if codex_prefixed?( text: review.fetch( :body ) )
+				hits = matched_risk_keywords( text: review.fetch( :body ) )
+				changes_requested = review.fetch( :state ) == "CHANGES_REQUESTED"
+				next if hits.empty? && !changes_requested
+				reason = changes_requested ? "changes_requested_review" : "risk_keywords: #{hits.join( ', ' )}"
+				items << {
+					kind: "review",
+					url: review.fetch( :url ),
+					author: review.fetch( :author ),
+					created_at: review.fetch( :created_at ),
+					reason: reason
+				}
+			end
+			deduplicate_findings_by_url( items: items )
+		end
+
+			# Parses Codex acknowledgement messages and extracts referenced review URLs plus disposition.
+			def disposition_acknowledgements( details:, pr_author: )
+			sources = []
+			sources.concat( Array( details.fetch( :comments ) ) )
+			sources.concat( Array( details.fetch( :reviews ) ) )
+			sources.concat( Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) } )
+			sources.filter_map do |entry|
+				next unless entry.fetch( :author, "" ) == pr_author
+				body = entry.fetch( :body, "" ).to_s
+				next unless codex_prefixed?( text: body )
+				disposition = disposition_token( text: body )
+				next if disposition.nil?
+				target_urls = extract_github_urls( text: body )
+				next if target_urls.empty?
+				{
+					url: entry.fetch( :url, "" ),
+					created_at: entry.fetch( :created_at, "" ),
+					disposition: disposition,
+					target_urls: target_urls
+				}
+			end
+		end
+
+			# True when any Codex acknowledgement references the specific finding URL.
+			def acknowledged_by_codex?( item:, acknowledgements: )
+			acknowledgements.any? do |ack|
+				Array( ack.fetch( :target_urls ) ).any? { |url| url == item.fetch( :url ) }
+			end
+		end
+
+			# Latest review activity marker used by convergence snapshots.
+			def latest_review_activity( details: )
+			timestamps = []
+			timestamps << details.fetch( :updated_at )
+			timestamps.concat( Array( details.fetch( :comments ) ).map { |entry| entry.fetch( :created_at ) } )
+			timestamps.concat( Array( details.fetch( :reviews ) ).map { |entry| entry.fetch( :created_at ) } )
+			timestamps.concat( Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) }.map { |entry| entry.fetch( :created_at ) } )
+			timestamps.map { |text| parse_time_or_nil( text: text ) }.compact.max&.utc&.iso8601
+		end
+
+			# Writes review gate artefacts using fixed report names in reports.dir.
+			def write_review_gate_report( report: )
+			markdown_path, json_path = write_report(
+				report: report,
+				markdown_name: REVIEW_GATE_REPORT_MD,
+				json_name: REVIEW_GATE_REPORT_JSON,
+				renderer: method( :render_review_gate_markdown )
+			)
+			puts_line "review_gate_report_markdown: #{markdown_path}"
+			puts_line "review_gate_report_json: #{json_path}"
+		rescue StandardError => e
+			puts_line "review_gate_report_write: SKIP (#{e.message})"
+		end
+
+			# Human-readable review gate report for merge-readiness evidence.
+			def render_review_gate_markdown( report: )
+			lines = []
+			lines << "# Butler Review Gate Report"
+			lines << ""
+			lines << "- Generated at: #{report.fetch( :generated_at )}"
+			lines << "- Branch: #{report.fetch( :branch )}"
+			lines << "- Status: #{report.fetch( :status )}"
+			lines << "- Converged: #{report.fetch( :converged )}"
+			lines << "- Poll attempts: #{report.fetch( :poll_attempts, 0 )}"
+			lines << "- Wait seconds: #{report.fetch( :wait_seconds )}"
+			lines << "- Poll seconds: #{report.fetch( :poll_seconds )}"
+			lines << "- Max polls: #{report.fetch( :max_polls )}"
+			lines << ""
+			lines << "## Pull Request"
+			pr = report[ :pr ]
+			if pr.nil?
+				lines << "- not available"
+			else
+				lines << "- Number: ##{pr.fetch( :number )}"
+				lines << "- Title: #{pr.fetch( :title )}"
+				lines << "- URL: #{pr.fetch( :url )}"
+				lines << "- State: #{pr.fetch( :state )}"
+			end
+			lines << ""
+			lines << "## Block Reasons"
+			if report.fetch( :block_reasons ).empty?
+				lines << "- none"
+			else
+				report.fetch( :block_reasons ).each { |reason| lines << "- #{reason}" }
+			end
+			lines << ""
+			lines << "## Unresolved Threads"
+			if report.fetch( :unresolved_threads ).empty?
+				lines << "- none"
+			else
+				report.fetch( :unresolved_threads ).each do |entry|
+					lines << "- #{entry.fetch( :url )} (author: #{entry.fetch( :author )}, outdated: #{entry.fetch( :outdated )})"
+				end
+			end
+			lines << ""
+			lines << "## Unacknowledged Actionable Top-Level Findings"
+			if report.fetch( :unacknowledged_actionable ).empty?
+				lines << "- none"
+			else
+				report.fetch( :unacknowledged_actionable ).each do |entry|
+					lines << "- #{entry.fetch( :kind )}: #{entry.fetch( :url )} (author: #{entry.fetch( :author )}, reason: #{entry.fetch( :reason )})"
+				end
+			end
+			lines << ""
+			lines.join( "\n" )
+		end
+
+			# Lists recently updated pull requests for scheduled sweep scanning.
+			def recent_pull_requests_for_sweep( owner:, repo:, cutoff_time: )
+			results = []
+			page = 1
+			loop do
+				stdout_text, stderr_text, success, = gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=all",
+					"-f", "sort=updated",
+					"-f", "direction=desc",
+					"-f", "per_page=100",
+					"-f", "page=#{page}"
+				)
+				unless success
+					error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to list pull requests for review sweep" )
+					raise error_text
+				end
+
+				page_nodes = Array( JSON.parse( stdout_text ) )
+				break if page_nodes.empty?
+				stop_paging = false
+
+				page_nodes.each do |entry|
+					updated_time = parse_time_or_nil( text: entry[ "updated_at" ] )
+					next if updated_time.nil?
+					if updated_time < cutoff_time
+						stop_paging = true
+						next
+					end
+					state = normalise_rest_pull_request_state( entry: entry )
+					next unless config.review_sweep_states.include?( sweep_state_for( pr_state: state ) )
+					results << {
+						number: entry[ "number" ],
+						title: entry[ "title" ].to_s,
+						url: entry[ "html_url" ].to_s,
+						state: state,
+						updated_at: updated_time.utc.iso8601,
+						merged_at: entry[ "merged_at" ].to_s,
+						closed_at: entry[ "closed_at" ].to_s,
+						author: entry.dig( "user", "login" ).to_s
+					}
+				end
+
+				break if stop_paging
+				page += 1
+			end
+			results
+		end
+
+			# REST /pulls payload normaliser so merged PRs stay distinguishable from closed-unmerged PRs.
+			def normalise_rest_pull_request_state( entry: )
+			base_state = entry[ "state" ].to_s.upcase
+			return "MERGED" if base_state == "CLOSED" && !entry[ "merged_at" ].to_s.strip.empty?
+			base_state
+		end
+
+			# Produces sweep findings for one PR using late-event baseline for closed/merged PRs.
+			def sweep_findings_for_pull_request( details: )
+			pr_author = details.dig( :author, :login ).to_s
+			state = details.fetch( :state )
+			baseline_time = if [ "CLOSED", "MERGED" ].include?( state )
+				parse_time_or_nil( text: details.fetch( :merged_at ) ) || parse_time_or_nil( text: details.fetch( :closed_at ) )
+			end
+
+			findings = []
+			unresolved_thread_entries( details: details ).each do |entry|
+				thread_time = parse_time_or_nil( text: entry.fetch( :created_at ) )
+				next unless include_sweep_event?( event_time: thread_time, baseline_time: baseline_time )
+				findings << build_sweep_finding(
+					details: details,
+					kind: "unresolved_thread",
+					url: entry.fetch( :url ),
+					author: entry.fetch( :author ),
+					created_at: entry.fetch( :created_at ),
+					reason: "unresolved review thread"
+				)
+			end
+
+			Array( details.fetch( :comments ) ).each do |comment|
+				next if comment.fetch( :author ) == pr_author
+				hits = matched_risk_keywords( text: comment.fetch( :body ) )
+				next if hits.empty?
+				event_time = parse_time_or_nil( text: comment.fetch( :created_at ) )
+				next unless include_sweep_event?( event_time: event_time, baseline_time: baseline_time )
+				findings << build_sweep_finding(
+					details: details,
+					kind: "risk_issue_comment",
+					url: comment.fetch( :url ),
+					author: comment.fetch( :author ),
+					created_at: comment.fetch( :created_at ),
+					reason: "risk keywords: #{hits.join( ', ' )}"
+				)
+			end
+
+			Array( details.fetch( :reviews ) ).each do |review|
+				next if review.fetch( :author ) == pr_author
+				hits = matched_risk_keywords( text: review.fetch( :body ) )
+				next if hits.empty?
+				event_time = parse_time_or_nil( text: review.fetch( :created_at ) )
+				next unless include_sweep_event?( event_time: event_time, baseline_time: baseline_time )
+				findings << build_sweep_finding(
+					details: details,
+					kind: "risk_review",
+					url: review.fetch( :url ),
+					author: review.fetch( :author ),
+					created_at: review.fetch( :created_at ),
+					reason: "risk keywords: #{hits.join( ', ' )}"
+				)
+			end
+
+			Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) }.each do |comment|
+				next if comment.fetch( :author ) == pr_author
+				hits = matched_risk_keywords( text: comment.fetch( :body ) )
+				next if hits.empty?
+				event_time = parse_time_or_nil( text: comment.fetch( :created_at ) )
+				next unless include_sweep_event?( event_time: event_time, baseline_time: baseline_time )
+				findings << build_sweep_finding(
+					details: details,
+					kind: "risk_thread_comment",
+					url: comment.fetch( :url ),
+					author: comment.fetch( :author ),
+					created_at: comment.fetch( :created_at ),
+					reason: "risk keywords: #{hits.join( ', ' )}"
+				)
+			end
+			deduplicate_findings_by_url( items: findings )
+		end
+
+			# Inclusion guard for late-event sweep checks; closed PRs only include events after close/merge.
+			def include_sweep_event?( event_time:, baseline_time: )
+			return true if baseline_time.nil?
+			return false if event_time.nil?
+			event_time > baseline_time
+		end
+
+			# Formats one sweep finding record with PR context fields included.
+			def build_sweep_finding( details:, kind:, url:, author:, created_at:, reason: )
+			{
+				pr_number: details.fetch( :number ),
+				pr_title: details.fetch( :title ),
+				pr_url: details.fetch( :url ),
+				pr_state: details.fetch( :state ),
+				kind: kind,
+				url: url,
+				author: author,
+				created_at: created_at.to_s,
+				reason: reason
+			}
+		end
+
+			# Upserts one rolling tracking issue that captures latest sweep findings.
+			def upsert_review_sweep_tracking_issue( owner:, repo:, findings: )
+			slug = "#{owner}/#{repo}"
+			ensure_review_sweep_label( repo_slug: slug )
+			issue = find_review_sweep_issue( repo_slug: slug )
+			if findings.empty?
+				return close_review_sweep_issue_if_open( repo_slug: slug, issue: issue )
+			end
+			body = render_review_sweep_issue_body( findings: findings )
+			if issue.nil?
+				stdout_text, stderr_text, success, = gh_run(
+					"issue", "create",
+					"--repo", slug,
+					"--title", config.review_tracking_issue_title,
+					"--body", body,
+					"--label", config.review_tracking_issue_label
+				)
+				raise gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to create review sweep tracking issue" ) unless success
+				issue = find_review_sweep_issue( repo_slug: slug )
+				return issue.nil? ? { action: "create_unknown", issue: nil } : { action: "created", issue: issue }
+			end
+
+			if issue.fetch( :state ) == "CLOSED"
+				gh_system!( "issue", "reopen", issue.fetch( :number ).to_s, "--repo", slug )
+			end
+			gh_system!(
+				"issue", "edit", issue.fetch( :number ).to_s,
+				"--repo", slug,
+				"--title", config.review_tracking_issue_title,
+				"--body", body,
+				"--add-label", config.review_tracking_issue_label
+			)
+			updated_issue = find_review_sweep_issue( repo_slug: slug )
+			{ action: issue.fetch( :state ) == "CLOSED" ? "reopened_updated" : "updated", issue: updated_issue || issue }
+		end
+
+			# Creates/updates sweep tracking label so issue upsert can apply a stable filter tag.
+			def ensure_review_sweep_label( repo_slug: )
+			gh_system!(
+				"label", "create", config.review_tracking_issue_label,
+				"--repo", repo_slug,
+				"--description", "Butler review sweep tracking",
+				"--color", "B60205",
+				"--force"
+			)
+		end
+
+			# Finds rolling tracking issue by exact configured title.
+			def find_review_sweep_issue( repo_slug: )
+			stdout_text, stderr_text, success, = gh_run( "issue", "list", "--repo", repo_slug, "--state", "all", "--limit", "100", "--json", "number,title,state,url,labels" )
+			raise gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to list issues for review sweep" ) unless success
+			issues = Array( JSON.parse( stdout_text ) )
+			node = issues.find { |entry| entry[ "title" ].to_s == config.review_tracking_issue_title }
+			return nil if node.nil?
+			{
+				number: node[ "number" ],
+				title: node[ "title" ].to_s,
+				state: node[ "state" ].to_s.upcase,
+				url: node[ "url" ].to_s
+			}
+		end
+
+			# When sweep is clear, close prior tracking issue and add one clear audit comment.
+			def close_review_sweep_issue_if_open( repo_slug:, issue: )
+			return { action: "none", issue: nil } if issue.nil?
+			return { action: "none", issue: issue } unless issue.fetch( :state ) == "OPEN"
+			clear_message = "Clear: no actionable late review activity detected at #{Time.now.utc.iso8601}."
+			gh_system!( "issue", "comment", issue.fetch( :number ).to_s, "--repo", repo_slug, "--body", clear_message )
+			gh_system!( "issue", "close", issue.fetch( :number ).to_s, "--repo", repo_slug )
+			closed_issue = find_review_sweep_issue( repo_slug: repo_slug )
+			{ action: "closed", issue: closed_issue || issue }
+		end
+
+			# Markdown body used by rolling sweep issue so latest findings are always in one place.
+			def render_review_sweep_issue_body( findings: )
+			lines = []
+			lines << "# Butler review sweep findings"
+			lines << ""
+			lines << "- Generated at: #{Time.now.utc.iso8601}"
+			lines << "- Window days: #{config.review_sweep_window_days}"
+			lines << "- States: #{config.review_sweep_states.join( ', ' )}"
+			lines << "- Finding count: #{findings.count}"
+			lines << ""
+			lines << "## Findings"
+			if findings.empty?
+				lines << "- none"
+			else
+				findings.each do |item|
+					lines << "- PR ##{item.fetch( :pr_number )} (#{item.fetch( :pr_state )}) #{item.fetch( :kind )}: #{item.fetch( :reason )}"
+					lines << "  - URL: #{item.fetch( :url )}"
+					lines << "  - Author: #{item.fetch( :author )}"
+					lines << "  - Created at: #{item.fetch( :created_at )}"
+				end
+			end
+			lines.join( "\n" )
+		end
+
+			# Writes sweep artefacts for CI logs and local troubleshooting.
+			def write_review_sweep_report( report: )
+			markdown_path, json_path = write_report(
+				report: report,
+				markdown_name: REVIEW_SWEEP_REPORT_MD,
+				json_name: REVIEW_SWEEP_REPORT_JSON,
+				renderer: method( :render_review_sweep_markdown )
+			)
+			puts_line "review_sweep_report_markdown: #{markdown_path}"
+			puts_line "review_sweep_report_json: #{json_path}"
+		rescue StandardError => e
+			puts_line "review_sweep_report_write: SKIP (#{e.message})"
+		end
+
+			# Human-readable scheduled sweep report.
+			def render_review_sweep_markdown( report: )
+			lines = []
+			lines << "# Butler Review Sweep Report"
+			lines << ""
+			lines << "- Generated at: #{report.fetch( :generated_at )}"
+			lines << "- Status: #{report.fetch( :status )}"
+			lines << "- Window days: #{report.fetch( :window_days )}"
+			lines << "- States: #{Array( report.fetch( :states ) ).join( ', ' )}"
+			lines << "- Cutoff time: #{report.fetch( :cutoff_time )}"
+			lines << "- Candidate count: #{report.fetch( :candidate_count )}"
+			lines << "- Finding count: #{report.fetch( :finding_count )}"
+			tracking_issue = report[ :tracking_issue ]
+			if tracking_issue.is_a?( Hash )
+				lines << "- Tracking issue action: #{tracking_issue.fetch( :action )}"
+				if tracking_issue[ :issue ].is_a?( Hash )
+					lines << "- Tracking issue URL: #{tracking_issue.dig( :issue, :url )}"
+				end
+			end
+			lines << ""
+			lines << "## Findings"
+			if report.fetch( :findings ).empty?
+				lines << "- none"
+			else
+				report.fetch( :findings ).each do |item|
+					lines << "- PR ##{item.fetch( :pr_number )} (#{item.fetch( :pr_state )}) #{item.fetch( :kind )}: #{item.fetch( :reason )}"
+					lines << "  - URL: #{item.fetch( :url )}"
+					lines << "  - Author: #{item.fetch( :author )}"
+					lines << "  - Created at: #{item.fetch( :created_at )}"
+				end
+			end
+			lines.join( "\n" )
+		end
+
+			# Shared report writer for JSON plus Markdown pairs in reports.dir.
+			def write_report( report:, markdown_name:, json_name:, renderer: )
+			report_dir = resolve_repo_path!( relative_path: config.report_dir, label: "reports.dir" )
+			FileUtils.mkdir_p( report_dir )
+			markdown_path = File.join( report_dir, markdown_name )
+			json_path = File.join( report_dir, json_name )
+			File.write( json_path, JSON.pretty_generate( report ) )
+			File.write( markdown_path, renderer.call( report: report ) )
+			[ markdown_path, json_path ]
+		end
+
+			# Sweep state mapping treats merged PRs as closed for state-based inclusion filtering.
+			def sweep_state_for( pr_state: )
+			pr_state.to_s.upcase == "OPEN" ? "open" : "closed"
+		end
+
+			# Extracts owner/repository from configured git remote URL.
+			def repository_coordinates
+			remote_url = git_capture!( "config", "--get", "remote.#{config.git_remote}.url" ).strip
+			match = remote_url.match( %r{\A(?:git@|https?://|ssh://git@)?[^/:]+[:/](?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?\z} )
+			return [ match[ :owner ], match[ :repo ] ] unless match.nil?
+
+			stdout_text, = gh_capture_soft( "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner" )
+			name_with_owner = stdout_text.to_s.strip
+			if name_with_owner.include?( "/" )
+				owner, repo = name_with_owner.split( "/", 2 )
+				return [ owner, repo ] unless owner.to_s.empty? || repo.to_s.empty?
+			end
+
+			repo_name = File.basename( remote_url ).sub( /\.git\z/, "" )
+			return [ "local", repo_name ] unless repo_name.empty?
+			raise "unable to parse owner/repo from remote URL #{remote_url}"
+		end
+
+			# Optional CI override for detached-HEAD contexts where branch-based PR lookup is not possible.
+			def butler_pr_number_override
+			text = ENV.fetch( "BUTLER_PR_NUMBER", "" ).to_s.strip
+			return nil if text.empty?
+			Integer( text )
+		rescue ArgumentError
+			raise "invalid BUTLER_PR_NUMBER value #{text.inspect}"
+		end
+
+			# Returns matching risk keywords using case-insensitive whole-word matching.
+			def matched_risk_keywords( text: )
+			text_value = text.to_s
+			config.review_risk_keywords.select do |keyword|
+				text_value.match?( /\b#{Regexp.escape( keyword )}\b/i )
+			end
+		end
+
+			# Codex disposition records always start with configured prefix.
+			def codex_prefixed?( text: )
+			text.to_s.lstrip.start_with?( config.review_disposition_prefix )
+		end
+
+			# Extracts first matching disposition token from configured acknowledgement body.
+			def disposition_token( text: )
+			DISPOSITION_TOKENS.find { |token| text.to_s.match?( /\b#{token}\b/i ) }
+		end
+
+			# GitHub URL extraction for mapping disposition acknowledgements to finding URLs.
+			def extract_github_urls( text: )
+			text.to_s.scan( %r{https://github\.com/[^\s\)\]]+} ).map { |value| value.sub( /[.,;:]+$/, "" ) }.uniq
+		end
+
+			# Parse RFC3339 timestamps and return nil on blank/invalid values.
+			def parse_time_or_nil( text: )
+			value = text.to_s.strip
+			return nil if value.empty?
+			Time.parse( value )
+		rescue ArgumentError
+			nil
+		end
+
+			# Removes duplicate finding URLs while preserving first occurrence ordering.
+			def deduplicate_findings_by_url( items: )
+			seen = {}
+			Array( items ).each_with_object( [] ) do |entry, result|
+				url = entry.fetch( :url ).to_s
+				next if url.empty? || seen.key?( url )
+				seen[ url ] = true
+				result << entry
+			end
+		end
+
+			# Prints scope guard diagnostics and returns machine-usable attention flags.
+			def print_scope_integrity_guard
+			files = changed_files
+			return { status: "ok", split_required: false, unknown_lane: false } if files.empty?
+
+			scope = scope_integrity_status( files: files, branch: current_branch )
+			print_header "Scope Integrity Guard"
+			puts_line "branch: #{scope.fetch( :branch )}"
+			puts_line "branch_lane: #{scope.fetch( :lane ) || 'unknown'}"
+			puts_line "primary_group: #{scope.fetch( :primary_group ) || 'unknown'}"
+			puts_line "detected_groups: #{scope.fetch( :detected_groups ).sort.join( ', ' )}"
+			puts_line "non_doc_groups: #{scope.fetch( :non_doc_groups ).empty? ? 'none' : scope.fetch( :non_doc_groups ).sort.join( ', ' )}"
+			puts_line "docs_only_changes: #{scope.fetch( :docs_only )}"
+			puts_line "violating_files_count: #{scope.fetch( :violating_files ).count}"
+			scope.fetch( :violating_files ).each { |path| puts_line "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
+			puts_line "checklist_single_business_intent: #{scope.fetch( :split_required ) ? 'needs_review' : 'pass'}"
+			puts_line "checklist_single_scope_group: #{( scope.fetch( :mixed_non_doc ) || scope.fetch( :misc_present ) ) ? 'needs_split' : 'pass'}"
+			puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :mismatched_lane_scope ) || scope.fetch( :unknown_lane ) ) ? 'needs_explanation' : 'pass'}"
+			if scope.fetch( :unknown_lane )
+				puts_line "ACTION: branch naming must match #{config.branch_pattern}; supported lanes: #{config.lane_group_map.keys.join( ', ' )}."
+				return { status: "attention", split_required: scope.fetch( :split_required ), unknown_lane: true }
+			end
+			puts_line( scope.fetch( :split_required ) ? "ACTION: split/re-branch is required before commit." : "ACTION: scope integrity is within commit policy." )
+			{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ), unknown_lane: false }
+		end
+
+			# Evaluates whether changed files stay within one non-doc scope boundary.
+			def scope_integrity_status( files:, branch: )
+			lane = branch_lane( branch_name: branch )
+			primary_group = config.lane_group_map[ lane ]
+			grouped_paths = files.map { |path| [ path, scope_group_for_path( path: path ) ] }.to_h
+			detected_groups = grouped_paths.values.uniq
+			non_doc_groups = detected_groups - [ "docs" ]
+			unknown_lane = lane.nil? || primary_group.nil?
+			mixed_non_doc = non_doc_groups.length > 1
+			mismatched_lane_scope = !unknown_lane && non_doc_groups.length == 1 && non_doc_groups.first != primary_group
+			misc_present = non_doc_groups.include?( "misc" )
+			split_required = mixed_non_doc || mismatched_lane_scope || misc_present
+			violating_files = files.select do |path|
+				group = grouped_paths.fetch( path )
+				next true if group == "misc"
+				next false if group == "docs"
+				next true if unknown_lane || mixed_non_doc
+				group != primary_group
+			end
+			{
+				branch: branch,
+				lane: lane,
+				primary_group: primary_group,
+				grouped_paths: grouped_paths,
+				detected_groups: detected_groups,
+				non_doc_groups: non_doc_groups,
+				docs_only: non_doc_groups.empty?,
+				unknown_lane: unknown_lane,
+				mixed_non_doc: mixed_non_doc,
+				mismatched_lane_scope: mismatched_lane_scope,
+				misc_present: misc_present,
+				split_required: split_required,
+				violating_files: violating_files,
+				status: ( unknown_lane || split_required ) ? "attention" : "ok"
+			}
+		end
+
+			# Resolves a path to configured scope group; unmatched paths become misc.
+			def scope_group_for_path( path: )
+			config.path_groups.each do |group, patterns|
+				return group if patterns.any? { |pattern| pattern_matches_path?( pattern: pattern, path: path ) }
+			end
+			"misc"
+		end
+
+			# Supports directory-wide /** prefixes and fnmatch for other patterns.
+			def pattern_matches_path?( pattern:, path: )
+			if pattern.end_with?( "/**" )
+				prefix = pattern.delete_suffix( "/**" )
+				return path == prefix || path.start_with?( "#{prefix}/" )
+			end
+			File.fnmatch?( pattern, path, File::FNM_PATHNAME | File::FNM_DOTMATCH )
+		end
+
+			# Extracts lane from configured branch naming pattern.
+			def branch_lane( branch_name: )
+			match = config.branch_regex.match( branch_name.to_s )
+			return nil if match.nil?
+			return match[ "lane" ] if match.names.include?( "lane" )
+			match[ 1 ]
+		end
+
+			# Parses `git status --porcelain` and normalises rename targets.
+			def changed_files
+			git_capture!( "status", "--porcelain" ).lines.filter_map do |line|
+				raw_path = line[ 3.. ].to_s.strip
+				next if raw_path.empty?
+				raw_path.split( " -> " ).last
+			end
+		end
+
+			# True when there are no staged/unstaged/untracked file changes.
+			def working_tree_clean?
+			git_capture!( "status", "--porcelain" ).strip.empty?
+		end
+
+			# Current local branch name.
+			def current_branch
+			git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
+		end
+
+			# Checks local branch existence before restore attempts in ensure blocks.
+			def branch_exists?( branch_name: )
+			_, _, success, = git_run( "show-ref", "--verify", "--quiet", "refs/heads/#{branch_name}" )
+			success
+		end
+
+			# Human-readable plural suffix helper for audit messaging.
+			def plural_suffix( count: )
+			count.to_i == 1 ? "" : "s"
+		end
+
+			# Section heading printer for command output.
+			def print_header( title )
+			puts_line ""
+			puts_line "[#{title}]"
+		end
+
+			# Single output funnel to keep messaging style consistent.
+			def puts_line( message )
+			out.puts message
+		end
+
+			# Converts absolute paths into repo-relative output paths.
+			def relative_path( absolute_path )
+				absolute_path.sub( "#{repo_root}/", "" )
+			end
+
+			# Resolves a repo-relative path and blocks traversal outside repository root.
+			def resolve_repo_path!( relative_path:, label: )
+				path = File.expand_path( relative_path.to_s, repo_root )
+				repo_root_prefix = File.join( repo_root, "" )
+				raise ConfigError, "#{label} must stay within repository root" unless path.start_with?( repo_root_prefix )
+				path
+			end
+
+			# Soft capability check for GitHub CLI presence.
+			def gh_available?
+			_, _, success, = gh_run( "--version" )
+			success
+		end
+
+			# Keeps check output fields stable even when gh returns blanks.
+			def normalise_check_entries( entries: )
+			Array( entries ).map do |entry|
+				{
+					workflow: blank_to( value: entry[ "workflow" ], default: "workflow" ),
+					name: blank_to( value: entry[ "name" ], default: "check" ),
+					state: blank_to( value: entry[ "state" ], default: "UNKNOWN" ),
+					link: entry[ "link" ].to_s
+				}
+			end
+		end
+
+			# Coalesces blank strings to explicit defaults.
+			def blank_to( value:, default: )
+			text = value.to_s.strip
+			text.empty? ? default : text
+		end
+
+			# Chooses best available error text from gh stderr/stdout.
+			def gh_error_text( stdout_text:, stderr_text:, fallback: )
+			combined = [ stderr_text.to_s.strip, stdout_text.to_s.strip ].reject( &:empty? ).join( " | " )
+			combined.empty? ? fallback : combined
+		end
+
+			# Runs gh command and raises with best available stderr/stdout details on failure.
+			def gh_system!( *args )
+			stdout_text, stderr_text, success, = gh_run( *args )
+			raise gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "gh #{args.join( ' ' )} failed" ) unless success
+			stdout_text
+		end
+
+			# Captures gh output without raising so callers can fall back when host metadata is unavailable.
+			def gh_capture_soft( *args )
+			stdout_text, stderr_text, success, = gh_run( *args )
+			[ stdout_text, stderr_text, success ]
+		end
+
+			# Runs git command, streams outputs, and raises on non-zero exit.
+			def git_system!( *args )
+			stdout_text, stderr_text, success, = git_run( *args )
+			out.print stdout_text unless stdout_text.empty?
+			err.print stderr_text unless stderr_text.empty?
+			raise "git #{args.join( ' ' )} failed" unless success
+		end
+
+			# Captures git stdout and raises on non-zero exit.
+			def git_capture!( *args )
+			stdout_text, stderr_text, success, = git_run( *args )
+			unless success
+				err.print stderr_text unless stderr_text.empty?
+				raise "git #{args.join( ' ' )} failed"
+			end
+			stdout_text
+		end
+
+			# Captures git output without raising so caller can decide behaviour.
+			def git_capture_soft( *args )
+			stdout_text, stderr_text, success, = git_run( *args )
+			[ stdout_text, stderr_text, success ]
+		end
+
+			# Low-level git invocation wrapper.
+			def git_run( *args )
+			git_adapter.run( *args )
+		end
+
+			# Low-level gh invocation wrapper.
+			def gh_run( *args )
+			github_adapter.run( *args )
+		end
+end
+
+end
