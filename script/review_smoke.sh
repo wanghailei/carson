@@ -145,47 +145,70 @@ JSON
     esac
     ;;
   api)
-    if [[ "${2:-}" != "graphql" ]]; then
+    endpoint="${2:-}"
+    api_page="1"
+    for arg in "$@"; do
+      if [[ "$arg" == page=* ]]; then
+        api_page="${arg#page=}"
+      fi
+    done
+    if [[ "$endpoint" == "graphql" ]]; then
+      case "$scenario" in
+        gate_unresolved)
+          emit_gate_payload unresolved "2026-02-16T00:00:02Z"
+          ;;
+        gate_missing_ack)
+          emit_gate_payload missing_ack "2026-02-16T00:00:02Z"
+          ;;
+        gate_ack_ok)
+          emit_gate_payload ack_ok "2026-02-16T00:00:02Z"
+          ;;
+        gate_summary_only)
+          emit_gate_payload summary_only "2026-02-16T00:00:02Z"
+          ;;
+        gate_timeout)
+          counter_file="$state_dir/gate_timeout_counter"
+          count=0
+          if [[ -f "$counter_file" ]]; then
+            count="$(cat "$counter_file")"
+          fi
+          count="$((count + 1))"
+          echo "$count" > "$counter_file"
+          updated="$(printf '2026-02-16T00:00:%02dZ' "$count")"
+          emit_gate_payload summary_only "$updated"
+          ;;
+        gate_parse_error)
+          echo "{invalid-json"
+          ;;
+        sweep_findings)
+          emit_gate_payload sweep_findings "2026-02-17T00:00:00Z"
+          ;;
+        sweep_clear)
+          emit_gate_payload sweep_clear "2026-02-17T00:00:00Z"
+          ;;
+        *)
+          emit_gate_payload summary_only "2026-02-16T00:00:02Z"
+          ;;
+      esac
+    elif [[ "$endpoint" == repos/*/pulls ]]; then
+      case "$scenario" in
+        sweep_findings|sweep_clear)
+          if [[ "$api_page" != "1" ]]; then
+            echo "[]"
+            exit 0
+          fi
+          cat <<JSON
+[{"number":88,"title":"Closed PR","html_url":"https://github.com/mock-org/mock-repo/pull/88","state":"closed","updated_at":"2026-02-17T00:00:00Z","merged_at":"2026-02-16T00:00:00Z","closed_at":"2026-02-16T00:00:00Z","user":{"login":"owner"}}]
+JSON
+          ;;
+        *)
+          echo "[]"
+          ;;
+      esac
+    else
       echo "unsupported gh api subcommand: ${2:-}" >&2
       exit 1
     fi
-    case "$scenario" in
-      gate_unresolved)
-        emit_gate_payload unresolved "2026-02-16T00:00:02Z"
-        ;;
-      gate_missing_ack)
-        emit_gate_payload missing_ack "2026-02-16T00:00:02Z"
-        ;;
-      gate_ack_ok)
-        emit_gate_payload ack_ok "2026-02-16T00:00:02Z"
-        ;;
-      gate_summary_only)
-        emit_gate_payload summary_only "2026-02-16T00:00:02Z"
-        ;;
-      gate_timeout)
-        counter_file="$state_dir/gate_timeout_counter"
-        count=0
-        if [[ -f "$counter_file" ]]; then
-          count="$(cat "$counter_file")"
-        fi
-        count="$((count + 1))"
-        echo "$count" > "$counter_file"
-        updated="$(printf '2026-02-16T00:00:%02dZ' "$count")"
-        emit_gate_payload summary_only "$updated"
-        ;;
-      gate_parse_error)
-        echo "{invalid-json"
-        ;;
-      sweep_findings)
-        emit_gate_payload sweep_findings "2026-02-17T00:00:00Z"
-        ;;
-      sweep_clear)
-        emit_gate_payload sweep_clear "2026-02-17T00:00:00Z"
-        ;;
-      *)
-        emit_gate_payload summary_only "2026-02-16T00:00:02Z"
-        ;;
-    esac
     ;;
   issue)
     sub="${2:-}"

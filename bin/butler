@@ -58,8 +58,8 @@ class ButlerConfig
 					"test" => "test"
 				},
 				"path_groups" => {
-					# Shared governance templates are part of the Butler tooling boundary.
-					"tool" => [ "bin/**", ".githooks/**", ".github/**", "templates/common/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
+					# Shared governance templates and repository scripts are part of the Butler tooling boundary.
+					"tool" => [ "bin/**", "script/**", ".githooks/**", ".github/**", "templates/common/**", ".butler.yml", ".gitignore", "docs/butler.md" ],
 					"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
 					"test" => [ "test/**", "spec/**", "features/**" ],
 					"domain" => [ "app/**", "db/**", "config/**", "lib/**" ],
@@ -561,7 +561,7 @@ class Butler
 
 		owner, repo = repository_coordinates
 		cutoff_time = Time.now.utc - ( config.review_sweep_window_days * 86_400 )
-		pull_requests = recent_pull_requests_for_sweep( cutoff_time: cutoff_time )
+		pull_requests = recent_pull_requests_for_sweep( owner: owner, repo: repo, cutoff_time: cutoff_time )
 		puts_line "window_days: #{config.review_sweep_window_days}"
 		puts_line "candidate_prs: #{pull_requests.count}"
 		findings = []
@@ -964,6 +964,13 @@ class Butler
 
 			# Pull request details used by both review gate and scheduled review sweep.
 			def pull_request_details( owner:, repo:, pr_number: )
+			node = pull_request_details_node( owner: owner, repo: repo, pr_number: pr_number )
+			paginate_pull_request_connections!( owner: owner, repo: repo, pr_number: pr_number, node: node )
+			normalise_pull_request_details( node: node )
+		end
+
+			# Base PR payload with first page of each connection; remaining pages are fetched separately.
+			def pull_request_details_node( owner:, repo:, pr_number: )
 			stdout_text, stderr_text, success, = gh_run(
 				"api", "graphql",
 				"-f", "query=#{pull_request_details_query}",
@@ -978,7 +985,78 @@ class Butler
 			payload = JSON.parse( stdout_text )
 			node = payload.dig( "data", "repository", "pullRequest" )
 			raise "pull request ##{pr_number} not found" unless node.is_a?( Hash )
-			normalise_pull_request_details( node: node )
+			node
+		end
+
+			# Paginates every relevant PR connection so gate/sweep decisions are based on complete data.
+			def paginate_pull_request_connections!( owner:, repo:, pr_number:, node: )
+			paginate_pull_request_connection!( owner: owner, repo: repo, pr_number: pr_number, node: node, connection_name: "reviewThreads" )
+			paginate_pull_request_connection!( owner: owner, repo: repo, pr_number: pr_number, node: node, connection_name: "comments" )
+			paginate_pull_request_connection!( owner: owner, repo: repo, pr_number: pr_number, node: node, connection_name: "reviews" )
+		end
+
+			# Fetches remaining connection pages using pageInfo; missing pageInfo defaults to one-page behaviour.
+			def paginate_pull_request_connection!( owner:, repo:, pr_number:, node:, connection_name: )
+			connection = node[ connection_name ]
+			return unless connection.is_a?( Hash )
+			nodes = Array( connection[ "nodes" ] )
+			page_info = connection[ "pageInfo" ].is_a?( Hash ) ? connection[ "pageInfo" ] : {}
+			while page_info[ "hasNextPage" ] == true
+				cursor = page_info[ "endCursor" ].to_s
+				break if cursor.empty?
+				page_connection = pull_request_connection_page(
+					owner: owner,
+					repo: repo,
+					pr_number: pr_number,
+					connection_name: connection_name,
+					after_cursor: cursor
+				)
+				nodes.concat( Array( page_connection[ "nodes" ] ) )
+				page_info = page_connection[ "pageInfo" ].is_a?( Hash ) ? page_connection[ "pageInfo" ] : {}
+			end
+			connection[ "nodes" ] = nodes
+			connection[ "pageInfo" ] = page_info
+		end
+
+			# Requests one additional page for the chosen PR connection.
+			def pull_request_connection_page( owner:, repo:, pr_number:, connection_name:, after_cursor: )
+			query = pull_request_connection_page_query( connection_name: connection_name )
+			stdout_text, stderr_text, success, = gh_run(
+				"api", "graphql",
+				"-f", "query=#{query}",
+				"-F", "owner=#{owner}",
+				"-F", "repo=#{repo}",
+				"-F", "number=#{pr_number}",
+				"-F", "after=#{after_cursor}"
+			)
+			unless success
+				error_text = gh_error_text(
+					stdout_text: stdout_text,
+					stderr_text: stderr_text,
+					fallback: "unable to paginate pull request ##{pr_number} #{connection_name}"
+				)
+				raise error_text
+			end
+			payload = JSON.parse( stdout_text )
+			node = payload.dig( "data", "repository", "pullRequest" )
+			raise "pull request ##{pr_number} not found during #{connection_name} pagination" unless node.is_a?( Hash )
+			connection = node[ connection_name ]
+			raise "missing #{connection_name} payload during pagination" unless connection.is_a?( Hash )
+			connection
+		end
+
+			# Returns GraphQL query text for one paginated PR connection.
+			def pull_request_connection_page_query( connection_name: )
+			case connection_name
+			when "comments"
+				pull_request_comments_page_query
+			when "reviews"
+				pull_request_reviews_page_query
+			when "reviewThreads"
+				pull_request_review_threads_page_query
+			else
+				raise "unsupported pull request connection #{connection_name}"
+			end
 		end
 
 			# GraphQL query kept in one place so gate/sweep consume the same PR payload schema.
@@ -996,10 +1074,14 @@ class Butler
 				      closedAt
 				      author { login }
 				      reviewThreads(first:100) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
 				        nodes {
 				          isResolved
 				          isOutdated
-				          comments(first:50) {
+				          comments(first:100) {
 				            nodes {
 				              author { login }
 				              body
@@ -1010,6 +1092,10 @@ class Butler
 				        }
 				      }
 				      comments(first:100) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
 				        nodes {
 				          author { login }
 				          body
@@ -1018,12 +1104,95 @@ class Butler
 				        }
 				      }
 				      reviews(first:100) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
 				        nodes {
 				          author { login }
 				          state
 				          body
 				          url
 				          submittedAt
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Additional page query for top-level issue comments.
+			def pull_request_comments_page_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!, $after:String!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      comments(first:100, after:$after) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          author { login }
+				          body
+				          url
+				          createdAt
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Additional page query for top-level reviews.
+			def pull_request_reviews_page_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!, $after:String!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      reviews(first:100, after:$after) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          author { login }
+				          state
+				          body
+				          url
+				          submittedAt
+				        }
+				      }
+				    }
+				  }
+				}
+			GRAPHQL
+		end
+
+			# Additional page query for review threads.
+			def pull_request_review_threads_page_query
+			<<~GRAPHQL
+				query($owner:String!, $repo:String!, $number:Int!, $after:String!) {
+				  repository(owner:$owner, name:$repo) {
+				    pullRequest(number:$number) {
+				      reviewThreads(first:100, after:$after) {
+				        pageInfo {
+				          hasNextPage
+				          endCursor
+				        }
+				        nodes {
+				          isResolved
+				          isOutdated
+				          comments(first:100) {
+				            nodes {
+				              author { login }
+				              body
+				              url
+				              createdAt
+				            }
+				          }
 				        }
 				      }
 				    }
@@ -1251,26 +1420,60 @@ class Butler
 		end
 
 			# Lists recently updated pull requests for scheduled sweep scanning.
-			def recent_pull_requests_for_sweep( cutoff_time: )
-			stdout_text, stderr_text, success, = gh_run( "pr", "list", "--state", "all", "--limit", "200", "--json", "number,title,url,state,updatedAt,mergedAt,closedAt,author" )
-			unless success
-				error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to list pull requests for review sweep" )
-				raise error_text
+			def recent_pull_requests_for_sweep( owner:, repo:, cutoff_time: )
+			results = []
+			page = 1
+			loop do
+				stdout_text, stderr_text, success, = gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=all",
+					"-f", "sort=updated",
+					"-f", "direction=desc",
+					"-f", "per_page=100",
+					"-f", "page=#{page}"
+				)
+				unless success
+					error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to list pull requests for review sweep" )
+					raise error_text
+				end
+
+				page_nodes = Array( JSON.parse( stdout_text ) )
+				break if page_nodes.empty?
+				stop_paging = false
+
+				page_nodes.each do |entry|
+					updated_time = parse_time_or_nil( text: entry[ "updated_at" ] )
+					next if updated_time.nil?
+					if updated_time < cutoff_time
+						stop_paging = true
+						next
+					end
+					state = normalise_rest_pull_request_state( entry: entry )
+					next unless config.review_sweep_states.include?( sweep_state_for( pr_state: state ) )
+					results << {
+						number: entry[ "number" ],
+						title: entry[ "title" ].to_s,
+						url: entry[ "html_url" ].to_s,
+						state: state,
+						updated_at: updated_time.utc.iso8601,
+						merged_at: entry[ "merged_at" ].to_s,
+						closed_at: entry[ "closed_at" ].to_s,
+						author: entry.dig( "user", "login" ).to_s
+					}
+				end
+
+				break if stop_paging
+				page += 1
 			end
-			Array( JSON.parse( stdout_text ) ).filter_map do |entry|
-				updated_time = parse_time_or_nil( text: entry[ "updatedAt" ] )
-				next if updated_time.nil? || updated_time < cutoff_time
-				{
-					number: entry[ "number" ],
-					title: entry[ "title" ].to_s,
-					url: entry[ "url" ].to_s,
-					state: entry[ "state" ].to_s.upcase,
-					updated_at: updated_time.utc.iso8601,
-					merged_at: entry[ "mergedAt" ].to_s,
-					closed_at: entry[ "closedAt" ].to_s,
-					author: entry.dig( "author", "login" ).to_s
-				}
-			end
+			results
+		end
+
+			# REST /pulls payload normaliser so merged PRs stay distinguishable from closed-unmerged PRs.
+			def normalise_rest_pull_request_state( entry: )
+			base_state = entry[ "state" ].to_s.upcase
+			return "MERGED" if base_state == "CLOSED" && !entry[ "merged_at" ].to_s.strip.empty?
+			base_state
 		end
 
 			# Produces sweep findings for one PR using late-event baseline for closed/merged PRs.
