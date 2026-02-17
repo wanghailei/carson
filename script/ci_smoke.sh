@@ -66,22 +66,42 @@ if [[ "${1:-}" == "--version" ]]; then
 	exit 0
 fi
 
-if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
-	head_branch=""
+if [[ "${1:-}" == "api" && "${2:-}" == repos/*/pulls ]]; then
+	head_filter=""
+	page_number="1"
 	while [[ "$#" -gt 0 ]]; do
-		if [[ "$1" == "--head" ]]; then
-			head_branch="${2:-}"
+		if [[ "$1" == "-f" ]]; then
+			field="${2:-}"
+			case "$field" in
+				head=*) head_filter="${field#head=}" ;;
+				page=*) page_number="${field#page=}" ;;
+			esac
 			shift 2
-			continue
+		else
+			shift
 		fi
-		shift
 	done
-	if [[ "$head_branch" == "codex/tool/stale-prune-squash" ]]; then
+
+	if [[ "$page_number" != "1" ]]; then
+		echo "[]"
+		exit 0
+	fi
+
+	if [[ "$head_filter" == "local:codex/tool/stale-prune-squash" ]]; then
+		tip_sha="$(git rev-parse --verify codex/tool/stale-prune-squash 2>/dev/null || true)"
 		cat <<JSON
-[{"number":999,"url":"https://github.com/mock/mock-repo/pull/999","mergedAt":"2026-02-17T00:00:00Z","headRefName":"codex/tool/stale-prune-squash","baseRefName":"main","headRepositoryOwner":{"login":"local"}}]
+[{"number":999,"html_url":"https://github.com/mock/mock-repo/pull/999","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"codex/tool/stale-prune-squash","sha":"$tip_sha"},"base":{"ref":"main"}}]
 JSON
 		exit 0
 	fi
+
+	if [[ "$head_filter" == "local:codex/tool/stale-prune-no-evidence" ]]; then
+		cat <<JSON
+[{"number":1000,"html_url":"https://github.com/mock/mock-repo/pull/1000","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"codex/tool/stale-prune-no-evidence","sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},"base":{"ref":"main"}}]
+JSON
+		exit 0
+	fi
+
 	echo "[]"
 	exit 0
 fi
@@ -157,6 +177,21 @@ if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-squash; then
 	exit 1
 fi
 echo "PASS: stale squash branch removed locally via merged PR evidence"
+
+git switch -c codex/tool/stale-prune-no-evidence >/dev/null
+printf "stale no-evidence candidate\n" > stale_no_evidence.txt
+git add stale_no_evidence.txt
+git commit -m "stale no-evidence candidate branch" >/dev/null
+git push -u github codex/tool/stale-prune-no-evidence >/dev/null
+git switch main >/dev/null
+git push github --delete codex/tool/stale-prune-no-evidence >/dev/null
+
+expect_exit 0 "prune skips force-delete when merged PR evidence does not match branch tip" run_butler_with_mock_gh prune
+if ! git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-no-evidence; then
+	echo "FAIL: no-evidence branch should remain after prune skip" >&2
+	exit 1
+fi
+echo "PASS: no-evidence branch retained when merged PR evidence does not match branch tip"
 
 expect_exit 0 "audit completes without a local hard block" run_butler audit
 

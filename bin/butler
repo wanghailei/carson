@@ -361,7 +361,7 @@ class Butler
 				end
 				force_text = force_stderr.to_s.strip
 				force_text = "unknown error" if force_text.empty?
-				puts_line "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_text}"
+				puts_line "fail_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_text}"
 				skipped_count += 1
 				next
 			end
@@ -794,39 +794,57 @@ class Butler
 			return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
 			return [ nil, "branch does not match managed pattern #{config.branch_pattern}" ] if config.branch_regex.match( branch.to_s ).nil?
 			return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
-			merged_pr_for_branch( branch: branch )
-		end
-
-			# Finds latest merged PR evidence for the branch; used to authorise force-delete on stale squash merges.
-			def merged_pr_for_branch( branch: )
-			owner, repo = repository_coordinates
-			stdout_text, stderr_text, success, = gh_run(
-				"pr", "list",
-				"--repo", "#{owner}/#{repo}",
-				"--state", "merged",
-				"--head", branch.to_s,
-				"--limit", "100",
-				"--json", "number,url,mergedAt,headRefName,baseRefName,headRepositoryOwner"
-			)
-			unless success
-				error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
+			tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+			unless tip_sha_success
+				error_text = tip_sha_error.to_s.strip
+				error_text = "unable to read local branch tip sha" if error_text.empty?
 				return [ nil, error_text ]
 			end
-			items = Array( JSON.parse( stdout_text ) ).filter_map do |entry|
-				next unless entry[ "headRefName" ].to_s == branch.to_s
-				next unless entry[ "baseRefName" ].to_s == config.main_branch
-				head_owner = entry.dig( "headRepositoryOwner", "login" ).to_s
-				next unless head_owner.empty? || head_owner == owner
-				merged_at = parse_time_or_nil( text: entry[ "mergedAt" ] )
-				next if merged_at.nil?
-				{
-					number: entry[ "number" ],
-					url: entry[ "url" ].to_s,
-					merged_at: merged_at.utc.iso8601
-				}
+			branch_tip_sha = tip_sha_text.to_s.strip
+			return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
+			merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+		end
+
+			# Finds merged PR evidence for the exact local branch tip; this blocks old-PR false positives.
+			def merged_pr_for_branch( branch:, branch_tip_sha: )
+			owner, repo = repository_coordinates
+			results = []
+			page = 1
+			loop do
+				stdout_text, stderr_text, success, = gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=closed",
+					"-f", "base=#{config.main_branch}",
+					"-f", "head=#{owner}:#{branch}",
+					"-f", "sort=updated",
+					"-f", "direction=desc",
+					"-f", "per_page=100",
+					"-f", "page=#{page}"
+				)
+				unless success
+					error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
+					return [ nil, error_text ]
+				end
+				page_nodes = Array( JSON.parse( stdout_text ) )
+				break if page_nodes.empty?
+				page_nodes.each do |entry|
+					next unless entry.dig( "head", "ref" ).to_s == branch.to_s
+					next unless entry.dig( "base", "ref" ).to_s == config.main_branch
+					next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
+					merged_at = parse_time_or_nil( text: entry[ "merged_at" ] )
+					next if merged_at.nil?
+					results << {
+						number: entry[ "number" ],
+						url: entry[ "html_url" ].to_s,
+						merged_at: merged_at.utc.iso8601,
+						head_sha: entry.dig( "head", "sha" ).to_s
+					}
+				end
+				page += 1
 			end
-			latest = items.max_by { |item| item.fetch( :merged_at ) }
-			return [ nil, "no merged PR evidence for branch #{branch} into #{config.main_branch}" ] if latest.nil?
+			latest = results.max_by { |item| item.fetch( :merged_at ) }
+			return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
 			[ latest, nil ]
 		rescue JSON::ParserError => e
 			[ nil, "invalid gh JSON response (#{e.message})" ]

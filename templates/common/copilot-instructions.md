@@ -3,6 +3,7 @@
 - GitHub rulesets and required checks are merge authority.
 - Local Butler is a thin local orchestrator for hook health, main sync, scope integrity, and gh visibility.
 - Before commit and before push, run `bin/butler audit`.
+- At session start and again immediately before merge recommendation, run `gh pr list --state open --limit 50` and re-confirm active PR priorities.
 - Before merge recommendation, run `bin/butler review gate`; it enforces warm-up wait, unresolved-thread convergence, and `Codex:` dispositions for actionable top-level findings.
 - Actionable findings are unresolved review threads, any non-author `CHANGES_REQUESTED` review, or non-author comments/reviews with risk keywords (`bug`, `security`, `incorrect`, `block`, `fail`, `regression`).
 - `Codex:` dispositions must include one token (`accepted`, `rejected`, `deferred`) and the target review URL.
