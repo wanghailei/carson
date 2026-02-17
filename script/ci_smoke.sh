@@ -169,6 +169,16 @@ git add stale_squash.txt
 git commit -m "stale squash candidate branch" >/dev/null
 git push -u github codex/tool/stale-prune-squash >/dev/null
 git switch main >/dev/null
+original_hooks_path="$(git config --get core.hooksPath || true)"
+git config core.hooksPath .git/hooks
+git merge --squash codex/tool/stale-prune-squash >/dev/null 2>&1
+git commit -m "squash-merge codex/tool/stale-prune-squash into main" >/dev/null
+git push github main >/dev/null
+if [[ -n "$original_hooks_path" ]]; then
+	git config core.hooksPath "$original_hooks_path"
+else
+	git config --unset core.hooksPath
+fi
 git push github --delete codex/tool/stale-prune-squash >/dev/null
 
 expect_exit 0 "prune force-deletes stale branch when merged PR evidence exists" run_butler_with_mock_gh prune
