@@ -62,7 +62,9 @@ jobs:
 
       - name: Butler audit
         working-directory: host
-        run: butler audit
+        run: |
+          butler hook
+          butler audit
 
       - name: Butler review gate
         working-directory: host

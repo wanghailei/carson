@@ -43,10 +43,20 @@ module Butler
 			when "template"
 				action = argv.shift
 				parser.parse!( argv )
+				if action.to_s.strip.empty?
+					err.puts "Missing subcommand for template. Use: butler template check|apply"
+					err.puts parser
+					return :invalid
+				end
 				"template:#{action}"
 			when "review"
 				action = argv.shift
 				parser.parse!( argv )
+				if action.to_s.strip.empty?
+					err.puts "Missing subcommand for review. Use: butler review gate|sweep"
+					err.puts parser
+					return :invalid
+				end
 				"review:#{action}"
 			else
 				parser.parse!( argv )
