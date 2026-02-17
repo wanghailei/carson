@@ -83,6 +83,11 @@ emit_gate_payload() {
 {"data":{"repository":{"pullRequest":{"number":77,"title":"Mock gate PR","url":"https://github.com/mock-org/mock-repo/pull/77","state":"OPEN","updatedAt":"$updated_at","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"nodes":[{"isResolved":false,"isOutdated":false,"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Needs update","url":"https://github.com/mock-org/mock-repo/pull/77#discussion_r1","createdAt":"2026-02-16T00:00:01Z"}]}}]},"comments":{"nodes":[]},"reviews":{"nodes":[]}}}}}
 JSON
       ;;
+    outdated_unresolved)
+      cat <<JSON
+{"data":{"repository":{"pullRequest":{"number":77,"title":"Mock gate PR","url":"https://github.com/mock-org/mock-repo/pull/77","state":"OPEN","updatedAt":"$updated_at","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"nodes":[{"isResolved":false,"isOutdated":true,"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Old diff comment","url":"https://github.com/mock-org/mock-repo/pull/77#discussion_r_outdated","createdAt":"2026-02-16T00:00:01Z"}]}}]},"comments":{"nodes":[]},"reviews":{"nodes":[]}}}}}
+JSON
+      ;;
     missing_ack)
       cat <<JSON
 {"data":{"repository":{"pullRequest":{"number":77,"title":"Mock gate PR","url":"https://github.com/mock-org/mock-repo/pull/77","state":"OPEN","updatedAt":"$updated_at","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"This has a security bug.","url":"https://github.com/mock-org/mock-repo/pull/77#issuecomment-risk","createdAt":"2026-02-16T00:00:01Z"}]},"reviews":{"nodes":[]}}}}}
@@ -159,6 +164,9 @@ JSON
           ;;
         gate_missing_ack)
           emit_gate_payload missing_ack "2026-02-16T00:00:02Z"
+          ;;
+        gate_outdated_unresolved)
+          emit_gate_payload outdated_unresolved "2026-02-16T00:00:02Z"
           ;;
         gate_ack_ok)
           emit_gate_payload ack_ok "2026-02-16T00:00:02Z"
@@ -298,6 +306,7 @@ run_with_mock() {
 
 expect_exit 2 "review gate blocks unresolved threads" run_with_mock gate_unresolved review gate
 expect_exit 2 "review gate blocks missing Codex disposition for actionable top-level finding" run_with_mock gate_missing_ack review gate
+expect_exit 0 "review gate ignores unresolved outdated threads from superseded diffs" run_with_mock gate_outdated_unresolved review gate
 expect_exit 0 "review gate passes with Codex disposition and target URL" run_with_mock gate_ack_ok review gate
 expect_exit 0 "review gate ignores non-actionable summary-only top-level comment" run_with_mock gate_summary_only review gate
 expect_exit 2 "review gate blocks non-converged snapshots" run_with_mock gate_timeout review gate

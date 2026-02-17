@@ -1265,6 +1265,8 @@ class Butler
 			def unresolved_thread_entries( details: )
 			Array( details.fetch( :review_threads ) ).each_with_index.filter_map do |thread, index|
 				next if thread.fetch( :is_resolved )
+				# Outdated threads belong to superseded diffs and should not block current merge readiness.
+				next if thread.fetch( :is_outdated )
 				comments = thread.fetch( :comments )
 				first_comment = comments.first || {}
 				latest_time = comments.map { |entry| entry.fetch( :created_at ) }.max.to_s
