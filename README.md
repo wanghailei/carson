@@ -18,9 +18,11 @@ Butler is a shared local governance tool for repository hygiene and merge readin
 
 - Workflow: `.github/workflows/ci.yml`
 - Trigger: pull requests (and manual dispatch)
+- Required job: `Butler governance` (`bin/butler review gate`)
 - Job step: `ruby -c bin/butler`
 - Job step: `bash script/ci_smoke.sh`
 - Smoke logs always print both numeric and text status, for example `0 - OK`.
+- Scheduled sweep workflow: `.github/workflows/review-sweep.yml` (every 8 hours)
 
 ## New Project Defaults
 
@@ -47,6 +49,8 @@ What it applies:
 - `bin/butler version`
 - `bin/butler template check`
 - `bin/butler template apply`
+- `bin/butler review gate`
+- `bin/butler review sweep`
 
 Compatibility aliases:
 
@@ -61,7 +65,7 @@ Compatibility aliases:
 
 ## Configuration
 
-`/.butler.yml` is optional.
+`.butler.yml` is optional.
 
 - If absent, Butler uses shared built-in defaults.
 - If present, Butler deep-merges your overrides onto those defaults.
@@ -82,3 +86,9 @@ Template sync behaviour:
 - `template apply` writes only the managed marker block content.
 - Repo-specific content outside marker blocks is preserved.
 - If markers are missing, Butler prepends the managed block and keeps existing content below it.
+
+## Review Governance
+
+- `review gate` enforces deterministic unresolved-thread convergence before merge recommendation.
+- Actionable top-level comments/reviews require `Codex:` disposition with one token (`accepted`, `rejected`, `deferred`) and the target review URL.
+- `review sweep` scans recent open/closed PRs and upserts one rolling issue for late actionable review activity.

@@ -8,12 +8,12 @@ Usage:
 
 Options:
   --branch <name>             Branch to protect (default: main)
-  --checks <csv>              Required status checks, comma-separated
+  --checks <csv>              Required status checks, comma-separated (default: "Syntax and smoke tests,Butler governance")
   --local-path <path>         Local repository path for wrapper and Butler setup
   --set-butler-read-token     Set BUTLER_REPO_READ_TOKEN from current gh auth token
 
 Examples:
-  script/bootstrap_repo_defaults.sh wanghailei/new-project --checks "Butler governance,lint,test"
+  script/bootstrap_repo_defaults.sh wanghailei/new-project --checks "Syntax and smoke tests,Butler governance,lint,test"
   script/bootstrap_repo_defaults.sh wanghailei/new-project --local-path ~/Studio/new-project --set-butler-read-token
 USAGE
 }
@@ -41,7 +41,7 @@ fi
 shift || true
 
 branch="main"
-checks_csv=""
+checks_csv="Syntax and smoke tests,Butler governance"
 local_path=""
 set_butler_read_token=0
 
