@@ -21,6 +21,12 @@ jobs:
         with:
           ruby-version: "4.0"
 
+      - name: Align remote name for Butler
+        run: |
+          if ! git remote get-url github >/dev/null 2>&1; then
+            git remote rename origin github
+          fi
+
       - name: Review gate
         env:
           GH_TOKEN: ${{ github.token }}
