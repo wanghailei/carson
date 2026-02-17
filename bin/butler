@@ -347,7 +347,26 @@ class Butler
 			end
 			error_text = stderr_text.to_s.strip
 			error_text = "unknown error" if error_text.empty?
+			merged_pr, force_error = force_delete_evidence_for_stale_branch(
+				branch: branch,
+				delete_error_text: error_text
+			)
+			unless merged_pr.nil?
+				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				if force_success
+					out.print force_stdout unless force_stdout.empty?
+					puts_line "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
+					deleted_count += 1
+					next
+				end
+				force_text = force_stderr.to_s.strip
+				force_text = "unknown error" if force_text.empty?
+				puts_line "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_text}"
+				skipped_count += 1
+				next
+			end
 			puts_line "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{error_text}"
+			puts_line "skip_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error}" unless force_error.nil? || force_error.empty?
 			skipped_count += 1
 		end
 		puts_line "prune_summary: deleted=#{deleted_count} skipped=#{skipped_count}"
@@ -760,6 +779,59 @@ class Butler
 				next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
 				{ branch: branch, upstream: upstream, track: track }
 			end
+		end
+
+			# Safe delete can fail after squash merges because branch tip is no longer an ancestor.
+			def non_merged_delete_error?( error_text: )
+			error_text.to_s.downcase.include?( "not fully merged" )
+		end
+
+			# Guarded force-delete policy for stale branches:
+			# 1) branch must match managed codex lane pattern,
+			# 2) safe delete failure must be merge-related (`not fully merged`),
+			# 3) gh must confirm at least one merged PR for this exact branch into configured main.
+			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
+			return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
+			return [ nil, "branch does not match managed pattern #{config.branch_pattern}" ] if config.branch_regex.match( branch.to_s ).nil?
+			return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
+			merged_pr_for_branch( branch: branch )
+		end
+
+			# Finds latest merged PR evidence for the branch; used to authorise force-delete on stale squash merges.
+			def merged_pr_for_branch( branch: )
+			owner, repo = repository_coordinates
+			stdout_text, stderr_text, success, = gh_run(
+				"pr", "list",
+				"--repo", "#{owner}/#{repo}",
+				"--state", "merged",
+				"--head", branch.to_s,
+				"--limit", "100",
+				"--json", "number,url,mergedAt,headRefName,baseRefName,headRepositoryOwner"
+			)
+			unless success
+				error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
+				return [ nil, error_text ]
+			end
+			items = Array( JSON.parse( stdout_text ) ).filter_map do |entry|
+				next unless entry[ "headRefName" ].to_s == branch.to_s
+				next unless entry[ "baseRefName" ].to_s == config.main_branch
+				head_owner = entry.dig( "headRepositoryOwner", "login" ).to_s
+				next unless head_owner.empty? || head_owner == owner
+				merged_at = parse_time_or_nil( text: entry[ "mergedAt" ] )
+				next if merged_at.nil?
+				{
+					number: entry[ "number" ],
+					url: entry[ "url" ].to_s,
+					merged_at: merged_at.utc.iso8601
+				}
+			end
+			latest = items.max_by { |item| item.fetch( :merged_at ) }
+			return [ nil, "no merged PR evidence for branch #{branch} into #{config.main_branch}" ] if latest.nil?
+			[ latest, nil ]
+		rescue JSON::ParserError => e
+			[ nil, "invalid gh JSON response (#{e.message})" ]
+		rescue StandardError => e
+			[ nil, e.message ]
 		end
 
 			# Thin `gh` monitor for PR and required checks; local audit continues on API gaps.

@@ -90,16 +90,19 @@ Mechanism:
 
 - `sync` requires a clean working tree, fetches from remote, fast-forwards local `main`, and checks divergence.
 - `prune` fetches with prune, finds local branches whose upstream refs are gone, and attempts safe delete with `git branch -d`.
+- If safe delete fails only because the branch is not fully merged (typical after squash merge), Butler may force-delete with `git branch -D` only when GitHub confirms merged PR evidence for that exact branch into configured `main`.
+- Branches without upstream tracking remain excluded from prune targeting.
 
 Key code segments:
 
 - `Butler#sync!` and `Butler#main_sync_counts` in `bin/butler`.
-- `Butler#prune!` and `Butler#stale_local_branches` in `bin/butler`.
+- `Butler#prune!`, `Butler#stale_local_branches`, and `Butler#force_delete_evidence_for_stale_branch` in `bin/butler`.
 
 Boundary:
 
 - Butler performs local maintenance only.
-- It does not bypass protected branches and does not force-delete local branches.
+- It does not bypass protected branches.
+- Force-delete is guarded: only stale tracked branches, only merge-related safe-delete failures, and only with merged PR evidence.
 
 ## Feature: Scope Integrity Guard
 

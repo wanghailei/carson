@@ -8,6 +8,10 @@ run_butler() {
 	ruby "$butler_bin" "$@"
 }
 
+run_butler_with_mock_gh() {
+	PATH="$mock_bin:$PATH" ruby "$butler_bin" "$@"
+}
+
 exit_text() {
 	case "${1:-}" in
 		0) echo "OK" ;;
@@ -47,9 +51,45 @@ trap cleanup EXIT
 
 remote_repo="$tmp_root/remote.git"
 work_repo="$tmp_root/work"
+mock_bin="$tmp_root/mock-bin"
 
 git init --bare "$remote_repo" >/dev/null
 git clone "$remote_repo" "$work_repo" >/dev/null
+mkdir -p "$mock_bin"
+
+cat > "$mock_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+	echo "gh version mock"
+	exit 0
+fi
+
+if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+	head_branch=""
+	while [[ "$#" -gt 0 ]]; do
+		if [[ "$1" == "--head" ]]; then
+			head_branch="${2:-}"
+			shift 2
+			continue
+		fi
+		shift
+	done
+	if [[ "$head_branch" == "codex/tool/stale-prune-squash" ]]; then
+		cat <<JSON
+[{"number":999,"url":"https://github.com/mock/mock-repo/pull/999","mergedAt":"2026-02-17T00:00:00Z","headRefName":"codex/tool/stale-prune-squash","baseRefName":"main","headRepositoryOwner":{"login":"local"}}]
+JSON
+		exit 0
+	fi
+	echo "[]"
+	exit 0
+fi
+
+echo "unsupported gh invocation: $*" >&2
+exit 1
+EOF
+chmod +x "$mock_bin/gh"
 
 ruby_major="$(ruby -e 'print RUBY_VERSION.split(".").first.to_i')"
 if [[ "$ruby_major" -lt 4 ]]; then
@@ -102,6 +142,21 @@ if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune; then
 	exit 1
 fi
 echo "PASS: stale branch removed locally"
+
+git switch -c codex/tool/stale-prune-squash >/dev/null
+printf "stale squash candidate\n" > stale_squash.txt
+git add stale_squash.txt
+git commit -m "stale squash candidate branch" >/dev/null
+git push -u github codex/tool/stale-prune-squash >/dev/null
+git switch main >/dev/null
+git push github --delete codex/tool/stale-prune-squash >/dev/null
+
+expect_exit 0 "prune force-deletes stale branch when merged PR evidence exists" run_butler_with_mock_gh prune
+if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-squash; then
+	echo "FAIL: stale squash branch still exists after prune" >&2
+	exit 1
+fi
+echo "PASS: stale squash branch removed locally via merged PR evidence"
 
 expect_exit 0 "audit completes without a local hard block" run_butler audit
 
