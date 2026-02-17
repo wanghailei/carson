@@ -1,13 +1,13 @@
-# Common Templates
+# GitHub Templates
 
-Butler manages cross-project `.github` common content through marker blocks.
+Butler manages cross-project `.github` template content through marker blocks.
 
 ## Managed Files
 
 - `.github/copilot-instructions.md`
 - `.github/pull_request_template.md`
 
-Each file is matched by basename to `templates/common/<basename>`.
+Each file is matched by basename to `templates/github/<basename>`.
 Marker ids are derived from the managed filename, for example:
 
 - `.github/copilot-instructions.md` -> `copilot-instructions`
@@ -16,7 +16,7 @@ Marker ids are derived from the managed filename, for example:
 ## Workflow
 
 1. Run `bin/butler template check` to detect drift.
-2. Run `bin/butler template apply` to apply canonical template blocks.
+2. Run `bin/butler template apply` to apply canonical GitHub template blocks.
 
 Compatibility aliases:
 
