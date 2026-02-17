@@ -8,6 +8,10 @@ run_butler() {
 	ruby "$butler_bin" "$@"
 }
 
+run_butler_with_mock_gh() {
+	PATH="$mock_bin:$PATH" ruby "$butler_bin" "$@"
+}
+
 exit_text() {
 	case "${1:-}" in
 		0) echo "OK" ;;
@@ -47,9 +51,65 @@ trap cleanup EXIT
 
 remote_repo="$tmp_root/remote.git"
 work_repo="$tmp_root/work"
+mock_bin="$tmp_root/mock-bin"
 
 git init --bare "$remote_repo" >/dev/null
 git clone "$remote_repo" "$work_repo" >/dev/null
+mkdir -p "$mock_bin"
+
+cat > "$mock_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+	echo "gh version mock"
+	exit 0
+fi
+
+if [[ "${1:-}" == "api" && "${2:-}" == repos/*/pulls ]]; then
+	head_filter=""
+	page_number="1"
+	while [[ "$#" -gt 0 ]]; do
+		if [[ "$1" == "-f" ]]; then
+			field="${2:-}"
+			case "$field" in
+				head=*) head_filter="${field#head=}" ;;
+				page=*) page_number="${field#page=}" ;;
+			esac
+			shift 2
+		else
+			shift
+		fi
+	done
+
+	if [[ "$page_number" != "1" ]]; then
+		echo "[]"
+		exit 0
+	fi
+
+	if [[ "$head_filter" == "local:codex/tool/stale-prune-squash" ]]; then
+		tip_sha="$(git rev-parse --verify codex/tool/stale-prune-squash 2>/dev/null || true)"
+		cat <<JSON
+[{"number":999,"html_url":"https://github.com/mock/mock-repo/pull/999","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"codex/tool/stale-prune-squash","sha":"$tip_sha"},"base":{"ref":"main"}}]
+JSON
+		exit 0
+	fi
+
+	if [[ "$head_filter" == "local:codex/tool/stale-prune-no-evidence" ]]; then
+		cat <<JSON
+[{"number":1000,"html_url":"https://github.com/mock/mock-repo/pull/1000","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"codex/tool/stale-prune-no-evidence","sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},"base":{"ref":"main"}}]
+JSON
+		exit 0
+	fi
+
+	echo "[]"
+	exit 0
+fi
+
+echo "unsupported gh invocation: $*" >&2
+exit 1
+EOF
+chmod +x "$mock_bin/gh"
 
 ruby_major="$(ruby -e 'print RUBY_VERSION.split(".").first.to_i')"
 if [[ "$ruby_major" -lt 4 ]]; then
@@ -102,6 +162,46 @@ if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune; then
 	exit 1
 fi
 echo "PASS: stale branch removed locally"
+
+git switch -c codex/tool/stale-prune-squash >/dev/null
+printf "stale squash candidate\n" > stale_squash.txt
+git add stale_squash.txt
+git commit -m "stale squash candidate branch" >/dev/null
+git push -u github codex/tool/stale-prune-squash >/dev/null
+git switch main >/dev/null
+original_hooks_path="$(git config --get core.hooksPath || true)"
+git config core.hooksPath .git/hooks
+git merge --squash codex/tool/stale-prune-squash >/dev/null 2>&1
+git commit -m "squash-merge codex/tool/stale-prune-squash into main" >/dev/null
+git push github main >/dev/null
+if [[ -n "$original_hooks_path" ]]; then
+	git config core.hooksPath "$original_hooks_path"
+else
+	git config --unset core.hooksPath
+fi
+git push github --delete codex/tool/stale-prune-squash >/dev/null
+
+expect_exit 0 "prune force-deletes stale branch when merged PR evidence exists" run_butler_with_mock_gh prune
+if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-squash; then
+	echo "FAIL: stale squash branch still exists after prune" >&2
+	exit 1
+fi
+echo "PASS: stale squash branch removed locally via merged PR evidence"
+
+git switch -c codex/tool/stale-prune-no-evidence >/dev/null
+printf "stale no-evidence candidate\n" > stale_no_evidence.txt
+git add stale_no_evidence.txt
+git commit -m "stale no-evidence candidate branch" >/dev/null
+git push -u github codex/tool/stale-prune-no-evidence >/dev/null
+git switch main >/dev/null
+git push github --delete codex/tool/stale-prune-no-evidence >/dev/null
+
+expect_exit 0 "prune skips force-delete when merged PR evidence does not match branch tip" run_butler_with_mock_gh prune
+if ! git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-no-evidence; then
+	echo "FAIL: no-evidence branch should remain after prune skip" >&2
+	exit 1
+fi
+echo "PASS: no-evidence branch retained when merged PR evidence does not match branch tip"
 
 expect_exit 0 "audit completes without a local hard block" run_butler audit
 

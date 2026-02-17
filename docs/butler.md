@@ -54,10 +54,12 @@ Out of scope:
 2. Verify local hard guards with `bin/butler check`.
 3. Keep local `main` current using `bin/butler sync`.
 4. Remove stale local branches with `bin/butler prune`.
-5. Run `bin/butler audit` for local policy status, scope guard, and thin PR/check visibility.
-6. Use `bin/butler template check` and `bin/butler template apply` for shared `.github` marker blocks.
-7. Run `bin/butler review gate` before merge recommendation.
-8. Let scheduled workflow run `bin/butler review sweep` for late actionable review activity.
+5. Run `gh pr list --state open --limit 50` at session start and map current active PR priorities.
+6. Run `bin/butler audit` for local policy status, scope guard, and thin PR/check visibility.
+7. Use `bin/butler template check` and `bin/butler template apply` for shared `.github` marker blocks.
+8. Re-run `gh pr list --state open --limit 50` immediately before merge decision.
+9. Run `bin/butler review gate` before merge recommendation.
+10. Let scheduled workflow run `bin/butler review sweep` for late actionable review activity.
 
 Exit status contract:
 
@@ -90,16 +92,19 @@ Mechanism:
 
 - `sync` requires a clean working tree, fetches from remote, fast-forwards local `main`, and checks divergence.
 - `prune` fetches with prune, finds local branches whose upstream refs are gone, and attempts safe delete with `git branch -d`.
+- If safe delete fails only because the branch is not fully merged (typical after squash merge), Butler may force-delete with `git branch -D` only when GitHub confirms merged PR evidence for that exact branch tip (`head.sha`) into configured `main`.
+- Branches without upstream tracking remain excluded from prune targeting.
 
 Key code segments:
 
 - `Butler#sync!` and `Butler#main_sync_counts` in `bin/butler`.
-- `Butler#prune!` and `Butler#stale_local_branches` in `bin/butler`.
+- `Butler#prune!`, `Butler#stale_local_branches`, and `Butler#force_delete_evidence_for_stale_branch` in `bin/butler`.
 
 Boundary:
 
 - Butler performs local maintenance only.
-- It does not bypass protected branches and does not force-delete local branches.
+- It does not bypass protected branches.
+- Force-delete is guarded: only stale tracked branches, only merge-related safe-delete failures, and only with merged PR evidence for the exact local tip.
 
 ## Feature: Scope Integrity Guard
 
@@ -123,6 +128,7 @@ Insight:
 Mechanism:
 
 - `audit` calls `gh pr view` and `gh pr checks --required`.
+- Session discipline rule: run `gh pr list --state open --limit 50` at session start and immediately before merge decisions.
 - Reports are written to `tmp/butler/pr_report_latest.md` and `tmp/butler/pr_report_latest.json`.
 - If GitHub data is unavailable, Butler marks monitor results as skipped/attention without pretending checks are green.
 - `review gate` waits for configured warm-up, polls snapshots until convergence, then blocks on unresolved review threads or missing `Codex:` dispositions for actionable top-level comments/reviews.

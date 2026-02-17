@@ -5,6 +5,8 @@
 - [ ] `cross-boundary_changes_justified`: any cross-boundary change has explicit rationale.
 - [ ] `bin/butler audit` before commit.
 - [ ] `bin/butler audit` before push.
+- [ ] `gh pr list --state open --limit 50` checked at session start (capture competing active PRs).
+- [ ] `gh pr list --state open --limit 50` re-checked immediately before merge decision.
 - [ ] Required CI checks are passing.
 - [ ] At least 60 seconds passed since the last push to allow AI reviewers to post.
 - [ ] No unresolved required conversation threads at merge time.
