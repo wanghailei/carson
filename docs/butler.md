@@ -21,7 +21,7 @@ In scope:
 - local hook installation and health checks,
 - local `main` synchronisation and stale branch pruning,
 - scope-integrity checks based on branch lane plus changed path groups,
-- thin PR and required-check visibility through `gh`,
+- merge-readiness review gate and scheduled late-review sweep through `gh`,
 - shared marker-block template drift detection and application,
 - optional repository override loading from `.butler.yml`.
 
@@ -43,6 +43,7 @@ Out of scope:
 - `templates/project/bin/butler`: consumer-repository bootstrap wrapper, with optional `BUTLER_REF`.
 - `script/bootstrap_repo_defaults.sh`: day-0 bootstrap helper for new repositories.
 - `script/ci_smoke.sh`: smoke tests for command behaviour and exit-code contract.
+- `.github/workflows/review-sweep.yml`: scheduled review sweep every 8 hours.
 - `VERSION`: canonical Butler version source.
 - `RELEASE.md`: release history and noteworthy changes.
 - `docs/common_templates.md`: dedicated template-block behaviour reference.
@@ -55,6 +56,8 @@ Out of scope:
 4. Remove stale local branches with `bin/butler prune`.
 5. Run `bin/butler audit` for local policy status, scope guard, and thin PR/check visibility.
 6. Use `bin/butler template check` and `bin/butler template apply` for shared `.github` marker blocks.
+7. Run `bin/butler review gate` before merge recommendation.
+8. Let scheduled workflow run `bin/butler review sweep` for late actionable review activity.
 
 Exit status contract:
 
@@ -115,23 +118,30 @@ Insight:
 
 ==Scope integrity is intent- and boundary-based (lane plus path groups), not file-count or line-count based.==
 
-## Feature: PR and Required-Check Visibility
+## Feature: PR Visibility, Review Gate, and Scheduled Sweep
 
 Mechanism:
 
 - `audit` calls `gh pr view` and `gh pr checks --required`.
 - Reports are written to `tmp/butler/pr_report_latest.md` and `tmp/butler/pr_report_latest.json`.
 - If GitHub data is unavailable, Butler marks monitor results as skipped/attention without pretending checks are green.
+- `review gate` waits for configured warm-up, polls snapshots until convergence, then blocks on unresolved review threads or missing `Codex:` dispositions for actionable top-level comments/reviews.
+- Actionable findings are defined as unresolved threads, any non-author `CHANGES_REQUESTED` review, or non-author comments/reviews with configured risk keywords (`bug`, `security`, `incorrect`, `block`, `fail`, `regression`).
+- `review sweep` scans recent open/closed PRs (default 3 days), records late actionable findings, and upserts one rolling tracking issue.
+- Review reports are written to `tmp/butler/review_gate_latest.{md,json}` and `tmp/butler/review_sweep_latest.{md,json}`.
 
 Key code segments:
 
 - `Butler#pr_and_check_report`
 - `Butler#write_pr_monitor_report`
 - `Butler#render_pr_monitor_markdown`
+- `Butler#review_gate!`
+- `Butler#review_sweep!`
+- `Butler#upsert_review_sweep_tracking_issue`
 
 Boundary:
 
-- Butler offers visibility, not merge authority.
+- Butler offers deterministic local governance signals and artefacts.
 - Final merge readiness remains a GitHub and human judgement concern.
 
 ## Feature: Shared Template Synchronisation
@@ -161,6 +171,7 @@ Mechanism:
 - If absent, Butler runs on built-in defaults.
 - If present, overrides are deep-merged on top of defaults.
 - Configuration keys are validated, with clear configuration errors for missing/blank/invalid structures.
+- `review.*` keys control warm-up/poll cadence, sweep window/states, risk keywords, disposition prefix, and rolling issue title/label.
 
 Key code segments:
 
@@ -199,6 +210,8 @@ Key code segments:
 6. Exit status texts must stay stable and explicit.
 7. Runtime baseline is `rbenv` Ruby `>= 4.0`.
 8. Template command naming (`template check/apply`) is primary, with `common` aliases kept for compatibility.
+9. Review convergence is deterministic and URL-linked dispositions are mandatory for actionable top-level findings.
+10. Scheduled sweep catches late review activity after PR close/merge.
 
 ## Feature: FAQ
 
@@ -210,6 +223,15 @@ A: Aliases preserve backward compatibility while consumers migrate to primary `t
 
 Q: Why can `audit` show attention even when no hard block exists?  
 A: Attention indicates non-blocking follow-up (for example scope clarification, lagging `main`, or incomplete `gh` visibility), while hard block remains reserved for policy stops.
+
+Q: What counts as an actionable review finding for `review gate` and `review sweep`?  
+A: Unresolved review threads, any non-author `CHANGES_REQUESTED` review, plus non-author comments/reviews containing configured risk keywords.
+
+Q: What must a valid `Codex:` disposition include?  
+A: Prefix `Codex:`, one disposition token (`accepted`, `rejected`, `deferred`), and the target review URL.
+
+Q: Why does sweep use one rolling issue instead of one issue per finding?  
+A: It keeps follow-up noise low while preserving all current findings in a single tracked place.
 
 Q: Where should repository-specific behaviour be customised?  
 A: In optional `.butler.yml` overrides; default operation works without local configuration.
