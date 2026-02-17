@@ -1,0 +1,72 @@
+name: Butler governance reusable
+
+on:
+  workflow_call:
+    inputs:
+      butler_ref:
+        description: Butler repository ref to check out
+        required: false
+        type: string
+        default: main
+      butler_version:
+        description: Exact Butler gem version expected in VERSION
+        required: true
+        type: string
+
+jobs:
+  governance:
+    name: Butler governance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout host repository
+        uses: actions/checkout@v4
+        with:
+          path: host
+
+      - name: Checkout Butler runtime
+        uses: actions/checkout@v4
+        with:
+          repository: wanghailei/butler
+          ref: ${{ inputs.butler_ref }}
+          path: butler
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Validate expected version
+        run: |
+          actual="$(cat butler/VERSION)"
+          if [[ "$actual" != "${{ inputs.butler_version }}" ]]; then
+            echo "Expected Butler version ${{ inputs.butler_version }} but got ${actual}" >&2
+            exit 1
+          fi
+
+      - name: Install Butler gem from source checkout
+        run: |
+          cd butler
+          gem build butler.gemspec
+          gem install --local "butler-governance-${{ inputs.butler_version }}.gem"
+
+      - name: Align remote name for Butler
+        working-directory: host
+        run: |
+          if ! git remote get-url github >/dev/null 2>&1; then
+            git remote rename origin github
+          fi
+
+      - name: Butler audit
+        working-directory: host
+        run: butler audit
+
+      - name: Butler review gate
+        working-directory: host
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUTLER_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: butler review gate
