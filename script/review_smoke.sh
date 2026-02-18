@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 butler_bin="$repo_root/exe/butler"
 
 run_butler() {
-	BUTLER_REPORT_DIR="$tmp_root/reports" ruby "$butler_bin" "$@"
+	HOME="$tmp_root/home" ruby "$butler_bin" "$@"
 }
 
 exit_text() {
@@ -39,6 +39,7 @@ expect_exit() {
 
 tmp_base="${BUTLER_TMP_BASE:-/tmp}"
 tmp_root="$(mktemp -d "$tmp_base/butler-review-smoke.XXXXXX")"
+mkdir -p "$tmp_root/home"
 cleanup() {
 	rm -rf "$tmp_root"
 }

@@ -5,11 +5,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 butler_bin="$repo_root/exe/butler"
 
 run_butler() {
-	BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" BUTLER_REPORT_DIR="$tmp_root/reports" ruby "$butler_bin" "$@"
+	HOME="$tmp_root/home" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
 }
 
 run_butler_with_mock_gh() {
-	PATH="$mock_bin:$PATH" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" BUTLER_REPORT_DIR="$tmp_root/reports" ruby "$butler_bin" "$@"
+	PATH="$mock_bin:$PATH" run_butler "$@"
 }
 
 exit_text() {
@@ -43,6 +43,7 @@ expect_exit() {
 
 tmp_base="${BUTLER_TMP_BASE:-/tmp}"
 tmp_root="$(mktemp -d "$tmp_base/butler-ci.XXXXXX")"
+mkdir -p "$tmp_root/home"
 cleanup() {
 	rm -rf "$tmp_root"
 }

@@ -613,7 +613,7 @@ def latest_review_activity( details: )
 	timestamps.map { |text| parse_time_or_nil( text: text ) }.compact.max&.utc&.iso8601
 end
 
-# Writes review gate artefacts using fixed report names in reports.dir.
+# Writes review gate artefacts using fixed report names in global report output.
 def write_review_gate_report( report: )
 	markdown_path, json_path = write_report(
 	report: report,
@@ -976,7 +976,7 @@ def render_review_sweep_markdown( report: )
 	lines.join( "\n" )
 end
 
-# Shared report writer for JSON plus Markdown pairs in reports.dir.
+# Shared report writer for JSON plus Markdown pairs in global report output.
 def write_report( report:, markdown_name:, json_name:, renderer: )
 	report_dir = report_dir_path
 	FileUtils.mkdir_p( report_dir )
