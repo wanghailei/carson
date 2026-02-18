@@ -50,14 +50,9 @@ require_command ruby
 require_command gem
 
 # Keep installer temporary artefacts out of user project paths.
-cache_tmp_dir="$HOME/.cache/tmp"
+cache_tmp_dir="$HOME/.cache"
 mkdir -p "$cache_tmp_dir"
 export TMPDIR="$cache_tmp_dir"
-
-if [[ "$(command -v ruby)" != *"/.rbenv/shims/ruby" ]]; then
-	echo "Butler install error: Ruby must come from rbenv shims." >&2
-	exit 1
-fi
 
 if ! ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (major > 4 || ( major == 4 && minor >= 0 )) ? 0 : 1 )'; then
 	echo "Butler install error: Ruby >= 4.0 is required (current: $(ruby -e 'print RUBY_VERSION'))." >&2
