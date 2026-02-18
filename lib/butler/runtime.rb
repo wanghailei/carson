@@ -74,7 +74,12 @@ module Butler
 
 		# Fixed global report output directory for outsider runtime artefacts.
 		def report_dir_path
-			File.expand_path( "~/.cache/butler" )
+			home = ENV.fetch( "HOME", "" ).to_s
+			return "/tmp/butler" if home.empty? || !home.start_with?( "/" )
+
+			File.join( home, ".cache", "butler" )
+		rescue StandardError
+			"/tmp/butler"
 		end
 
 		# Soft capability check for GitHub CLI presence.

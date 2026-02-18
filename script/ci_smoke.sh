@@ -9,7 +9,7 @@ run_butler() {
 }
 
 run_butler_with_mock_gh() {
-	PATH="$mock_bin:$PATH" HOME="$tmp_root/home" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
+	PATH="$mock_bin:$PATH" run_butler "$@"
 }
 
 exit_text() {
