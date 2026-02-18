@@ -1,4 +1,4 @@
-name: Butler governance reusable
+name: Butler policy reusable
 
 on:
   workflow_call:
@@ -15,7 +15,7 @@ on:
 
 jobs:
   governance:
-    name: Butler governance
+    name: Butler policy
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -51,7 +51,7 @@ jobs:
         run: |
           cd butler
           gem build butler.gemspec
-          gem install --local "butler-governance-${{ inputs.butler_version }}.gem"
+          gem install --local "butler-to-merge-${{ inputs.butler_version }}.gem"
 
       - name: Align remote name for Butler
         working-directory: host

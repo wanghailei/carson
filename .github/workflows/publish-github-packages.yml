@@ -32,4 +32,4 @@ jobs:
           :github: Bearer ${GH_PACKAGES_TOKEN}
           EOF
           chmod 0600 ~/.gem/credentials
-          gem push --key github --host https://rubygems.pkg.github.com/wanghailei "butler-governance-$(cat VERSION).gem"
+          gem push --key github --host https://rubygems.pkg.github.com/wanghailei "butler-to-merge-$(cat VERSION).gem"
