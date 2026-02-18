@@ -159,6 +159,10 @@ fi
 echo "PASS: init aligned remote name to github"
 cd "$init_repo"
 expect_exit 0 "check passes after init" run_butler check
+legacy_hooks_dir="$tmp_root/legacy-hooks/$expected_butler_version"
+mkdir -p "$legacy_hooks_dir"
+cp "$tmp_root/global-hooks/$expected_butler_version/"* "$legacy_hooks_dir/"
+git config core.hooksPath "$legacy_hooks_dir"
 mkdir -p .github/workflows .tools/butler bin
 printf "review: {}\n" > .butler.yml
 printf "#!/usr/bin/env bash\n" > bin/butler

@@ -577,7 +577,24 @@ module Butler
 
 			def butler_managed_hooks_path?( configured_abs: )
 				hooks_root = File.join( File.expand_path( config.hooks_base_path ), "" )
-				configured_abs.start_with?( hooks_root )
+				return true if configured_abs.start_with?( hooks_root )
+
+				butler_hook_files_match_templates?( hooks_path: configured_abs )
+			end
+
+			def butler_hook_files_match_templates?( hooks_path: )
+				return false unless Dir.exist?( hooks_path )
+				config.required_hooks.all? do |hook_name|
+					installed_path = File.join( hooks_path, hook_name )
+					template_path = hook_template_path( hook_name: hook_name )
+					next false unless File.file?( installed_path ) && File.file?( template_path )
+
+					installed_content = normalize_text( text: File.read( installed_path ) )
+					template_content = normalize_text( text: File.read( template_path ) )
+					installed_content == template_content
+				end
+			rescue StandardError
+				false
 			end
 
 			def offboard_cleanup_targets
