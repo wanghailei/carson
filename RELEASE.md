@@ -32,9 +32,7 @@ Release-note scope rule:
 #### Upgrade steps
 
 ```bash
-gem install --user-install butler-governance -v 0.4.0
-mkdir -p ~/.local/bin
-ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+gem install butler-governance
 butler version
 ```
 
