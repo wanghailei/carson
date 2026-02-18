@@ -50,7 +50,9 @@ require_command ruby
 require_command gem
 
 # Keep installer temporary artefacts out of user project paths.
-export TMPDIR="/tmp"
+cache_tmp_dir="$HOME/.cache/tmp"
+mkdir -p "$cache_tmp_dir"
+export TMPDIR="$cache_tmp_dir"
 
 if [[ "$(command -v ruby)" != *"/.rbenv/shims/ruby" ]]; then
 	echo "Butler install error: Ruby must come from rbenv shims." >&2
