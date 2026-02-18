@@ -5,6 +5,14 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.3.2 (2026-02-18)
+
+### User Overview
+
+#### What changed
+
+- Version baseline bumped to `0.3.2` ahead of offboard command implementation.
+
 ## 0.3.1 (2026-02-18)
 
 ### User Overview
