@@ -5,6 +5,62 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.3.1 (2026-02-18)
+
+### User Overview
+
+#### What changed
+
+- Removed report output environment override `BUTLER_REPORT_DIR`.
+- Report output is standardised to `~/.cache/butler` when `HOME` is valid.
+- Added safe fallback to `/tmp/butler` when `HOME` is missing, empty, non-absolute, or otherwise invalid.
+- Reduced duplication in CI smoke helper wiring (`run_butler_with_mock_gh` now delegates to `run_butler`).
+
+#### Why users should care
+
+- Report path behaviour is now deterministic without extra per-run configuration.
+- Misconfigured CI/container `HOME` values no longer break report generation.
+
+#### What users must do now
+
+1. Stop setting `BUTLER_REPORT_DIR` in local scripts and CI jobs.
+2. Read reports from `~/.cache/butler` in normal environments.
+3. If running with unusual environment setup, ensure `HOME` is writable and absolute.
+
+#### Breaking or removed behaviour
+
+- `BUTLER_REPORT_DIR` is no longer recognised.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install butler-governance -v 0.3.1
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+#### Known limits and safe fallback
+
+- If `gh` metadata is unavailable, audit/review features degrade to skip/attention states.
+- If `HOME` is invalid for cache path resolution, Butler falls back to `/tmp/butler`.
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- Removed `BUTLER_REPORT_DIR` handling from runtime configuration.
+- `report_dir_path` now resolves to `~/.cache/butler` and falls back to `/tmp/butler` for invalid `HOME`.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy block.
+
+#### Migration notes
+
+- Replace any `BUTLER_REPORT_DIR=...` usage with `HOME=...` test isolation where needed.
+
+#### Verification evidence
+
+- Smoke coverage passes via `script/ci_smoke.sh` (including review smoke path).
+
 ## 0.3.0 (2026-02-17)
 
 ### User Overview

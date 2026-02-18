@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide explains how client project teams use Butler from `0.3.0` onwards.
+This guide explains how client project teams use Butler from `0.3.1` onwards.
 
 The focus is operational: what to run, when to run it, and what to expect.
 
@@ -41,7 +41,7 @@ Boundary rules:
 4. Enforce merge readiness with `review gate`.
 5. Run scheduled late-review monitoring with `review sweep`.
 
-## Feature: Quick start in one command (`0.3.0+`)
+## Feature: Quick start in one command (`0.3.1+`)
 
 For a repository at a local demo path:
 
@@ -56,7 +56,7 @@ This command performs baseline setup in sequence:
 - apply managed `.github/*` templates
 - run an initial audit report
 
-## Feature: First-time setup for a new repository (`0.3.0+`)
+## Feature: First-time setup for a new repository (`0.3.1+`)
 
 Example repository path:
 
@@ -67,7 +67,7 @@ Example repository path:
 Install from the published gem package:
 
 ```bash
-gem install --user-install butler-governance -v 0.3.0
+gem install --user-install butler-governance -v 0.3.1
 mkdir -p ~/.local/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
 butler version
@@ -80,7 +80,7 @@ Prerequisites:
 
 Expected result:
 
-- `butler version` prints `0.3.0`.
+- `butler version` prints `0.3.1`.
 
 ### 2) Prepare the repository
 
@@ -122,7 +122,7 @@ jobs:
   governance:
     uses: wanghailei/butler/.github/workflows/governance-reusable.yml@main
     with:
-      butler_version: "0.3.0"
+      butler_version: "0.3.1"
 ```
 
 Then ensure this workflow is required in branch protection.
