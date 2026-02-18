@@ -45,7 +45,6 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-require_command rbenv
 require_command ruby
 require_command gem
 
