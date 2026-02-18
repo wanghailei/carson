@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide explains how client project teams use Butler from `0.3.2` onwards.
+This guide explains how client project teams use Butler from `0.4.0` onwards.
 
 The focus is operational: what to run, when to run it, and what to expect.
 
@@ -40,8 +40,9 @@ Boundary rules:
 3. Use Butler continuously during local development (`audit`, `sync`, `prune`).
 4. Enforce merge readiness with `review gate`.
 5. Run scheduled late-review monitoring with `review sweep`.
+6. Retire Butler from a repository when needed with `offboard`.
 
-## Feature: Quick start in one command (`0.3.2+`)
+## Feature: Quick start in one command (`0.4.0+`)
 
 For a repository at a local demo path:
 
@@ -56,7 +57,7 @@ This command performs baseline setup in sequence:
 - apply managed `.github/*` templates
 - run an initial audit report
 
-## Feature: First-time setup for a new repository (`0.3.2+`)
+## Feature: First-time setup for a new repository (`0.4.0+`)
 
 Example repository path:
 
@@ -67,20 +68,18 @@ Example repository path:
 Install from the published gem package:
 
 ```bash
-gem install --user-install butler-governance -v 0.3.2
-mkdir -p ~/.local/bin
-ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+gem install butler-governance
 butler version
 ```
 
 Prerequisites:
 
 - Ruby `>= 4.0`
-- `~/.local/bin` available in `PATH`
+- Butler executable available in `PATH`
 
 Expected result:
 
-- `butler version` prints `0.3.2`.
+- `butler version` prints `0.4.0`.
 
 ### 2) Prepare the repository
 
@@ -122,7 +121,7 @@ jobs:
   governance:
     uses: wanghailei/butler/.github/workflows/governance-reusable.yml@main
     with:
-      butler_version: "0.3.2"
+      butler_version: "0.4.0"
 ```
 
 Then ensure this workflow is required in branch protection.
@@ -148,6 +147,24 @@ Do not use `init` as a daily command. For day-to-day work, use:
 - `butler audit`
 - `butler sync`
 - `butler prune`
+
+## Feature: When to use `offboard`
+
+Use `butler offboard /local/path/of/repo` when:
+
+- removing Butler from a repository
+- cleaning legacy Butler artefacts from earlier versions
+- resetting a repository before re-onboarding with a newer Butler release
+
+What `offboard` removes:
+
+- Butler-managed `.github/*` template files
+- Butler governance workflow files (`.github/workflows/butler-governance.yml`, `.github/workflows/butler_policy.yml`)
+- legacy Butler artefacts (`.butler.yml`, `bin/butler`, `.tools/butler`)
+
+What `offboard` changes:
+
+- unsets repo `core.hooksPath` when it points to Butler-managed global hooks
 
 ## Feature: Daily usage pattern
 

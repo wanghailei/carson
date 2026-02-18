@@ -6,6 +6,7 @@ module Butler
 			parsed = parse_args( argv: argv, out: out, err: err )
 			command = parsed.fetch( :command )
 			return Runtime::EXIT_OK if command == :help
+
 			if command == "version"
 				out.puts Butler::VERSION
 				return Runtime::EXIT_OK
@@ -29,7 +30,7 @@ module Butler
 
 		def self.parse_args( argv:, out:, err: )
 			parser = OptionParser.new do |opts|
-				opts.banner = "Usage: butler [audit|sync|prune|hook|check|init [repo_path]|template check|template apply|review gate|review sweep|version]"
+				opts.banner = "Usage: butler [audit|sync|prune|hook|check|init [repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|version]"
 			end
 
 			first = argv.first
@@ -55,6 +56,18 @@ module Butler
 				repo_path = argv.first
 				{
 					command: "init",
+					repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+				}
+			when "offboard"
+				parser.parse!( argv )
+				if argv.length > 1
+					err.puts "Too many arguments for offboard. Use: butler offboard [repo_path]"
+					err.puts parser
+					return { command: :invalid }
+				end
+				repo_path = argv.first
+				{
+					command: "offboard",
 					repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
 				}
 			when "template"
@@ -101,6 +114,8 @@ module Butler
 				runtime.check!
 			when "init"
 				runtime.init!
+			when "offboard"
+				runtime.offboard!
 			when "template:check"
 				runtime.template_check!
 			when "template:apply"

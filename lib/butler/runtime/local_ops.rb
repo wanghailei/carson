@@ -4,6 +4,7 @@ module Butler
 			def sync!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
+
 				unless working_tree_clean?
 					puts_line "BLOCK: working tree is dirty; commit/stash first, then run butler sync."
 					return EXIT_BLOCK
@@ -35,6 +36,7 @@ module Butler
 			def prune!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
+
 				git_system!( "fetch", config.git_remote, "--prune" )
 				active_branch = current_branch
 				stale_branches = stale_local_branches
@@ -96,6 +98,7 @@ module Butler
 			def hook!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
+
 				FileUtils.mkdir_p( hooks_dir )
 				missing_templates = config.required_hooks.reject { |name| File.file?( hook_template_path( hook_name: name ) ) }
 				unless missing_templates.empty?
@@ -121,44 +124,78 @@ module Butler
 				check!
 			end
 
-			# One-command initialisation for new repositories: align remote naming, install hooks,
-			# apply templates, and produce a first audit report.
-			def init!
-				fingerprint_status = block_if_outsider_fingerprints!
-				return fingerprint_status unless fingerprint_status.nil?
-				print_header "Init"
-				unless inside_git_work_tree?
-					puts_line "ERROR: #{repo_root} is not a git repository."
-					return EXIT_ERROR
-				end
-				align_remote_name_for_butler!
-				hook_status = hook!
-				return hook_status unless hook_status == EXIT_OK
-				template_status = template_apply!
-				return template_status unless template_status == EXIT_OK
-				audit_status = audit!
-				if audit_status == EXIT_OK
-					puts_line "OK: Butler initialisation completed for #{repo_root}."
-				elsif audit_status == EXIT_BLOCK
-					puts_line "BLOCK: Butler initialisation completed with policy blocks; resolve and rerun butler audit."
-				end
-				audit_status
-			end
+				# One-command initialisation for new repositories: align remote naming, install hooks,
+				# apply templates, and produce a first audit report.
+				def init!
+					fingerprint_status = block_if_outsider_fingerprints!
+					return fingerprint_status unless fingerprint_status.nil?
 
-			# Strict hook health check used by humans, hooks, and CI paths.
-			def check!
-				fingerprint_status = block_if_outsider_fingerprints!
-				return fingerprint_status unless fingerprint_status.nil?
-				print_header "Hooks Check"
-				ok = hooks_health_report( strict: true )
-				puts_line( ok ? "status: ok" : "status: block" )
-				ok ? EXIT_OK : EXIT_BLOCK
-			end
+					print_header "Init"
+					unless inside_git_work_tree?
+						puts_line "ERROR: #{repo_root} is not a git repository."
+						return EXIT_ERROR
+					end
+					align_remote_name_for_butler!
+					hook_status = hook!
+					return hook_status unless hook_status == EXIT_OK
+
+					template_status = template_apply!
+					return template_status unless template_status == EXIT_OK
+
+					audit_status = audit!
+					if audit_status == EXIT_OK
+						puts_line "OK: Butler initialisation completed for #{repo_root}."
+					elsif audit_status == EXIT_BLOCK
+						puts_line "BLOCK: Butler initialisation completed with policy blocks; resolve and rerun butler audit."
+					end
+					audit_status
+				end
+
+				# Removes Butler-managed repository integration so a host repository can retire Butler cleanly.
+				def offboard!
+					print_header "Offboard"
+					unless inside_git_work_tree?
+						puts_line "ERROR: #{repo_root} is not a git repository."
+						return EXIT_ERROR
+					end
+					hooks_status = disable_butler_hooks_path!
+					return hooks_status unless hooks_status == EXIT_OK
+
+					removed_count = 0
+					missing_count = 0
+					offboard_cleanup_targets.each do |relative|
+						absolute = resolve_repo_path!( relative_path: relative, label: "offboard target #{relative}" )
+						if File.exist?( absolute )
+							FileUtils.rm_rf( absolute )
+							puts_line "removed_path: #{relative}"
+							removed_count += 1
+						else
+							puts_line "skip_missing_path: #{relative}"
+							missing_count += 1
+						end
+					end
+					remove_empty_offboard_directories!
+					puts_line "offboard_summary: removed=#{removed_count} missing=#{missing_count}"
+					puts_line "OK: Butler offboard completed for #{repo_root}."
+					EXIT_OK
+				end
+
+				# Strict hook health check used by humans, hooks, and CI paths.
+				def check!
+					fingerprint_status = block_if_outsider_fingerprints!
+					return fingerprint_status unless fingerprint_status.nil?
+
+					print_header "Hooks Check"
+					ok = hooks_health_report( strict: true )
+					puts_line( ok ? "status: ok" : "status: block" )
+					ok ? EXIT_OK : EXIT_BLOCK
+				end
 
 			# Read-only template drift check; returns block when managed files are out of sync.
 			def template_check!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
+
 				print_header "Template Sync Check"
 				results = template_results
 				drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
@@ -168,6 +205,7 @@ module Butler
 				end
 				puts_line "template_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
 				return EXIT_ERROR if error_count.positive?
+
 				drift_count.positive? ? EXIT_BLOCK : EXIT_OK
 			end
 
@@ -175,6 +213,7 @@ module Butler
 			def template_apply!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
+
 				print_header "Template Sync Apply"
 				results = template_results
 				applied = 0
@@ -202,6 +241,7 @@ module Butler
 			end
 
 			private
+
 			def template_results
 				config.template_managed_files.map { |managed_file| template_result_for_file( managed_file: managed_file ) }
 			end
@@ -209,9 +249,7 @@ module Butler
 			# Calculates whole-file expected content and returns sync status plus apply payload.
 			def template_result_for_file( managed_file: )
 				template_path = File.join( github_templates_dir, File.basename( managed_file ) )
-				unless File.file?( template_path )
-					return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil }
-				end
+				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil } unless File.file?( template_path )
 
 				expected_content = normalize_text( text: File.read( template_path ) )
 				file_path = resolve_repo_path!( relative_path: managed_file, label: "template.managed_files entry #{managed_file}" )
@@ -225,7 +263,7 @@ module Butler
 
 			# Uses LF-only normalisation so platform newlines do not cause false drift.
 			def normalize_text( text: )
-				text.to_s.gsub( "\r\n", "\n" ).rstrip + "\n"
+				"#{text.to_s.gsub( "\r\n", "\n" ).rstrip}\n"
 			end
 
 			# GitHub managed template source directory inside Butler repository.
@@ -275,6 +313,7 @@ module Butler
 				end
 				counts = stdout_text.to_s.strip.split( /\s+/ )
 				return [ 0, 0, "unexpected rev-list output: #{stdout_text.to_s.strip}" ] if counts.length < 2
+
 				[ counts[ 0 ].to_i, counts[ 1 ].to_i, nil ]
 			end
 
@@ -292,7 +331,7 @@ module Butler
 
 			# Missing required hook files.
 			def missing_hook_files
-				required_hook_paths.select { |path| !File.file?( path ) }.map { |path| relative_path( path ) }
+				required_hook_paths.reject { |path| File.file?( path ) }.map { |path| relative_path( path ) }
 			end
 
 			# Required hook files that exist but are not executable.
@@ -313,8 +352,10 @@ module Butler
 			# In outsider mode, Butler must not leave Butler-owned fingerprints in host repositories.
 			def block_if_outsider_fingerprints!
 				return nil unless outsider_mode?
+
 				violations = outsider_fingerprint_violations
 				return nil if violations.empty?
+
 				violations.each { |entry| puts_line "BLOCK: #{entry}" }
 				EXIT_BLOCK
 			end
@@ -342,6 +383,7 @@ module Butler
 					next if absolute.include?( "/.git/" )
 					next unless File.file?( absolute )
 					next unless File.read( absolute ).include?( legacy_marker_token )
+
 					relative = absolute.sub( "#{repo_root}/", "" )
 					files << "forbidden legacy marker detected in #{relative}"
 				end
@@ -359,6 +401,7 @@ module Butler
 					track = track.to_s
 					next if branch.to_s.empty? || upstream.empty?
 					next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
+
 					{ branch: branch, upstream: upstream, track: track }
 				end
 			end
@@ -376,6 +419,7 @@ module Butler
 				return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
 				return [ nil, "branch does not match managed pattern #{config.branch_pattern}" ] if config.branch_regex.match( branch.to_s ).nil?
 				return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
+
 				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
 				unless tip_sha_success
 					error_text = tip_sha_error.to_s.strip
@@ -384,6 +428,7 @@ module Butler
 				end
 				branch_tip_sha = tip_sha_text.to_s.strip
 				return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
+
 				merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
 			end
 
@@ -410,12 +455,15 @@ module Butler
 					end
 					page_nodes = Array( JSON.parse( stdout_text ) )
 					break if page_nodes.empty?
+
 					page_nodes.each do |entry|
 						next unless entry.dig( "head", "ref" ).to_s == branch.to_s
 						next unless entry.dig( "base", "ref" ).to_s == config.main_branch
 						next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
+
 						merged_at = parse_time_or_nil( text: entry[ "merged_at" ] )
 						next if merged_at.nil?
+
 						results << {
 						number: entry[ "number" ],
 						url: entry[ "html_url" ].to_s,
@@ -427,6 +475,7 @@ module Butler
 				end
 				latest = results.max_by { |item| item.fetch( :merged_at ) }
 				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
+
 				[ latest, nil ]
 			rescue JSON::ParserError => e
 				[ nil, "invalid gh JSON response (#{e.message})" ]
@@ -435,29 +484,75 @@ module Butler
 			end
 
 			# Thin `gh` monitor for PR and required checks; local audit continues on API gaps.
-			def working_tree_clean?
-				git_capture!( "status", "--porcelain" ).strip.empty?
-			end
-
-			def inside_git_work_tree?
-				stdout_text, = git_capture_soft( "rev-parse", "--is-inside-work-tree" )
-				stdout_text.to_s.strip == "true"
-			end
-
-			# Ensures Butler expected remote naming (`github`) while keeping existing
-			# repositories safe when neither `github` nor `origin` exists.
-			def align_remote_name_for_butler!
-				if git_remote_exists?( remote_name: config.git_remote )
-					puts_line "remote_ok: #{config.git_remote}"
-					return
+				def working_tree_clean?
+					git_capture!( "status", "--porcelain" ).strip.empty?
 				end
-				if git_remote_exists?( remote_name: "origin" )
-					git_system!( "remote", "rename", "origin", config.git_remote )
-					puts_line "remote_renamed: origin -> #{config.git_remote}"
-					return
+
+				def inside_git_work_tree?
+					stdout_text, = git_capture_soft( "rev-parse", "--is-inside-work-tree" )
+					stdout_text.to_s.strip == "true"
 				end
-				puts_line "WARN: no #{config.git_remote} or origin remote configured; continue with local baseline only."
-			end
+
+				def disable_butler_hooks_path!
+					configured = configured_hooks_path
+					if configured.nil?
+						puts_line "hooks_path: (unset)"
+						return EXIT_OK
+					end
+					puts_line "hooks_path: #{configured}"
+					configured_abs = File.expand_path( configured, repo_root )
+					unless butler_managed_hooks_path?( configured_abs: configured_abs )
+						puts_line "hooks_path_kept: #{configured} (not Butler-managed)"
+						return EXIT_OK
+					end
+					git_system!( "config", "--unset", "core.hooksPath" )
+					puts_line "hooks_path_unset: core.hooksPath"
+					EXIT_OK
+				rescue StandardError => e
+					puts_line "ERROR: unable to update core.hooksPath (#{e.message})"
+					EXIT_ERROR
+				end
+
+				def butler_managed_hooks_path?( configured_abs: )
+					hooks_root = File.join( File.expand_path( config.hooks_base_path ), "" )
+					configured_abs.start_with?( hooks_root )
+				end
+
+				def offboard_cleanup_targets
+					( config.template_managed_files + [
+						".github/workflows/butler-governance.yml",
+						".github/workflows/butler_policy.yml",
+						".butler.yml",
+						"bin/butler",
+						".tools/butler"
+					] ).uniq
+				end
+
+				def remove_empty_offboard_directories!
+					[ ".github/workflows", ".github", ".tools", "bin" ].each do |relative|
+						absolute = resolve_repo_path!( relative_path: relative, label: "offboard cleanup directory #{relative}" )
+						next unless Dir.exist?( absolute )
+						next unless Dir.empty?( absolute )
+
+						Dir.rmdir( absolute )
+						puts_line "removed_empty_dir: #{relative}"
+					end
+				end
+
+				# Ensures Butler expected remote naming (`github`) while keeping existing
+				# repositories safe when neither `github` nor `origin` exists.
+				def align_remote_name_for_butler!
+					if git_remote_exists?( remote_name: config.git_remote )
+						puts_line "remote_ok: #{config.git_remote}"
+						return
+					end
+					if git_remote_exists?( remote_name: "origin" )
+						git_system!( "remote", "rename", "origin", config.git_remote )
+						puts_line "remote_renamed: origin -> #{config.git_remote}"
+						return
+					end
+					puts_line "WARN: no #{config.git_remote} or origin remote configured; continue with local baseline only."
+				end
 
 			# Uses `git remote get-url` as existence check to avoid parsing remote lists.
 			def git_remote_exists?( remote_name: )

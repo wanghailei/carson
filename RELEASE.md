@@ -5,6 +5,50 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.4.0 (2026-02-18)
+
+### User Overview
+
+#### What changed
+
+- Added repository retirement command: `butler offboard [repo_path]`.
+- `offboard` now removes Butler-managed host artefacts and legacy Butler files from client repositories.
+- `offboard` unsets repo `core.hooksPath` only when it points to Butler-managed global hook paths.
+
+#### Why users should care
+
+- Retiring Butler from a repository is now one command.
+- Re-onboarding with a newer Butler release is cleaner after explicit offboarding.
+
+#### What users must do now
+
+1. Use `butler offboard /local/path/of/repo` when removing Butler from a repository.
+2. Re-run `butler init /local/path/of/repo` when re-onboarding later.
+
+#### Breaking or removed behaviour
+
+- None.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install butler-governance -v 0.4.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- Added command `offboard [repo_path]` to CLI surface.
+- Added runtime methods `offboard!`, `disable_butler_hooks_path!`, `offboard_cleanup_targets`, and `remove_empty_offboard_directories!`.
+
+#### Verification evidence
+
+- CI smoke coverage includes `offboard` cleanup and idempotency checks.
+
 ## 0.3.2 (2026-02-18)
 
 ### User Overview

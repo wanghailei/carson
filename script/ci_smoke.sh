@@ -159,6 +159,30 @@ fi
 echo "PASS: init aligned remote name to github"
 cd "$init_repo"
 expect_exit 0 "check passes after init" run_butler check
+mkdir -p .github/workflows .tools/butler bin
+printf "review: {}\n" > .butler.yml
+printf "#!/usr/bin/env bash\n" > bin/butler
+chmod +x bin/butler
+printf "name: Butler governance\n" > .github/workflows/butler-governance.yml
+expect_exit 0 "offboard removes Butler integration and legacy artefacts" run_butler offboard
+if git config --get core.hooksPath >/dev/null 2>&1; then
+	echo "FAIL: offboard did not unset Butler-managed core.hooksPath" >&2
+	exit 1
+fi
+for removed_path in \
+	".github/copilot-instructions.md" \
+	".github/pull_request_template.md" \
+	".github/workflows/butler-governance.yml" \
+	".butler.yml" \
+	"bin/butler" \
+	".tools/butler"; do
+	if [[ -e "$removed_path" ]]; then
+		echo "FAIL: offboard did not remove $removed_path" >&2
+		exit 1
+	fi
+done
+echo "PASS: offboard cleaned Butler-managed repo artefacts"
+expect_exit 0 "offboard is idempotent on an already cleaned repo" run_butler offboard
 expect_exit 1 "legacy run command is rejected" run_butler run "$init_repo"
 
 cd "$work_repo"
