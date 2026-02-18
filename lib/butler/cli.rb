@@ -6,6 +6,7 @@ module Butler
 			parsed = parse_args( argv: argv, out: out, err: err )
 			command = parsed.fetch( :command )
 			return Runtime::EXIT_OK if command == :help
+
 			if command == "version"
 				out.puts Butler::VERSION
 				return Runtime::EXIT_OK
@@ -28,10 +29,25 @@ module Butler
 		end
 
 		def self.parse_args( argv:, out:, err: )
-			parser = OptionParser.new do |opts|
-				opts.banner = "Usage: butler [audit|sync|prune|hook|check|init [repo_path]|template check|template apply|review gate|review sweep|version]"
-			end
+			parser = build_parser
+			preset = parse_preset_command( argv: argv, out: out, parser: parser )
+			return preset unless preset.nil?
 
+			command = argv.shift
+			parse_command( command: command, argv: argv, parser: parser, err: err )
+		rescue OptionParser::ParseError => e
+			err.puts e.message
+			err.puts parser
+			{ command: :invalid }
+		end
+
+		def self.build_parser
+			OptionParser.new do |opts|
+				opts.banner = "Usage: butler [audit|sync|prune|hook|check|init [repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|version]"
+			end
+		end
+
+		def self.parse_preset_command( argv:, out:, parser: )
 			first = argv.first
 			if [ "--help", "-h" ].include?( first )
 				out.puts parser
@@ -40,49 +56,49 @@ module Butler
 			return { command: "version" } if [ "--version", "-v" ].include?( first )
 			return { command: "audit" } if argv.empty?
 
-			command = argv.shift
+			nil
+		end
+
+		def self.parse_command( command:, argv:, parser:, err: )
 			case command
 			when "version"
 				parser.parse!( argv )
 				{ command: "version" }
-			when "init"
-				parser.parse!( argv )
-				if argv.length > 1
-					err.puts "Too many arguments for init. Use: butler init [repo_path]"
-					err.puts parser
-					return { command: :invalid }
-				end
-				repo_path = argv.first
-				{
-					command: "init",
-					repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
-				}
+			when "init", "offboard"
+				parse_repo_path_command( command: command, argv: argv, parser: parser, err: err )
 			when "template"
-				action = argv.shift
-				parser.parse!( argv )
-				if action.to_s.strip.empty?
-					err.puts "Missing subcommand for template. Use: butler template check|apply"
-					err.puts parser
-					return { command: :invalid }
-				end
-				{ command: "template:#{action}" }
+				parse_named_subcommand( command: command, usage: "check|apply", argv: argv, parser: parser, err: err )
 			when "review"
-				action = argv.shift
-				parser.parse!( argv )
-				if action.to_s.strip.empty?
-					err.puts "Missing subcommand for review. Use: butler review gate|sweep"
-					err.puts parser
-					return { command: :invalid }
-				end
-				{ command: "review:#{action}" }
+				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
 			else
 				parser.parse!( argv )
 				{ command: command }
 			end
-		rescue OptionParser::ParseError => e
-			err.puts e.message
-			err.puts parser
-			{ command: :invalid }
+		end
+
+		def self.parse_repo_path_command( command:, argv:, parser:, err: )
+			parser.parse!( argv )
+			if argv.length > 1
+				err.puts "Too many arguments for #{command}. Use: butler #{command} [repo_path]"
+				err.puts parser
+				return { command: :invalid }
+			end
+			repo_path = argv.first
+			{
+				command: command,
+				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+			}
+		end
+
+		def self.parse_named_subcommand( command:, usage:, argv:, parser:, err: )
+			action = argv.shift
+			parser.parse!( argv )
+			if action.to_s.strip.empty?
+				err.puts "Missing subcommand for #{command}. Use: butler #{command} #{usage}"
+				err.puts parser
+				return { command: :invalid }
+			end
+			{ command: "#{command}:#{action}" }
 		end
 
 		def self.dispatch( command:, runtime: )
@@ -101,6 +117,8 @@ module Butler
 				runtime.check!
 			when "init"
 				runtime.init!
+			when "offboard"
+				runtime.offboard!
 			when "template:check"
 				runtime.template_check!
 			when "template:apply"

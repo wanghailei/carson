@@ -25,6 +25,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - `butler hook`
 - `butler check`
 - `butler init [repo_path]`
+- `butler offboard [repo_path]`
 - `butler template check`
 - `butler template apply`
 - `butler review gate`
@@ -64,6 +65,12 @@ Allowed persistence in host repositories:
 - Template sources are carried by Butler in `templates/.github/*`
 - `butler template check` performs whole-file drift checks
 - `butler template apply` writes full managed file content
+
+## Offboard Model
+
+- `butler offboard [repo_path]` retires Butler from a repository
+- It unsets `core.hooksPath` when it points to Butler-managed global hooks
+- It removes Butler-managed host artefacts and known legacy Butler files
 
 ## CI
 
