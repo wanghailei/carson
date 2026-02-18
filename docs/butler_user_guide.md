@@ -65,21 +65,38 @@ Example repository path:
 
 ### 1) Install Butler globally once
 
-Install from the published gem package:
+Start with the simplest command:
 
 ```bash
-gem install butler-governance
+gem install butler-to-merge
 butler version
 ```
 
-Prerequisites:
+Expected result:
+
+- `butler version` prints the installed Butler version (for example `0.4.0`).
+- `butler` is the primary command, and `butler-to-merge` is an equivalent alias.
+
+Prerequisite:
+
+- Ruby `>= 4.0`
+
+Advanced install options (only if needed):
+
+```bash
+gem install --user-install butler-to-merge -v 0.4.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+Use these options when:
 
 - Ruby `>= 4.0`
 - Butler executable available in `PATH`
-
-Expected result:
-
-- `butler version` prints `0.4.0`.
+- `--user-install`: you want user-local gem install without system-wide writes
+- `-v 0.4.0`: you want to pin an exact Butler version
+- `~/.local/bin` link: your shell cannot find `butler` after a user-local install
 
 ### 2) Prepare the repository
 
@@ -109,7 +126,7 @@ Commit and push the generated `.github/*` files as normal repository content.
 
 ### 5) Add Butler governance workflow in repository CI
 
-Create `.github/workflows/butler-governance.yml` in the repository:
+Create `.github/workflows/butler_policy.yml` in the repository:
 
 ```yaml
 name: Butler governance
@@ -119,7 +136,7 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/butler/.github/workflows/governance-reusable.yml@main
+    uses: wanghailei/butler/.github/workflows/butler_policy.yml@main
     with:
       butler_version: "0.4.0"
 ```
@@ -131,7 +148,7 @@ Then ensure this workflow is required in branch protection.
 Use the helper script directly (no local Butler checkout required):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/script/bootstrap_repo_defaults.sh | bash -s -- <owner>/<repo> --checks "Syntax and smoke tests,Butler governance"
+curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/script/bootstrap_repo_defaults.sh | bash -s -- <owner>/<repo> --checks "Syntax and smoke tests,Butler policy"
 ```
 
 ## Feature: When to use `init`
@@ -212,5 +229,5 @@ Recommended sweep schedule:
 - `README.md`
 - `RELEASE.md`
 - `docs/butler_technical_guide.md`
-- `.github/workflows/governance-reusable.yml`
+- `.github/workflows/butler_policy.yml`
 - `script/bootstrap_repo_defaults.sh`

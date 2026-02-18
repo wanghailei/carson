@@ -3,7 +3,7 @@
 require_relative "lib/butler/version"
 
 Gem::Specification.new do |spec|
-	spec.name = "butler-governance"
+	spec.name = "butler-to-merge"
 	spec.version = Butler::VERSION
 	spec.authors = [ "Hailei Wang" ]
 	spec.email = [ "noreply@example.com" ]
@@ -18,7 +18,7 @@ Gem::Specification.new do |spec|
 	}
 
 	spec.bindir = "exe"
-	spec.executables = [ "butler" ]
+	spec.executables = [ "butler", "butler-to-merge" ]
 	spec.require_paths = [ "lib" ]
 	spec.files = Dir.glob( "{lib,exe,templates,assets,script,docs,.github}/**/*", File::FNM_DOTMATCH ).select { |path| File.file?( path ) } + [ "README.md", "RELEASE.md", "VERSION", "butler.gemspec" ]
 end

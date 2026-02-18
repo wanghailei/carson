@@ -61,6 +61,9 @@ butler version
 
 #### What changed
 
+- Renamed Butler gem package from `butler-governance` to `butler-to-merge` (CLI command remains `butler`).
+- Added CLI alias command `butler-to-merge` (primary command remains `butler`).
+- Renamed reusable workflow to `.github/workflows/butler_policy.yml`.
 - Removed report output environment override `BUTLER_REPORT_DIR`.
 - Report output is standardised to `~/.cache/butler` when `HOME` is valid.
 - Added safe fallback to `/tmp/butler` when `HOME` is missing, empty, non-absolute, or otherwise invalid.
@@ -73,9 +76,11 @@ butler version
 
 #### What users must do now
 
-1. Stop setting `BUTLER_REPORT_DIR` in local scripts and CI jobs.
-2. Read reports from `~/.cache/butler` in normal environments.
-3. If running with unusual environment setup, ensure `HOME` is writable and absolute.
+1. Install using gem package name `butler-to-merge` (not `butler-governance`).
+2. Use reusable workflow path `.github/workflows/butler_policy.yml` in client repository CI.
+3. Stop setting `BUTLER_REPORT_DIR` in local scripts and CI jobs.
+4. Read reports from `~/.cache/butler` in normal environments.
+5. If running with unusual environment setup, ensure `HOME` is writable and absolute.
 
 #### Breaking or removed behaviour
 
@@ -84,7 +89,7 @@ butler version
 #### Upgrade steps
 
 ```bash
-gem install --user-install butler-governance -v 0.3.1
+gem install --user-install butler-to-merge -v 0.3.1
 mkdir -p ~/.local/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
 butler version
@@ -198,7 +203,7 @@ butler audit
 
 - Ruby gem scaffolding (`butler.gemspec`, `lib/`, `exe/butler`) for outsider runtime delivery.
 - Modular command and adapter structure under `lib/butler/commands/*` and `lib/butler/adapters/*`.
-- Reusable governance workflow (`.github/workflows/governance-reusable.yml`) with exact version input.
+- Reusable policy workflow (current path: `.github/workflows/butler_policy.yml`) with exact version input.
 - Outsider boundary enforcement that blocks Butler-owned artefacts in host repositories.
 
 ### Changed

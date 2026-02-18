@@ -8,7 +8,8 @@ It runs against a repository without placing Butler-owned artefacts into that re
 
 - Ruby managed by `rbenv`
 - Supported Ruby versions: `>= 4.0`
-- Gem executable: `butler`
+- Primary CLI executable: `butler`
+- CLI alias: `butler-to-merge`
 - Default report output directory: `~/.cache/butler`
 
 ## Version
@@ -76,7 +77,7 @@ Allowed persistence in host repositories:
 
 - Butler repository CI workflow: `.github/workflows/ci.yml`
 - Review sweep workflow: `.github/workflows/review-sweep.yml`
-- Reusable host-repository governance workflow: `.github/workflows/governance-reusable.yml`
+- Reusable host-repository policy workflow: `.github/workflows/butler_policy.yml`
 
 ## Bootstrap Defaults
 
