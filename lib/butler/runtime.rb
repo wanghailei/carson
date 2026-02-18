@@ -72,14 +72,9 @@ module Butler
 			path
 		end
 
-		# Resolves report output directory from config. Absolute and home-relative paths are
-		# treated as global runtime output locations; relative values stay repo-scoped.
+		# Fixed global report output directory for outsider runtime artefacts.
 		def report_dir_path
-			configured = config.report_dir.to_s.strip
-			return resolve_repo_path!( relative_path: "tmp/butler", label: "reports.dir" ) if configured.empty?
-			return File.expand_path( configured ) if configured.start_with?( "/", "~" )
-
-			resolve_repo_path!( relative_path: configured, label: "reports.dir" )
+			File.expand_path( "~/.cache/butler" )
 		end
 
 		# Soft capability check for GitHub CLI presence.

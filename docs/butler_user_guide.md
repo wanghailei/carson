@@ -99,7 +99,7 @@ Expected result:
 
 - global hooks installed under `~/.butler/hooks/<version>/`
 - repository `core.hooksPath` set to Butler hooks path
-- Butler reports written under `/tmp/butler` by default
+- Butler reports written under `~/.cache/butler` by default
 - managed files written:
   - `.github/copilot-instructions.md`
   - `.github/pull_request_template.md`
