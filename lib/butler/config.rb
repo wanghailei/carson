@@ -47,7 +47,7 @@ module Butler
 					}
 				},
 				"reports" => {
-					"dir" => "tmp/butler"
+					"dir" => "/tmp/butler"
 				},
 				"template" => {
 					"managed_files" => [ ".github/copilot-instructions.md", ".github/pull_request_template.md" ]
@@ -75,6 +75,9 @@ module Butler
 			hooks = copy.fetch( "hooks" )
 			hooks_path = ENV.fetch( "BUTLER_HOOKS_BASE_PATH", "" ).to_s.strip
 			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
+			reports = copy.fetch( "reports" )
+			report_dir = ENV.fetch( "BUTLER_REPORT_DIR", "" ).to_s.strip
+			reports[ "dir" ] = report_dir unless report_dir.empty?
 			review = copy.fetch( "review" )
 			review[ "wait_seconds" ] = env_integer( key: "BUTLER_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
 			review[ "poll_seconds" ] = env_integer( key: "BUTLER_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )

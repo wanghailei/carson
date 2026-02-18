@@ -49,13 +49,30 @@ jobs:
       - name: Ruby syntax check
         run: |
           ruby -c exe/butler
-          ruby -c bin/butler
           ruby -c lib/butler.rb
+
+      - name: Ruby indentation guard
+        run: |
+          if rg -n --glob '*.rb' '^ +\S' lib exe script .github; then
+            echo "space-based indentation detected in Ruby source; use hard tabs" >&2
+            exit 1
+          fi
+          if rg -n --glob '*.rb' '^\t+ +\S|^ +\t+\S' lib exe script .github; then
+            echo "mixed tab/space indentation detected in Ruby source" >&2
+            exit 1
+          fi
 
       - name: Legacy naming guard
         run: |
-          if rg -n '\bcommon\b' README.md docs lib script templates .github bin exe RELEASE.md; then
+          if rg -n '\bcommon\b' README.md docs lib script templates .github exe RELEASE.md; then
             echo "legacy naming token detected" >&2
+            exit 1
+          fi
+
+      - name: Local path privacy guard
+        run: |
+          if rg -n '(/(Users|home)/[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+)' README.md RELEASE.md docs lib script templates .github exe; then
+            echo "machine-specific local path detected; use ~/ paths in docs and source examples" >&2
             exit 1
           fi
 
