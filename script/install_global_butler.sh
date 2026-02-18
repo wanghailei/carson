@@ -59,11 +59,13 @@ if ! ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (ma
 	exit 1
 fi
 
-gem install --user-install "butler-governance" -v "$version" --clear-sources --source "$source_url"
+gem install --user-install "butler-to-merge" -v "$version" --clear-sources --source "$source_url"
 
 user_bin="$(ruby -e 'print Gem.user_dir')/bin"
 mkdir -p "$HOME/.local/bin"
 ln -sf "$user_bin/butler" "$HOME/.local/bin/butler"
+ln -sf "$user_bin/butler-to-merge" "$HOME/.local/bin/butler-to-merge"
 
 echo "Installed Butler ${version}"
 echo "Launcher linked: $HOME/.local/bin/butler"
+echo "Alias linked: $HOME/.local/bin/butler-to-merge"
