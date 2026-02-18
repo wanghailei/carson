@@ -146,7 +146,8 @@ git clone "$remote_repo" "$init_repo" >/dev/null
 	cd "$init_repo"
 	git config user.name "Butler CI"
 	git config user.email "butler-ci@example.com"
-	git switch -c main >/dev/null 2>&1 || git switch main >/dev/null
+	# CI runners may default bare-repo HEAD to master; prefer tracking origin/main first.
+	git switch main >/dev/null 2>&1 || git switch -c main --track origin/main >/dev/null 2>&1 || git switch -c main >/dev/null
 )
 cd "$repo_root"
 expect_exit 0 "init initialises repo path and renames origin remote" run_butler init "$init_repo"
