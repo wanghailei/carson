@@ -2,13 +2,5 @@
 # frozen_string_literal: true
 
 # Alias executable for users who install the butler-to-merge gem package.
-$LOAD_PATH.unshift( File.expand_path( "../lib", __dir__ ) )
-require "butler"
-
-exit Butler::CLI.start(
-	argv: ARGV.dup,
-	repo_root: Dir.pwd,
-	tool_root: File.expand_path( "..", __dir__ ),
-	out: $stdout,
-	err: $stderr
-)
+# Delegate to the primary launcher to avoid duplicated bootstrap logic.
+load File.expand_path( "butler", __dir__ )
