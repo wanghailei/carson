@@ -9,7 +9,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - Ruby managed by `rbenv`
 - Supported Ruby versions: `>= 4.0`
 - Gem executable: `butler`
-- Default report output directory: `/tmp/butler` (override with `BUTLER_REPORT_DIR`)
+- Default report output directory: `~/.cache/butler`
 
 ## Version
 

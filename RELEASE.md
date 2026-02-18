@@ -12,8 +12,7 @@ Release-note scope rule:
 #### What changed
 
 - Added one-command initialisation: `butler init [repo_path]` (`hook` + `template apply` + `audit`).
-- Added `BUTLER_REPORT_DIR` for report output override.
-- Default report output moved to `/tmp/butler`.
+- Default report output moved to `~/.cache/butler`.
 - Outsider boundary now hard-blocks Butler-owned host artefacts (`.butler.yml`, `bin/butler`, `.tools/butler/*`).
 - Installation/setup guidance now targets standard-user package-consumer flow.
 
@@ -28,7 +27,7 @@ Release-note scope rule:
 1. Install Butler as a normal user executable (`butler` in `PATH`).
 2. Initialise each repository with `butler init /local/path/of/repo`.
 3. Remove forbidden Butler-owned artefacts from host repositories if reported.
-4. Read reports from `/tmp/butler` (or set `BUTLER_REPORT_DIR` explicitly).
+4. Read reports from `~/.cache/butler`.
 
 #### Breaking or removed behaviour
 
@@ -52,7 +51,7 @@ butler audit
 #### Known limits and safe fallback
 
 - If `gh` metadata is unavailable, audit/review features degrade to skip/attention states.
-- If `/tmp` is restricted, set `BUTLER_REPORT_DIR` to an explicit writable path.
+- If the default cache path is restricted, run Butler with a writable `HOME`.
 
 ### Engineering Appendix
 
@@ -69,13 +68,12 @@ butler audit
 
 - Command surface is `audit`, `sync`, `prune`, `hook`, `check`, `init`, `template`, `review`, `version`.
 - Initialisation command: `init [repo_path]` (no `run` alias).
-- New environment override: `BUTLER_REPORT_DIR`.
-- Default report output: `/tmp/butler`.
+- Default report output: `~/.cache/butler`.
 - Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy block.
 
 #### Migration notes
 
-- Update automation expecting repo-local `tmp/butler` to `/tmp/butler` or explicit `BUTLER_REPORT_DIR`.
+- Update automation expecting repo-local `tmp/butler` to `~/.cache/butler`.
 - Remove any Butler-owned host artefacts from client repositories.
 
 #### Verification evidence

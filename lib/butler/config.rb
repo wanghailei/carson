@@ -7,7 +7,7 @@ module Butler
 	# Config is built-in only for outsider mode; host repositories do not carry Butler config files.
 	class Config
 		attr_reader :git_remote, :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :report_dir, :template_managed_files,
+			:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :template_managed_files,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label
@@ -46,9 +46,6 @@ module Butler
 						"docs" => [ "docs/**", "*.md" ]
 					}
 				},
-				"reports" => {
-					"dir" => "/tmp/butler"
-				},
 				"template" => {
 					"managed_files" => [ ".github/copilot-instructions.md", ".github/pull_request_template.md" ]
 				},
@@ -75,9 +72,6 @@ module Butler
 			hooks = copy.fetch( "hooks" )
 			hooks_path = ENV.fetch( "BUTLER_HOOKS_BASE_PATH", "" ).to_s.strip
 			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
-			reports = copy.fetch( "reports" )
-			report_dir = ENV.fetch( "BUTLER_REPORT_DIR", "" ).to_s.strip
-			reports[ "dir" ] = report_dir unless report_dir.empty?
 			review = copy.fetch( "review" )
 			review[ "wait_seconds" ] = env_integer( key: "BUTLER_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
 			review[ "poll_seconds" ] = env_integer( key: "BUTLER_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
@@ -110,7 +104,6 @@ module Butler
 			@lane_group_map = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "lane_group_map" ).transform_values { |value| value.to_s }
 			@path_groups = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "path_groups" ).transform_values { |value| normalize_patterns( value: value ) }
 
-			@report_dir = fetch_string( hash: fetch_hash( hash: data, key: "reports" ), key: "dir" )
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
 
 			review_hash = fetch_hash( hash: data, key: "review" )
@@ -139,7 +132,6 @@ module Butler
 				raise ConfigError, "hooks.required_hooks cannot be empty" if required_hooks.empty?
 				raise ConfigError, "scope.lane_group_map cannot be empty" if lane_group_map.empty?
 				raise ConfigError, "scope.path_groups cannot be empty" if path_groups.empty?
-				raise ConfigError, "reports.dir cannot be empty" if report_dir.empty?
 				raise ConfigError, "review.required_disposition_prefix cannot be empty" if review_disposition_prefix.empty?
 				raise ConfigError, "review.risk_keywords cannot be empty" if review_risk_keywords.empty?
 				raise ConfigError, "review.sweep.states must contain one or both of open, closed" if ( review_sweep_states - [ "open", "closed" ] ).any? || review_sweep_states.empty?
