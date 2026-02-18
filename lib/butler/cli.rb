@@ -29,7 +29,7 @@ module Butler
 
 		def self.parse_args( argv:, out:, err: )
 			parser = OptionParser.new do |opts|
-				opts.banner = "Usage: butler [audit|sync|prune|hook|check|run [repo_path]|template check|template apply|review gate|review sweep|version]"
+				opts.banner = "Usage: butler [audit|sync|prune|hook|check|init [repo_path]|template check|template apply|review gate|review sweep|version]"
 			end
 
 			first = argv.first
@@ -45,16 +45,16 @@ module Butler
 			when "version"
 				parser.parse!( argv )
 				{ command: "version" }
-			when "run"
+			when "init"
 				parser.parse!( argv )
 				if argv.length > 1
-					err.puts "Too many arguments for run. Use: butler run [repo_path]"
+					err.puts "Too many arguments for init. Use: butler init [repo_path]"
 					err.puts parser
 					return { command: :invalid }
 				end
 				repo_path = argv.first
 				{
-					command: "run",
+					command: "init",
 					repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
 				}
 			when "template"
@@ -99,8 +99,8 @@ module Butler
 				runtime.hook!
 			when "check"
 				runtime.check!
-			when "run"
-				runtime.run!
+			when "init"
+				runtime.init!
 			when "template:check"
 				runtime.template_check!
 			when "template:apply"

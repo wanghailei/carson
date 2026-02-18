@@ -1,12 +1,17 @@
 # Butler Release Notes
 
+Release-note scope rule:
+
+- `RELEASE.md` records only version deltas, breaking changes, and migration actions.
+- Operational usage guides live in `docs/butler_user_guide.md`.
+
 ## 0.3.0 (2026-02-17)
 
 ### User Overview
 
 #### What changed
 
-- Added one-command bootstrap: `butler run [repo_path]` (`hook` + `template apply` + `audit`).
+- Added one-command initialisation: `butler init [repo_path]` (`hook` + `template apply` + `audit`).
 - Added `BUTLER_REPORT_DIR` for report output override.
 - Default report output moved to `/tmp/butler`.
 - Outsider boundary now hard-blocks Butler-owned host artefacts (`.butler.yml`, `bin/butler`, `.tools/butler/*`).
@@ -21,7 +26,7 @@
 #### What users must do now
 
 1. Install Butler as a normal user executable (`butler` in `PATH`).
-2. Bootstrap each repository with `butler run /local/path/of/repo`.
+2. Initialise each repository with `butler init /local/path/of/repo`.
 3. Remove forbidden Butler-owned artefacts from host repositories if reported.
 4. Read reports from `/tmp/butler` (or set `BUTLER_REPORT_DIR` explicitly).
 
@@ -30,6 +35,7 @@
 - Host `.butler.yml` is no longer accepted.
 - Host `bin/butler` and `.tools/butler/*` are no longer accepted.
 - Butler repository no longer relies on local `bin/butler` shim for normal usage.
+- Command `run [repo_path]` has been removed; use `init [repo_path]`.
 
 #### Upgrade steps
 
@@ -39,7 +45,7 @@ mkdir -p ~/.local/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
 butler version
 
-butler run /local/path/of/repo
+butler init /local/path/of/repo
 butler audit
 ```
 
@@ -61,8 +67,8 @@ butler audit
 
 #### Public interface and config changes
 
-- Command surface remains stable (`audit`, `sync`, `prune`, `hook`, `check`, `run`, `template`, `review`, `version`).
-- New command: `run [repo_path]`.
+- Command surface is `audit`, `sync`, `prune`, `hook`, `check`, `init`, `template`, `review`, `version`.
+- Initialisation command: `init [repo_path]` (no `run` alias).
 - New environment override: `BUTLER_REPORT_DIR`.
 - Default report output: `/tmp/butler`.
 - Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy block.

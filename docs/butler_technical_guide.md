@@ -1,4 +1,4 @@
-# Butler
+# Butler Technical Guide
 
 ## Purpose
 
@@ -6,13 +6,17 @@ Butler is an outsider governance runtime for repository hygiene and merge-readin
 
 Its design goal is operational discipline with minimal host-repository footprint.
 
+Audience: Butler contributors and advanced operators who need technical behaviour details.
+
+Common-user operations belong in `docs/butler_user_guide.md`.
+
 ==Butler carries its own runtime assets and does not rely on Butler-owned files inside host repositories.==
 
 ## Scope and Boundaries
 
 In scope:
 
-- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `run`, `template`, `review`)
+- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `init`, `template`, `review`)
 - deterministic review gating and scheduled late-review sweeps through GitHub CLI
 - whole-file management of selected GitHub-native files (`.github/*`)
 - global hook installation under Butler runtime home
@@ -67,7 +71,7 @@ Rails-derived split rule used by Butler:
 
 ## Core Flow
 
-1. For new repositories, run `butler run [repo_path]` to apply baseline setup in one command.
+1. For new repositories, run `butler init [repo_path]` to apply baseline setup in one command.
 2. Run `butler audit` to evaluate local policy state.
 3. If required, run `butler hook` then `butler check`.
 4. Keep local `main` aligned using `butler sync`.
@@ -125,22 +129,22 @@ Boundary:
 
 - Butler does not create `.githooks/*` inside host repositories.
 
-## Feature: One-command bootstrap (`run`)
+## Feature: One-command initialisation (`init`)
 
 Mechanism:
 
-- `run` verifies the target path is a git repository.
+- `init` verifies the target path is a git repository.
 - It ensures Butler remote naming by using `github` when present or renaming `origin` to `github`.
 - It then executes baseline setup sequence: `hook`, `template apply`, `audit`.
 
 Key code segments:
 
-- `run!` in `lib/butler/runtime/local_ops.rb`
+- `init!` in `lib/butler/runtime/local_ops.rb`
 - `align_remote_name_for_butler!` in `lib/butler/runtime/local_ops.rb`
 
 Boundary:
 
-- `run` does not commit changes in the host repository.
+- `init` does not commit changes in the host repository.
 - Merge authority and required checks remain GitHub controls.
 
 ## Feature: GitHub Template Management
@@ -150,6 +154,21 @@ Mechanism:
 - Template sources live in `templates/.github/*`.
 - Drift checks compare full file content (normalised line endings).
 - Apply writes full managed file content.
+
+Managed files:
+
+- `.github/copilot-instructions.md`
+- `.github/pull_request_template.md`
+
+Workflow:
+
+1. Run `butler template check` to detect drift.
+2. Run `butler template apply` to write canonical content.
+
+Drift reasons:
+
+- `missing_file`: target file does not exist.
+- `content_mismatch`: target file content differs from canonical content.
 
 Key code segments:
 
@@ -250,7 +269,6 @@ A: Yes. CI pins exact Butler version and runs the same exit-status contract.
 - `lib/butler/runtime/local_ops.rb`
 - `lib/butler/runtime/audit_ops.rb`
 - `lib/butler/runtime/review_ops.rb`
-- `docs/github_templates.md`
 - `assets/hooks/pre-push`
 - `assets/hooks/pre-merge-commit`
 - `assets/hooks/prepare-commit-msg`

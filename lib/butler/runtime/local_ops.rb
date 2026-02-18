@@ -121,12 +121,12 @@ module Butler
 				check!
 			end
 
-			# One-command bootstrap for new repositories: align remote naming, install hooks,
+			# One-command initialisation for new repositories: align remote naming, install hooks,
 			# apply templates, and produce a first audit report.
-			def run!
+			def init!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
-				print_header "Run Bootstrap"
+				print_header "Init"
 				unless inside_git_work_tree?
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
@@ -138,9 +138,9 @@ module Butler
 				return template_status unless template_status == EXIT_OK
 				audit_status = audit!
 				if audit_status == EXIT_OK
-					puts_line "OK: Butler bootstrap completed for #{repo_root}."
+					puts_line "OK: Butler initialisation completed for #{repo_root}."
 				elsif audit_status == EXIT_BLOCK
-					puts_line "BLOCK: Butler bootstrap completed with policy blocks; resolve and rerun butler audit."
+					puts_line "BLOCK: Butler initialisation completed with policy blocks; resolve and rerun butler audit."
 				end
 				audit_status
 			end

@@ -24,12 +24,21 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - `butler prune`
 - `butler hook`
 - `butler check`
-- `butler run [repo_path]`
+- `butler init [repo_path]`
 - `butler template check`
 - `butler template apply`
 - `butler review gate`
 - `butler review sweep`
 - `butler version`
+
+## Documentation Map
+
+To minimise overlap across documents:
+
+- `README.md`: product overview, runtime prerequisites, command index.
+- `docs/butler_user_guide.md`: common-user onboarding and daily usage workflows.
+- `docs/butler_technical_guide.md`: technical behaviour guide for contributors/advanced operators.
+- `RELEASE.md`: version-by-version deltas, breaking changes, and migration notes only.
 
 ## Outsider Boundary
 

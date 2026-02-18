@@ -6,6 +6,8 @@ This guide explains how client project teams use Butler from `0.3.0` onwards.
 
 The focus is operational: what to run, when to run it, and what to expect.
 
+Version-by-version change history is tracked in `RELEASE.md`.
+
 ## Scope and boundaries
 
 In scope:
@@ -34,7 +36,7 @@ Boundary rules:
 ## Core flow
 
 1. Install Butler once on the workstation.
-2. Initialise each repository with `butler run [repo_path]`.
+2. Initialise each repository with `butler init [repo_path]`.
 3. Use Butler continuously during local development (`audit`, `sync`, `prune`).
 4. Enforce merge readiness with `review gate`.
 5. Run scheduled late-review monitoring with `review sweep`.
@@ -44,7 +46,7 @@ Boundary rules:
 For a repository at a local demo path:
 
 ```bash
-butler run /local/path/of/repo
+butler init /local/path/of/repo
 ```
 
 This command performs baseline setup in sequence:
@@ -90,7 +92,7 @@ git remote get-url github >/dev/null 2>&1 || git remote rename origin github
 ### 3) Apply local Butler baseline
 
 ```bash
-butler run /local/path/of/repo
+butler init /local/path/of/repo
 ```
 
 Expected result:
@@ -132,6 +134,20 @@ Use the helper script directly (no local Butler checkout required):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/script/bootstrap_repo_defaults.sh | bash -s -- <owner>/<repo> --checks "Syntax and smoke tests,Butler governance"
 ```
+
+## Feature: When to use `init`
+
+Use `butler init /local/path/of/repo` when:
+
+- onboarding Butler to a repository for the first time
+- setting up a fresh local clone that has not had Butler hook/template baseline applied
+- reapplying baseline after deliberate local Butler hook reset
+
+Do not use `init` as a daily command. For day-to-day work, use:
+
+- `butler audit`
+- `butler sync`
+- `butler prune`
 
 ## Feature: Daily usage pattern
 
@@ -178,7 +194,6 @@ Recommended sweep schedule:
 
 - `README.md`
 - `RELEASE.md`
-- `docs/butler.md`
-- `docs/github_templates.md`
+- `docs/butler_technical_guide.md`
 - `.github/workflows/governance-reusable.yml`
 - `script/bootstrap_repo_defaults.sh`

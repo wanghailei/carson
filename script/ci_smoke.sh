@@ -50,7 +50,7 @@ trap cleanup EXIT
 
 remote_repo="$tmp_root/remote.git"
 work_repo="$tmp_root/work"
-run_repo="$tmp_root/run-work"
+init_repo="$tmp_root/init-work"
 mock_bin="$tmp_root/mock-bin"
 
 git init --bare "$remote_repo" >/dev/null
@@ -141,22 +141,23 @@ git add README.md
 git commit -m "initial commit" >/dev/null
 git push -u github main >/dev/null
 
-git clone "$remote_repo" "$run_repo" >/dev/null
+git clone "$remote_repo" "$init_repo" >/dev/null
 (
-	cd "$run_repo"
+	cd "$init_repo"
 	git config user.name "Butler CI"
 	git config user.email "butler-ci@example.com"
 	git switch -c main >/dev/null 2>&1 || git switch main >/dev/null
 )
 cd "$repo_root"
-expect_exit 0 "run bootstraps repo path and renames origin remote" run_butler run "$run_repo"
-if ! git -C "$run_repo" remote get-url github >/dev/null 2>&1; then
-	echo "FAIL: run bootstrap did not align remote name to github" >&2
+expect_exit 0 "init initialises repo path and renames origin remote" run_butler init "$init_repo"
+if ! git -C "$init_repo" remote get-url github >/dev/null 2>&1; then
+	echo "FAIL: init did not align remote name to github" >&2
 	exit 1
 fi
-echo "PASS: run bootstrap aligned remote name to github"
-cd "$run_repo"
-expect_exit 0 "check passes after run bootstrap" run_butler check
+echo "PASS: init aligned remote name to github"
+cd "$init_repo"
+expect_exit 0 "check passes after init" run_butler check
+expect_exit 1 "legacy run command is rejected" run_butler run "$init_repo"
 
 cd "$work_repo"
 expect_exit 2 "check blocks before hooks are installed" run_butler check
