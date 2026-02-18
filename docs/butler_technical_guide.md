@@ -16,7 +16,7 @@ Common-user operations belong in `docs/butler_user_guide.md`.
 
 In scope:
 
-- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `init`, `template`, `review`)
+- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `init`, `offboard`, `template`, `review`)
 - deterministic review gating and scheduled late-review sweeps through GitHub CLI
 - whole-file management of selected GitHub-native files (`.github/*`)
 - global hook installation under Butler runtime home
@@ -79,6 +79,7 @@ Rails-derived split rule used by Butler:
 6. Keep managed `.github/*` files aligned using `butler template check` and `butler template apply`.
 7. Before merge recommendation, run `gh pr list --state open --limit 50` and `butler review gate`.
 8. Scheduled automation runs `butler review sweep` for late actionable review activity.
+9. If retiring Butler from a repository, run `butler offboard [repo_path]`.
 
 Exit status contract:
 
@@ -146,6 +147,24 @@ Boundary:
 
 - `init` does not commit changes in the host repository.
 - Merge authority and required checks remain GitHub controls.
+
+## Feature: Repository retirement (`offboard`)
+
+Mechanism:
+
+- `offboard` verifies the target path is a git repository.
+- It unsets `core.hooksPath` only when the configured value points to Butler-managed hooks base path.
+- It removes Butler-managed template files and known Butler-specific legacy artefacts in the host repository.
+
+Key code segments:
+
+- `offboard!` in `lib/butler/runtime/local_ops.rb`
+- `disable_butler_hooks_path!` in `lib/butler/runtime/local_ops.rb`
+- `offboard_cleanup_targets` in `lib/butler/runtime/local_ops.rb`
+
+Boundary:
+
+- `offboard` does not remove user-owned hook configurations that are not Butler-managed.
 
 ## Feature: GitHub Template Management
 
