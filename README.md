@@ -9,7 +9,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - Ruby managed by `rbenv`
 - Supported Ruby versions: `>= 4.0`
 - Gem executable: `butler`
-- Developer shim in this repository: `bin/butler` -> `exe/butler`
+- Default report output directory: `/tmp/butler` (override with `BUTLER_REPORT_DIR`)
 
 ## Version
 
@@ -24,6 +24,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - `butler prune`
 - `butler hook`
 - `butler check`
+- `butler run [repo_path]`
 - `butler template check`
 - `butler template apply`
 - `butler review gate`

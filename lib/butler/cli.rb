@@ -3,14 +3,21 @@ require "optparse"
 module Butler
 	class CLI
 		def self.start( argv:, repo_root:, tool_root:, out:, err: )
-			command = parse_args( argv: argv, out: out, err: err )
+			parsed = parse_args( argv: argv, out: out, err: err )
+			command = parsed.fetch( :command )
 			return Runtime::EXIT_OK if command == :help
 			if command == "version"
 				out.puts Butler::VERSION
 				return Runtime::EXIT_OK
 			end
 
-			runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, out: out, err: err )
+			target_repo_root = parsed.fetch( :repo_root, nil )
+			target_repo_root = repo_root if target_repo_root.to_s.strip.empty?
+			unless Dir.exist?( target_repo_root )
+				err.puts "ERROR: repository path does not exist: #{target_repo_root}"
+				return Runtime::EXIT_ERROR
+			end
+			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, out: out, err: err )
 			dispatch( command: command, runtime: runtime )
 		rescue ConfigError => e
 			err.puts "CONFIG ERROR: #{e.message}"
@@ -22,48 +29,60 @@ module Butler
 
 		def self.parse_args( argv:, out:, err: )
 			parser = OptionParser.new do |opts|
-				opts.banner = "Usage: butler [audit|sync|prune|hook|check|template check|template apply|review gate|review sweep|version]"
+				opts.banner = "Usage: butler [audit|sync|prune|hook|check|run [repo_path]|template check|template apply|review gate|review sweep|version]"
 			end
 
 			first = argv.first
 			if [ "--help", "-h" ].include?( first )
 				out.puts parser
-				return :help
+				return { command: :help }
 			end
-			return "version" if [ "--version", "-v" ].include?( first )
-			return "audit" if argv.empty?
+			return { command: "version" } if [ "--version", "-v" ].include?( first )
+			return { command: "audit" } if argv.empty?
 
 			command = argv.shift
 			case command
 			when "version"
 				parser.parse!( argv )
-				"version"
+				{ command: "version" }
+			when "run"
+				parser.parse!( argv )
+				if argv.length > 1
+					err.puts "Too many arguments for run. Use: butler run [repo_path]"
+					err.puts parser
+					return { command: :invalid }
+				end
+				repo_path = argv.first
+				{
+					command: "run",
+					repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+				}
 			when "template"
 				action = argv.shift
 				parser.parse!( argv )
 				if action.to_s.strip.empty?
 					err.puts "Missing subcommand for template. Use: butler template check|apply"
 					err.puts parser
-					return :invalid
+					return { command: :invalid }
 				end
-				"template:#{action}"
+				{ command: "template:#{action}" }
 			when "review"
 				action = argv.shift
 				parser.parse!( argv )
 				if action.to_s.strip.empty?
 					err.puts "Missing subcommand for review. Use: butler review gate|sweep"
 					err.puts parser
-					return :invalid
+					return { command: :invalid }
 				end
-				"review:#{action}"
+				{ command: "review:#{action}" }
 			else
 				parser.parse!( argv )
-				command
+				{ command: command }
 			end
 		rescue OptionParser::ParseError => e
 			err.puts e.message
 			err.puts parser
-			:invalid
+			{ command: :invalid }
 		end
 
 		def self.dispatch( command:, runtime: )
@@ -71,23 +90,25 @@ module Butler
 
 			case command
 			when "audit"
-				Commands::Audit.run( runtime: runtime )
+				runtime.audit!
 			when "sync"
-				Commands::Sync.run( runtime: runtime )
+				runtime.sync!
 			when "prune"
-				Commands::Prune.run( runtime: runtime )
+				runtime.prune!
 			when "hook"
-				Commands::Hook.run( runtime: runtime )
+				runtime.hook!
 			when "check"
-				Commands::Check.run( runtime: runtime )
+				runtime.check!
+			when "run"
+				runtime.run!
 			when "template:check"
-				Commands::TemplateCheck.run( runtime: runtime )
+				runtime.template_check!
 			when "template:apply"
-				Commands::TemplateApply.run( runtime: runtime )
+				runtime.template_apply!
 			when "review:gate"
-				Commands::ReviewGate.run( runtime: runtime )
+				runtime.review_gate!
 			when "review:sweep"
-				Commands::ReviewSweep.run( runtime: runtime )
+				runtime.review_sweep!
 			else
 				runtime.send( :puts_line, "Unknown command: #{command}" )
 				Runtime::EXIT_ERROR

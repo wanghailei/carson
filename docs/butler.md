@@ -12,7 +12,7 @@ Its design goal is operational discipline with minimal host-repository footprint
 
 In scope:
 
-- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `template`, `review`)
+- local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `run`, `template`, `review`)
 - deterministic review gating and scheduled late-review sweeps through GitHub CLI
 - whole-file management of selected GitHub-native files (`.github/*`)
 - global hook installation under Butler runtime home
@@ -33,26 +33,48 @@ Boundary rules:
 ## Module Relationships
 
 - `exe/butler`: primary executable entrypoint
-- `bin/butler`: developer shim for this repository
 - `lib/butler/cli.rb`: command parsing and dispatch
 - `lib/butler/config.rb`: built-in runtime defaults and environment override handling
-- `lib/butler/runtime.rb`: orchestration and core domain behaviour
-- `lib/butler/commands/*`: command classes mapped from CLI routes
+- `lib/butler/runtime.rb`: runtime wiring, shared helpers, and concern loading
+- `lib/butler/runtime/local_ops.rb`: local repository operations and hook/template/runtime boundary helpers
+- `lib/butler/runtime/audit_ops.rb`: audit reporting, PR/check monitor report generation, and scope integrity guard
+- `lib/butler/runtime/review_ops.rb`: review gate/review sweep orchestration and GitHub review data mapping
 - `lib/butler/adapters/git.rb`: git process adapter
 - `lib/butler/adapters/github.rb`: GitHub CLI process adapter
 - `templates/.github/*`: canonical managed GitHub-native files
 - `assets/hooks/*`: canonical hook assets
 - `script/bootstrap_repo_defaults.sh`: branch-protection and secret bootstrap helper
 
+`*_ops.rb` purpose:
+
+- keep `Runtime` as the single orchestration object
+- group methods by workflow ownership (`local`, `audit`, `review`)
+- keep command dispatch in `CLI` while placing command logic in runtime concerns
+
+Current line count reality:
+
+- `local_ops.rb`: multi-workflow local governance and hook/template helpers
+- `audit_ops.rb`: audit state and monitor report writing
+- `review_ops.rb`: gate/sweep with substantial GitHub response normalisation logic
+
+Rails-derived split rule used by Butler:
+
+- split by behaviour ownership, not arbitrary line count
+- keep one primary responsibility per file
+- keep thin entrypoints (`CLI`) and move behaviour into concern files
+- avoid no-op wrapper files that only forward one call
+- split further when a file mixes unrelated helper clusters or integrations
+
 ## Core Flow
 
-1. Run `butler audit` to evaluate local policy state.
-2. If required, run `butler hook` then `butler check`.
-3. Keep local `main` aligned using `butler sync`.
-4. Remove stale local branches using `butler prune`.
-5. Keep managed `.github/*` files aligned using `butler template check` and `butler template apply`.
-6. Before merge recommendation, run `gh pr list --state open --limit 50` and `butler review gate`.
-7. Scheduled automation runs `butler review sweep` for late actionable review activity.
+1. For new repositories, run `butler run [repo_path]` to apply baseline setup in one command.
+2. Run `butler audit` to evaluate local policy state.
+3. If required, run `butler hook` then `butler check`.
+4. Keep local `main` aligned using `butler sync`.
+5. Remove stale local branches using `butler prune`.
+6. Keep managed `.github/*` files aligned using `butler template check` and `butler template apply`.
+7. Before merge recommendation, run `gh pr list --state open --limit 50` and `butler review gate`.
+8. Scheduled automation runs `butler review sweep` for late actionable review activity.
 
 Exit status contract:
 
@@ -76,9 +98,9 @@ Blocked host artefacts:
 
 Key code segments:
 
-- `block_if_outsider_fingerprints!` in `lib/butler/runtime.rb`
-- `outsider_fingerprint_violations` in `lib/butler/runtime.rb`
-- `legacy_marker_violations` in `lib/butler/runtime.rb`
+- `block_if_outsider_fingerprints!` in `lib/butler/runtime/local_ops.rb`
+- `outsider_fingerprint_violations` in `lib/butler/runtime/local_ops.rb`
+- `legacy_marker_violations` in `lib/butler/runtime/local_ops.rb`
 
 Boundary:
 
@@ -94,14 +116,32 @@ Mechanism:
 
 Key code segments:
 
-- `hook!` in `lib/butler/runtime.rb`
-- `hooks_dir` in `lib/butler/runtime.rb`
-- `hook_template_path` in `lib/butler/runtime.rb`
-- `hooks_health_report` in `lib/butler/runtime.rb`
+- `hook!` in `lib/butler/runtime/local_ops.rb`
+- `hooks_dir` in `lib/butler/runtime/local_ops.rb`
+- `hook_template_path` in `lib/butler/runtime/local_ops.rb`
+- `hooks_health_report` in `lib/butler/runtime/local_ops.rb`
 
 Boundary:
 
 - Butler does not create `.githooks/*` inside host repositories.
+
+## Feature: One-command bootstrap (`run`)
+
+Mechanism:
+
+- `run` verifies the target path is a git repository.
+- It ensures Butler remote naming by using `github` when present or renaming `origin` to `github`.
+- It then executes baseline setup sequence: `hook`, `template apply`, `audit`.
+
+Key code segments:
+
+- `run!` in `lib/butler/runtime/local_ops.rb`
+- `align_remote_name_for_butler!` in `lib/butler/runtime/local_ops.rb`
+
+Boundary:
+
+- `run` does not commit changes in the host repository.
+- Merge authority and required checks remain GitHub controls.
 
 ## Feature: GitHub Template Management
 
@@ -113,10 +153,10 @@ Mechanism:
 
 Key code segments:
 
-- `template_results` in `lib/butler/runtime.rb`
-- `template_result_for_file` in `lib/butler/runtime.rb`
-- `template_check!` in `lib/butler/runtime.rb`
-- `template_apply!` in `lib/butler/runtime.rb`
+- `template_results` in `lib/butler/runtime/local_ops.rb`
+- `template_result_for_file` in `lib/butler/runtime/local_ops.rb`
+- `template_check!` in `lib/butler/runtime/local_ops.rb`
+- `template_apply!` in `lib/butler/runtime/local_ops.rb`
 
 Boundary:
 
@@ -133,10 +173,10 @@ Mechanism:
 
 Key code segments:
 
-- `review_gate!` in `lib/butler/runtime.rb`
-- `review_gate_snapshot` in `lib/butler/runtime.rb`
-- `review_sweep!` in `lib/butler/runtime.rb`
-- `upsert_review_sweep_tracking_issue` in `lib/butler/runtime.rb`
+- `review_gate!` in `lib/butler/runtime/review_ops.rb`
+- `review_gate_snapshot` in `lib/butler/runtime/review_ops.rb`
+- `review_sweep!` in `lib/butler/runtime/review_ops.rb`
+- `upsert_review_sweep_tracking_issue` in `lib/butler/runtime/review_ops.rb`
 
 Boundary:
 
@@ -153,10 +193,10 @@ Mechanism:
 
 Key code segments:
 
-- `sync!` in `lib/butler/runtime.rb`
-- `prune!` in `lib/butler/runtime.rb`
-- `stale_local_branches` in `lib/butler/runtime.rb`
-- `force_delete_evidence_for_stale_branch` in `lib/butler/runtime.rb`
+- `sync!` in `lib/butler/runtime/local_ops.rb`
+- `prune!` in `lib/butler/runtime/local_ops.rb`
+- `stale_local_branches` in `lib/butler/runtime/local_ops.rb`
+- `force_delete_evidence_for_stale_branch` in `lib/butler/runtime/local_ops.rb`
 
 Insight:
 
@@ -167,7 +207,8 @@ Insight:
 Mechanism:
 
 - Runtime uses built-in defaults from `lib/butler/config.rb`.
-- Environment overrides exist for review timing and sweep window/states.
+- Default report output is global `/tmp/butler` (not repository-local).
+- Environment overrides exist for hooks path (`BUTLER_HOOKS_BASE_PATH`), report path (`BUTLER_REPORT_DIR`), review timing, and sweep window/states.
 - Host repository configuration file loading is intentionally disabled.
 
 Key code segments:
@@ -206,6 +247,9 @@ A: Yes. CI pins exact Butler version and runs the same exit-status contract.
 - `lib/butler/cli.rb`
 - `lib/butler/config.rb`
 - `lib/butler/runtime.rb`
+- `lib/butler/runtime/local_ops.rb`
+- `lib/butler/runtime/audit_ops.rb`
+- `lib/butler/runtime/review_ops.rb`
 - `docs/github_templates.md`
 - `assets/hooks/pre-push`
 - `assets/hooks/pre-merge-commit`

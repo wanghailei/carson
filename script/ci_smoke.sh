@@ -5,11 +5,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 butler_bin="$repo_root/exe/butler"
 
 run_butler() {
-	BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
+	BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" BUTLER_REPORT_DIR="$tmp_root/reports" ruby "$butler_bin" "$@"
 }
 
 run_butler_with_mock_gh() {
-	PATH="$mock_bin:$PATH" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
+	PATH="$mock_bin:$PATH" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" BUTLER_REPORT_DIR="$tmp_root/reports" ruby "$butler_bin" "$@"
 }
 
 exit_text() {
@@ -41,8 +41,7 @@ expect_exit() {
 	echo "PASS: $description ($actual - $(exit_text "$actual"))"
 }
 
-tmp_base="$repo_root/tmp"
-mkdir -p "$tmp_base"
+tmp_base="${BUTLER_TMP_BASE:-/tmp}"
 tmp_root="$(mktemp -d "$tmp_base/butler-ci.XXXXXX")"
 cleanup() {
 	rm -rf "$tmp_root"
@@ -51,6 +50,7 @@ trap cleanup EXIT
 
 remote_repo="$tmp_root/remote.git"
 work_repo="$tmp_root/work"
+run_repo="$tmp_root/run-work"
 mock_bin="$tmp_root/mock-bin"
 
 git init --bare "$remote_repo" >/dev/null
@@ -141,6 +141,24 @@ git add README.md
 git commit -m "initial commit" >/dev/null
 git push -u github main >/dev/null
 
+git clone "$remote_repo" "$run_repo" >/dev/null
+(
+	cd "$run_repo"
+	git config user.name "Butler CI"
+	git config user.email "butler-ci@example.com"
+	git switch -c main >/dev/null 2>&1 || git switch main >/dev/null
+)
+cd "$repo_root"
+expect_exit 0 "run bootstraps repo path and renames origin remote" run_butler run "$run_repo"
+if ! git -C "$run_repo" remote get-url github >/dev/null 2>&1; then
+	echo "FAIL: run bootstrap did not align remote name to github" >&2
+	exit 1
+fi
+echo "PASS: run bootstrap aligned remote name to github"
+cd "$run_repo"
+expect_exit 0 "check passes after run bootstrap" run_butler check
+
+cd "$work_repo"
 expect_exit 2 "check blocks before hooks are installed" run_butler check
 expect_exit 0 "sync keeps local main aligned to github/main" run_butler sync
 expect_exit 0 "hook installs required hooks to global runtime path" run_butler hook
