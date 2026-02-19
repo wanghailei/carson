@@ -6,7 +6,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 
 ## Runtime
 
-- Ruby managed by `rbenv`
+- Ruby `>= 4.0` available in your shell (any Ruby manager is acceptable)
 - Supported Ruby versions: `>= 4.0`
 - Primary CLI executable: `butler`
 - CLI alias: `butler-to-merge`
