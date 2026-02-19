@@ -40,7 +40,8 @@ To minimise overlap across documents:
 
 - `README.md`: product overview, runtime prerequisites, command index.
 - `docs/butler_user_guide.md`: common-user onboarding and daily usage workflows.
-- `docs/butler_technical_guide.md`: technical behaviour guide for contributors/advanced operators.
+- `docs/butler_tech_guide.md`: technical behaviour guide for contributors/advanced operators.
+- `docs/butler_technical_review.md`: full codebase architecture and subsystem review.
 - `RELEASE.md`: version-by-version deltas, breaking changes, and migration notes only.
 
 ## Outsider Boundary

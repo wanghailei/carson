@@ -229,6 +229,6 @@ Recommended sweep schedule:
 
 - `README.md`
 - `RELEASE.md`
-- `docs/butler_technical_guide.md`
+- `docs/butler_tech_guide.md`
 - `.github/workflows/butler_policy.yml`
 - `script/bootstrap_repo_defaults.sh`
