@@ -116,6 +116,7 @@ Expected result:
 - global hooks installed under `~/.butler/hooks/<version>/`
 - repository `core.hooksPath` set to Butler hooks path
 - Butler reports written under `~/.cache/butler` by default
+- when `HOME` is invalid, Butler falls back to `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
 - managed files written:
   - `.github/copilot-instructions.md`
   - `.github/pull_request_template.md`
@@ -228,6 +229,6 @@ Recommended sweep schedule:
 
 - `README.md`
 - `RELEASE.md`
-- `docs/butler_technical_guide.md`
+- `docs/butler_tech_guide.md`
 - `.github/workflows/butler_policy.yml`
 - `script/bootstrap_repo_defaults.sh`
