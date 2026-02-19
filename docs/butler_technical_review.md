@@ -1,6 +1,6 @@
 # Butler Technical Review (Senior-Level)
 
-Scope mapped for this review: `codex/docs-onboarding-simplicity` in `~/Studio/butler`.
+Scope: Butler codebase architecture and subsystem review.
 
 ## 1) What Butler is, in architectural terms
 
