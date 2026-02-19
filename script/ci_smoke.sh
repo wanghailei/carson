@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
+# CI smoke runner for Butler CLI.
+# Exercises critical command flows and policy exits in isolated temporary Git
+# repositories so CI catches behavioural regressions early.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 butler_bin="$repo_root/exe/butler"
 
+# Shared launch helpers for Butler invocations in smoke scenarios.
 run_butler() {
 	HOME="$tmp_root/home" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
 }
 
 run_butler_with_mock_gh() {
 	PATH="$mock_bin:$PATH" run_butler "$@"
+}
+
+run_butler_with_report_env() {
+	report_home="$1"
+	report_tmpdir="$2"
+	shift 2
+	HOME="$report_home" TMPDIR="$report_tmpdir" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
 }
 
 exit_text() {
@@ -41,6 +52,7 @@ expect_exit() {
 	echo "PASS: $description ($actual - $(exit_text "$actual"))"
 }
 
+# Temporary sandbox setup for all smoke checks.
 tmp_base="${BUTLER_TMP_BASE:-/tmp}"
 tmp_root="$(mktemp -d "$tmp_base/butler-ci.XXXXXX")"
 mkdir -p "$tmp_root/home"
@@ -58,6 +70,7 @@ git init --bare "$remote_repo" >/dev/null
 git clone "$remote_repo" "$work_repo" >/dev/null
 mkdir -p "$mock_bin"
 
+# Minimal gh stub used by stale-branch prune evidence tests.
 cat > "$mock_bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -112,6 +125,7 @@ exit 1
 EOF
 chmod +x "$mock_bin/gh"
 
+# Baseline toolchain and version contract checks.
 ruby_major="$(ruby -e 'print RUBY_VERSION.split(".").first.to_i')"
 if [[ "$ruby_major" -lt 4 ]]; then
 	echo "FAIL: Ruby >= 4.0 is required; found $(ruby -v)" >&2
@@ -131,6 +145,7 @@ for arg in "version" "--version"; do
 	echo "PASS: ${description} reports ${actual_version}"
 done
 
+# Seed disposable repo and validate init/offboard lifecycle.
 cd "$work_repo"
 git switch -c main >/dev/null
 git config user.name "Butler CI"
@@ -191,6 +206,7 @@ echo "PASS: offboard cleaned Butler-managed repo artefacts"
 expect_exit 0 "offboard is idempotent on an already cleaned repo" run_butler offboard
 expect_exit 1 "legacy run command is rejected" run_butler run "$init_repo"
 
+# Validate core setup flows (check/sync/hook/template).
 cd "$work_repo"
 expect_exit 2 "check blocks before hooks are installed" run_butler check
 expect_exit 0 "sync keeps local main aligned to github/main" run_butler sync
@@ -202,6 +218,29 @@ expect_exit 0 "template apply writes managed github files" run_butler template a
 expect_exit 0 "template check passes after apply" run_butler template check
 expect_exit 1 "unknown command returns runtime/configuration error" run_butler template lint
 
+# Validate report directory fallback precedence for invalid HOME.
+tmpdir_report_root="$tmp_root/custom-tmpdir"
+mkdir -p "$tmpdir_report_root"
+tmpdir_report_output="$(run_butler_with_report_env "relative-home" "$tmpdir_report_root" audit)"
+expected_tmpdir_report_path="$tmpdir_report_root/butler/pr_report_latest.md"
+if [[ "$tmpdir_report_output" != *"report_markdown: $expected_tmpdir_report_path"* ]]; then
+	echo "FAIL: audit did not use TMPDIR fallback when HOME is invalid" >&2
+	echo "expected output to include: report_markdown: $expected_tmpdir_report_path" >&2
+	echo "actual output: $tmpdir_report_output" >&2
+	exit 1
+fi
+echo "PASS: report path falls back to TMPDIR/butler when HOME is invalid"
+
+tmp_fallback_output="$(run_butler_with_report_env "relative-home" "relative-tmpdir" audit)"
+if [[ "$tmp_fallback_output" != *"report_markdown: /tmp/butler/pr_report_latest.md"* ]]; then
+	echo "FAIL: audit did not use /tmp fallback when HOME and TMPDIR are invalid" >&2
+	echo "expected output to include: report_markdown: /tmp/butler/pr_report_latest.md" >&2
+	echo "actual output: $tmp_fallback_output" >&2
+	exit 1
+fi
+echo "PASS: report path falls back to /tmp/butler when HOME and TMPDIR are invalid"
+
+# Stale-branch prune behaviour: safe removal without force evidence.
 git switch -c codex/tool/stale-prune >/dev/null
 git push -u github codex/tool/stale-prune >/dev/null
 git switch main >/dev/null
@@ -214,6 +253,7 @@ if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune; then
 fi
 echo "PASS: stale branch removed locally"
 
+# Stale-branch prune behaviour: force deletion with matching merged-PR evidence.
 git switch -c codex/tool/stale-prune-squash >/dev/null
 printf "stale squash candidate\n" > stale_squash.txt
 git add stale_squash.txt
@@ -239,6 +279,7 @@ if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-squash; then
 fi
 echo "PASS: stale squash branch removed locally via merged PR evidence"
 
+# Stale-branch prune behaviour: retain branch when evidence does not match tip.
 git switch -c codex/tool/stale-prune-no-evidence >/dev/null
 printf "stale no-evidence candidate\n" > stale_no_evidence.txt
 git add stale_no_evidence.txt
@@ -254,6 +295,7 @@ if ! git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-no-evidence
 fi
 echo "PASS: no-evidence branch retained when merged PR evidence does not match branch tip"
 
+# Outsider boundary audit blocks forbidden host-repo artefacts.
 expect_exit 0 "audit completes without a local hard block" run_butler audit
 
 printf 'review: {}\n' > .butler.yml
@@ -278,6 +320,7 @@ printf "<!-- butler:${marker_word}:start old -->\nlegacy\n<!-- butler:${marker_w
 expect_exit 2 "outsider boundary blocks legacy marker artefacts" run_butler audit
 rm -rf .github
 
+# Include dedicated review smoke suite from CI smoke entrypoint.
 cd "$repo_root"
 bash script/review_smoke.sh
 

@@ -11,6 +11,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - Primary CLI executable: `butler`
 - CLI alias: `butler-to-merge`
 - Default report output directory: `~/.cache/butler`
+- Report fallback order when `HOME` is invalid: `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
 
 ## Version
 

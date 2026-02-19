@@ -245,7 +245,7 @@ Insight:
 Mechanism:
 
 - Runtime uses built-in defaults from `lib/butler/config.rb`.
-- Default report output is global `~/.cache/butler` (not repository-local).
+- Report output precedence is global `~/.cache/butler`, then `TMPDIR/butler` when `HOME` is invalid and `TMPDIR` is absolute, then `/tmp/butler`.
 - Environment overrides exist for hooks path (`BUTLER_HOOKS_BASE_PATH`), review timing, and sweep window/states.
 - Host repository configuration file loading is intentionally disabled.
 
