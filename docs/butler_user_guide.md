@@ -71,7 +71,7 @@ Start with one command:
 curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/install.sh | bash
 ```
 
-This installer builds Butler from source and installs it globally for your user account, so it works even before package publishing.
+This installer builds Butler from source and installs it locally for your user account, so it works even before package publishing.
 
 Prerequisites:
 
