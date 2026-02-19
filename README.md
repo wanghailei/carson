@@ -11,6 +11,7 @@ It runs against a repository without placing Butler-owned artefacts into that re
 - Primary CLI executable: `butler`
 - CLI alias: `butler-to-merge`
 - Default report output directory: `~/.cache/butler`
+- Report fallback order when `HOME` is invalid: `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
 
 ## Version
 
@@ -39,7 +40,7 @@ To minimise overlap across documents:
 
 - `README.md`: product overview, runtime prerequisites, command index.
 - `docs/butler_user_guide.md`: common-user onboarding and daily usage workflows.
-- `docs/butler_technical_guide.md`: technical behaviour guide for contributors/advanced operators.
+- `docs/butler_tech_guide.md`: technical behaviour guide for contributors/advanced operators, including full codebase architecture and subsystem review.
 - `RELEASE.md`: version-by-version deltas, breaking changes, and migration notes only.
 
 ## Outsider Boundary

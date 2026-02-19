@@ -1,3 +1,6 @@
+# Butler runtime wiring and shared helper layer.
+# Centralises command-neutral concerns such as output contracts, path resolution,
+# adapter invocation, and report-location policy.
 require "fileutils"
 require "json"
 require "time"
@@ -72,14 +75,26 @@ module Butler
 			path
 		end
 
-		# Fixed global report output directory for outsider runtime artefacts.
+		# Resolves report output precedence:
+		# 1) ~/.cache/butler when HOME is an absolute path
+		# 2) TMPDIR/butler when HOME is invalid and TMPDIR is absolute
+		# 3) /tmp/butler as final safety fallback
 		def report_dir_path
 			home = ENV.fetch( "HOME", "" ).to_s
-			return "/tmp/butler" if home.empty? || !home.start_with?( "/" )
+			return File.join( home, ".cache", "butler" ) if absolute_env_path?( path: home )
 
-			File.join( home, ".cache", "butler" )
+			tmpdir = ENV.fetch( "TMPDIR", "" ).to_s
+			return File.join( tmpdir, "butler" ) if absolute_env_path?( path: tmpdir )
+
+			"/tmp/butler"
 		rescue StandardError
 			"/tmp/butler"
+		end
+
+		# Treats empty or non-absolute environment paths as invalid.
+		def absolute_env_path?( path: )
+			text = path.to_s
+			!text.empty? && text.start_with?( "/" )
 		end
 
 		# Soft capability check for GitHub CLI presence.
