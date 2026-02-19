@@ -65,38 +65,39 @@ Example repository path:
 
 ### 1) Install Butler globally once
 
-Start with the simplest command:
+Start with one command:
 
 ```bash
-gem install butler-to-merge
+curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/install.sh | bash
+```
+
+This installer builds Butler from source and installs it globally for your user account, so it works even before package publishing.
+
+Prerequisites:
+
+- Ruby `>= 4.0`
+- `git`
+- `curl`
+
+Verify:
+
+```bash
 butler version
+```
+
+If `butler` is not found in your shell, add `~/.local/bin` to `PATH`.
+
+Alternative (if you already cloned Butler locally):
+
+```bash
+cd /local/path/of/butler
+./install.sh
 ```
 
 Expected result:
 
 - `butler version` prints the installed Butler version (for example `0.4.0`).
 - `butler` is the primary command, and `butler-to-merge` is an equivalent alias.
-
-Prerequisite:
-
-- Ruby `>= 4.0`
-
-Advanced install options (only if needed):
-
-```bash
-gem install --user-install butler-to-merge -v 0.4.0
-mkdir -p ~/.local/bin
-ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
-butler version
-```
-
-Use these options when:
-
-- Ruby `>= 4.0`
-- Butler executable available in `PATH`
-- `--user-install`: you want user-local gem install without system-wide writes
-- `-v 0.4.0`: you want to pin an exact Butler version
-- `~/.local/bin` link: your shell cannot find `butler` after a user-local install
 
 ### 2) Prepare the repository
 
