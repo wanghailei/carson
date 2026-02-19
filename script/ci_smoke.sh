@@ -17,8 +17,8 @@ run_butler_with_mock_gh() {
 }
 
 run_butler_with_report_env() {
-	report_home="$1"
-	report_tmpdir="$2"
+	local report_home="$1"
+	local report_tmpdir="$2"
 	shift 2
 	HOME="$report_home" TMPDIR="$report_tmpdir" BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$butler_bin" "$@"
 }

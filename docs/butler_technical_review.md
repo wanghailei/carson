@@ -8,9 +8,9 @@ Butler is a Ruby gem that acts as an **outsider governance runtime**.
 Its key design choice is: keep Butler-owned operational artefacts outside client repositories, while still managing selected GitHub-native files inside them (`.github/*`).
 
 Primary statement of intent:
-- `~/Studio/butler/README.md:3`
-- `~/Studio/butler/README.md:44`
-- `~/Studio/butler/docs/butler_tech_guide.md:13`
+- `README.md:3`
+- `README.md:44`
+- `docs/butler_tech_guide.md:13`
 
 ## 2) System structure at a glance
 
@@ -36,26 +36,26 @@ flowchart LR
 ```
 
 This diagram maps directly to:
-- entrypoints: `~/Studio/butler/exe/butler:7`, `~/Studio/butler/exe/butler-to-merge:8`
-- dispatch: `~/Studio/butler/lib/butler/cli.rb:88`
-- runtime wiring: `~/Studio/butler/lib/butler/runtime.rb:21`
-- concern split: `~/Studio/butler/lib/butler/runtime.rb:164`
+- entrypoints: `exe/butler:7`, `exe/butler-to-merge:8`
+- dispatch: `lib/butler/cli.rb:88`
+- runtime wiring: `lib/butler/runtime.rb:21`
+- concern split: `lib/butler/runtime.rb:164`
 
 ## 3) Codebase topology (what each area owns)
 
 | Area | Responsibility | Key file |
 |---|---|---|
-| Executables | CLI launchers (`butler`, `butler-to-merge`) | `~/Studio/butler/exe/butler` |
-| CLI parsing | Parse args/subcommands, instantiate runtime, dispatch | `~/Studio/butler/lib/butler/cli.rb` |
-| Runtime shell | Shared helpers, exit contract, adapters, report constants | `~/Studio/butler/lib/butler/runtime.rb` |
-| Local governance | `sync`, `prune`, `hook`, `check`, `init`, `template` | `~/Studio/butler/lib/butler/runtime/local_ops.rb` |
-| Audit reporting | `audit`, PR/check monitor, scope integrity guard | `~/Studio/butler/lib/butler/runtime/audit_ops.rb` |
-| Review governance | `review gate`, `review sweep`, GraphQL/REST normalisation, issue upsert | `~/Studio/butler/lib/butler/runtime/review_ops.rb` |
-| Config | Built-in defaults + env overrides + validation | `~/Studio/butler/lib/butler/config.rb` |
-| Git/GitHub adapters | Process wrappers over `git` and `gh` | `~/Studio/butler/lib/butler/adapters/git.rb`, `~/Studio/butler/lib/butler/adapters/github.rb` |
-| Managed artefacts | Hook templates and `.github` templates | `~/Studio/butler/assets/hooks/*`, `~/Studio/butler/templates/.github/*` |
-| Automation and release | CI, sweep schedule, reusable policy, publish jobs | `~/Studio/butler/.github/workflows/*` |
-| Smoke testing | End-to-end shell smoke suites | `~/Studio/butler/script/ci_smoke.sh`, `~/Studio/butler/script/review_smoke.sh` |
+| Executables | CLI launchers (`butler`, `butler-to-merge`) | `exe/butler` |
+| CLI parsing | Parse args/subcommands, instantiate runtime, dispatch | `lib/butler/cli.rb` |
+| Runtime shell | Shared helpers, exit contract, adapters, report constants | `lib/butler/runtime.rb` |
+| Local governance | `sync`, `prune`, `hook`, `check`, `init`, `template` | `lib/butler/runtime/local_ops.rb` |
+| Audit reporting | `audit`, PR/check monitor, scope integrity guard | `lib/butler/runtime/audit_ops.rb` |
+| Review governance | `review gate`, `review sweep`, GraphQL/REST normalisation, issue upsert | `lib/butler/runtime/review_ops.rb` |
+| Config | Built-in defaults + env overrides + validation | `lib/butler/config.rb` |
+| Git/GitHub adapters | Process wrappers over `git` and `gh` | `lib/butler/adapters/git.rb`, `lib/butler/adapters/github.rb` |
+| Managed artefacts | Hook templates and `.github` templates | `assets/hooks/*`, `templates/.github/*` |
+| Automation and release | CI, sweep schedule, reusable policy, publish jobs | `.github/workflows/*` |
+| Smoke testing | End-to-end shell smoke suites | `script/ci_smoke.sh`, `script/review_smoke.sh` |
 
 ## 4) Runtime model and contracts
 
@@ -66,24 +66,25 @@ This diagram maps directly to:
 - `2`: policy block
 
 Defined centrally:
-- `~/Studio/butler/lib/butler/runtime.rb:8`
+- `lib/butler/runtime.rb:8`
 
 This is one of the strongest design traits: all command surfaces consistently target this contract.
 
 ### Fixed report location
 
 - Primary: `~/.cache/butler`
-- Fallback: `/tmp/butler` when `HOME` is invalid
+- Fallback 1: `$TMPDIR/butler` when `TMPDIR` is set to an absolute path
+- Fallback 2: `/tmp/butler` when no absolute `TMPDIR` is available
 
 Implemented in:
-- `~/Studio/butler/lib/butler/runtime.rb:76`
+- `lib/butler/runtime.rb:69`
 
 ### Config strategy
 
 Butler intentionally avoids host-repo config files and uses built-in config with env overrides:
-- defaults: `~/Studio/butler/lib/butler/config.rb:20`
-- env overrides: `~/Studio/butler/lib/butler/config.rb:70`
-- validation: `~/Studio/butler/lib/butler/config.rb:127`
+- defaults: `lib/butler/config.rb:20`
+- env overrides: `lib/butler/config.rb:70`
+- validation: `lib/butler/config.rb:127`
 
 Notable configurable knobs:
 - hooks path via `BUTLER_HOOKS_BASE_PATH`
@@ -99,9 +100,9 @@ Notable configurable knobs:
 - subcommands for `init`, `template`, `review`
 
 Core file:
-- `~/Studio/butler/lib/butler/cli.rb:5`
-- `~/Studio/butler/lib/butler/cli.rb:41`
-- `~/Studio/butler/lib/butler/cli.rb:91`
+- `lib/butler/cli.rb:5`
+- `lib/butler/cli.rb:41`
+- `lib/butler/cli.rb:91`
 
 ## 6) LocalOps deep walkthrough (`sync`, `prune`, `hook`, `init`, `check`, `template`)
 
@@ -117,8 +118,8 @@ Flow:
 7. restore original branch in `ensure`
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:4`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:267`
+- `lib/butler/runtime/local_ops.rb:4`
+- `lib/butler/runtime/local_ops.rb:267`
 
 ### `prune!`
 
@@ -130,10 +131,10 @@ Force-delete path exists, but only with strict evidence:
 - GH evidence shows merged PR for exact branch tip SHA into main
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:35`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:355`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:375`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:391`
+- `lib/butler/runtime/local_ops.rb:35`
+- `lib/butler/runtime/local_ops.rb:355`
+- `lib/butler/runtime/local_ops.rb:375`
+- `lib/butler/runtime/local_ops.rb:391`
 
 ### `hook!` and `check!`
 
@@ -143,10 +144,10 @@ Key refs:
 - `check!` is strict health check mode
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:96`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:149`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:242`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:309`
+- `lib/butler/runtime/local_ops.rb:96`
+- `lib/butler/runtime/local_ops.rb:149`
+- `lib/butler/runtime/local_ops.rb:242`
+- `lib/butler/runtime/local_ops.rb:309`
 
 ### `init!`
 
@@ -171,8 +172,8 @@ flowchart TD
 ```
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:126`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:449`
+- `lib/butler/runtime/local_ops.rb:126`
+- `lib/butler/runtime/local_ops.rb:449`
 
 ### `template_check!` / `template_apply!`
 
@@ -181,10 +182,10 @@ Key refs:
 - secure path resolve prevents traversal outside repo root
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:159`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:175`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:227`
-- `~/Studio/butler/lib/butler/runtime.rb:68`
+- `lib/butler/runtime/local_ops.rb:159`
+- `lib/butler/runtime/local_ops.rb:175`
+- `lib/butler/runtime/local_ops.rb:227`
+- `lib/butler/runtime.rb:68`
 
 ## 7) Outsider boundary model (critical concept)
 
@@ -197,9 +198,9 @@ Every governance command starts with `block_if_outsider_fingerprints!`:
 And it exempts the Butler repository itself (`repo_root == tool_root`) so Butler can evolve its own code.
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:314`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:323`
-- `~/Studio/butler/lib/butler/runtime/local_ops.rb:338`
+- `lib/butler/runtime/local_ops.rb:314`
+- `lib/butler/runtime/local_ops.rb:323`
+- `lib/butler/runtime/local_ops.rb:338`
 
 ## 8) AuditOps deep walkthrough
 
@@ -213,10 +214,10 @@ Key refs:
 - writes machine + human reports
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/audit_ops.rb:4`
-- `~/Studio/butler/lib/butler/runtime/audit_ops.rb:50`
-- `~/Studio/butler/lib/butler/runtime/audit_ops.rb:134`
-- `~/Studio/butler/lib/butler/runtime/audit_ops.rb:193`
+- `lib/butler/runtime/audit_ops.rb:4`
+- `lib/butler/runtime/audit_ops.rb:50`
+- `lib/butler/runtime/audit_ops.rb:134`
+- `lib/butler/runtime/audit_ops.rb:193`
 
 Important nuance:
 - scope integrity issues currently result in `attention`, not hard block (exit remains 0 unless another blocking condition exists).
@@ -256,9 +257,9 @@ Signature fields:
 - unacknowledged actionable URLs
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:4`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:182`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:199`
+- `lib/butler/runtime/review_ops.rb:4`
+- `lib/butler/runtime/review_ops.rb:182`
+- `lib/butler/runtime/review_ops.rb:199`
 
 ### Actionable classification model
 
@@ -269,19 +270,19 @@ Actionable items include:
 - then filtered by Codex disposition acknowledgements authored by PR author
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:524`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:543`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:577`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:1023`
+- `lib/butler/runtime/review_ops.rb:524`
+- `lib/butler/runtime/review_ops.rb:543`
+- `lib/butler/runtime/review_ops.rb:577`
+- `lib/butler/runtime/review_ops.rb:1023`
 
 ### GraphQL + pagination strategy
 
 Butler fetches details from GraphQL and paginates `reviewThreads`, `comments`, and `reviews`, so gating decisions are based on complete connection sets.
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:232`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:250`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:281`
+- `lib/butler/runtime/review_ops.rb:232`
+- `lib/butler/runtime/review_ops.rb:250`
+- `lib/butler/runtime/review_ops.rb:281`
 
 ### `review sweep`
 
@@ -291,11 +292,11 @@ Key refs:
 - upserts one rolling tracking issue and label
 
 Key refs:
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:116`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:684`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:741`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:835`
-- `~/Studio/butler/lib/butler/runtime/review_ops.rb:871`
+- `lib/butler/runtime/review_ops.rb:116`
+- `lib/butler/runtime/review_ops.rb:684`
+- `lib/butler/runtime/review_ops.rb:741`
+- `lib/butler/runtime/review_ops.rb:835`
+- `lib/butler/runtime/review_ops.rb:871`
 
 ## 10) CI, distribution, and operational integration
 
@@ -306,36 +307,36 @@ Two jobs:
 - smoke (syntax + indentation + naming/privacy guards + smoke scripts)
 
 File:
-- `~/Studio/butler/.github/workflows/ci.yml:8`
-- `~/Studio/butler/.github/workflows/ci.yml:36`
+- `.github/workflows/ci.yml:8`
+- `.github/workflows/ci.yml:36`
 
 ### Scheduled sweep
 
 Runs every 8 hours:
-- `~/Studio/butler/.github/workflows/review-sweep.yml:5`
+- `.github/workflows/review-sweep.yml:5`
 
 ### Reusable host policy workflow
 
 Checks out host + Butler runtime, validates version, installs gem from source checkout, runs `butler hook`, `butler audit`, `butler review gate`.
 
 File:
-- `~/Studio/butler/.github/workflows/butler_policy.yml:4`
-- `~/Studio/butler/.github/workflows/butler_policy.yml:63`
+- `.github/workflows/butler_policy.yml:4`
+- `.github/workflows/butler_policy.yml:63`
 
 ### Publish workflows
 
-- GitHub Packages: `~/Studio/butler/.github/workflows/publish-github-packages.yml:1`
-- RubyGems: `~/Studio/butler/.github/workflows/publish-rubygems.yml:1`
+- GitHub Packages: `.github/workflows/publish-github-packages.yml:1`
+- RubyGems: `.github/workflows/publish-rubygems.yml:1`
 
 ## 11) Managed assets and policy artefacts
 
 - Hook scripts block direct commits/merges/pushes on `main/master`:
-  - `~/Studio/butler/assets/hooks/prepare-commit-msg:5`
-  - `~/Studio/butler/assets/hooks/pre-merge-commit:5`
-  - `~/Studio/butler/assets/hooks/pre-push:8`
+  - `assets/hooks/prepare-commit-msg:5`
+  - `assets/hooks/pre-merge-commit:5`
+  - `assets/hooks/pre-push:8`
 - Managed `.github` templates encode governance checklist and review-gate expectations:
-  - `~/Studio/butler/templates/.github/copilot-instructions.md:1`
-  - `~/Studio/butler/templates/.github/pull_request_template.md:1`
+  - `templates/.github/copilot-instructions.md:1`
+  - `templates/.github/pull_request_template.md:1`
 
 ## 12) Engineering assessment (strengths, trade-offs, risks)
 
@@ -354,18 +355,3 @@ File:
 - outsider legacy-marker scan walks and reads all repo files on each command; this is simple but potentially heavy on large repos.
 - Configuration is intentionally centralised and opinionated; this reduces drift but also limits per-repo adaptability.
 - Heavy dependence on `gh` runtime availability and auth quality for review features.
-
-## 13) Validation note from this environment
-
-I executed smoke scripts during this review.
-
-Results:
-- `~/Studio/butler/script/ci_smoke.sh` failed immediately because current runtime Ruby is `2.6.10`, while Butler requires `>= 4.0`.
-- `~/Studio/butler/script/review_smoke.sh` then failed with `undefined method 'filter_map'`, which is consistent with running on old Ruby.
-
-Requirement sources:
-- `~/Studio/butler/.ruby-version:1`
-- `~/Studio/butler/README.md:10`
-- `~/Studio/butler/script/ci_smoke.sh:116`
-
-So behavioural conclusions above are from code inspection plus partial runtime evidence before Ruby-version mismatch halted execution.
