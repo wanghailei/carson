@@ -5,6 +5,54 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.5.0 (2026-02-21)
+
+### User Overview
+
+#### What changed
+
+- Added one-command source installer: `./install.sh`.
+- Split installation guidance into public user and internal developer tracks.
+- Added Butler evolution planning document: `docs/butler_evo_plan.md`.
+- Stabilised review sweep smoke fixtures with relative timestamps to remove date drift failures.
+
+#### Why users should care
+
+- Source-based onboarding is now a single command.
+- Installation paths are clearer for end users versus contributors.
+- Governance smoke coverage is more stable over time.
+
+#### What users must do now
+
+1. For source-based onboarding, run `./install.sh`.
+2. For gem-based onboarding, pin and install `butler-to-merge` at `0.5.0`.
+3. No migration is required for existing `0.4.0` policy/runtime behaviour.
+
+#### Breaking or removed behaviour
+
+- None.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install butler-to-merge -v 0.5.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- Added `install.sh` as a source-install entrypoint.
+- No CLI command-surface changes.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+
+#### Verification evidence
+
+- `script/review_smoke.sh` now uses relative fixture timestamps for sweep-window stability.
+
 ## 0.4.0 (2026-02-18)
 
 ### User Overview
