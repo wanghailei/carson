@@ -65,19 +65,22 @@ Example repository path:
 
 ### 1) Install Butler globally once
 
-Start with one command:
+Public package installation starts from `1.0.0`.
+
+Before `1.0.0`:
+
+- public RubyGems installation is not available yet.
+
+From `1.0.0` onwards, start with:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/install.sh | bash
+gem install butler-to-merge
 ```
-
-This installer builds Butler from source and installs it locally for your user account, so it works even before package publishing.
 
 Prerequisites:
 
 - Ruby `>= 4.0`
-- `git`
-- `curl`
+- `gem`
 
 Verify:
 
@@ -85,18 +88,11 @@ Verify:
 butler version
 ```
 
-If `butler` is not found in your shell, add `~/.local/bin` to `PATH`.
-
-Alternative (if you already cloned Butler locally):
-
-```bash
-cd /local/path/of/butler
-./install.sh
-```
+If `butler` is not found in your shell, add `$(ruby -e 'print Gem.user_dir')/bin` to `PATH`.
 
 Expected result:
 
-- `butler version` prints the installed Butler version (for example `0.4.0`).
+- `butler version` prints the installed Butler version (for example `1.0.0`).
 - `butler` is the primary command, and `butler-to-merge` is an equivalent alias.
 
 ### 2) Prepare the repository
@@ -147,10 +143,11 @@ Then ensure this workflow is required in branch protection.
 
 ### 6) Set repository defaults (optional helper)
 
-Use the helper script directly (no local Butler checkout required):
+Use the helper script from a Butler checkout:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/wanghailei/butler/main/script/bootstrap_repo_defaults.sh | bash -s -- <owner>/<repo> --checks "Syntax and smoke tests,Butler policy"
+cd /local/path/of/butler
+script/bootstrap_repo_defaults.sh <owner>/<repo> --checks "Syntax and smoke tests,Butler policy"
 ```
 
 ## Feature: When to use `init`
