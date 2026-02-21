@@ -137,4 +137,4 @@ If any new public CLI/API name becomes necessary during implementation, that nam
 3. Governance posture: human review remains mandatory at every maturity level in this roadmap.
 4. Existing Butler architecture and outsider boundary remain non-negotiable.
 5. Baseline evidence references existing Butler guides and contracts in:
-`/Users/Hailei/dev/butler/docs/butler_tech_guide.md`, `/Users/Hailei/dev/butler/docs/butler_user_guide.md`, `/Users/Hailei/dev/butler/README.md`.
+`docs/butler_tech_guide.md`, `docs/butler_user_guide.md`, `README.md`.
