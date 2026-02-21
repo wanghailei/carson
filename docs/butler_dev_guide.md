@@ -40,10 +40,19 @@ If `butler` is not found in your shell, add `~/.local/bin` to `PATH`.
 
 Use this only when direct raw GitHub URLs are not accessible for a private repository.
 
+Security note:
+
+- use trusted `<owner>/<repo>` and a trusted ref (tag or commit SHA preferred over `main`)
+- download first, review content, then execute
+- use `/tmp` for temporary installer files
+
 With GitHub CLI:
 
 ```bash
-gh api -H "Accept: application/vnd.github.raw" "repos/<owner>/<repo>/contents/install.sh?ref=main" | bash
+gh api -H "Accept: application/vnd.github.raw" "repos/<owner>/<repo>/contents/install.sh?ref=<trusted_ref>" > /tmp/butler-install.sh
+sed -n '1,120p' /tmp/butler-install.sh
+bash /tmp/butler-install.sh
+rm -f /tmp/butler-install.sh
 ```
 
 With `curl` and token:
@@ -52,7 +61,10 @@ With `curl` and token:
 curl -fsSL \
   -H "Authorization: Bearer $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/<owner>/<repo>/contents/install.sh?ref=main" | bash
+  "https://api.github.com/repos/<owner>/<repo>/contents/install.sh?ref=<trusted_ref>" > /tmp/butler-install.sh
+sed -n '1,120p' /tmp/butler-install.sh
+bash /tmp/butler-install.sh
+rm -f /tmp/butler-install.sh
 ```
 
 ## Basic smoke verification for a client repository

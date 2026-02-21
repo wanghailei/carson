@@ -2,11 +2,13 @@
 
 ## Purpose
 
-This guide explains how client project teams use Butler from `0.4.0` onwards.
+This guide explains how client project teams use Butler from `1.0.0` onwards for public releases.
 
 The focus is operational: what to run, when to run it, and what to expect.
 
 Version-by-version change history is tracked in `RELEASE.md`.
+
+For private/pre-public installation workflows, use `docs/butler_dev_guide.md`.
 
 ## Scope and boundaries
 
@@ -42,7 +44,7 @@ Boundary rules:
 5. Run scheduled late-review monitoring with `review sweep`.
 6. Retire Butler from a repository when needed with `offboard`.
 
-## Feature: Quick start in one command (`0.4.0+`)
+## Feature: Quick start in one command (`1.0.0+`)
 
 For a repository at a local demo path:
 
@@ -57,7 +59,7 @@ This command performs baseline setup in sequence:
 - apply managed `.github/*` templates
 - run an initial audit report
 
-## Feature: First-time setup for a new repository (`0.4.0+`)
+## Feature: First-time setup for a new repository (`1.0.0+`)
 
 Example repository path:
 
@@ -88,11 +90,17 @@ Verify:
 butler version
 ```
 
-If `butler` is not found in your shell, add `$(ruby -e 'print Gem.user_dir')/bin` to `PATH`.
+If installation fails with a permissions error, use:
+
+```bash
+gem install --user-install butler-to-merge
+```
+
+If you used `--user-install` and `butler` is not found in your shell, add `$(ruby -e 'print Gem.user_dir')/bin` to `PATH`.
 
 Expected result:
 
-- `butler version` prints the installed Butler version (for example `1.0.0`).
+- `butler version` prints the installed Butler version (for example `X.Y.Z`).
 - `butler` is the primary command, and `butler-to-merge` is an equivalent alias.
 
 ### 2) Prepare the repository
@@ -136,12 +144,29 @@ jobs:
   governance:
     uses: wanghailei/butler/.github/workflows/butler_policy.yml@main
     with:
-      butler_version: "0.4.0"
+      butler_version: "X.Y.Z"
 ```
+
+Set `butler_version` to a released public Butler version (for the first public release: `1.0.0`).
 
 Then ensure this workflow is required in branch protection.
 
 ### 6) Set repository defaults (optional helper)
+
+This helper script applies repository defaults using GitHub CLI.
+
+Prerequisites:
+
+- `gh` is installed and available in `PATH`.
+- `gh auth status` confirms authentication to the correct host/account.
+- your account can edit branch protection and repository secrets on `<owner>/<repo>`.
+
+Warning: `script/bootstrap_repo_defaults.sh` makes privileged repository changes:
+
+- updates branch protection and required checks
+- may create or update repository secrets when configured
+
+Double-check `<owner>/<repo>` before running.
 
 Use the helper script from a Butler checkout:
 
