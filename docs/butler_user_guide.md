@@ -1,138 +1,104 @@
 # Butler User Guide
 
-## Purpose
+## Brief
 
-This guide explains how client project teams use Butler from `1.0.0` onwards for public releases.
+Butler helps you bootstrap and run repository governance with a predictable workflow.
 
-The focus is operational: what to run, when to run it, and what to expect.
+It is an outsider tool: Butler runs from your workstation and does not install Butler-owned tooling inside client repositories.
 
-Version-by-version change history is tracked in `RELEASE.md`.
+Your target outcome as a new user is simple:
 
-For private/pre-public installation workflows, use `docs/butler_dev_guide.md`.
+1. Install Butler once.
+2. Configure a repository once.
+3. Run a short daily command cadence.
 
-## Scope and boundaries
+## Who this guide is for
 
-In scope:
+Use this guide if you are onboarding Butler in a client repository and want a clear path from zero setup to stable daily operation.
 
-- local usage in client repositories
-- CI governance integration
-- review-gate and sweep workflow
+For Butler implementation details, use `docs/butler_tech_guide.md`.
 
-Out of scope:
+## User journey at a glance
 
-- Butler internals and implementation detail
-- replacing GitHub as merge authority
+1. Install Butler.
+2. Verify your runtime and shell path.
+3. Configure one repository with `butler init`.
+4. Add/pin Butler governance in CI.
+5. Run daily commands (`sync`, `audit`, `prune`, `review gate`).
+6. Use `offboard` when retiring Butler from a repository.
 
-Boundary rules:
+## 1) Install Butler
 
-- Butler runs outside client repositories.
-- Butler-owned artefacts must not exist in host repositories (`.butler.yml`, `bin/butler`, `.tools/butler/*`).
-- Butler may manage selected GitHub-native files in host repositories under `.github/*`.
-
-## Module relationships
-
-- Developer workstation: runs `butler` commands locally.
-- Client repository: receives GitHub-native managed files and normal project changes.
-- GitHub: remains the merge authority and required-check gate.
-
-## Core flow
-
-1. Install Butler once on the workstation.
-2. Initialise each repository with `butler init [repo_path]`.
-3. Use Butler continuously during local development (`audit`, `sync`, `prune`).
-4. Enforce merge readiness with `review gate`.
-5. Run scheduled late-review monitoring with `review sweep`.
-6. Retire Butler from a repository when needed with `offboard`.
-
-## Feature: Quick start in one command (`1.0.0+`)
-
-For a repository at a local demo path:
-
-```bash
-butler init /local/path/of/repo
-```
-
-This command performs baseline setup in sequence:
-
-- align remote naming for Butler (`origin` -> `github` when needed)
-- install and enforce Butler hooks
-- apply managed `.github/*` templates
-- run an initial audit report
-
-## Feature: First-time setup for a new repository (`1.0.0+`)
-
-Example repository path:
-
-- `/local/path/of/repo`
-
-### 1) Install Butler globally once
-
-Public package installation starts from `1.0.0`.
-
-Before `1.0.0`:
-
-- public RubyGems installation is not available yet.
-
-From `1.0.0` onwards, start with:
-
-```bash
-gem install butler-to-merge
-```
-
-Prerequisites:
+### Prerequisites
 
 - Ruby `>= 4.0`
-- `gem`
+- `gem` in `PATH`
+- `git` in `PATH`
+- `gh` in `PATH` (recommended for full governance and review features)
 
-Verify:
+### Option A (recommended): install from RubyGems
+
+```bash
+gem install --user-install butler-to-merge -v 0.5.0
+```
+
+If your shell cannot find `butler`, add your Ruby user bin directory:
+
+```bash
+export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+```
+
+### Option B: install from a Butler source checkout
+
+```bash
+git clone https://github.com/wanghailei/butler.git
+cd butler
+./install.sh
+```
+
+### Verify installation
 
 ```bash
 butler version
 ```
 
-If installation fails with a permissions error, use:
-
-```bash
-gem install --user-install butler-to-merge
-```
-
-If you used `--user-install` and `butler` is not found in your shell, add `$(ruby -e 'print Gem.user_dir')/bin` to `PATH`.
-
 Expected result:
 
-- `butler version` prints the installed Butler version (for example `X.Y.Z`).
-- `butler` is the primary command, and `butler-to-merge` is an equivalent alias.
+- version prints `0.5.0` (or newer)
+- executable `butler` is available
+- alias `butler-to-merge` is available
 
-### 2) Prepare the repository
+## 2) Configure your first repository
+
+Assume your project lives at `/local/path/of/repo`.
+
+### Step 1: ensure Butler remote naming expectation
 
 ```bash
 cd /local/path/of/repo
 git remote get-url github >/dev/null 2>&1 || git remote rename origin github
 ```
 
-### 3) Apply local Butler baseline
+### Step 2: run one-command baseline setup
 
 ```bash
 butler init /local/path/of/repo
 ```
 
-Expected result:
+`init` performs:
 
-- global hooks installed under `~/.butler/hooks/<version>/`
-- repository `core.hooksPath` set to Butler hooks path
-- Butler reports written under `~/.cache/butler` by default
-- when `HOME` is invalid, Butler falls back to `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
-- managed files written:
-  - `.github/copilot-instructions.md`
-  - `.github/pull_request_template.md`
+- hook installation under `~/.butler/hooks/<version>/`
+- repository `core.hooksPath` alignment to Butler global hooks
+- managed GitHub template sync under `.github/*`
+- initial governance audit output
 
-### 4) Commit managed GitHub files in the repository
+### Step 3: commit managed GitHub files
 
-Commit and push the generated `.github/*` files as normal repository content.
+Commit generated `.github/*` files in the client repository as normal project files.
 
-### 5) Add Butler governance workflow in repository CI
+### Step 4: pin Butler governance in CI
 
-Create `.github/workflows/butler_policy.yml` in the repository:
+Create `/local/path/of/repo/.github/workflows/butler_policy.yml`:
 
 ```yaml
 name: Butler governance
@@ -144,114 +110,152 @@ jobs:
   governance:
     uses: wanghailei/butler/.github/workflows/butler_policy.yml@main
     with:
-      butler_version: "X.Y.Z"
+      butler_version: "0.5.0"
 ```
 
-Set `butler_version` to a released public Butler version (for the first public release: `1.0.0`).
+Then set required checks in repository branch protection to include Butler governance.
 
-Then ensure this workflow is required in branch protection.
+### Optional: one-command GitHub defaults bootstrap
 
-### 6) Set repository defaults (optional helper)
-
-This helper script applies repository defaults using GitHub CLI.
-
-Prerequisites:
-
-- `gh` is installed and available in `PATH`.
-- `gh auth status` confirms authentication to the correct host/account.
-- your account can edit branch protection and repository secrets on `<owner>/<repo>`.
-
-Warning: `script/bootstrap_repo_defaults.sh` makes privileged repository changes:
-
-- updates branch protection and required checks
-- may create or update repository secrets when configured
-
-Double-check `<owner>/<repo>` before running.
-
-Use the helper script from a Butler checkout:
+From a local Butler checkout:
 
 ```bash
 cd /local/path/of/butler
-script/bootstrap_repo_defaults.sh <owner>/<repo> --checks "Syntax and smoke tests,Butler policy"
+script/bootstrap_repo_defaults.sh <owner>/<repo> --checks "Syntax and smoke tests,Butler governance"
 ```
 
-## Feature: When to use `init`
+This script updates GitHub settings (for example branch protection), so confirm target repository carefully before running.
 
-Use `butler init /local/path/of/repo` when:
+## 3) Configure boundaries correctly
 
-- onboarding Butler to a repository for the first time
-- setting up a fresh local clone that has not had Butler hook/template baseline applied
-- reapplying baseline after deliberate local Butler hook reset
+Butler enforces outsider boundaries in client repositories.
 
-Do not use `init` as a daily command. For day-to-day work, use:
+Blocked Butler fingerprints in host repositories:
 
+- `.butler.yml`
+- `bin/butler`
+- `.tools/butler/*`
+- legacy Butler marker artefacts
+
+Allowed managed persistence in host repositories:
+
+- selected GitHub-native files under `.github/*`
+
+## 4) Run Butler daily
+
+Use this practical daily cadence:
+
+### Start of work
+
+```bash
+butler sync
+butler audit
+```
+
+### Before push or PR update
+
+```bash
+butler audit
+butler template check
+```
+
+If template drift is detected:
+
+```bash
+butler template apply
+```
+
+### Keep local branches clean
+
+```bash
+butler prune
+```
+
+### Before merge recommendation
+
+```bash
+gh pr list --state open --limit 50
+butler review gate
+```
+
+### Scheduled late-review monitoring
+
+Run every 8 hours in CI:
+
+```bash
+butler review sweep
+```
+
+## 5) Understand outputs and exit codes
+
+Butler uses a strict exit contract:
+
+- `0 - OK`
+- `1 - runtime/configuration error`
+- `2 - policy blocked (hard stop)`
+
+Treat exit `2` as a mandatory stop until the blocking condition is resolved.
+
+Report output directory behaviour:
+
+- default: `~/.cache/butler`
+- fallback when `HOME` is invalid: `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
+
+## 6) Troubleshooting quick path
+
+### `butler: command not found`
+
+- confirm Ruby and gem installation
+- ensure `$(ruby -e 'print Gem.user_dir')/bin` is in `PATH`
+
+### review gate fails on actionable comments
+
+- respond with a valid `Codex:` disposition comment
+- include disposition token and target comment/review URL
+- rerun `butler review gate`
+
+### hooks check blocks
+
+```bash
+butler hook
+butler check
+```
+
+### template drift blocks
+
+```bash
+butler template apply
+butler template check
+```
+
+## 7) Offboard cleanly when needed
+
+To retire Butler from a repository:
+
+```bash
+butler offboard /local/path/of/repo
+```
+
+This command removes Butler-managed host artefacts and unsets `core.hooksPath` when it points to Butler-managed global hooks.
+
+## Command quick reference
+
+- `butler init [repo_path]`
 - `butler audit`
 - `butler sync`
 - `butler prune`
+- `butler hook`
+- `butler check`
+- `butler template check`
+- `butler template apply`
+- `butler review gate`
+- `butler review sweep`
+- `butler offboard [repo_path]`
+- `butler version`
 
-## Feature: When to use `offboard`
-
-Use `butler offboard /local/path/of/repo` when:
-
-- removing Butler from a repository
-- cleaning legacy Butler artefacts from earlier versions
-- resetting a repository before re-onboarding with a newer Butler release
-
-What `offboard` removes:
-
-- Butler-managed `.github/*` template files
-- Butler governance workflow files (`.github/workflows/butler-governance.yml`, `.github/workflows/butler_policy.yml`)
-- legacy Butler artefacts (`.butler.yml`, `bin/butler`, `.tools/butler`)
-
-What `offboard` changes:
-
-- unsets repo `core.hooksPath` when it points to Butler-managed global hooks
-
-## Feature: Daily usage pattern
-
-Use this normal local cadence in client repositories:
-
-1. Start work: `butler audit`.
-2. Keep local main current: `butler sync`.
-3. Before commit and before push: `butler audit`.
-4. Clean stale local branches: `butler prune`.
-5. Before merge recommendation: `gh pr list --state open --limit 50`, then `butler review gate`.
-
-## Feature: Exit status contract
-
-Butler command exits:
-
-- `0`: OK
-- `1`: runtime or configuration error
-- `2`: policy blocked (hard stop)
-
-Treat exit `2` as a mandatory stop until resolved.
-
-## Feature: Managed GitHub templates
-
-Butler manages:
-
-- `.github/copilot-instructions.md`
-- `.github/pull_request_template.md`
-
-Commands:
-
-- `butler template check`: detect drift
-- `butler template apply`: apply canonical content
-
-## Feature: Review gate and review sweep
-
-- `butler review gate`: merge-readiness check on unresolved threads and actionable review findings.
-- `butler review sweep`: scheduled scan for late actionable review activity on recent pull requests.
-
-Recommended sweep schedule:
-
-- every 8 hours in GitHub Actions.
-
-## References
+## Related docs
 
 - `README.md`
 - `RELEASE.md`
 - `docs/butler_tech_guide.md`
-- `.github/workflows/butler_policy.yml`
-- `script/bootstrap_repo_defaults.sh`
+- `docs/butler_dev_guide.md`
