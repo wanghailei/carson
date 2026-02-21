@@ -72,14 +72,7 @@ Expected result:
 
 Assume your project lives at `/local/path/of/repo`.
 
-### Step 1: ensure Butler remote naming expectation
-
-```bash
-cd /local/path/of/repo
-git remote get-url github >/dev/null 2>&1 || git remote rename origin github
-```
-
-### Step 2: run one-command baseline setup
+### Step 1: run one-command baseline setup
 
 ```bash
 butler init /local/path/of/repo
@@ -87,33 +80,35 @@ butler init /local/path/of/repo
 
 `init` performs:
 
+- remote alignment (`origin` to `github` when required)
 - hook installation under `~/.butler/hooks/<version>/`
 - repository `core.hooksPath` alignment to Butler global hooks
 - managed GitHub template sync under `.github/*`
 - initial governance audit output
 
-### Step 3: commit managed GitHub files
+### Step 2: commit managed GitHub files
 
 Commit generated `.github/*` files in the client repository as normal project files.
 
-### Step 4: pin Butler governance in CI
+### Step 3: pin Butler policy workflow in CI
 
 Create `/local/path/of/repo/.github/workflows/butler_policy.yml`:
 
 ```yaml
-name: Butler governance
+name: Butler policy
 
 on:
   pull_request:
 
 jobs:
   governance:
-    uses: wanghailei/butler/.github/workflows/butler_policy.yml@main
+    uses: wanghailei/butler/.github/workflows/butler_policy.yml@9dafd1b32042dc064b9cea743fd02c933d2322a8
     with:
       butler_version: "0.5.0"
 ```
 
-Then set required checks in repository branch protection to include Butler governance.
+Then set required checks in repository branch protection to include `Butler policy`.
+When adopting newer Butler releases, update both the workflow commit SHA and `butler_version` together.
 
 ### Optional: one-command GitHub defaults bootstrap
 
@@ -121,7 +116,7 @@ From a local Butler checkout:
 
 ```bash
 cd /local/path/of/butler
-script/bootstrap_repo_defaults.sh <owner>/<repo> --checks "Syntax and smoke tests,Butler governance"
+script/bootstrap_repo_defaults.sh <owner>/<repo> --checks "Syntax and smoke tests,Butler policy"
 ```
 
 This script updates GitHub settings (for example branch protection), so confirm target repository carefully before running.
@@ -206,7 +201,7 @@ Report output directory behaviour:
 ### `butler: command not found`
 
 - confirm Ruby and gem installation
-- ensure `$(ruby -e 'print Gem.user_dir')/bin` is in `PATH`
+- ensure `$(ruby -e 'print Gem.user_dir')/bin` or `~/.local/bin` is in `PATH`
 
 ### review gate fails on actionable comments
 
