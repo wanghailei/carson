@@ -66,6 +66,13 @@ log_file="${BUTLER_MOCK_GH_LOG_FILE:?}"
 mkdir -p "$state_dir"
 printf '%s\n' "$*" >> "$log_file"
 
+# Keep sweep fixtures relative to execution time so the 3-day sweep window
+# remains valid over time.
+sweep_updated_at="$(ruby -rtime -e 'print (Time.now.utc - 3600).iso8601')"
+sweep_baseline_at="$(ruby -rtime -e 'print (Time.now.utc - 7200).iso8601')"
+sweep_late_comment_at="$(ruby -rtime -e 'print (Time.now.utc - 1800).iso8601')"
+sweep_old_comment_at="$(ruby -rtime -e 'print (Time.now.utc - 10800).iso8601')"
+
 if [[ "${1:-}" == "--version" ]]; then
   if [[ "$scenario" == "gh_unavailable" ]]; then
     exit 1
@@ -105,12 +112,12 @@ JSON
       ;;
     sweep_findings)
       cat <<JSON
-{"data":{"repository":{"pullRequest":{"number":88,"title":"Closed PR","url":"https://github.com/mock-org/mock-repo/pull/88","state":"MERGED","updatedAt":"2026-02-17T00:00:00Z","mergedAt":"2026-02-16T00:00:00Z","closedAt":"2026-02-16T00:00:00Z","author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Late security bug found.","url":"https://github.com/mock-org/mock-repo/pull/88#issuecomment-late","createdAt":"2026-02-16T08:00:00Z"}]},"reviews":{"nodes":[]}}}}}
+{"data":{"repository":{"pullRequest":{"number":88,"title":"Closed PR","url":"https://github.com/mock-org/mock-repo/pull/88","state":"MERGED","updatedAt":"$sweep_updated_at","mergedAt":"$sweep_baseline_at","closedAt":"$sweep_baseline_at","author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Late security bug found.","url":"https://github.com/mock-org/mock-repo/pull/88#issuecomment-late","createdAt":"$sweep_late_comment_at"}]},"reviews":{"nodes":[]}}}}}
 JSON
       ;;
     sweep_clear)
       cat <<JSON
-{"data":{"repository":{"pullRequest":{"number":88,"title":"Closed PR","url":"https://github.com/mock-org/mock-repo/pull/88","state":"MERGED","updatedAt":"2026-02-17T00:00:00Z","mergedAt":"2026-02-16T00:00:00Z","closedAt":"2026-02-16T00:00:00Z","author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Old security note before merge.","url":"https://github.com/mock-org/mock-repo/pull/88#issuecomment-old","createdAt":"2026-02-15T08:00:00Z"}]},"reviews":{"nodes":[]}}}}}
+{"data":{"repository":{"pullRequest":{"number":88,"title":"Closed PR","url":"https://github.com/mock-org/mock-repo/pull/88","state":"MERGED","updatedAt":"$sweep_updated_at","mergedAt":"$sweep_baseline_at","closedAt":"$sweep_baseline_at","author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Old security note before merge.","url":"https://github.com/mock-org/mock-repo/pull/88#issuecomment-old","createdAt":"$sweep_old_comment_at"}]},"reviews":{"nodes":[]}}}}}
 JSON
       ;;
     *)
@@ -135,7 +142,7 @@ JSON
         case "$scenario" in
           sweep_findings|sweep_clear)
             cat <<JSON
-[{"number":88,"title":"Closed PR","url":"https://github.com/mock-org/mock-repo/pull/88","state":"MERGED","updatedAt":"2026-02-17T00:00:00Z","mergedAt":"2026-02-16T00:00:00Z","closedAt":"2026-02-16T00:00:00Z","author":{"login":"owner"}}]
+[{"number":88,"title":"Closed PR","url":"https://github.com/mock-org/mock-repo/pull/88","state":"MERGED","updatedAt":"$sweep_updated_at","mergedAt":"$sweep_baseline_at","closedAt":"$sweep_baseline_at","author":{"login":"owner"}}]
 JSON
             ;;
           *)
@@ -206,7 +213,7 @@ JSON
             exit 0
           fi
           cat <<JSON
-[{"number":88,"title":"Closed PR","html_url":"https://github.com/mock-org/mock-repo/pull/88","state":"closed","updated_at":"2026-02-17T00:00:00Z","merged_at":"2026-02-16T00:00:00Z","closed_at":"2026-02-16T00:00:00Z","user":{"login":"owner"}}]
+[{"number":88,"title":"Closed PR","html_url":"https://github.com/mock-org/mock-repo/pull/88","state":"closed","updated_at":"$sweep_updated_at","merged_at":"$sweep_baseline_at","closed_at":"$sweep_baseline_at","user":{"login":"owner"}}]
 JSON
           ;;
         *)
