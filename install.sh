@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Overview:
+# - Installs Butler for the current user from a local checkout or a trusted fallback clone.
+# - Builds the gem into an ephemeral work directory so source trees stay clean.
 set -euo pipefail
 
 fail() {
@@ -47,6 +50,7 @@ script_dir="$(dirname "$script_path")"
 
 source_dir=""
 source_label=""
+# Prefer local source when this script is executed from a Butler checkout.
 if [[ -f "$script_dir/butler.gemspec" && -f "$script_dir/VERSION" ]]; then
 	source_dir="$script_dir"
 	source_label="$script_dir"
@@ -68,11 +72,12 @@ if [[ -z "$version" ]]; then
 	fail "Butler install error: VERSION file is empty in source directory $source_dir."
 fi
 
-if ! gem build butler.gemspec >/dev/null; then
+# Build into the ephemeral installer workspace to avoid leaving repo-root artefacts.
+gem_file="$work_dir/butler-to-merge-${version}.gem"
+if ! gem build butler.gemspec --output "$gem_file" >/dev/null; then
 	fail "Butler install error: failed to build butler.gemspec."
 fi
 
-gem_file="butler-to-merge-${version}.gem"
 if [[ ! -f "$gem_file" ]]; then
 	fail "Butler install error: expected gem file '$gem_file' was not created."
 fi
