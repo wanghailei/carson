@@ -5,6 +5,48 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.5.1 (2026-02-22)
+
+### User Overview
+
+#### What changed
+
+- Fixed source installer behaviour so running `./install.sh` no longer leaves `butler-to-merge-<version>.gem` in the Butler repository root.
+- Updated user-facing install and pin examples to `0.5.1`.
+
+#### Why users should care
+
+- Source installation now leaves Butler checkouts clean after install.
+- Version guidance in onboarding docs now matches the latest published patch release.
+
+#### What users must do now
+
+1. Upgrade to `0.5.1` where you pin Butler explicitly.
+2. No migration is required for existing `0.5.0` runtime/governance behaviour.
+
+#### Breaking or removed behaviour
+
+- None.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install butler-to-merge -v 0.5.1
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- No CLI, config schema, or exit-contract changes.
+
+#### Verification evidence
+
+- Installer behaviour corrected by PR #32 (`install.sh` temporary gem handling).
+
 ## 0.5.0 (2026-02-21)
 
 ### User Overview
