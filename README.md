@@ -1,91 +1,121 @@
 # Butler
 
-Butler is an outsider governance runtime.
+Butler is an outsider governance runtime for GitHub repositories.
 
-It runs against a repository without placing Butler-owned artefacts into that repository.
+It runs from your workstation, applies governance consistently, and avoids placing Butler-owned tooling inside client repositories.
 
-## Runtime
+## Why Butler
 
-- Ruby `>= 4.0` available in your shell (any Ruby manager is acceptable)
-- Supported Ruby versions: `>= 4.0`
-- Primary CLI executable: `butler`
-- CLI alias: `butler-to-merge`
-- Default report output directory: `~/.cache/butler`
-- Report fallback order when `HOME` is invalid: `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
+- keeps GitHub as merge authority
+- enforces local hard protection and review discipline
+- provides deterministic governance checks with stable exit codes
+- keeps host repositories clean from Butler runtime artefacts
 
-## Version
+## Quick start (about 10 minutes)
 
-- Canonical source: `VERSION`
-- CLI version output: `butler version` or `butler --version`
-- Release notes: `RELEASE.md`
+### 1) Prerequisites
 
-## Commands
+- Ruby `>= 4.0`
+- `gem`, `git`, and `gh` available in `PATH`
 
-- `butler audit`
-- `butler sync`
-- `butler prune`
-- `butler hook`
-- `butler check`
-- `butler init [repo_path]`
-- `butler offboard [repo_path]`
-- `butler template check`
-- `butler template apply`
-- `butler review gate`
-- `butler review sweep`
-- `butler version`
+### 2) Install Butler
 
-## Documentation Map
+```bash
+gem install --user-install butler-to-merge -v 0.5.0
+```
 
-To minimise overlap across documents:
+If `butler` is not found after install:
 
-- `README.md`: product overview, runtime prerequisites, command index.
-- `docs/butler_user_guide.md`: common-user onboarding and daily usage workflows.
-- `docs/butler_tech_guide.md`: technical behaviour guide for contributors/advanced operators, including full codebase architecture and subsystem review.
-- `RELEASE.md`: version-by-version deltas, breaking changes, and migration notes only.
+```bash
+export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+```
 
-## Outsider Boundary
+### 3) Verify installation
 
-In host repositories, Butler blocks on:
+```bash
+butler version
+```
+
+Expected: `0.5.0` (or newer).
+
+### 4) Bootstrap one repository
+
+```bash
+butler init /local/path/of/repo
+```
+
+Expected outcomes:
+
+- remote aligned to `github` when required
+- hooks installed under `~/.butler/hooks/<version>/`
+- `.github` managed files synced
+- initial audit executed
+
+### 5) Commit managed GitHub files
+
+Commit generated `.github/*` files in the client repository.
+
+## CI quick start (pinned)
+
+In client repositories, pin the reusable workflow to an immutable commit SHA and pin the Butler version explicitly.
+
+```yaml
+name: Butler policy
+
+on:
+  pull_request:
+
+jobs:
+  governance:
+    uses: wanghailei/butler/.github/workflows/butler_policy.yml@9dafd1b32042dc064b9cea743fd02c933d2322a8
+    with:
+      butler_version: "0.5.0"
+```
+
+When upgrading Butler, update both values together.
+
+## Daily minimum
+
+```bash
+butler sync
+butler audit
+butler prune
+```
+
+Before recommending merge:
+
+```bash
+butler review gate
+```
+
+For scheduled late-review monitoring (for example every 8 hours in CI):
+
+```bash
+butler review sweep
+```
+
+## Outsider boundary
+
+Blocked Butler fingerprints in host repositories:
 
 - `.butler.yml`
 - `bin/butler`
 - `.tools/butler/*`
-- legacy marker artefacts from earlier template model
+- legacy Butler marker artefacts
 
-Allowed persistence in host repositories:
+Allowed managed persistence:
 
-- GitHub-native files that Butler manages, currently under `.github/*`
+- selected GitHub-native files under `.github/*`
 
-## Hook Model
+## Exit contract
 
-- Hook assets are carried by Butler in `assets/hooks/*`
-- `butler hook` installs hooks under `~/.butler/hooks/<version>/`
-- Repo `core.hooksPath` points to that global hook path
+- `0 - OK`
+- `1 - runtime/configuration error`
+- `2 - policy blocked (hard stop)`
 
-## Template Model
+## Where to read next
 
-- Template sources are carried by Butler in `templates/.github/*`
-- `butler template check` performs whole-file drift checks
-- `butler template apply` writes full managed file content
-
-## Offboard Model
-
-- `butler offboard [repo_path]` retires Butler from a repository
-- It unsets `core.hooksPath` when it points to Butler-managed global hooks
-- It removes Butler-managed host artefacts and known legacy Butler files
-
-## CI
-
-- Butler repository CI workflow: `.github/workflows/ci.yml`
-- Review sweep workflow: `.github/workflows/review-sweep.yml`
-- Reusable host-repository policy workflow: `.github/workflows/butler_policy.yml`
-
-## Bootstrap Defaults
-
-Use:
-
-- `script/bootstrap_repo_defaults.sh <owner/repo>`
-- Optional checks override: `--checks "check_one,check_two"`
-- Optional token setup: `--set-butler-read-token`
-
-Bootstrap script now configures GitHub branch protection and secrets only.
+- user onboarding and workflows: `docs/butler_user_guide.md`
+- technical behaviour and architecture: `docs/butler_tech_guide.md`
+- contributor/internal install path: `docs/butler_dev_guide.md`
+- version history and migration notes: `RELEASE.md`
