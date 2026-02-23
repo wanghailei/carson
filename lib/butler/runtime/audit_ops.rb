@@ -280,11 +280,11 @@ module Butler
 
 			# Parses `git status --porcelain` and normalises rename targets.
 			def changed_files
-				git_capture!( "status", "--porcelain" ).lines.filter_map do |line|
+				git_capture!( "status", "--porcelain" ).lines.map do |line|
 					raw_path = line[ 3.. ].to_s.strip
 					next if raw_path.empty?
 					raw_path.split( " -> " ).last
-				end
+				end.compact
 			end
 
 			# True when there are no staged/unstaged/untracked file changes.

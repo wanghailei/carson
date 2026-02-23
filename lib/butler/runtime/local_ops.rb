@@ -457,7 +457,7 @@ module Butler
 			# 2) upstream tracking state is marked as gone after fetch --prune.
 			# Branches without upstream tracking are intentionally excluded.
 			def stale_local_branches
-				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.map do |line|
 					branch, upstream, track = line.strip.split( "\t", 3 )
 					upstream = upstream.to_s
 					track = track.to_s
@@ -465,7 +465,7 @@ module Butler
 					next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
 
 					{ branch: branch, upstream: upstream, track: track }
-				end
+				end.compact
 			end
 
 			# Safe delete can fail after squash merges because branch tip is no longer an ancestor.
