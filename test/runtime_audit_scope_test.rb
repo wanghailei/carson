@@ -41,4 +41,12 @@ class RuntimeAuditScopeTest < Minitest::Test
 		assert_equal true, scope.fetch( :unknown_lane )
 		assert_equal "attention", scope.fetch( :status )
 	end
+
+	def test_scope_integrity_treats_install_script_as_tool_scope
+		scope = @runtime.send( :scope_integrity_status, files: [ "install.sh" ], branch: "tool/install-upgrade" )
+		assert_equal false, scope.fetch( :split_required )
+		assert_equal false, scope.fetch( :mismatched_lane_scope )
+		assert_equal "ok", scope.fetch( :status )
+		assert_equal "tool", scope.fetch( :primary_group )
+	end
 end
