@@ -320,7 +320,13 @@ module Butler
 				print_required_hook_status
 				hooks_integrity = hook_integrity_state
 				hooks_ok = hooks_integrity_ok?( hooks_integrity: hooks_integrity )
-				print_hook_action( strict: strict, hooks_ok: hooks_path_ok && hooks_ok )
+				print_hook_action(
+					strict: strict,
+					hooks_ok: hooks_path_ok && hooks_ok,
+					hooks_path_ok: hooks_path_ok,
+					configured: configured,
+					expected: expected
+				)
 				hooks_path_ok && hooks_ok
 			end
 
@@ -357,10 +363,18 @@ module Butler
 				missing_ok && non_executable_ok && symlinked_ok
 			end
 
-			def print_hook_action( strict:, hooks_ok: )
+			def print_hook_action( strict:, hooks_ok:, hooks_path_ok:, configured:, expected: )
 				return if hooks_ok
 
-				message = strict ? "ACTION: run butler hook." : "ACTION: run butler hook to enforce local main protections."
+				if strict && !hooks_path_ok
+					configured_text = configured.to_s.strip
+					if configured_text.empty?
+						puts_line "ACTION: hooks path is unset (expected=#{expected})."
+					else
+						puts_line "ACTION: hooks path mismatch (configured=#{configured_text}, expected=#{expected})."
+					end
+				end
+				message = strict ? "ACTION: run butler hook to align hooks with Butler #{Butler::VERSION}." : "ACTION: run butler hook to enforce local main protections."
 				puts_line message
 			end
 
