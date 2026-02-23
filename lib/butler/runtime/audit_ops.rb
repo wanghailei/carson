@@ -38,6 +38,7 @@ module Butler
 				monitor_report = pr_and_check_report
 				audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
 				scope_guard = print_scope_integrity_guard
+				audit_state = "block" if scope_guard.fetch( :split_required )
 				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
 				write_and_print_pr_monitor_report( report: monitor_report.merge( audit_status: audit_state ) )
 				print_header "Audit Result"
@@ -189,13 +190,17 @@ module Butler
 				lines.join( "\n" )
 			end
 
-			# Waits once before polling so asynchronous AI reviewers have time to post feedback.
+			# Evaluates scope integrity using staged paths first, then working-tree paths as fallback.
 			def print_scope_integrity_guard
-				files = changed_files
+				staged = staged_files
+				files = staged.empty? ? changed_files : staged
+				files_source = staged.empty? ? "working_tree" : "staged"
 				return { status: "ok", split_required: false, unknown_lane: false } if files.empty?
 
 				scope = scope_integrity_status( files: files, branch: current_branch )
 				print_header "Scope Integrity Guard"
+				puts_line "scope_file_source: #{files_source}"
+				puts_line "scope_file_count: #{files.count}"
 				puts_line "branch: #{scope.fetch( :branch )}"
 				puts_line "branch_lane: #{scope.fetch( :lane ) || 'unknown'}"
 				puts_line "primary_group: #{scope.fetch( :primary_group ) || 'unknown'}"
@@ -277,13 +282,22 @@ module Butler
 				match[ 1 ]
 			end
 
+			# Uses index-only paths so commit hooks evaluate exactly what is being committed.
+			def staged_files
+				git_capture!( "diff", "--cached", "--name-only" ).lines.map do |line|
+					raw_path = line.to_s.strip
+					next if raw_path.empty?
+					raw_path.split( " -> " ).last
+				end.compact
+			end
+
 			# Parses `git status --porcelain` and normalises rename targets.
 			def changed_files
-				git_capture!( "status", "--porcelain" ).lines.filter_map do |line|
+				git_capture!( "status", "--porcelain" ).lines.map do |line|
 					raw_path = line[ 3.. ].to_s.strip
 					next if raw_path.empty?
 					raw_path.split( " -> " ).last
-				end
+				end.compact
 			end
 
 			# True when there are no staged/unstaged/untracked file changes.
