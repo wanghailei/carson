@@ -43,9 +43,11 @@ Compact example:
 
 ```json
 {
-	"_comment": "Lane-first branch naming and disposition defaults.",
+	"_comment": "Scope groups are path-based; branch naming is not enforced.",
 	"scope": {
-		"branch_pattern": "^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$"
+		"path_groups": {
+			"domain": [ "app/**", "db/**", "config/**" ]
+		}
 	},
 	"review": {
 		"required_disposition_prefix": "Disposition:"
@@ -71,7 +73,6 @@ Key environment overrides supported by the loader:
 
 - `BUTLER_CONFIG_FILE`
 - `BUTLER_HOOKS_BASE_PATH`
-- `BUTLER_SCOPE_BRANCH_PATTERN`
 - `BUTLER_REVIEW_WAIT_SECONDS`
 - `BUTLER_REVIEW_POLL_SECONDS`
 - `BUTLER_REVIEW_MAX_POLLS`

@@ -7,7 +7,7 @@ module Butler
 	# Config is built-in only for outsider mode; host repositories do not carry Butler config files.
 	class Config
 		attr_reader :git_remote, :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :template_managed_files,
+			:path_groups, :template_managed_files,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation
@@ -31,15 +31,6 @@ module Butler
 					"required_hooks" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
 				},
 				"scope" => {
-					"branch_pattern" => "^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$",
-					"lane_group_map" => {
-						"tool" => "tool",
-						"ui" => "ui",
-						"module" => "domain",
-						"feature" => "domain",
-						"fix" => "domain",
-						"test" => "test"
-					},
 					"path_groups" => {
 						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "assets/hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "butler.gemspec" ],
 						"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
@@ -124,9 +115,6 @@ module Butler
 			hooks = fetch_hash_section( data: copy, key: "hooks" )
 			hooks_path = ENV.fetch( "BUTLER_HOOKS_BASE_PATH", "" ).to_s.strip
 			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
-			scope = fetch_hash_section( data: copy, key: "scope" )
-			scope_branch_pattern = ENV.fetch( "BUTLER_SCOPE_BRANCH_PATTERN", "" ).to_s.strip
-			scope[ "branch_pattern" ] = scope_branch_pattern unless scope_branch_pattern.empty?
 			review = fetch_hash_section( data: copy, key: "review" )
 			review[ "wait_seconds" ] = env_integer( key: "BUTLER_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
 			review[ "poll_seconds" ] = env_integer( key: "BUTLER_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
@@ -166,9 +154,6 @@ module Butler
 			@hooks_base_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "base_path" )
 			@required_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "required_hooks" )
 
-			@branch_pattern = fetch_string( hash: fetch_hash( hash: data, key: "scope" ), key: "branch_pattern" )
-			@branch_regex = compile_branch_regex( pattern: @branch_pattern )
-			@lane_group_map = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "lane_group_map" ).transform_values { |value| value.to_s }
 			@path_groups = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "path_groups" ).transform_values { |value| normalize_patterns( value: value ) }
 
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
@@ -199,7 +184,6 @@ module Butler
 				raise ConfigError, "git.protected_branches must include #{main_branch}" unless protected_branches.include?( main_branch )
 				raise ConfigError, "hooks.base_path cannot be empty" if hooks_base_path.empty?
 				raise ConfigError, "hooks.required_hooks cannot be empty" if required_hooks.empty?
-				raise ConfigError, "scope.lane_group_map cannot be empty" if lane_group_map.empty?
 				raise ConfigError, "scope.path_groups cannot be empty" if path_groups.empty?
 				raise ConfigError, "review.required_disposition_prefix cannot be empty" if review_disposition_prefix.empty?
 				raise ConfigError, "review.risk_keywords cannot be empty" if review_risk_keywords.empty?
@@ -256,12 +240,6 @@ module Butler
 				patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
 				raise ConfigError, "scope.path_groups entries must contain at least one glob" if patterns.empty?
 				patterns
-			end
-
-			def compile_branch_regex( pattern: )
-				Regexp.new( pattern )
-			rescue RegexpError => e
-				raise ConfigError, "invalid scope.branch_pattern (#{e.message})"
 			end
 	end
 end
