@@ -91,11 +91,11 @@ module Butler
 			home = ENV.fetch( "HOME", "" ).to_s.strip
 			return "" unless home.start_with?( "/" )
 
-				File.join( home, ".butler", "config.json" )
-			end
+			File.join( home, ".butler", "config.json" )
+		end
 
 		def self.deep_merge( base:, overlay: )
-			return JSON.parse( JSON.generate( base ) ) unless overlay.is_a?( Hash )
+			return deep_dup_value( value: base ) unless overlay.is_a?( Hash )
 
 			base.each_with_object( {} ) { |( key, value ), copy| copy[ key ] = deep_dup_value( value: value ) }.tap do |merged|
 				overlay.each do |key, value|
