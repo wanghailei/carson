@@ -38,6 +38,7 @@ module Butler
 				monitor_report = pr_and_check_report
 				audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
 				scope_guard = print_scope_integrity_guard
+				audit_state = "block" if scope_guard.fetch( :split_required )
 				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
 				write_and_print_pr_monitor_report( report: monitor_report.merge( audit_status: audit_state ) )
 				print_header "Audit Result"

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "${BUTLER_BIN:-}" ]]; then
+	butler_command=( "$BUTLER_BIN" )
+elif command -v butler >/dev/null 2>&1; then
+	butler_command=( "butler" )
+else
+	echo "Butler policy: 'butler' command is required for pre-commit governance checks." >&2
+	echo "Install Butler and rerun 'butler hook'." >&2
+	exit 1
+fi
+
+if ! "${butler_command[@]}" audit; then
+	echo "Butler policy: commit blocked by governance audit." >&2
+	echo "Resolve reported policy blocks before committing." >&2
+	exit 1
+fi
