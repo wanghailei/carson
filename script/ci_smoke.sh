@@ -226,24 +226,25 @@ for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 done
 echo "PASS: required hooks include pre-commit and are executable"
 
-git switch -c tool/scope-policy-block >/dev/null
-mkdir -p app/models
+git switch -c feature/scope-policy-block >/dev/null
+mkdir -p app/models lib
 printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
-git add app/models/scope_policy_smoke.rb
-expect_exit 2 "audit blocks lane/scope mismatch for staged non-doc files" run_butler audit
+printf "scope enforcement mixed module smoke\n" > lib/scope_policy_tool_smoke.rb
+git add app/models/scope_policy_smoke.rb lib/scope_policy_tool_smoke.rb
+expect_exit 2 "audit blocks mixed module groups for staged non-doc files" run_butler audit
 set +e
-git commit -m "scope mismatch should fail pre-commit" >/dev/null 2>&1
+git commit -m "mixed module groups should fail pre-commit" >/dev/null 2>&1
 commit_status="$?"
 set -e
 if [[ "$commit_status" -eq 0 ]]; then
-	echo "FAIL: pre-commit hook should block commit on scope mismatch" >&2
+	echo "FAIL: pre-commit hook should block commit on mixed module groups" >&2
 	exit 1
 fi
 git reset --hard HEAD >/dev/null
 git switch main >/dev/null
-git branch -D tool/scope-policy-block >/dev/null
+git branch -D feature/scope-policy-block >/dev/null
 
-git switch -c tool/staged-scope-only >/dev/null
+git switch -c feature/staged-scope-only >/dev/null
 mkdir -p app/models lib
 printf "staged scope pass\n" > lib/staged_scope_ok.rb
 printf "unstaged mismatch should not block\n" > app/models/unstaged_scope_violation.rb
@@ -261,7 +262,7 @@ echo "PASS: pre-commit ignores unstaged scope mismatches when staged scope is va
 git reset --hard HEAD >/dev/null
 git clean -fd >/dev/null
 git switch main >/dev/null
-git branch -D tool/staged-scope-only >/dev/null
+git branch -D feature/staged-scope-only >/dev/null
 
 expect_exit 2 "template check reports drift when managed github files are missing" run_butler template check
 expect_exit 0 "template apply writes managed github files" run_butler template apply

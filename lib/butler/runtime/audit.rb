@@ -195,65 +195,64 @@ module Butler
 				staged = staged_files
 				files = staged.empty? ? changed_files : staged
 				files_source = staged.empty? ? "working_tree" : "staged"
-				return { status: "ok", split_required: false, unknown_lane: false } if files.empty?
+				return { status: "ok", split_required: false } if files.empty?
 
 				scope = scope_integrity_status( files: files, branch: current_branch )
 				print_header "Scope Integrity Guard"
 				puts_line "scope_file_source: #{files_source}"
 				puts_line "scope_file_count: #{files.count}"
 				puts_line "branch: #{scope.fetch( :branch )}"
-				puts_line "branch_lane: #{scope.fetch( :lane ) || 'unknown'}"
-				puts_line "primary_group: #{scope.fetch( :primary_group ) || 'unknown'}"
+				puts_line "scope_basis: changed_paths_only"
 				puts_line "detected_groups: #{scope.fetch( :detected_groups ).sort.join( ', ' )}"
+				puts_line "core_groups: #{scope.fetch( :core_groups ).empty? ? 'none' : scope.fetch( :core_groups ).sort.join( ', ' )}"
 				puts_line "non_doc_groups: #{scope.fetch( :non_doc_groups ).empty? ? 'none' : scope.fetch( :non_doc_groups ).sort.join( ', ' )}"
 				puts_line "docs_only_changes: #{scope.fetch( :docs_only )}"
+				puts_line "unmatched_paths_count: #{scope.fetch( :unmatched_paths ).count}"
+				scope.fetch( :unmatched_paths ).each { |path| puts_line "unmatched_path: #{path}" }
 				puts_line "violating_files_count: #{scope.fetch( :violating_files ).count}"
 				scope.fetch( :violating_files ).each { |path| puts_line "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
 				puts_line "checklist_single_business_intent: #{scope.fetch( :split_required ) ? 'needs_review' : 'pass'}"
-				puts_line "checklist_single_scope_group: #{( scope.fetch( :mixed_non_doc ) || scope.fetch( :misc_present ) ) ? 'needs_split' : 'pass'}"
-				puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :mismatched_lane_scope ) || scope.fetch( :unknown_lane ) ) ? 'needs_explanation' : 'pass'}"
-				if scope.fetch( :unknown_lane )
-					puts_line "ACTION: branch naming must match #{config.branch_pattern}; supported lanes: #{config.lane_group_map.keys.join( ', ' )}."
-					return { status: "attention", split_required: scope.fetch( :split_required ), unknown_lane: true }
+				puts_line "checklist_single_scope_group: #{scope.fetch( :split_required ) ? 'needs_split' : 'pass'}"
+				puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :split_required ) || scope.fetch( :misc_present ) ) ? 'needs_explanation' : 'pass'}"
+				if scope.fetch( :split_required )
+					puts_line "ACTION: split/re-branch is required before commit; multiple module groups detected."
+				elsif scope.fetch( :misc_present )
+					puts_line "ACTION: unmatched paths detected; classify via scope.path_groups for stricter module checks."
+				else
+					puts_line "ACTION: scope integrity is within commit policy."
 				end
-				puts_line( scope.fetch( :split_required ) ? "ACTION: split/re-branch is required before commit." : "ACTION: scope integrity is within commit policy." )
-				{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ), unknown_lane: false }
+				{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ) }
 			end
 
-			# Evaluates whether changed files stay within one non-doc scope boundary.
+			# Evaluates whether changed files stay within one core module group.
 			def scope_integrity_status( files:, branch: )
-				lane = branch_lane( branch_name: branch )
-				primary_group = config.lane_group_map[ lane ]
 				grouped_paths = files.map { |path| [ path, scope_group_for_path( path: path ) ] }.to_h
 				detected_groups = grouped_paths.values.uniq
 				non_doc_groups = detected_groups - [ "docs" ]
-				unknown_lane = lane.nil? || primary_group.nil?
-				mixed_non_doc = non_doc_groups.length > 1
-				mismatched_lane_scope = !unknown_lane && non_doc_groups.length == 1 && non_doc_groups.first != primary_group
+				# Tests are supporting changes; they may travel with one core module group.
+				core_groups = non_doc_groups - [ "test", "misc" ]
+				mixed_core_groups = core_groups.length > 1
 				misc_present = non_doc_groups.include?( "misc" )
-				split_required = mixed_non_doc || mismatched_lane_scope || misc_present
+				split_required = mixed_core_groups
+				unmatched_paths = files.select { |path| grouped_paths.fetch( path ) == "misc" }
 				violating_files = files.select do |path|
 					group = grouped_paths.fetch( path )
-					next true if group == "misc"
-					next false if group == "docs"
-					next true if unknown_lane || mixed_non_doc
-					group != primary_group
+					next false if [ "docs", "test", "misc" ].include?( group )
+					core_groups.include?( group )
 				end
 				{
 				branch: branch,
-				lane: lane,
-				primary_group: primary_group,
 				grouped_paths: grouped_paths,
 				detected_groups: detected_groups,
 				non_doc_groups: non_doc_groups,
+				core_groups: core_groups,
 				docs_only: non_doc_groups.empty?,
-				unknown_lane: unknown_lane,
-				mixed_non_doc: mixed_non_doc,
-				mismatched_lane_scope: mismatched_lane_scope,
+				mixed_core_groups: mixed_core_groups,
 				misc_present: misc_present,
 				split_required: split_required,
+				unmatched_paths: unmatched_paths,
 				violating_files: violating_files,
-				status: ( unknown_lane || split_required ) ? "attention" : "ok"
+				status: ( split_required || misc_present ) ? "attention" : "ok"
 				}
 			end
 
@@ -272,14 +271,6 @@ module Butler
 					return path == prefix || path.start_with?( "#{prefix}/" )
 				end
 				File.fnmatch?( pattern, path, File::FNM_PATHNAME | File::FNM_DOTMATCH )
-			end
-
-			# Extracts lane from configured branch naming pattern.
-			def branch_lane( branch_name: )
-				match = config.branch_regex.match( branch_name.to_s )
-				return nil if match.nil?
-				return match[ "lane" ] if match.names.include?( "lane" )
-				match[ 1 ]
 			end
 
 			# Uses index-only paths so commit hooks evaluate exactly what is being committed.
