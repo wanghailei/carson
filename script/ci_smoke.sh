@@ -53,7 +53,10 @@ expect_exit() {
 }
 
 # Temporary sandbox setup for all smoke checks.
-tmp_base="${BUTLER_TMP_BASE:-/tmp}"
+default_tmp_base="$HOME/.cache/tmp"
+mkdir -p "$default_tmp_base" 2>/dev/null || default_tmp_base="/tmp"
+tmp_base="${BUTLER_TMP_BASE:-$default_tmp_base}"
+mkdir -p "$tmp_base"
 tmp_root="$(mktemp -d "$tmp_base/butler-ci.XXXXXX")"
 mkdir -p "$tmp_root/home"
 export HOME="$tmp_root/home"
@@ -104,17 +107,17 @@ if [[ "${1:-}" == "api" && "${2:-}" == repos/*/pulls ]]; then
 		exit 0
 	fi
 
-	if [[ "$head_filter" == "local:codex/tool/stale-prune-squash" ]]; then
-		tip_sha="$(git rev-parse --verify codex/tool/stale-prune-squash 2>/dev/null || true)"
+	if [[ "$head_filter" == "local:tool/stale-prune-squash" ]]; then
+		tip_sha="$(git rev-parse --verify tool/stale-prune-squash 2>/dev/null || true)"
 		cat <<JSON
-[{"number":999,"html_url":"https://github.com/mock/mock-repo/pull/999","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"codex/tool/stale-prune-squash","sha":"$tip_sha"},"base":{"ref":"main"}}]
+[{"number":999,"html_url":"https://github.com/mock/mock-repo/pull/999","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"tool/stale-prune-squash","sha":"$tip_sha"},"base":{"ref":"main"}}]
 JSON
 		exit 0
 	fi
 
-	if [[ "$head_filter" == "local:codex/tool/stale-prune-no-evidence" ]]; then
+	if [[ "$head_filter" == "local:tool/stale-prune-no-evidence" ]]; then
 		cat <<JSON
-[{"number":1000,"html_url":"https://github.com/mock/mock-repo/pull/1000","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"codex/tool/stale-prune-no-evidence","sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},"base":{"ref":"main"}}]
+[{"number":1000,"html_url":"https://github.com/mock/mock-repo/pull/1000","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"tool/stale-prune-no-evidence","sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},"base":{"ref":"main"}}]
 JSON
 		exit 0
 	fi
@@ -223,7 +226,7 @@ for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 done
 echo "PASS: required hooks include pre-commit and are executable"
 
-git switch -c codex/tool/scope-policy-block >/dev/null
+git switch -c tool/scope-policy-block >/dev/null
 mkdir -p app/models
 printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
 git add app/models/scope_policy_smoke.rb
@@ -238,9 +241,9 @@ if [[ "$commit_status" -eq 0 ]]; then
 fi
 git reset --hard HEAD >/dev/null
 git switch main >/dev/null
-git branch -D codex/tool/scope-policy-block >/dev/null
+git branch -D tool/scope-policy-block >/dev/null
 
-git switch -c codex/tool/staged-scope-only >/dev/null
+git switch -c tool/staged-scope-only >/dev/null
 mkdir -p app/models lib
 printf "staged scope pass\n" > lib/staged_scope_ok.rb
 printf "unstaged mismatch should not block\n" > app/models/unstaged_scope_violation.rb
@@ -258,7 +261,7 @@ echo "PASS: pre-commit ignores unstaged scope mismatches when staged scope is va
 git reset --hard HEAD >/dev/null
 git clean -fd >/dev/null
 git switch main >/dev/null
-git branch -D codex/tool/staged-scope-only >/dev/null
+git branch -D tool/staged-scope-only >/dev/null
 
 expect_exit 2 "template check reports drift when managed github files are missing" run_butler template check
 expect_exit 0 "template apply writes managed github files" run_butler template apply
@@ -288,57 +291,57 @@ fi
 echo "PASS: report path falls back to /tmp/butler when HOME and TMPDIR are invalid"
 
 # Stale-branch prune behaviour: safe removal without force evidence.
-git switch -c codex/tool/stale-prune >/dev/null
-git push -u github codex/tool/stale-prune >/dev/null
+git switch -c tool/stale-prune >/dev/null
+git push -u github tool/stale-prune >/dev/null
 git switch main >/dev/null
-git push github --delete codex/tool/stale-prune >/dev/null
+git push github --delete tool/stale-prune >/dev/null
 
 expect_exit 0 "prune deletes stale local branches safely" run_butler prune
-if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune; then
+if git show-ref --verify --quiet refs/heads/tool/stale-prune; then
 	echo "FAIL: stale branch still exists after prune" >&2
 	exit 1
 fi
 echo "PASS: stale branch removed locally"
 
 # Stale-branch prune behaviour: force deletion with matching merged-PR evidence.
-git switch -c codex/tool/stale-prune-squash >/dev/null
+git switch -c tool/stale-prune-squash >/dev/null
 mkdir -p lib
 printf "stale squash candidate\n" > lib/stale_squash.rb
 git add lib/stale_squash.rb
 git commit -m "stale squash candidate branch" >/dev/null
-git push -u github codex/tool/stale-prune-squash >/dev/null
+git push -u github tool/stale-prune-squash >/dev/null
 git switch main >/dev/null
 original_hooks_path="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
-git merge --squash codex/tool/stale-prune-squash >/dev/null 2>&1
-git commit -m "squash-merge codex/tool/stale-prune-squash into main" >/dev/null
+git merge --squash tool/stale-prune-squash >/dev/null 2>&1
+git commit -m "squash-merge tool/stale-prune-squash into main" >/dev/null
 git push github main >/dev/null
 if [[ -n "$original_hooks_path" ]]; then
 	git config core.hooksPath "$original_hooks_path"
 else
 	git config --unset core.hooksPath
 fi
-git push github --delete codex/tool/stale-prune-squash >/dev/null
+git push github --delete tool/stale-prune-squash >/dev/null
 
 expect_exit 0 "prune force-deletes stale branch when merged PR evidence exists" run_butler_with_mock_gh prune
-if git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-squash; then
+if git show-ref --verify --quiet refs/heads/tool/stale-prune-squash; then
 	echo "FAIL: stale squash branch still exists after prune" >&2
 	exit 1
 fi
 echo "PASS: stale squash branch removed locally via merged PR evidence"
 
 # Stale-branch prune behaviour: retain branch when evidence does not match tip.
-git switch -c codex/tool/stale-prune-no-evidence >/dev/null
+git switch -c tool/stale-prune-no-evidence >/dev/null
 mkdir -p lib
 printf "stale no-evidence candidate\n" > lib/stale_no_evidence.rb
 git add lib/stale_no_evidence.rb
 git commit -m "stale no-evidence candidate branch" >/dev/null
-git push -u github codex/tool/stale-prune-no-evidence >/dev/null
+git push -u github tool/stale-prune-no-evidence >/dev/null
 git switch main >/dev/null
-git push github --delete codex/tool/stale-prune-no-evidence >/dev/null
+git push github --delete tool/stale-prune-no-evidence >/dev/null
 
 expect_exit 0 "prune skips force-delete when merged PR evidence does not match branch tip" run_butler_with_mock_gh prune
-if ! git show-ref --verify --quiet refs/heads/codex/tool/stale-prune-no-evidence; then
+if ! git show-ref --verify --quiet refs/heads/tool/stale-prune-no-evidence; then
 	echo "FAIL: no-evidence branch should remain after prune skip" >&2
 	exit 1
 fi

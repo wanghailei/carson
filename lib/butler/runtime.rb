@@ -176,6 +176,6 @@ module Butler
 	end
 end
 
-require_relative "runtime/local_ops"
-require_relative "runtime/audit_ops"
-require_relative "runtime/review_ops"
+require_relative "runtime/local"
+require_relative "runtime/audit"
+require_relative "runtime/review"

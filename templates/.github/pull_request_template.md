@@ -11,4 +11,4 @@
 - [ ] At least 60 seconds passed since the last push to allow AI reviewers to post.
 - [ ] No unresolved required conversation threads at merge time.
 - [ ] `butler review gate` passes with converged snapshots.
-- [ ] Every actionable top-level review item has a `Codex:` disposition (`accepted`, `rejected`, `deferred`) with the target review URL.
+- [ ] Every actionable top-level review item has a `Disposition:` disposition (`accepted`, `rejected`, `deferred`) with the target review URL.
