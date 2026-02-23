@@ -536,14 +536,12 @@ module Butler
 				error_text.to_s.downcase.include?( "not fully merged" )
 			end
 
-			# Guarded force-delete policy for stale branches:
-				# 1) branch must match managed lane pattern,
-			# 2) safe delete failure must be merge-related (`not fully merged`),
-			# 3) gh must confirm at least one merged PR for this exact branch into configured main.
-			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
-				return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
-				return [ nil, "branch does not match managed pattern #{config.branch_pattern}" ] if config.branch_regex.match( branch.to_s ).nil?
-				return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
+				# Guarded force-delete policy for stale branches:
+				# 1) safe delete failure must be merge-related (`not fully merged`),
+				# 2) gh must confirm at least one merged PR for this exact branch into configured main.
+				def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
+					return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
+					return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
 
 				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
 				unless tip_sha_success

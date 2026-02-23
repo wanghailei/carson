@@ -392,7 +392,6 @@ Butler intentionally avoids host-repo config files and uses built-in config + gl
 Notable configurable knobs:
 - hooks path via `BUTLER_HOOKS_BASE_PATH`
 - config file path via `BUTLER_CONFIG_FILE`
-- scope branch pattern via `BUTLER_SCOPE_BRANCH_PATTERN`
 - review disposition prefix via `BUTLER_REVIEW_DISPOSITION_PREFIX`
 - review timing via `BUTLER_REVIEW_WAIT_SECONDS`, `BUTLER_REVIEW_POLL_SECONDS`, `BUTLER_REVIEW_MAX_POLLS`
 - sweep window/states via `BUTLER_REVIEW_SWEEP_WINDOW_DAYS`, `BUTLER_REVIEW_SWEEP_STATES`

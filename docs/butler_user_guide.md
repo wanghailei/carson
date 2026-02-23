@@ -154,7 +154,9 @@ Minimal example:
 ```json
 {
 	"scope": {
-		"branch_pattern": "^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$"
+		"path_groups": {
+			"domain": [ "app/**", "db/**", "config/**" ]
+		}
 	},
 	"review": {
 		"required_disposition_prefix": "Disposition:"
@@ -167,7 +169,6 @@ Minimal example:
 
 Policy env overrides:
 
-- `BUTLER_SCOPE_BRANCH_PATTERN`
 - `BUTLER_REVIEW_DISPOSITION_PREFIX`
 - `BUTLER_RUBY_INDENTATION` (`tabs`, `spaces`, `either`)
 
