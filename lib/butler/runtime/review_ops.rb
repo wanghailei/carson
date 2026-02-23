@@ -522,7 +522,7 @@ end
 
 # Unresolved review threads are always actionable until explicitly resolved.
 def unresolved_thread_entries( details: )
-	Array( details.fetch( :review_threads ) ).each_with_index.filter_map do |thread, index|
+	Array( details.fetch( :review_threads ) ).each_with_index.map do |thread, index|
 		next if thread.fetch( :is_resolved )
 		# Outdated threads belong to superseded diffs and should not block current merge readiness.
 		next if thread.fetch( :is_outdated )
@@ -536,7 +536,7 @@ def unresolved_thread_entries( details: )
 		outdated: thread.fetch( :is_outdated ),
 		reason: "unresolved_thread"
 		}
-	end
+	end.compact
 end
 
 # Actionable top-level findings include CHANGES_REQUESTED reviews or risk-keyword findings.
@@ -579,7 +579,7 @@ def disposition_acknowledgements( details:, pr_author: )
 	sources.concat( Array( details.fetch( :comments ) ) )
 	sources.concat( Array( details.fetch( :reviews ) ) )
 	sources.concat( Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) } )
-	sources.filter_map do |entry|
+	sources.map do |entry|
 		next unless entry.fetch( :author, "" ) == pr_author
 		body = entry.fetch( :body, "" ).to_s
 		next unless codex_prefixed?( text: body )
@@ -593,7 +593,7 @@ def disposition_acknowledgements( details:, pr_author: )
 		disposition: disposition,
 		target_urls: target_urls
 		}
-	end
+	end.compact
 end
 
 # True when any Codex acknowledgement references the specific finding URL.

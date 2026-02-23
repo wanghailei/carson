@@ -83,6 +83,7 @@ butler init /local/path/of/repo
 - remote alignment (`origin` to `github` when required)
 - hook installation under `~/.butler/hooks/<version>/`
 - repository `core.hooksPath` alignment to Butler global hooks
+- commit-time governance gate via managed `pre-commit` hook (`butler audit`)
 - managed GitHub template sync under `.github/*`
 - initial governance audit output
 
