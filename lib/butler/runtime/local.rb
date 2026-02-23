@@ -543,17 +543,17 @@ module Butler
 					return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
 					return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
 
-				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
-				unless tip_sha_success
-					error_text = tip_sha_error.to_s.strip
-					error_text = "unable to read local branch tip sha" if error_text.empty?
-					return [ nil, error_text ]
-				end
-				branch_tip_sha = tip_sha_text.to_s.strip
-				return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
+					tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+					unless tip_sha_success
+						error_text = tip_sha_error.to_s.strip
+						error_text = "unable to read local branch tip sha" if error_text.empty?
+						return [ nil, error_text ]
+					end
+					branch_tip_sha = tip_sha_text.to_s.strip
+					return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
 
-				merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
-			end
+					merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				end
 
 			# Finds merged PR evidence for the exact local branch tip; this blocks old-PR false positives.
 			def merged_pr_for_branch( branch:, branch_tip_sha: )
