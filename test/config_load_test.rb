@@ -3,10 +3,9 @@ require_relative "test_helper"
 class ConfigLoadTest < Minitest::Test
 	include ButlerTestSupport
 
-	def test_default_scope_pattern_is_lane_first
+	def test_default_scope_path_groups_include_install_script_under_tool
 		config = Butler::Config.load( repo_root: Dir.pwd )
-		assert_match config.branch_regex, "tool/review-refactor"
-		refute_match config.branch_regex, "codex/tool/review-refactor"
+		assert_includes config.path_groups.fetch( "tool" ), "install.sh"
 	end
 
 	def test_env_overrides_global_config_values
