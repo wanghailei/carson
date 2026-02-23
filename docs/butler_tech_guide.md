@@ -516,6 +516,7 @@ Key refs:
 
 Important nuance:
 - scope integrity `split_required` results now return `block` (exit 2), so mixed or mismatched non-doc scope changes are stopped before commit/push.
+- commit-time enforcement evaluates staged paths first; unrelated unstaged or untracked files do not block a valid partial commit.
 
 ## 9) ReviewOps deep walkthrough (the most complex subsystem)
 

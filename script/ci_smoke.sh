@@ -240,6 +240,26 @@ git reset --hard HEAD >/dev/null
 git switch main >/dev/null
 git branch -D codex/tool/scope-policy-block >/dev/null
 
+git switch -c codex/tool/staged-scope-only >/dev/null
+mkdir -p app/models lib
+printf "staged scope pass\n" > lib/staged_scope_ok.rb
+printf "unstaged mismatch should not block\n" > app/models/unstaged_scope_violation.rb
+git add lib/staged_scope_ok.rb
+expect_exit 0 "audit enforces scope using staged paths when index changes exist" run_butler audit
+set +e
+git commit -m "staged scope only commit should pass pre-commit" >/dev/null 2>&1
+commit_status="$?"
+set -e
+if [[ "$commit_status" -ne 0 ]]; then
+	echo "FAIL: pre-commit hook should ignore unstaged scope mismatches when staged scope is valid" >&2
+	exit 1
+fi
+echo "PASS: pre-commit ignores unstaged scope mismatches when staged scope is valid"
+git reset --hard HEAD >/dev/null
+git clean -fd >/dev/null
+git switch main >/dev/null
+git branch -D codex/tool/staged-scope-only >/dev/null
+
 expect_exit 2 "template check reports drift when managed github files are missing" run_butler template check
 expect_exit 0 "template apply writes managed github files" run_butler template apply
 expect_exit 0 "template check passes after apply" run_butler template check
