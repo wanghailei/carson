@@ -37,7 +37,10 @@ expect_exit() {
 	echo "PASS: $description ($actual - $(exit_text "$actual"))"
 }
 
-tmp_base="${BUTLER_TMP_BASE:-/tmp}"
+default_tmp_base="$HOME/.cache/tmp"
+mkdir -p "$default_tmp_base" 2>/dev/null || default_tmp_base="/tmp"
+tmp_base="${BUTLER_TMP_BASE:-$default_tmp_base}"
+mkdir -p "$tmp_base"
 tmp_root="$(mktemp -d "$tmp_base/butler-review-smoke.XXXXXX")"
 mkdir -p "$tmp_root/home"
 cleanup() {
@@ -102,7 +105,7 @@ JSON
       ;;
     ack_ok)
       cat <<JSON
-{"data":{"repository":{"pullRequest":{"number":77,"title":"Mock gate PR","url":"https://github.com/mock-org/mock-repo/pull/77","state":"OPEN","updatedAt":"$updated_at","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Potential security regression.","url":"https://github.com/mock-org/mock-repo/pull/77#issuecomment-risk","createdAt":"2026-02-16T00:00:01Z"},{"author":{"login":"owner"},"body":"Codex: accepted https://github.com/mock-org/mock-repo/pull/77#issuecomment-risk","url":"https://github.com/mock-org/mock-repo/pull/77#issuecomment-ack","createdAt":"2026-02-16T00:00:02Z"}]},"reviews":{"nodes":[]}}}}}
+{"data":{"repository":{"pullRequest":{"number":77,"title":"Mock gate PR","url":"https://github.com/mock-org/mock-repo/pull/77","state":"OPEN","updatedAt":"$updated_at","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"nodes":[]},"comments":{"nodes":[{"author":{"login":"reviewer"},"body":"Potential security regression.","url":"https://github.com/mock-org/mock-repo/pull/77#issuecomment-risk","createdAt":"2026-02-16T00:00:01Z"},{"author":{"login":"owner"},"body":"Disposition: accepted https://github.com/mock-org/mock-repo/pull/77#issuecomment-risk","url":"https://github.com/mock-org/mock-repo/pull/77#issuecomment-ack","createdAt":"2026-02-16T00:00:02Z"}]},"reviews":{"nodes":[]}}}}}
 JSON
       ;;
     summary_only)
@@ -285,7 +288,7 @@ printf "# Butler Review Smoke Repo\n" > README.md
 git add README.md
 git commit -m "initial commit" >/dev/null
 git push -u github main >/dev/null
-git switch -c codex/tool/review-smoke >/dev/null
+git switch -c tool/review-smoke >/dev/null
 
 run_with_mock() {
 	scenario="$1"
@@ -306,9 +309,9 @@ run_with_mock() {
 }
 
 expect_exit 2 "review gate blocks unresolved threads" run_with_mock gate_unresolved review gate
-expect_exit 2 "review gate blocks missing Codex disposition for actionable top-level finding" run_with_mock gate_missing_ack review gate
+expect_exit 2 "review gate blocks missing required disposition for actionable top-level finding" run_with_mock gate_missing_ack review gate
 expect_exit 0 "review gate ignores unresolved outdated threads from superseded diffs" run_with_mock gate_outdated_unresolved review gate
-expect_exit 0 "review gate passes with Codex disposition and target URL" run_with_mock gate_ack_ok review gate
+expect_exit 0 "review gate passes with required disposition and target URL" run_with_mock gate_ack_ok review gate
 expect_exit 0 "review gate ignores non-actionable summary-only top-level comment" run_with_mock gate_summary_only review gate
 expect_exit 2 "review gate blocks non-converged snapshots" run_with_mock gate_timeout review gate
 expect_exit 1 "review gate returns runtime/configuration error on invalid gh JSON" run_with_mock gate_parse_error review gate

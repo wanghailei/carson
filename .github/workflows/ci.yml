@@ -52,15 +52,10 @@ jobs:
           ruby -c lib/butler.rb
 
       - name: Ruby indentation guard
-        run: |
-          if rg -n --glob '*.rb' '^ +\S' lib exe script .github; then
-            echo "space-based indentation detected in Ruby source; use hard tabs" >&2
-            exit 1
-          fi
-          if rg -n --glob '*.rb' '^\t+ +\S|^ +\t+\S' lib exe script .github; then
-            echo "mixed tab/space indentation detected in Ruby source" >&2
-            exit 1
-          fi
+        run: ruby script/ruby_indentation_guard.rb
+
+      - name: Ruby unit tests
+        run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
 
       - name: Legacy naming guard
         run: |

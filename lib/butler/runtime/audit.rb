@@ -1,6 +1,6 @@
 module Butler
 	class Runtime
-		module AuditOps
+		module Audit
 			def audit!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -303,6 +303,6 @@ module Butler
 			# True when there are no staged/unstaged/untracked file changes.
 		end
 
-		include AuditOps
+		include Audit
 	end
 end

@@ -10,10 +10,12 @@ module Butler
 			:branch_pattern, :branch_regex, :lane_group_map, :path_groups, :template_managed_files,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
-			:review_tracking_issue_title, :review_tracking_issue_label
+			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation
 
 		def self.load( repo_root: )
-			data = apply_env_overrides( data: default_data )
+			base_data = default_data
+			merged_data = deep_merge( base: base_data, overlay: load_global_config_data( repo_root: repo_root ) )
+			data = apply_env_overrides( data: merged_data )
 			new( data: data )
 		end
 
@@ -29,7 +31,7 @@ module Butler
 					"required_hooks" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
 				},
 				"scope" => {
-					"branch_pattern" => "^codex/(?<lane>[^/]+)/(?<slug>.+)$",
+					"branch_pattern" => "^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$",
 					"lane_group_map" => {
 						"tool" => "tool",
 						"ui" => "ui",
@@ -53,7 +55,7 @@ module Butler
 					"wait_seconds" => 60,
 					"poll_seconds" => 15,
 					"max_polls" => 20,
-					"required_disposition_prefix" => "Codex:",
+					"required_disposition_prefix" => "Disposition:",
 					"risk_keywords" => [ "bug", "security", "incorrect", "block", "fail", "regression" ],
 					"sweep" => {
 						"window_days" => 3,
@@ -63,24 +65,89 @@ module Butler
 						"title" => "Butler review sweep findings",
 						"label" => "butler-review-sweep"
 					}
+				},
+				"style" => {
+					"ruby_indentation" => "tabs"
 				}
 			}
 		end
 
+		def self.load_global_config_data( repo_root: )
+			path = global_config_path( repo_root: repo_root )
+			return {} if path.empty? || !File.file?( path )
+
+			raw = File.read( path )
+			parsed = JSON.parse( raw )
+			raise ConfigError, "global config must be a JSON object at #{path}" unless parsed.is_a?( Hash )
+			parsed
+		rescue JSON::ParserError => e
+			raise ConfigError, "invalid global config JSON at #{path} (#{e.message})"
+		end
+
+		def self.global_config_path( repo_root: )
+			override = ENV.fetch( "BUTLER_CONFIG_FILE", "" ).to_s.strip
+			return File.expand_path( override ) unless override.empty?
+
+			home = ENV.fetch( "HOME", "" ).to_s.strip
+			return "" unless home.start_with?( "/" )
+
+			File.join( home, ".butler", "config.json" )
+		end
+
+		def self.deep_merge( base:, overlay: )
+			return deep_dup_value( value: base ) unless overlay.is_a?( Hash )
+
+			base.each_with_object( {} ) { |( key, value ), copy| copy[ key ] = deep_dup_value( value: value ) }.tap do |merged|
+				overlay.each do |key, value|
+					if merged[ key ].is_a?( Hash ) && value.is_a?( Hash )
+						merged[ key ] = deep_merge( base: merged[ key ], overlay: value )
+					else
+						merged[ key ] = deep_dup_value( value: value )
+					end
+				end
+			end
+		end
+
+		def self.deep_dup_value( value: )
+			case value
+			when Hash
+				value.each_with_object( {} ) { |( key, entry ), copy| copy[ key ] = deep_dup_value( value: entry ) }
+			when Array
+				value.map { |entry| deep_dup_value( value: entry ) }
+			else
+				value
+			end
+		end
+
 		def self.apply_env_overrides( data: )
-			copy = JSON.parse( JSON.generate( data ) )
-			hooks = copy.fetch( "hooks" )
+			copy = deep_dup_value( value: data )
+			hooks = fetch_hash_section( data: copy, key: "hooks" )
 			hooks_path = ENV.fetch( "BUTLER_HOOKS_BASE_PATH", "" ).to_s.strip
 			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
-			review = copy.fetch( "review" )
+			scope = fetch_hash_section( data: copy, key: "scope" )
+			scope_branch_pattern = ENV.fetch( "BUTLER_SCOPE_BRANCH_PATTERN", "" ).to_s.strip
+			scope[ "branch_pattern" ] = scope_branch_pattern unless scope_branch_pattern.empty?
+			review = fetch_hash_section( data: copy, key: "review" )
 			review[ "wait_seconds" ] = env_integer( key: "BUTLER_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
 			review[ "poll_seconds" ] = env_integer( key: "BUTLER_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
 			review[ "max_polls" ] = env_integer( key: "BUTLER_REVIEW_MAX_POLLS", fallback: review.fetch( "max_polls" ) )
-			sweep = review.fetch( "sweep" )
+			disposition_prefix = ENV.fetch( "BUTLER_REVIEW_DISPOSITION_PREFIX", "" ).to_s.strip
+			review[ "required_disposition_prefix" ] = disposition_prefix unless disposition_prefix.empty?
+			sweep = fetch_hash_section( data: review, key: "sweep" )
 			sweep[ "window_days" ] = env_integer( key: "BUTLER_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
 			states = ENV.fetch( "BUTLER_REVIEW_SWEEP_STATES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
 			sweep[ "states" ] = states unless states.empty?
+			style = fetch_hash_section( data: copy, key: "style" )
+			ruby_indentation = ENV.fetch( "BUTLER_RUBY_INDENTATION", "" ).to_s.strip
+			style[ "ruby_indentation" ] = ruby_indentation unless ruby_indentation.empty?
 			copy
+		end
+
+		def self.fetch_hash_section( data:, key: )
+			value = data[ key ]
+			raise ConfigError, "missing config section #{key}" if value.nil?
+			raise ConfigError, "config section #{key} must be an object" unless value.is_a?( Hash )
+			value
 		end
 
 		def self.env_integer( key:, fallback: )
@@ -118,6 +185,8 @@ module Butler
 			tracking_issue_hash = fetch_hash( hash: review_hash, key: "tracking_issue" )
 			@review_tracking_issue_title = fetch_string( hash: tracking_issue_hash, key: "title" )
 			@review_tracking_issue_label = fetch_string( hash: tracking_issue_hash, key: "label" )
+			style_hash = fetch_hash( hash: data, key: "style" )
+			@ruby_indentation = fetch_string( hash: style_hash, key: "ruby_indentation" ).downcase
 
 			validate!
 		end
@@ -138,6 +207,7 @@ module Butler
 				raise ConfigError, "review.sweep.states cannot contain duplicates" unless review_sweep_states.uniq.length == review_sweep_states.length
 				raise ConfigError, "review.tracking_issue.title cannot be empty" if review_tracking_issue_title.empty?
 				raise ConfigError, "review.tracking_issue.label cannot be empty" if review_tracking_issue_label.empty?
+				raise ConfigError, "style.ruby_indentation must be one of tabs, spaces, either" unless [ "tabs", "spaces", "either" ].include?( ruby_indentation )
 			end
 
 			def fetch_hash( hash:, key: )
