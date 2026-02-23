@@ -288,6 +288,7 @@ A: Yes. CI pins exact Butler version and runs the same exit-status contract.
 - `lib/butler/runtime/local_ops.rb`
 - `lib/butler/runtime/audit_ops.rb`
 - `lib/butler/runtime/review_ops.rb`
+- `assets/hooks/pre-commit`
 - `assets/hooks/pre-push`
 - `assets/hooks/pre-merge-commit`
 - `assets/hooks/prepare-commit-msg`
@@ -514,7 +515,7 @@ Key refs:
 - `lib/butler/runtime/audit_ops.rb:193`
 
 Important nuance:
-- scope integrity issues currently result in `attention`, not hard block (exit remains 0 unless another blocking condition exists).
+- scope integrity `split_required` results now return `block` (exit 2), so mixed or mismatched non-doc scope changes are stopped before commit/push.
 
 ## 9) ReviewOps deep walkthrough (the most complex subsystem)
 
@@ -624,7 +625,8 @@ File:
 
 ## 11) Managed assets and policy artefacts
 
-- Hook scripts block direct commits/merges/pushes on `main/master`:
+- Hook scripts enforce governance checks and block direct commits/merges/pushes on `main/master`:
+  - `assets/hooks/pre-commit:4`
   - `assets/hooks/prepare-commit-msg:5`
   - `assets/hooks/pre-merge-commit:5`
   - `assets/hooks/pre-push:8`

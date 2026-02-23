@@ -56,6 +56,9 @@ expect_exit() {
 tmp_base="${BUTLER_TMP_BASE:-/tmp}"
 tmp_root="$(mktemp -d "$tmp_base/butler-ci.XXXXXX")"
 mkdir -p "$tmp_root/home"
+export HOME="$tmp_root/home"
+export BUTLER_HOOKS_BASE_PATH="$tmp_root/global-hooks"
+export BUTLER_BIN="$butler_bin"
 cleanup() {
 	rm -rf "$tmp_root"
 }
@@ -212,6 +215,30 @@ expect_exit 2 "check blocks before hooks are installed" run_butler check
 expect_exit 0 "sync keeps local main aligned to github/main" run_butler sync
 expect_exit 0 "hook installs required hooks to global runtime path" run_butler hook
 expect_exit 0 "check passes after hook install" run_butler check
+for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
+	if [[ ! -x "$tmp_root/global-hooks/$expected_butler_version/$required_hook" ]]; then
+		echo "FAIL: required hook missing or non-executable: $required_hook" >&2
+		exit 1
+	fi
+done
+echo "PASS: required hooks include pre-commit and are executable"
+
+git switch -c codex/tool/scope-policy-block >/dev/null
+mkdir -p app/models
+printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
+git add app/models/scope_policy_smoke.rb
+expect_exit 2 "audit blocks lane/scope mismatch for staged non-doc files" run_butler audit
+set +e
+git commit -m "scope mismatch should fail pre-commit" >/dev/null 2>&1
+commit_status="$?"
+set -e
+if [[ "$commit_status" -eq 0 ]]; then
+	echo "FAIL: pre-commit hook should block commit on scope mismatch" >&2
+	exit 1
+fi
+git reset --hard HEAD >/dev/null
+git switch main >/dev/null
+git branch -D codex/tool/scope-policy-block >/dev/null
 
 expect_exit 2 "template check reports drift when managed github files are missing" run_butler template check
 expect_exit 0 "template apply writes managed github files" run_butler template apply
@@ -255,8 +282,9 @@ echo "PASS: stale branch removed locally"
 
 # Stale-branch prune behaviour: force deletion with matching merged-PR evidence.
 git switch -c codex/tool/stale-prune-squash >/dev/null
-printf "stale squash candidate\n" > stale_squash.txt
-git add stale_squash.txt
+mkdir -p lib
+printf "stale squash candidate\n" > lib/stale_squash.rb
+git add lib/stale_squash.rb
 git commit -m "stale squash candidate branch" >/dev/null
 git push -u github codex/tool/stale-prune-squash >/dev/null
 git switch main >/dev/null
@@ -281,8 +309,9 @@ echo "PASS: stale squash branch removed locally via merged PR evidence"
 
 # Stale-branch prune behaviour: retain branch when evidence does not match tip.
 git switch -c codex/tool/stale-prune-no-evidence >/dev/null
-printf "stale no-evidence candidate\n" > stale_no_evidence.txt
-git add stale_no_evidence.txt
+mkdir -p lib
+printf "stale no-evidence candidate\n" > lib/stale_no_evidence.rb
+git add lib/stale_no_evidence.rb
 git commit -m "stale no-evidence candidate branch" >/dev/null
 git push -u github codex/tool/stale-prune-no-evidence >/dev/null
 git switch main >/dev/null

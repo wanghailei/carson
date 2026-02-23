@@ -26,7 +26,7 @@ module Butler
 				},
 				"hooks" => {
 					"base_path" => "~/.butler/hooks",
-					"required_hooks" => [ "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
+					"required_hooks" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
 				},
 				"scope" => {
 					"branch_pattern" => "^codex/(?<lane>[^/]+)/(?<slug>.+)$",

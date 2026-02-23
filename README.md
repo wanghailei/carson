@@ -48,6 +48,7 @@ Expected outcomes:
 
 - remote aligned to `github` when required
 - hooks installed under `~/.butler/hooks/<version>/`
+- commit-time governance gate enabled via managed `pre-commit` hook
 - `.github` managed files synced
 - initial audit executed
 
