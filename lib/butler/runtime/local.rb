@@ -475,8 +475,19 @@ module Butler
 						raw_path = line.to_s[ 3.. ].to_s.strip
 						next if raw_path.empty?
 
-						raw_path.split( " -> " ).last
-					end.compact
+						normalise_porcelain_path( path_text: raw_path.split( " -> " ).last )
+					end.compact.uniq
+				end
+
+				# Porcelain status can quote paths with spaces/special characters.
+				def normalise_porcelain_path( path_text: )
+					text = path_text.to_s.strip
+					return text if text.empty?
+					return text unless text.start_with?( "\"" ) && text.end_with?( "\"" )
+
+					JSON.parse( text ).to_s
+				rescue JSON::ParserError
+					text.delete_prefix( "\"" ).delete_suffix( "\"" )
 				end
 
 				# Bounded file read for non-tracked candidates.
