@@ -1,6 +1,6 @@
 module Butler
 	class Runtime
-		module LocalOps
+		module Local
 			def sync!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -437,20 +437,69 @@ module Butler
 				violations
 			end
 
-			# Legacy template markers are disallowed in outsider mode.
-			def legacy_marker_violations
-				files = []
-				legacy_marker_token = "butler:#{%w[c o m m o n].join}:"
-				Dir.glob( File.join( repo_root, "**", "*" ), File::FNM_DOTMATCH ).each do |absolute|
-					next if absolute.include?( "/.git/" )
-					next unless File.file?( absolute )
-					next unless File.read( absolute ).include?( legacy_marker_token )
-
-					relative = absolute.sub( "#{repo_root}/", "" )
-					files << "forbidden legacy marker detected in #{relative}"
+				# Legacy template markers are disallowed in outsider mode.
+				def legacy_marker_violations
+					legacy_marker_token = "butler:#{%w[c o m m o n].join}:"
+					legacy_marker_paths( token: legacy_marker_token ).map do |relative|
+						"forbidden legacy marker detected in #{relative}"
+					end
 				end
-				files
-			end
+
+				# Uses tracked-file grep first, then scans changed/untracked files for non-tracked candidates.
+				def legacy_marker_paths( token: )
+					detected = {}
+					tracked_paths_with_legacy_marker( token: token ).each { |path| detected[ path ] = true }
+					untracked_or_changed_candidate_paths.each do |relative|
+						next unless file_contains_legacy_marker?( relative_path: relative, token: token )
+
+						detected[ relative ] = true
+					end
+					detected.keys.sort
+				end
+
+				# Reads tracked files through git grep to avoid opening every file in the repository tree.
+				def tracked_paths_with_legacy_marker( token: )
+					stdout_text, stderr_text, success, exit_status = git_run( "grep", "-I", "-l", "--fixed-strings", token, "--", "." )
+					return stdout_text.lines.map { |line| line.to_s.strip }.reject( &:empty? ) if success
+					return [] if exit_status == 1
+
+					error_text = stderr_text.to_s.strip
+					puts_line "WARN: unable to run git grep for legacy marker detection (#{error_text.empty? ? 'unknown error' : error_text})"
+					[]
+				end
+
+				# Candidate set sourced from git status so untracked files are still covered.
+				def untracked_or_changed_candidate_paths
+					stdout_text, = git_capture_soft( "status", "--porcelain", "--untracked-files=all" )
+					stdout_text.lines.map do |line|
+						raw_path = line.to_s[ 3.. ].to_s.strip
+						next if raw_path.empty?
+
+						normalise_porcelain_path( path_text: raw_path.split( " -> " ).last )
+					end.compact.uniq
+				end
+
+				# Porcelain status can quote paths with spaces/special characters.
+				def normalise_porcelain_path( path_text: )
+					text = path_text.to_s.strip
+					return text if text.empty?
+					return text unless text.start_with?( "\"" ) && text.end_with?( "\"" )
+
+					JSON.parse( text ).to_s
+				rescue JSON::ParserError
+					text.delete_prefix( "\"" ).delete_suffix( "\"" )
+				end
+
+				# Bounded file read for non-tracked candidates.
+				def file_contains_legacy_marker?( relative_path:, token: )
+					absolute = resolve_repo_path!( relative_path: relative_path, label: "legacy marker candidate #{relative_path}" )
+					return false unless File.file?( absolute )
+					return false if absolute.include?( "/.git/" )
+
+					File.read( absolute ).include?( token )
+				rescue StandardError
+					false
+				end
 
 			# NOTE: prune only targets local branches that meet both conditions:
 			# 1) branch tracks configured remote (`github/*` by default), and
@@ -474,7 +523,7 @@ module Butler
 			end
 
 			# Guarded force-delete policy for stale branches:
-			# 1) branch must match managed codex lane pattern,
+				# 1) branch must match managed lane pattern,
 			# 2) safe delete failure must be merge-related (`not fully merged`),
 			# 3) gh must confirm at least one merged PR for this exact branch into configured main.
 			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
@@ -640,6 +689,6 @@ module Butler
 			end
 		end
 
-		include LocalOps
+		include Local
 	end
 end

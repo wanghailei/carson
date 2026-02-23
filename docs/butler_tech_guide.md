@@ -40,9 +40,14 @@ Boundary rules:
 - `lib/butler/cli.rb`: command parsing and dispatch
 - `lib/butler/config.rb`: built-in runtime defaults and environment override handling
 - `lib/butler/runtime.rb`: runtime wiring, shared helpers, and concern loading
-- `lib/butler/runtime/local_ops.rb`: local repository operations and hook/template/runtime boundary helpers
-- `lib/butler/runtime/audit_ops.rb`: audit reporting, PR/check monitor report generation, and scope integrity guard
-- `lib/butler/runtime/review_ops.rb`: review gate/review sweep orchestration and GitHub review data mapping
+- `lib/butler/runtime/local.rb`: local repository operations and hook/template/runtime boundary helpers
+- `lib/butler/runtime/audit.rb`: audit reporting, PR/check monitor report generation, and scope integrity guard
+- `lib/butler/runtime/review.rb`: review gate/review sweep command entrypoints
+- `lib/butler/runtime/review/data_access.rb`: GitHub query/pagination and payload normalisation
+- `lib/butler/runtime/review/gate_support.rb`: review gate snapshot/actionability/report helpers
+- `lib/butler/runtime/review/sweep_support.rb`: review sweep findings/tracking issue/report helpers
+- `lib/butler/runtime/review/query_text.rb`: GraphQL query text
+- `lib/butler/runtime/review/utility.rb`: shared parsing/matching helpers
 - `lib/butler/adapters/git.rb`: git process adapter
 - `lib/butler/adapters/github.rb`: GitHub CLI process adapter
 - `templates/.github/*`: canonical managed GitHub-native files
@@ -57,9 +62,9 @@ Boundary rules:
 
 Current line count reality:
 
-- `local_ops.rb`: multi-workflow local governance and hook/template helpers
-- `audit_ops.rb`: audit state and monitor report writing
-- `review_ops.rb`: gate/sweep with substantial GitHub response normalisation logic
+- `local.rb`: multi-workflow local governance and hook/template helpers
+- `audit.rb`: audit state and monitor report writing
+- `review/*.rb`: gate/sweep concerns split by data access, gate logic, sweep logic, queries, and shared helpers
 
 Rails-derived split rule used by Butler:
 
@@ -103,9 +108,9 @@ Blocked host artefacts:
 
 Key code segments:
 
-- `block_if_outsider_fingerprints!` in `lib/butler/runtime/local_ops.rb`
-- `outsider_fingerprint_violations` in `lib/butler/runtime/local_ops.rb`
-- `legacy_marker_violations` in `lib/butler/runtime/local_ops.rb`
+- `block_if_outsider_fingerprints!` in `lib/butler/runtime/local.rb`
+- `outsider_fingerprint_violations` in `lib/butler/runtime/local.rb`
+- `legacy_marker_violations` in `lib/butler/runtime/local.rb`
 
 Boundary:
 
@@ -121,10 +126,10 @@ Mechanism:
 
 Key code segments:
 
-- `hook!` in `lib/butler/runtime/local_ops.rb`
-- `hooks_dir` in `lib/butler/runtime/local_ops.rb`
-- `hook_template_path` in `lib/butler/runtime/local_ops.rb`
-- `hooks_health_report` in `lib/butler/runtime/local_ops.rb`
+- `hook!` in `lib/butler/runtime/local.rb`
+- `hooks_dir` in `lib/butler/runtime/local.rb`
+- `hook_template_path` in `lib/butler/runtime/local.rb`
+- `hooks_health_report` in `lib/butler/runtime/local.rb`
 
 Boundary:
 
@@ -140,8 +145,8 @@ Mechanism:
 
 Key code segments:
 
-- `init!` in `lib/butler/runtime/local_ops.rb`
-- `align_remote_name_for_butler!` in `lib/butler/runtime/local_ops.rb`
+- `init!` in `lib/butler/runtime/local.rb`
+- `align_remote_name_for_butler!` in `lib/butler/runtime/local.rb`
 
 Boundary:
 
@@ -158,9 +163,9 @@ Mechanism:
 
 Key code segments:
 
-- `offboard!` in `lib/butler/runtime/local_ops.rb`
-- `disable_butler_hooks_path!` in `lib/butler/runtime/local_ops.rb`
-- `offboard_cleanup_targets` in `lib/butler/runtime/local_ops.rb`
+- `offboard!` in `lib/butler/runtime/local.rb`
+- `disable_butler_hooks_path!` in `lib/butler/runtime/local.rb`
+- `offboard_cleanup_targets` in `lib/butler/runtime/local.rb`
 
 Boundary:
 
@@ -191,10 +196,10 @@ Drift reasons:
 
 Key code segments:
 
-- `template_results` in `lib/butler/runtime/local_ops.rb`
-- `template_result_for_file` in `lib/butler/runtime/local_ops.rb`
-- `template_check!` in `lib/butler/runtime/local_ops.rb`
-- `template_apply!` in `lib/butler/runtime/local_ops.rb`
+- `template_results` in `lib/butler/runtime/local.rb`
+- `template_result_for_file` in `lib/butler/runtime/local.rb`
+- `template_check!` in `lib/butler/runtime/local.rb`
+- `template_apply!` in `lib/butler/runtime/local.rb`
 
 Boundary:
 
@@ -211,10 +216,10 @@ Mechanism:
 
 Key code segments:
 
-- `review_gate!` in `lib/butler/runtime/review_ops.rb`
-- `review_gate_snapshot` in `lib/butler/runtime/review_ops.rb`
-- `review_sweep!` in `lib/butler/runtime/review_ops.rb`
-- `upsert_review_sweep_tracking_issue` in `lib/butler/runtime/review_ops.rb`
+- `review_gate!` in `lib/butler/runtime/review.rb`
+- `review_gate_snapshot` in `lib/butler/runtime/review/gate_support.rb`
+- `review_sweep!` in `lib/butler/runtime/review.rb`
+- `upsert_review_sweep_tracking_issue` in `lib/butler/runtime/review/sweep_support.rb`
 
 Boundary:
 
@@ -231,10 +236,10 @@ Mechanism:
 
 Key code segments:
 
-- `sync!` in `lib/butler/runtime/local_ops.rb`
-- `prune!` in `lib/butler/runtime/local_ops.rb`
-- `stale_local_branches` in `lib/butler/runtime/local_ops.rb`
-- `force_delete_evidence_for_stale_branch` in `lib/butler/runtime/local_ops.rb`
+- `sync!` in `lib/butler/runtime/local.rb`
+- `prune!` in `lib/butler/runtime/local.rb`
+- `stale_local_branches` in `lib/butler/runtime/local.rb`
+- `force_delete_evidence_for_stale_branch` in `lib/butler/runtime/local.rb`
 
 Insight:
 
@@ -245,8 +250,9 @@ Insight:
 Mechanism:
 
 - Runtime uses built-in defaults from `lib/butler/config.rb`.
+- Runtime optionally merges global user config from `~/.butler/config.json` (or `BUTLER_CONFIG_FILE` override).
 - Report output precedence is global `~/.cache/butler`, then `TMPDIR/butler` when `HOME` is invalid and `TMPDIR` is absolute, then `/tmp/butler`.
-- Environment overrides exist for hooks path (`BUTLER_HOOKS_BASE_PATH`), review timing, and sweep window/states.
+- Environment overrides exist for hooks path, scope/review policy fields, review timing, sweep window/states, and Ruby indentation policy.
 - Host repository configuration file loading is intentionally disabled.
 
 Key code segments:
@@ -285,9 +291,10 @@ A: Yes. CI pins exact Butler version and runs the same exit-status contract.
 - `lib/butler/cli.rb`
 - `lib/butler/config.rb`
 - `lib/butler/runtime.rb`
-- `lib/butler/runtime/local_ops.rb`
-- `lib/butler/runtime/audit_ops.rb`
-- `lib/butler/runtime/review_ops.rb`
+- `lib/butler/runtime/local.rb`
+- `lib/butler/runtime/audit.rb`
+- `lib/butler/runtime/review.rb`
+- `lib/butler/runtime/review/*.rb`
 - `assets/hooks/pre-commit`
 - `assets/hooks/pre-push`
 - `assets/hooks/pre-merge-commit`
@@ -315,9 +322,9 @@ flowchart LR
   E --> C["Butler::CLI.start"]
   C --> R["Butler::Runtime"]
 
-  R --> LO["LocalOps"]
-  R --> AO["AuditOps"]
-  R --> RO["ReviewOps"]
+  R --> LO["Local"]
+  R --> AO["Audit"]
+  R --> RO["Review"]
 
   R --> G["Adapters::Git -> git CLI"]
   R --> H["Adapters::GitHub -> gh CLI"]
@@ -343,10 +350,10 @@ This diagram maps directly to:
 | Executables | CLI launchers (`butler`, `butler-to-merge`) | `exe/butler` |
 | CLI parsing | Parse args/subcommands, instantiate runtime, dispatch | `lib/butler/cli.rb` |
 | Runtime shell | Shared helpers, exit contract, adapters, report constants | `lib/butler/runtime.rb` |
-| Local governance | `sync`, `prune`, `hook`, `check`, `init`, `template` | `lib/butler/runtime/local_ops.rb` |
-| Audit reporting | `audit`, PR/check monitor, scope integrity guard | `lib/butler/runtime/audit_ops.rb` |
-| Review governance | `review gate`, `review sweep`, GraphQL/REST normalisation, issue upsert | `lib/butler/runtime/review_ops.rb` |
-| Config | Built-in defaults + env overrides + validation | `lib/butler/config.rb` |
+| Local governance | `sync`, `prune`, `hook`, `check`, `init`, `template` | `lib/butler/runtime/local.rb` |
+| Audit reporting | `audit`, PR/check monitor, scope integrity guard | `lib/butler/runtime/audit.rb` |
+| Review governance | `review gate`, `review sweep`, GraphQL/REST normalisation, issue upsert | `lib/butler/runtime/review.rb` + `lib/butler/runtime/review/*.rb` |
+| Config | Built-in defaults + global user config + env overrides + validation | `lib/butler/config.rb` |
 | Git/GitHub adapters | Process wrappers over `git` and `gh` | `lib/butler/adapters/git.rb`, `lib/butler/adapters/github.rb` |
 | Managed artefacts | Hook templates and `.github` templates | `assets/hooks/*`, `templates/.github/*` |
 | Automation and release | CI, sweep schedule, reusable policy, publish jobs | `.github/workflows/*` |
@@ -376,15 +383,20 @@ Implemented in:
 
 ### Config strategy
 
-Butler intentionally avoids host-repo config files and uses built-in config with env overrides:
+Butler intentionally avoids host-repo config files and uses built-in config + global user config + env overrides:
 - defaults: `lib/butler/config.rb:20`
-- env overrides: `lib/butler/config.rb:70`
+- global config load: `lib/butler/config.rb`
+- env overrides: `lib/butler/config.rb:115`
 - validation: `lib/butler/config.rb:127`
 
 Notable configurable knobs:
 - hooks path via `BUTLER_HOOKS_BASE_PATH`
+- config file path via `BUTLER_CONFIG_FILE`
+- scope branch pattern via `BUTLER_SCOPE_BRANCH_PATTERN`
+- review disposition prefix via `BUTLER_REVIEW_DISPOSITION_PREFIX`
 - review timing via `BUTLER_REVIEW_WAIT_SECONDS`, `BUTLER_REVIEW_POLL_SECONDS`, `BUTLER_REVIEW_MAX_POLLS`
 - sweep window/states via `BUTLER_REVIEW_SWEEP_WINDOW_DAYS`, `BUTLER_REVIEW_SWEEP_STATES`
+- indentation policy via `BUTLER_RUBY_INDENTATION`
 
 ## 5) Command surface and internal dispatch
 
@@ -399,7 +411,7 @@ Core file:
 - `lib/butler/cli.rb:41`
 - `lib/butler/cli.rb:91`
 
-## 6) LocalOps deep walkthrough (`sync`, `prune`, `hook`, `init`, `check`, `template`)
+## 6) Local deep walkthrough (`sync`, `prune`, `hook`, `init`, `check`, `template`)
 
 ### `sync!`
 
@@ -413,8 +425,8 @@ Flow:
 7. restore original branch in `ensure`
 
 Key refs:
-- `lib/butler/runtime/local_ops.rb:4`
-- `lib/butler/runtime/local_ops.rb:267`
+- `lib/butler/runtime/local.rb:4`
+- `lib/butler/runtime/local.rb:267`
 
 ### `prune!`
 
@@ -422,14 +434,14 @@ Important design: prune only branches with deleted tracked upstreams (`gone`), n
 
 Force-delete path exists, but only with strict evidence:
 - delete failed for “not fully merged”
-- branch matches managed pattern (`codex/...`)
+- branch matches managed pattern (`tool/...`)
 - GH evidence shows merged PR for exact branch tip SHA into main
 
 Key refs:
-- `lib/butler/runtime/local_ops.rb:35`
-- `lib/butler/runtime/local_ops.rb:355`
-- `lib/butler/runtime/local_ops.rb:375`
-- `lib/butler/runtime/local_ops.rb:391`
+- `lib/butler/runtime/local.rb:35`
+- `lib/butler/runtime/local.rb:355`
+- `lib/butler/runtime/local.rb:375`
+- `lib/butler/runtime/local.rb:391`
 
 ### `hook!` and `check!`
 
@@ -439,10 +451,10 @@ Key refs:
 - `check!` is strict health check mode
 
 Key refs:
-- `lib/butler/runtime/local_ops.rb:96`
-- `lib/butler/runtime/local_ops.rb:149`
-- `lib/butler/runtime/local_ops.rb:242`
-- `lib/butler/runtime/local_ops.rb:309`
+- `lib/butler/runtime/local.rb:96`
+- `lib/butler/runtime/local.rb:149`
+- `lib/butler/runtime/local.rb:242`
+- `lib/butler/runtime/local.rb:309`
 
 ### `init!`
 
@@ -467,8 +479,8 @@ flowchart TD
 ```
 
 Key refs:
-- `lib/butler/runtime/local_ops.rb:126`
-- `lib/butler/runtime/local_ops.rb:449`
+- `lib/butler/runtime/local.rb:126`
+- `lib/butler/runtime/local.rb:449`
 
 ### `template_check!` / `template_apply!`
 
@@ -477,9 +489,9 @@ Key refs:
 - secure path resolve prevents traversal outside repo root
 
 Key refs:
-- `lib/butler/runtime/local_ops.rb:159`
-- `lib/butler/runtime/local_ops.rb:175`
-- `lib/butler/runtime/local_ops.rb:227`
+- `lib/butler/runtime/local.rb:159`
+- `lib/butler/runtime/local.rb:175`
+- `lib/butler/runtime/local.rb:227`
 - `lib/butler/runtime.rb:68`
 
 ## 7) Outsider boundary model (critical concept)
@@ -493,11 +505,11 @@ Every governance command starts with `block_if_outsider_fingerprints!`:
 And it exempts the Butler repository itself (`repo_root == tool_root`) so Butler can evolve its own code.
 
 Key refs:
-- `lib/butler/runtime/local_ops.rb:314`
-- `lib/butler/runtime/local_ops.rb:323`
-- `lib/butler/runtime/local_ops.rb:338`
+- `lib/butler/runtime/local.rb:314`
+- `lib/butler/runtime/local.rb:323`
+- `lib/butler/runtime/local.rb:338`
 
-## 8) AuditOps deep walkthrough
+## 8) Audit deep walkthrough
 
 `audit!` assembles operational posture in one run:
 - repository metadata
@@ -509,16 +521,16 @@ Key refs:
 - writes machine + human reports
 
 Key refs:
-- `lib/butler/runtime/audit_ops.rb:4`
-- `lib/butler/runtime/audit_ops.rb:50`
-- `lib/butler/runtime/audit_ops.rb:134`
-- `lib/butler/runtime/audit_ops.rb:193`
+- `lib/butler/runtime/audit.rb:4`
+- `lib/butler/runtime/audit.rb:50`
+- `lib/butler/runtime/audit.rb:134`
+- `lib/butler/runtime/audit.rb:193`
 
 Important nuance:
 - scope integrity `split_required` results now return `block` (exit 2), so mixed or mismatched non-doc scope changes are stopped before commit/push.
 - commit-time enforcement evaluates staged paths first; unrelated unstaged or untracked files do not block a valid partial commit.
 
-## 9) ReviewOps deep walkthrough (the most complex subsystem)
+## 9) Review deep walkthrough (the most complex subsystem)
 
 This file is the policy engine for merge readiness and late-review surveillance.
 
@@ -553,9 +565,8 @@ Signature fields:
 - unacknowledged actionable URLs
 
 Key refs:
-- `lib/butler/runtime/review_ops.rb:4`
-- `lib/butler/runtime/review_ops.rb:182`
-- `lib/butler/runtime/review_ops.rb:199`
+- `lib/butler/runtime/review.rb`
+- `lib/butler/runtime/review/gate_support.rb`
 
 ### Actionable classification model
 
@@ -563,22 +574,19 @@ Actionable items include:
 - unresolved non-outdated threads
 - non-author `CHANGES_REQUESTED` reviews
 - non-author comments/reviews containing risk keywords
-- then filtered by Codex disposition acknowledgements authored by PR author
+- then filtered by disposition acknowledgements authored by PR author
 
 Key refs:
-- `lib/butler/runtime/review_ops.rb:524`
-- `lib/butler/runtime/review_ops.rb:543`
-- `lib/butler/runtime/review_ops.rb:577`
-- `lib/butler/runtime/review_ops.rb:1023`
+- `lib/butler/runtime/review/gate_support.rb`
+- `lib/butler/runtime/review/utility.rb`
 
 ### GraphQL + pagination strategy
 
 Butler fetches details from GraphQL and paginates `reviewThreads`, `comments`, and `reviews`, so gating decisions are based on complete connection sets.
 
 Key refs:
-- `lib/butler/runtime/review_ops.rb:232`
-- `lib/butler/runtime/review_ops.rb:250`
-- `lib/butler/runtime/review_ops.rb:281`
+- `lib/butler/runtime/review/data_access.rb`
+- `lib/butler/runtime/review/query_text.rb`
 
 ### `review sweep`
 
@@ -588,11 +596,9 @@ Key refs:
 - upserts one rolling tracking issue and label
 
 Key refs:
-- `lib/butler/runtime/review_ops.rb:116`
-- `lib/butler/runtime/review_ops.rb:684`
-- `lib/butler/runtime/review_ops.rb:741`
-- `lib/butler/runtime/review_ops.rb:835`
-- `lib/butler/runtime/review_ops.rb:871`
+- `lib/butler/runtime/review.rb`
+- `lib/butler/runtime/review/data_access.rb`
+- `lib/butler/runtime/review/sweep_support.rb`
 
 ## 10) CI, distribution, and operational integration
 
@@ -600,7 +606,7 @@ Key refs:
 
 Two jobs:
 - governance (`review gate`)
-- smoke (syntax + indentation + naming/privacy guards + smoke scripts)
+- smoke (syntax + config-driven indentation guard + naming/privacy guards + Ruby unit tests + smoke scripts)
 
 File:
 - `.github/workflows/ci.yml:8`
@@ -648,7 +654,7 @@ File:
 
 ### Trade-offs / hotspots
 
-- `review_ops.rb` is large (1069 lines), mixing orchestration, API transport shape, normalisation, and report rendering.
-- outsider legacy-marker scan walks and reads all repo files on each command; this is simple but potentially heavy on large repos.
+- review governance remains the most complex subsystem, now split across `review/*.rb` concern files.
+- outsider legacy-marker detection now prioritises `git grep` on tracked files and scans changed/untracked candidates; this reduces full-tree read cost.
 - Configuration is intentionally centralised and opinionated; this reduces drift but also limits per-repo adaptability.
 - Heavy dependence on `gh` runtime availability and auth quality for review features.

@@ -137,7 +137,41 @@ Allowed managed persistence in host repositories:
 
 - selected GitHub-native files under `.github/*`
 
-## 4) Run Butler daily
+## 4) Optional global configuration
+
+Butler remains outsider-only. Configuration lives in your user space, not in host repositories.
+
+Default global config path:
+
+- `~/.butler/config.json`
+
+Override path:
+
+- `BUTLER_CONFIG_FILE=/absolute/path/to/config.json`
+
+Minimal example:
+
+```json
+{
+	"scope": {
+		"branch_pattern": "^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$"
+	},
+	"review": {
+		"required_disposition_prefix": "Disposition:"
+	},
+	"style": {
+		"ruby_indentation": "tabs"
+	}
+}
+```
+
+Policy env overrides:
+
+- `BUTLER_SCOPE_BRANCH_PATTERN`
+- `BUTLER_REVIEW_DISPOSITION_PREFIX`
+- `BUTLER_RUBY_INDENTATION` (`tabs`, `spaces`, `either`)
+
+## 5) Run Butler daily
 
 Use this practical daily cadence:
 
@@ -182,7 +216,7 @@ Run every 8 hours in CI:
 butler review sweep
 ```
 
-## 5) Understand outputs and exit codes
+## 6) Understand outputs and exit codes
 
 Butler uses a strict exit contract:
 
@@ -197,7 +231,7 @@ Report output directory behaviour:
 - default: `~/.cache/butler`
 - fallback when `HOME` is invalid: `TMPDIR/butler` (absolute `TMPDIR` only), then `/tmp/butler`
 
-## 6) Troubleshooting quick path
+## 7) Troubleshooting quick path
 
 ### `butler: command not found`
 
@@ -206,7 +240,7 @@ Report output directory behaviour:
 
 ### review gate fails on actionable comments
 
-- respond with a valid `Codex:` disposition comment
+- respond with a valid `Disposition:` disposition comment
 - include disposition token and target comment/review URL
 - rerun `butler review gate`
 
@@ -224,7 +258,7 @@ butler template apply
 butler template check
 ```
 
-## 7) Offboard cleanly when needed
+## 8) Offboard cleanly when needed
 
 To retire Butler from a repository:
 
