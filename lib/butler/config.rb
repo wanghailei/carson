@@ -41,7 +41,7 @@ module Butler
 						"test" => "test"
 					},
 					"path_groups" => {
-						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "assets/hooks/**", "README.md", "RELEASE.md", "VERSION", "butler.gemspec" ],
+						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "assets/hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "butler.gemspec" ],
 						"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
 						"test" => [ "test/**", "spec/**", "features/**" ],
 						"domain" => [ "app/**", "db/**", "config/**" ],
