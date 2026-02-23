@@ -30,6 +30,7 @@ class RuntimeAuditScopeTest < Minitest::Test
 		assert_equal "ok", scope.fetch( :status )
 		assert_equal false, scope.fetch( :split_required )
 		assert_equal [ "tool" ], scope.fetch( :core_groups )
+		assert_equal [], scope.fetch( :violating_files )
 	end
 
 	def test_scope_integrity_requires_split_for_multiple_core_groups
@@ -43,6 +44,7 @@ class RuntimeAuditScopeTest < Minitest::Test
 		assert_equal "attention", scope.fetch( :status )
 		assert_includes scope.fetch( :core_groups ), "tool"
 		assert_includes scope.fetch( :core_groups ), "domain"
+		assert_equal 2, scope.fetch( :violating_files ).length
 	end
 
 	def test_scope_integrity_is_branch_name_agnostic

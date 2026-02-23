@@ -235,10 +235,14 @@ module Butler
 				misc_present = non_doc_groups.include?( "misc" )
 				split_required = mixed_core_groups
 				unmatched_paths = files.select { |path| grouped_paths.fetch( path ) == "misc" }
-				violating_files = files.select do |path|
-					group = grouped_paths.fetch( path )
-					next false if [ "docs", "test", "misc" ].include?( group )
-					core_groups.include?( group )
+				violating_files = if split_required
+					files.select do |path|
+						group = grouped_paths.fetch( path )
+						next false if [ "docs", "test", "misc" ].include?( group )
+						core_groups.include?( group )
+					end
+				else
+					[]
 				end
 				{
 				branch: branch,
