@@ -5,6 +5,68 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.6.0 (2026-02-23)
+
+### User Overview
+
+#### What changed
+
+- Refactored runtime concerns from `*Ops` naming to neutral modules (`Local`, `Audit`, `Review`), and split review governance internals into dedicated support files.
+- Added global user configuration loading from `~/.butler/config.json` with deterministic precedence:
+  built-in defaults, then global config file, then environment overrides.
+- Changed default scope branch pattern to lane-first:
+  `^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$`.
+- Changed default review acknowledgement prefix from `Codex:` to `Disposition:`.
+- Added Ruby stdlib unit tests for deterministic helper logic and integrated them in CI.
+- Replaced static indentation regex checks with policy-based guard script (`script/ruby_indentation_guard.rb`).
+- Optimised legacy marker detection and hardened untracked/quoted-path handling.
+- Added internal developer documentation for `~/.butler/config.json`.
+
+#### Why users should care
+
+- Butler is now more neutral and less coupled to a single agent naming workflow.
+- User-space configuration is now explicit and predictable without adding repo-local Butler files.
+- Review governance and helper logic are easier to maintain and reason about.
+- CI catches deterministic logic regressions earlier through added unit tests.
+
+#### What users must do now
+
+1. Upgrade to `0.6.0` where you pin Butler explicitly.
+2. If you relied on `codex/...` branches, set `BUTLER_SCOPE_BRANCH_PATTERN` (or `scope.branch_pattern` in `~/.butler/config.json`) to preserve legacy behaviour.
+3. If you relied on `Codex:` acknowledgement comments, set `BUTLER_REVIEW_DISPOSITION_PREFIX=Codex:` (or `review.required_disposition_prefix` in `~/.butler/config.json`).
+
+#### Breaking or removed behaviour
+
+- Default branch-policy matching no longer assumes `codex/...`.
+- Default review acknowledgement prefix no longer assumes `Codex:`.
+- `docs/butler_evo_plan.md` has been removed from the repository.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install butler-to-merge -v 0.6.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- CLI command surface unchanged.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+- New canonical global config path: `~/.butler/config.json`.
+- New path override env var: `BUTLER_CONFIG_FILE`.
+- Added policy env overrides:
+  `BUTLER_SCOPE_BRANCH_PATTERN`, `BUTLER_REVIEW_DISPOSITION_PREFIX`, `BUTLER_RUBY_INDENTATION`.
+- Style policy supports `tabs`, `spaces`, or `either` through configuration.
+
+#### Verification evidence
+
+- PR #37 merged with both CI jobs green (`Butler governance`, `Syntax and smoke tests`).
+- Unit tests run in CI via `ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'`.
+
 ## 0.5.1 (2026-02-22)
 
 ### User Overview
