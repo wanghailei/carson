@@ -1,4 +1,4 @@
-name: Publish Butler gem (GitHub Packages)
+name: Publish Carson gem (GitHub Packages)
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ jobs:
           ruby-version: "4.0"
 
       - name: Build gem
-        run: gem build butler.gemspec
+        run: gem build carson.gemspec
 
       - name: Publish gem to GitHub Packages
         env:
@@ -32,4 +32,4 @@ jobs:
           :github: Bearer ${GH_PACKAGES_TOKEN}
           EOF
           chmod 0600 ~/.gem/credentials
-          gem push --key github --host https://rubygems.pkg.github.com/wanghailei "butler-to-merge-$(cat VERSION).gem"
+          gem push --key github --host https://rubygems.pkg.github.com/wanghailei "carson-$(cat VERSION).gem"

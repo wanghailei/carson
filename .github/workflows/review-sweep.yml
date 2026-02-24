@@ -1,4 +1,4 @@
-name: Butler review sweep
+name: Carson review sweep
 
 on:
   schedule:
@@ -25,4 +25,4 @@ jobs:
       - name: Run review sweep
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ruby exe/butler review sweep
+        run: ruby exe/carson review sweep

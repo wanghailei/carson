@@ -4,7 +4,7 @@ require_relative "review/gate_support"
 require_relative "review/sweep_support"
 require_relative "review/utility"
 
-module Butler
+module Carson
 	class Runtime
 		module Review
 			include QueryText
@@ -22,7 +22,7 @@ module Butler
 				end
 
 				owner, repo = repository_coordinates
-				pr_number_override = butler_pr_number_override
+				pr_number_override = carson_pr_number_override
 				pr_summary =
 				if pr_number_override.nil?
 					current_pull_request_for_branch( branch_name: current_branch )

@@ -1,4 +1,4 @@
-module Butler
+module Carson
 	class Runtime
 		module Review
 			module DataAccess
@@ -218,12 +218,12 @@ def repository_coordinates
 end
 
 # Optional CI override for detached-HEAD contexts where branch-based PR lookup is not possible.
-def butler_pr_number_override
-	text = ENV.fetch( "BUTLER_PR_NUMBER", "" ).to_s.strip
+def carson_pr_number_override
+	text = ENV.fetch( "CARSON_PR_NUMBER", "" ).to_s.strip
 	return nil if text.empty?
 	Integer( text )
 rescue ArgumentError
-	raise "invalid BUTLER_PR_NUMBER value #{text.inspect}"
+	raise "invalid CARSON_PR_NUMBER value #{text.inspect}"
 end
 			end
 		end

@@ -1,6 +1,6 @@
 require "open3"
 
-module Butler
+module Carson
 	module Adapters
 		class GitHub
 			def initialize( repo_root: )

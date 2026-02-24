@@ -1,4 +1,4 @@
-module Butler
+module Carson
 	class Runtime
 		module Local
 			def sync!
@@ -6,7 +6,7 @@ module Butler
 				return fingerprint_status unless fingerprint_status.nil?
 
 				unless working_tree_clean?
-					puts_line "BLOCK: working tree is dirty; commit/stash first, then run butler sync."
+					puts_line "BLOCK: working tree is dirty; commit/stash first, then run carson sync."
 					return EXIT_BLOCK
 				end
 				start_branch = current_branch
@@ -138,7 +138,7 @@ module Butler
 				FileUtils.mkdir_p( hooks_dir )
 				missing_templates = config.required_hooks.reject { |name| File.file?( hook_template_path( hook_name: name ) ) }
 				unless missing_templates.empty?
-					puts_line "BLOCK: missing hook templates in Butler: #{missing_templates.join( ', ' )}."
+					puts_line "BLOCK: missing hook templates in Carson: #{missing_templates.join( ', ' )}."
 					return EXIT_BLOCK
 				end
 
@@ -171,7 +171,7 @@ module Butler
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
-				align_remote_name_for_butler!
+				align_remote_name_for_carson!
 				hook_status = hook!
 				return hook_status unless hook_status == EXIT_OK
 
@@ -180,21 +180,21 @@ module Butler
 
 				audit_status = audit!
 				if audit_status == EXIT_OK
-					puts_line "OK: Butler initialisation completed for #{repo_root}."
+					puts_line "OK: Carson initialisation completed for #{repo_root}."
 				elsif audit_status == EXIT_BLOCK
-					puts_line "BLOCK: Butler initialisation completed with policy blocks; resolve and rerun butler audit."
+					puts_line "BLOCK: Carson initialisation completed with policy blocks; resolve and rerun carson audit."
 				end
 				audit_status
 			end
 
-			# Removes Butler-managed repository integration so a host repository can retire Butler cleanly.
+			# Removes Carson-managed repository integration so a host repository can retire Carson cleanly.
 			def offboard!
 				print_header "Offboard"
 				unless inside_git_work_tree?
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
-				hooks_status = disable_butler_hooks_path!
+				hooks_status = disable_carson_hooks_path!
 				return hooks_status unless hooks_status == EXIT_OK
 
 				removed_count = 0
@@ -212,7 +212,7 @@ module Butler
 				end
 				remove_empty_offboard_directories!
 				puts_line "offboard_summary: removed=#{removed_count} missing=#{missing_count}"
-				puts_line "OK: Butler offboard completed for #{repo_root}."
+				puts_line "OK: Carson offboard completed for #{repo_root}."
 				EXIT_OK
 			end
 
@@ -245,7 +245,7 @@ module Butler
 				drift_count.positive? ? EXIT_BLOCK : EXIT_OK
 			end
 
-			# Applies managed template files as full-file writes from Butler sources.
+			# Applies managed template files as full-file writes from Carson sources.
 			def template_apply!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -302,12 +302,12 @@ module Butler
 				"#{text.to_s.gsub( "\r\n", "\n" ).rstrip}\n"
 			end
 
-			# GitHub managed template source directory inside Butler repository.
+			# GitHub managed template source directory inside Carson repository.
 			def github_templates_dir
 				File.join( tool_root, "templates", ".github" )
 			end
 
-			# Canonical hook template location inside Butler repository.
+			# Canonical hook template location inside Carson repository.
 			def hook_template_path( hook_name: )
 				File.join( tool_root, "assets", "hooks", hook_name )
 			end
@@ -374,7 +374,7 @@ module Butler
 						puts_line "ACTION: hooks path mismatch (configured=#{configured_text}, expected=#{expected})."
 					end
 				end
-				message = strict ? "ACTION: run butler hook to align hooks with Butler #{Butler::VERSION}." : "ACTION: run butler hook to enforce local main protections."
+				message = strict ? "ACTION: run carson hook to align hooks with Carson #{Carson::VERSION}." : "ACTION: run carson hook to enforce local main protections."
 				puts_line message
 			end
 
@@ -422,10 +422,10 @@ module Butler
 
 			# Local directory where managed hooks are installed.
 			def hooks_dir
-				File.expand_path( File.join( config.hooks_base_path, Butler::VERSION ) )
+				File.expand_path( File.join( config.hooks_base_path, Carson::VERSION ) )
 			end
 
-			# In outsider mode, Butler must not leave Butler-owned fingerprints in host repositories.
+			# In outsider mode, Carson must not leave Carson-owned fingerprints in host repositories.
 			def block_if_outsider_fingerprints!
 				return nil unless outsider_mode?
 
@@ -436,24 +436,24 @@ module Butler
 				EXIT_BLOCK
 			end
 
-			# Butler source repository itself is excluded from host-repository fingerprint checks.
+			# Carson source repository itself is excluded from host-repository fingerprint checks.
 			def outsider_mode?
 				File.expand_path( repo_root ) != File.expand_path( tool_root )
 			end
 
-			# Detects Butler-owned host artefacts that violate outsider boundary.
+			# Detects Carson-owned host artefacts that violate outsider boundary.
 			def outsider_fingerprint_violations
 				violations = []
-				violations << "forbidden file .butler.yml detected" if File.file?( File.join( repo_root, ".butler.yml" ) )
-				violations << "forbidden file bin/butler detected" if File.file?( File.join( repo_root, "bin", "butler" ) )
-				violations << "forbidden directory .tools/butler detected" if Dir.exist?( File.join( repo_root, ".tools", "butler" ) )
+				violations << "forbidden file .carson.yml detected" if File.file?( File.join( repo_root, ".carson.yml" ) )
+				violations << "forbidden file bin/carson detected" if File.file?( File.join( repo_root, "bin", "carson" ) )
+				violations << "forbidden directory .tools/carson detected" if Dir.exist?( File.join( repo_root, ".tools", "carson" ) )
 				violations.concat( legacy_marker_violations )
 				violations
 			end
 
 				# Legacy template markers are disallowed in outsider mode.
 				def legacy_marker_violations
-					legacy_marker_token = "butler:#{%w[c o m m o n].join}:"
+					legacy_marker_token = "carson:#{%w[c o m m o n].join}:"
 					legacy_marker_paths( token: legacy_marker_token ).map do |relative|
 						"forbidden legacy marker detected in #{relative}"
 					end
@@ -616,7 +616,7 @@ module Butler
 				stdout_text.to_s.strip == "true"
 			end
 
-			def disable_butler_hooks_path!
+			def disable_carson_hooks_path!
 				configured = configured_hooks_path
 				if configured.nil?
 					puts_line "hooks_path: (unset)"
@@ -624,8 +624,8 @@ module Butler
 				end
 				puts_line "hooks_path: #{configured}"
 				configured_abs = File.expand_path( configured, repo_root )
-				unless butler_managed_hooks_path?( configured_abs: configured_abs )
-					puts_line "hooks_path_kept: #{configured} (not Butler-managed)"
+				unless carson_managed_hooks_path?( configured_abs: configured_abs )
+					puts_line "hooks_path_kept: #{configured} (not Carson-managed)"
 					return EXIT_OK
 				end
 				git_system!( "config", "--unset", "core.hooksPath" )
@@ -636,14 +636,14 @@ module Butler
 				EXIT_ERROR
 			end
 
-			def butler_managed_hooks_path?( configured_abs: )
+			def carson_managed_hooks_path?( configured_abs: )
 				hooks_root = File.join( File.expand_path( config.hooks_base_path ), "" )
 				return true if configured_abs.start_with?( hooks_root )
 
-				butler_hook_files_match_templates?( hooks_path: configured_abs )
+				carson_hook_files_match_templates?( hooks_path: configured_abs )
 			end
 
-			def butler_hook_files_match_templates?( hooks_path: )
+			def carson_hook_files_match_templates?( hooks_path: )
 				return false unless Dir.exist?( hooks_path )
 				config.required_hooks.all? do |hook_name|
 					installed_path = File.join( hooks_path, hook_name )
@@ -660,11 +660,11 @@ module Butler
 
 			def offboard_cleanup_targets
 				( config.template_managed_files + [
-					".github/workflows/butler-governance.yml",
-					".github/workflows/butler_policy.yml",
-					".butler.yml",
-					"bin/butler",
-					".tools/butler"
+					".github/workflows/carson-governance.yml",
+					".github/workflows/carson_policy.yml",
+					".carson.yml",
+					"bin/carson",
+					".tools/carson"
 				] ).uniq
 			end
 
@@ -679,9 +679,9 @@ module Butler
 				end
 			end
 
-			# Ensures Butler expected remote naming (`github`) while keeping existing
+			# Ensures Carson expected remote naming (`github`) while keeping existing
 			# repositories safe when neither `github` nor `origin` exists.
-			def align_remote_name_for_butler!
+			def align_remote_name_for_carson!
 				if git_remote_exists?( remote_name: config.git_remote )
 					puts_line "remote_ok: #{config.git_remote}"
 					return

@@ -1,4 +1,4 @@
-module Butler
+module Carson
 	class Runtime
 		module Audit
 			def audit!
@@ -27,7 +27,7 @@ module Butler
 				elsif behind_count.positive?
 					puts_line "main_vs_remote_main_ahead: #{ahead_count}"
 					puts_line "main_vs_remote_main_behind: #{behind_count}"
-					puts_line "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run butler sync."
+					puts_line "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run carson sync."
 					audit_state = "attention" if audit_state == "ok"
 				else
 					puts_line "main_vs_remote_main_ahead: 0"
@@ -145,7 +145,7 @@ module Butler
 			# Renders Markdown summary used by humans during merge-readiness reviews.
 			def render_pr_monitor_markdown( report: )
 				lines = []
-				lines << "# Butler PR Monitor Report"
+				lines << "# Carson PR Monitor Report"
 				lines << ""
 				lines << "- Generated at: #{report.fetch( :generated_at )}"
 				lines << "- Branch: #{report.fetch( :branch )}"

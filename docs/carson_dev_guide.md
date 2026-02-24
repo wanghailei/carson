@@ -1,8 +1,8 @@
-# Butler Developer Guide (Internal)
+# Carson Developer Guide (Internal)
 
 ## Audience
 
-This guide is for internal Butler developers and internal testers only.
+This guide is for internal Carson developers and internal testers only.
 
 It is not an end-user installation guide.
 
@@ -17,27 +17,27 @@ This document covers:
 This document does not cover:
 
 - public RubyGems onboarding for end users
-- Butler runtime internals
+- Carson runtime internals
 
-## Internal Configuration (`~/.butler/config.json`)
+## Internal Configuration (`~/.carson/config.json`)
 
-Butler remains outsider-only. Runtime configuration belongs in user space, never in host repositories.
+Carson remains outsider-only. Runtime configuration belongs in user space, never in host repositories.
 
 Canonical path:
 
-- `~/.butler/config.json`
+- `~/.carson/config.json`
 
 Override path:
 
-- `BUTLER_CONFIG_FILE=/absolute/path/to/config.json`
+- `CARSON_CONFIG_FILE=/absolute/path/to/config.json`
 
-Config precedence (as implemented in `lib/butler/config.rb`):
+Config precedence (as implemented in `lib/carson/config.rb`):
 
 1. built-in defaults
 2. global user config file
 3. environment overrides
 
-Host-repository Butler config files are intentionally not loaded.
+Host-repository Carson config files are intentionally not loaded.
 
 Compact example:
 
@@ -67,36 +67,36 @@ JSON rationale (internal):
 JSON comment guidance:
 
 - use `_comment` keys for inline hints inside `config.json`
-- or keep explanatory notes in a sidecar file such as `~/.butler/config.notes.md`
+- or keep explanatory notes in a sidecar file such as `~/.carson/config.notes.md`
 
 Key environment overrides supported by the loader:
 
-- `BUTLER_CONFIG_FILE`
-- `BUTLER_HOOKS_BASE_PATH`
-- `BUTLER_REVIEW_WAIT_SECONDS`
-- `BUTLER_REVIEW_POLL_SECONDS`
-- `BUTLER_REVIEW_MAX_POLLS`
-- `BUTLER_REVIEW_DISPOSITION_PREFIX`
-- `BUTLER_REVIEW_SWEEP_WINDOW_DAYS`
-- `BUTLER_REVIEW_SWEEP_STATES`
-- `BUTLER_RUBY_INDENTATION`
+- `CARSON_CONFIG_FILE`
+- `CARSON_HOOKS_BASE_PATH`
+- `CARSON_REVIEW_WAIT_SECONDS`
+- `CARSON_REVIEW_POLL_SECONDS`
+- `CARSON_REVIEW_MAX_POLLS`
+- `CARSON_REVIEW_DISPOSITION_PREFIX`
+- `CARSON_REVIEW_SWEEP_WINDOW_DAYS`
+- `CARSON_REVIEW_SWEEP_STATES`
+- `CARSON_RUBY_INDENTATION`
 
-## Internal install from a local Butler checkout
+## Internal install from a local Carson checkout
 
-Use this path when you already have Butler source locally:
+Use this path when you already have Carson source locally:
 
 ```bash
-cd /local/path/of/butler
+cd /local/path/of/carson
 ./install.sh
 ```
 
 Verify:
 
 ```bash
-butler version
+carson version
 ```
 
-If `butler` is not found in your shell, add `~/.local/bin` to `PATH`.
+If `carson` is not found in your shell, add `~/.local/bin` to `PATH`.
 
 ## Authenticated install script fetch (private repo only)
 
@@ -111,10 +111,10 @@ Security note:
 With GitHub CLI:
 
 ```bash
-gh api -H "Accept: application/vnd.github.raw" "repos/<owner>/<repo>/contents/install.sh?ref=<trusted_ref>" > /tmp/butler-install.sh
-sed -n '1,120p' /tmp/butler-install.sh
-bash /tmp/butler-install.sh
-rm -f /tmp/butler-install.sh
+gh api -H "Accept: application/vnd.github.raw" "repos/<owner>/<repo>/contents/install.sh?ref=<trusted_ref>" > /tmp/carson-install.sh
+sed -n '1,120p' /tmp/carson-install.sh
+bash /tmp/carson-install.sh
+rm -f /tmp/carson-install.sh
 ```
 
 With `curl` and token:
@@ -123,10 +123,10 @@ With `curl` and token:
 curl -fsSL \
   -H "Authorization: Bearer $GITHUB_TOKEN" \
   -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/<owner>/<repo>/contents/install.sh?ref=<trusted_ref>" > /tmp/butler-install.sh
-sed -n '1,120p' /tmp/butler-install.sh
-bash /tmp/butler-install.sh
-rm -f /tmp/butler-install.sh
+  "https://api.github.com/repos/<owner>/<repo>/contents/install.sh?ref=<trusted_ref>" > /tmp/carson-install.sh
+sed -n '1,120p' /tmp/carson-install.sh
+bash /tmp/carson-install.sh
+rm -f /tmp/carson-install.sh
 ```
 
 ## Basic smoke verification for a client repository
@@ -134,13 +134,13 @@ rm -f /tmp/butler-install.sh
 After installation:
 
 ```bash
-butler version
-butler init /local/path/of/repo
+carson version
+carson init /local/path/of/repo
 ```
 
 Expected result:
 
-- Butler version prints successfully
+- Carson version prints successfully
 - `init` completes baseline setup or returns actionable policy output
 
 ## Privacy conventions for docs and examples
@@ -148,7 +148,7 @@ Expected result:
 Always use generic paths and placeholders:
 
 - `~` or `$HOME` (never machine-specific absolute home paths)
-- `/local/path/of/butler`
+- `/local/path/of/carson`
 - `/local/path/of/repo`
 - `<owner>/<repo>`
 
