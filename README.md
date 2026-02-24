@@ -103,7 +103,6 @@ Blocked Carson fingerprints in host repositories:
 - `.carson.yml`
 - `bin/carson`
 - `.tools/carson/*`
-- legacy Carson marker artefacts
 
 Allowed managed persistence:
 

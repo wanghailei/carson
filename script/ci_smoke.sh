@@ -180,17 +180,17 @@ fi
 echo "PASS: init aligned remote name to github"
 cd "$init_repo"
 expect_exit 0 "check passes after init" run_carson check
-legacy_hooks_dir="$tmp_root/legacy-hooks/$expected_carson_version"
-mkdir -p "$legacy_hooks_dir"
-cp "$tmp_root/global-hooks/$expected_carson_version/"* "$legacy_hooks_dir/"
-git config core.hooksPath "$legacy_hooks_dir"
+previous_hooks_dir="$tmp_root/previous-hooks/$expected_carson_version"
+mkdir -p "$previous_hooks_dir"
+cp "$tmp_root/global-hooks/$expected_carson_version/"* "$previous_hooks_dir/"
+git config core.hooksPath "$previous_hooks_dir"
 mkdir -p .github/workflows .tools/carson bin
 printf "review: {}\n" > .carson.yml
 printf "#!/usr/bin/env bash\n" > bin/carson
 chmod +x bin/carson
 printf "name: Carson governance\n" > .github/workflows/carson-governance.yml
 printf "name: Carson policy\n" > .github/workflows/carson_policy.yml
-expect_exit 0 "offboard removes Carson integration and legacy artefacts" run_carson offboard
+expect_exit 0 "offboard removes Carson integration artefacts" run_carson offboard
 if git config --get core.hooksPath >/dev/null 2>&1; then
 	echo "FAIL: offboard did not unset Carson-managed core.hooksPath" >&2
 	exit 1
@@ -210,7 +210,7 @@ for removed_path in \
 done
 echo "PASS: offboard cleaned Carson-managed repo artefacts"
 expect_exit 0 "offboard is idempotent on an already cleaned repo" run_carson offboard
-expect_exit 1 "legacy run command is rejected" run_carson run "$init_repo"
+expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 
 # Validate core setup flows (check/sync/hook/template).
 cd "$work_repo"
@@ -366,12 +366,6 @@ mkdir -p .tools/carson
 printf 'runtime\n' > .tools/carson/README
 expect_exit 2 "outsider boundary blocks host repo .tools/carson" run_carson audit
 rm -rf .tools
-
-mkdir -p .github
-marker_word="$(printf '%s' c o m m o n)"
-printf "<!-- carson:${marker_word}:start old -->\nlegacy\n<!-- carson:${marker_word}:end old -->\n" > .github/copilot-instructions.md
-expect_exit 2 "outsider boundary blocks legacy marker artefacts" run_carson audit
-rm -rf .github
 
 # Include dedicated review smoke suite from CI smoke entrypoint.
 cd "$repo_root"
