@@ -49,7 +49,7 @@ class RuntimeReviewHelpersTest < Minitest::Test
 				{
 					author: "owner",
 					body: "Codex: accepted https://github.com/acme/widgets/pull/12#issuecomment-risk",
-					url: "https://github.com/acme/widgets/pull/12#issuecomment-legacy",
+					url: "https://github.com/acme/widgets/pull/12#issuecomment-alt",
 					created_at: "2026-02-20T00:00:02Z"
 				}
 			],
