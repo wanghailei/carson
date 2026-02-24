@@ -21,7 +21,7 @@ It runs from your workstation, applies governance consistently, and avoids placi
 ### 2) Install Butler
 
 ```bash
-gem install --user-install butler-to-merge -v 0.6.0
+gem install --user-install butler-to-merge -v 0.6.1
 ```
 
 If `butler` is not found after install:
@@ -36,7 +36,7 @@ export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
 butler version
 ```
 
-Expected: `0.6.0` (or newer).
+Expected: `0.6.1` (or newer).
 
 ### 4) Bootstrap one repository
 
@@ -68,9 +68,9 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/butler/.github/workflows/butler_policy.yml@9dafd1b32042dc064b9cea743fd02c933d2322a8
+    uses: wanghailei/butler/.github/workflows/butler_policy.yml@<commit-sha-for-v0.6.1>
     with:
-      butler_version: "0.6.0"
+      butler_version: "0.6.1"
 ```
 
 When upgrading Butler, update both values together.

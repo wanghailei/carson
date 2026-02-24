@@ -5,6 +5,58 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/butler_user_guide.md`.
 
+## 0.6.1 (2026-02-24)
+
+### User Overview
+
+#### What changed
+
+- Removed branch-name scope enforcement from commit-time governance and kept scope integrity path-group based.
+- Improved hook-upgrade diagnostics and installer guidance when repositories are still pinned to an older Butler hooks path.
+- Fixed scope guard conflict reporting so `violating_files` only lists true cross-core conflicts.
+- Updated user-facing install/pin examples to `0.6.1`.
+
+#### Why users should care
+
+- Branch names are now informational only for scope checks, so commits are governed by actual feature/module path boundaries.
+- Hook upgrade failure modes are easier to diagnose and fix locally.
+- Scope integrity output is less noisy and more actionable.
+
+#### What users must do now
+
+1. Upgrade to `0.6.1` where Butler is pinned.
+2. Re-run `butler hook` in governed repositories after upgrade.
+3. Update CI `butler_version` pins to `0.6.1`.
+
+#### Breaking or removed behaviour
+
+- `BUTLER_SCOPE_BRANCH_PATTERN` override support has been removed.
+- `scope.branch_pattern` and `scope.lane_group_map` config keys are no longer consumed.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install butler-to-merge -v 0.6.1
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/butler" ~/.local/bin/butler
+butler version
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- CLI command surface unchanged.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+- Scope policy is now strictly changed-path based; branch-pattern controls are removed.
+- Review acknowledgement and style overrides remain:
+  `BUTLER_REVIEW_DISPOSITION_PREFIX`, `BUTLER_RUBY_INDENTATION`.
+
+#### Verification evidence
+
+- PR #40 merged with green required checks (`Butler governance`, `Syntax and smoke tests`).
+- PR #41 merged with green required checks (`Butler governance`, `Syntax and smoke tests`).
+
 ## 0.6.0 (2026-02-23)
 
 ### User Overview
