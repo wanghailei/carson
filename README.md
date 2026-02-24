@@ -21,7 +21,7 @@ It runs from your workstation, applies governance consistently, and avoids placi
 ### 2) Install Carson
 
 ```bash
-gem install --user-install carson -v 0.6.1
+gem install --user-install carson -v 0.7.0
 ```
 
 If `carson` is not found after install:
@@ -36,7 +36,7 @@ export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
 carson version
 ```
 
-Expected: `0.6.1` (or newer).
+Expected: `0.7.0` (or newer).
 
 ### 4) Bootstrap one repository
 
@@ -46,7 +46,7 @@ carson init /local/path/of/repo
 
 Expected outcomes:
 
-- remote aligned to `github` when required
+- remote aligned to configured `git.remote` (default `github`)
 - hooks installed under `~/.carson/hooks/<version>/`
 - commit-time governance gate enabled via managed `pre-commit` hook
 - `.github` managed files synced
@@ -58,7 +58,7 @@ Commit generated `.github/*` files in the client repository.
 
 ## CI quick start (pinned)
 
-In client repositories, pin the reusable workflow to an immutable commit SHA and pin the Carson version explicitly.
+In client repositories, pin the reusable workflow to an explicit release ref and pin the Carson version explicitly.
 
 ```yaml
 name: Carson policy
@@ -68,10 +68,10 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.6.1
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.7.0
     with:
-      carson_ref: "v0.6.1"
-      carson_version: "0.6.1"
+      carson_ref: "v0.7.0"
+      carson_version: "0.7.0"
 ```
 
 When upgrading Carson, update both values together.
