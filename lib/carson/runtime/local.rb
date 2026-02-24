@@ -452,17 +452,11 @@ module Carson
 			end
 
 				# Legacy template markers are disallowed in outsider mode.
-				# Keep both Carson and Butler tokens so upgraded hosts cannot silently bypass checks.
 				def legacy_marker_violations
-					tokens = [
-						"carson:#{%w[c o m m o n].join}:",
-						"butler:#{%w[c o m m o n].join}:"
-					]
-					detected = {}
-					tokens.each do |token|
-						legacy_marker_paths( token: token ).each { |relative| detected[ relative ] = true }
+					legacy_marker_token = "carson:#{%w[c o m m o n].join}:"
+					legacy_marker_paths( token: legacy_marker_token ).map do |relative|
+						"forbidden legacy marker detected in #{relative}"
 					end
-					detected.keys.sort.map { |relative| "forbidden legacy marker detected in #{relative}" }
 				end
 
 				# Uses tracked-file grep first, then scans changed/untracked files for non-tracked candidates.
