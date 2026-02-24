@@ -54,8 +54,8 @@ butler version
 
 #### Verification evidence
 
-- PR #40 merged with green required checks (`Butler governance`, `Syntax and smoke tests`).
-- PR #41 merged with green required checks (`Butler governance`, `Syntax and smoke tests`).
+- PR #40 merged with green required checks (`Butler policy`, `Syntax and smoke tests`).
+- PR #41 merged with green required checks (`Butler policy`, `Syntax and smoke tests`).
 
 ## 0.6.0 (2026-02-23)
 

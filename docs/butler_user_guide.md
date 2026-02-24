@@ -103,8 +103,9 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/butler/.github/workflows/butler_policy.yml@<commit-sha-for-v0.6.1>
+    uses: wanghailei/butler/.github/workflows/butler_policy.yml@v0.6.1
     with:
+      butler_ref: "v0.6.1"
       butler_version: "0.6.1"
 ```
 
