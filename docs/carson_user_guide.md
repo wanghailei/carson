@@ -79,12 +79,18 @@ carson init /local/path/of/repo
 
 `init` performs:
 
-- remote alignment (`origin` to `github` when required)
+- canonical remote alignment (`origin` to `github` when required)
 - hook installation under `~/.carson/hooks/<version>/`
 - repository `core.hooksPath` alignment to Carson global hooks
 - commit-time governance gate via managed `pre-commit` hook (`carson audit`)
 - managed GitHub template sync under `.github/*`
 - initial governance audit output
+
+Remote check:
+
+```bash
+git -C /local/path/of/repo remote get-url github
+```
 
 ### Step 2: commit managed GitHub files
 

@@ -46,11 +46,17 @@ carson init /local/path/of/repo
 
 Expected outcomes:
 
-- remote aligned to `github` when required
+- canonical remote name is `github` (`origin` is renamed when required)
 - hooks installed under `~/.carson/hooks/<version>/`
 - commit-time governance gate enabled via managed `pre-commit` hook
 - `.github` managed files synced
 - initial audit executed
+
+Remote check:
+
+```bash
+git -C /local/path/of/repo remote get-url github
+```
 
 ### 5) Commit managed GitHub files
 
