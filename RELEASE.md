@@ -70,7 +70,7 @@ carson version
 - Changed default review acknowledgement prefix from `Codex:` to `Disposition:`.
 - Added Ruby stdlib unit tests for deterministic helper logic and integrated them in CI.
 - Replaced static indentation regex checks with policy-based guard script (`script/ruby_indentation_guard.rb`).
-- Optimised legacy marker detection and hardened untracked/quoted-path handling.
+- Hardened untracked/quoted-path handling.
 - Added internal developer documentation for `~/.carson/config.json`.
 
 #### Why users should care
@@ -89,7 +89,7 @@ carson version
 
 - Branch-name policy matching has been removed; branch names are informational only.
 - Default review acknowledgement prefix no longer assumes `Codex:`.
-- `docs/carson_evo_plan.md` has been removed from the repository.
+- Internal planning document removed from the repository.
 
 #### Upgrade steps
 
@@ -167,7 +167,7 @@ carson version
 
 - Added one-command source installer: `./install.sh`.
 - Split installation guidance into public user and internal developer tracks.
-- Added Carson evolution planning document: `docs/carson_evo_plan.md`.
+- Added internal planning document for Carson rollout.
 - Stabilised review sweep smoke fixtures with relative timestamps to remove date drift failures.
 
 #### Why users should care
@@ -214,7 +214,7 @@ carson version
 #### What changed
 
 - Added repository retirement command: `carson offboard [repo_path]`.
-- `offboard` now removes Carson-managed host artefacts and legacy Carson files from client repositories.
+- `offboard` now removes Carson-managed host artefacts and Carson-specific files from client repositories.
 - `offboard` unsets repo `core.hooksPath` only when it points to Carson-managed global hook paths.
 
 #### Why users should care
@@ -264,7 +264,7 @@ carson version
 #### What changed
 
 - Renamed Carson gem package from `carson-governance` to `carson` (CLI command remains `carson`).
-- Removed the `butler-to-merge` CLI alias.
+- Removed an extra CLI alias command.
 - Renamed reusable workflow to `.github/workflows/carson_policy.yml`.
 - Removed report output environment override `CARSON_REPORT_DIR`.
 - Report output is standardised to `~/.cache/carson` when `HOME` is valid.
@@ -419,9 +419,9 @@ carson audit
 
 ### Removed
 
-- Legacy alias command family previously mapped to template operations.
+- Alias command family previously mapped to template operations.
 - Repository-local Carson wrapper bootstrap path in `script/bootstrap_repo_defaults.sh`.
-- Legacy marker-based template model.
+- Marker-based template model.
 
 ## 0.1.0 (2026-02-16)
 
