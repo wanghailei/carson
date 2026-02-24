@@ -1,7 +1,7 @@
 require_relative "test_helper"
 
 class RuntimeLocalHelpersTest < Minitest::Test
-	include ButlerTestSupport
+	include CarsonTestSupport
 
 	def test_normalise_porcelain_path_decodes_quoted_paths
 		runtime, repo_root = build_runtime
@@ -20,7 +20,7 @@ class RuntimeLocalHelpersTest < Minitest::Test
 	end
 
 	def test_check_reports_hooks_path_mismatch_with_upgrade_action
-		Dir.mktmpdir( "butler-hooks-upgrade-test", butler_tmp_root ) do |tmp_dir|
+		Dir.mktmpdir( "carson-hooks-upgrade-test", carson_tmp_root ) do |tmp_dir|
 			repo_root = File.join( tmp_dir, "repo" )
 			FileUtils.mkdir_p( repo_root )
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
@@ -30,12 +30,12 @@ class RuntimeLocalHelpersTest < Minitest::Test
 
 			with_env(
 				"HOME" => tmp_dir,
-				"BUTLER_CONFIG_FILE" => "",
-				"BUTLER_HOOKS_BASE_PATH" => hooks_base
+				"CARSON_CONFIG_FILE" => "",
+				"CARSON_HOOKS_BASE_PATH" => hooks_base
 			) do
 				out = StringIO.new
 				err = StringIO.new
-				runtime = Butler::Runtime.new(
+				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
@@ -52,10 +52,10 @@ class RuntimeLocalHelpersTest < Minitest::Test
 
 				status = runtime.check!
 				output = out.string
-				assert_equal Butler::Runtime::EXIT_BLOCK, status
+				assert_equal Carson::Runtime::EXIT_BLOCK, status
 				assert_includes output, "hooks_path_status: attention"
 				assert_includes output, "ACTION: hooks path mismatch (configured=#{legacy_hooks_path}, expected=#{expected_hooks_path})."
-				assert_includes output, "ACTION: run butler hook to align hooks with Butler #{Butler::VERSION}."
+				assert_includes output, "ACTION: run carson hook to align hooks with Carson #{Carson::VERSION}."
 			end
 		end
 	end

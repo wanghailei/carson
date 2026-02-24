@@ -1,4 +1,4 @@
-name: Publish Butler gem (RubyGems)
+name: Publish Carson gem (RubyGems)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
           ruby-version: "4.0"
 
       - name: Build gem
-        run: gem build butler.gemspec
+        run: gem build carson.gemspec
 
       - name: Publish gem to RubyGems
         env:
@@ -31,4 +31,4 @@ jobs:
           :rubygems_api_key: ${RUBYGEMS_API_KEY}
           EOF
           chmod 0600 ~/.gem/credentials
-          gem push "butler-to-merge-$(cat VERSION).gem"
+          gem push "carson-$(cat VERSION).gem"

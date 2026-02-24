@@ -1,0 +1,74 @@
+name: Carson policy reusable
+
+on:
+  workflow_call:
+    inputs:
+      carson_ref:
+        description: Carson repository ref to check out
+        required: false
+        type: string
+        default: main
+      carson_version:
+        description: Exact Carson gem version expected in VERSION
+        required: true
+        type: string
+
+jobs:
+  governance:
+    name: Carson policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout host repository
+        uses: actions/checkout@v4
+        with:
+          path: host
+
+      - name: Checkout Carson runtime
+        uses: actions/checkout@v4
+        with:
+          repository: wanghailei/carson
+          ref: ${{ inputs.carson_ref }}
+          path: carson
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Validate expected version
+        run: |
+          actual="$(cat carson/VERSION)"
+          if [[ "$actual" != "${{ inputs.carson_version }}" ]]; then
+            echo "Expected Carson version ${{ inputs.carson_version }} but got ${actual}" >&2
+            exit 1
+          fi
+
+      - name: Install Carson gem from source checkout
+        run: |
+          cd carson
+          gem build carson.gemspec
+          gem install --local "carson-${{ inputs.carson_version }}.gem"
+
+      - name: Align remote name for Carson
+        working-directory: host
+        run: |
+          if ! git remote get-url github >/dev/null 2>&1; then
+            git remote rename origin github
+          fi
+
+      - name: Carson audit
+        working-directory: host
+        run: |
+          carson hook
+          carson audit
+
+      - name: Carson review gate
+        working-directory: host
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARSON_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: carson review gate

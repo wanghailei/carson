@@ -1,13 +1,13 @@
 #!/usr/bin/env ruby
-require_relative "../lib/butler/config"
+require_relative "../lib/carson/config"
 
-module Butler
+module Carson
 	module RubyIndentationGuard
 		module_function
 
 		def run!
 			repo_root = File.expand_path( "..", __dir__ )
-			config = Butler::Config.load( repo_root: repo_root )
+			config = Carson::Config.load( repo_root: repo_root )
 			policy = config.ruby_indentation
 			violations = ruby_files( repo_root: repo_root ).flat_map do |path|
 				file_violations( path: path, repo_root: repo_root, policy: policy )
@@ -69,4 +69,4 @@ module Butler
 	end
 end
 
-Butler::RubyIndentationGuard.run!
+Carson::RubyIndentationGuard.run!

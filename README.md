@@ -1,15 +1,15 @@
-# Butler
+# Carson
 
-Butler is an outsider governance runtime for GitHub repositories.
+Carson is an outsider governance runtime for GitHub repositories.
 
-It runs from your workstation, applies governance consistently, and avoids placing Butler-owned tooling inside client repositories.
+It runs from your workstation, applies governance consistently, and avoids placing Carson-owned tooling inside client repositories.
 
-## Why Butler
+## Why Carson
 
 - keeps GitHub as merge authority
 - enforces local hard protection and review discipline
 - provides deterministic governance checks with stable exit codes
-- keeps host repositories clean from Butler runtime artefacts
+- keeps host repositories clean from Carson runtime artefacts
 
 ## Quick start (about 10 minutes)
 
@@ -18,13 +18,13 @@ It runs from your workstation, applies governance consistently, and avoids placi
 - Ruby `>= 4.0`
 - `gem`, `git`, and `gh` available in `PATH`
 
-### 2) Install Butler
+### 2) Install Carson
 
 ```bash
-gem install --user-install butler-to-merge -v 0.6.1
+gem install --user-install carson -v 0.6.1
 ```
 
-If `butler` is not found after install:
+If `carson` is not found after install:
 
 ```bash
 export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
@@ -33,7 +33,7 @@ export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
 ### 3) Verify installation
 
 ```bash
-butler version
+carson version
 ```
 
 Expected: `0.6.1` (or newer).
@@ -41,13 +41,13 @@ Expected: `0.6.1` (or newer).
 ### 4) Bootstrap one repository
 
 ```bash
-butler init /local/path/of/repo
+carson init /local/path/of/repo
 ```
 
 Expected outcomes:
 
 - remote aligned to `github` when required
-- hooks installed under `~/.butler/hooks/<version>/`
+- hooks installed under `~/.carson/hooks/<version>/`
 - commit-time governance gate enabled via managed `pre-commit` hook
 - `.github` managed files synced
 - initial audit executed
@@ -58,52 +58,52 @@ Commit generated `.github/*` files in the client repository.
 
 ## CI quick start (pinned)
 
-In client repositories, pin the reusable workflow to an immutable commit SHA and pin the Butler version explicitly.
+In client repositories, pin the reusable workflow to an immutable commit SHA and pin the Carson version explicitly.
 
 ```yaml
-name: Butler policy
+name: Carson policy
 
 on:
   pull_request:
 
 jobs:
   governance:
-    uses: wanghailei/butler/.github/workflows/butler_policy.yml@v0.6.1
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.6.1
     with:
-      butler_ref: "v0.6.1"
-      butler_version: "0.6.1"
+      carson_ref: "v0.6.1"
+      carson_version: "0.6.1"
 ```
 
-When upgrading Butler, update both values together.
+When upgrading Carson, update both values together.
 
 ## Daily minimum
 
 ```bash
-butler sync
-butler audit
-butler prune
+carson sync
+carson audit
+carson prune
 ```
 
 Before recommending merge:
 
 ```bash
-butler review gate
+carson review gate
 ```
 
 For scheduled late-review monitoring (for example every 8 hours in CI):
 
 ```bash
-butler review sweep
+carson review sweep
 ```
 
 ## Outsider boundary
 
-Blocked Butler fingerprints in host repositories:
+Blocked Carson fingerprints in host repositories:
 
-- `.butler.yml`
-- `bin/butler`
-- `.tools/butler/*`
-- legacy Butler marker artefacts
+- `.carson.yml`
+- `bin/carson`
+- `.tools/carson/*`
+- legacy Carson marker artefacts
 
 Allowed managed persistence:
 
@@ -117,7 +117,7 @@ Allowed managed persistence:
 
 ## Where to read next
 
-- user onboarding and workflows: `docs/butler_user_guide.md`
-- technical behaviour and architecture: `docs/butler_tech_guide.md`
-- contributor/internal install path: `docs/butler_dev_guide.md`
+- user onboarding and workflows: `docs/carson_user_guide.md`
+- technical behaviour and architecture: `docs/carson_tech_guide.md`
+- contributor/internal install path: `docs/carson_dev_guide.md`
 - version history and migration notes: `RELEASE.md`

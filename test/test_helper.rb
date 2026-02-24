@@ -3,11 +3,11 @@ require "minitest/autorun"
 require "stringio"
 require "tmpdir"
 
-require_relative "../lib/butler"
+require_relative "../lib/carson"
 
-module ButlerTestSupport
-	def butler_tmp_root
-		candidate = File.join( Dir.home, ".cache", "butler-test" )
+module CarsonTestSupport
+	def carson_tmp_root
+		candidate = File.join( Dir.home, ".cache", "carson-test" )
 		FileUtils.mkdir_p( candidate )
 		candidate
 	rescue StandardError
@@ -15,10 +15,10 @@ module ButlerTestSupport
 	end
 
 	def build_runtime
-		repo_root = Dir.mktmpdir( "butler-runtime-test", butler_tmp_root )
+		repo_root = Dir.mktmpdir( "carson-runtime-test", carson_tmp_root )
 		out = StringIO.new
 		err = StringIO.new
-		runtime = Butler::Runtime.new( repo_root: repo_root, tool_root: repo_root, out: out, err: err )
+		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: repo_root, out: out, err: err )
 		[ runtime, repo_root ]
 	end
 

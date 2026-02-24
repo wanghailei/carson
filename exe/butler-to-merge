@@ -1,6 +1,0 @@
-#!/usr/bin/env ruby
-# frozen_string_literal: true
-
-# Alias executable for users who install the butler-to-merge gem package.
-# Delegate to the primary launcher to avoid duplicated bootstrap logic.
-load File.expand_path( "butler", __dir__ )

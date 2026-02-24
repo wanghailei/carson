@@ -3,6 +3,6 @@ set -euo pipefail
 
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$branch_name" == "main" || "$branch_name" == "master" ]]; then
-	echo "Butler policy: direct merge commits on ${branch_name} are blocked. Merge through a pull request." >&2
+	echo "Carson policy: direct merge commits on ${branch_name} are blocked. Merge through a pull request." >&2
 	exit 1
 fi

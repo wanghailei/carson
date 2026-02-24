@@ -1,4 +1,4 @@
-module Butler
+module Carson
 	class Runtime
 		module Review
 			module SweepSupport
@@ -137,7 +137,7 @@ def ensure_review_sweep_label( repo_slug: )
 	gh_system!(
 	"label", "create", config.review_tracking_issue_label,
 	"--repo", repo_slug,
-	"--description", "Butler review sweep tracking",
+	"--description", "Carson review sweep tracking",
 	"--color", "B60205",
 	"--force"
 	)
@@ -172,7 +172,7 @@ end
 # Markdown body used by rolling sweep issue so latest findings are always in one place.
 def render_review_sweep_issue_body( findings: )
 	lines = []
-	lines << "# Butler review sweep findings"
+	lines << "# Carson review sweep findings"
 	lines << ""
 	lines << "- Generated at: #{Time.now.utc.iso8601}"
 	lines << "- Window days: #{config.review_sweep_window_days}"
@@ -210,7 +210,7 @@ end
 # Human-readable scheduled sweep report.
 def render_review_sweep_markdown( report: )
 	lines = []
-	lines << "# Butler Review Sweep Report"
+	lines << "# Carson Review Sweep Report"
 	lines << ""
 	lines << "- Generated at: #{report.fetch( :generated_at )}"
 	lines << "- Status: #{report.fetch( :status )}"
