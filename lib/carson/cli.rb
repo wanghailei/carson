@@ -1,6 +1,6 @@
 require "optparse"
 
-module Butler
+module Carson
 	class CLI
 		def self.start( argv:, repo_root:, tool_root:, out:, err: )
 			parsed = parse_args( argv: argv, out: out, err: err )
@@ -8,7 +8,7 @@ module Butler
 			return Runtime::EXIT_OK if command == :help
 
 			if command == "version"
-				out.puts Butler::VERSION
+				out.puts Carson::VERSION
 				return Runtime::EXIT_OK
 			end
 
@@ -43,7 +43,7 @@ module Butler
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: butler [audit|sync|prune|hook|check|init [repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|version]"
+				opts.banner = "Usage: carson [audit|sync|prune|hook|check|init [repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|version]"
 			end
 		end
 
@@ -79,7 +79,7 @@ module Butler
 		def self.parse_repo_path_command( command:, argv:, parser:, err: )
 			parser.parse!( argv )
 			if argv.length > 1
-				err.puts "Too many arguments for #{command}. Use: butler #{command} [repo_path]"
+				err.puts "Too many arguments for #{command}. Use: carson #{command} [repo_path]"
 				err.puts parser
 				return { command: :invalid }
 			end
@@ -94,7 +94,7 @@ module Butler
 			action = argv.shift
 			parser.parse!( argv )
 			if action.to_s.strip.empty?
-				err.puts "Missing subcommand for #{command}. Use: butler #{command} #{usage}"
+				err.puts "Missing subcommand for #{command}. Use: carson #{command} #{usage}"
 				err.puts parser
 				return { command: :invalid }
 			end

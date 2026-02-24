@@ -1,16 +1,16 @@
-# Butler Technical Guide
+# Carson Technical Guide
 
 ## Purpose
 
-Butler is an outsider governance runtime for repository hygiene and merge-readiness controls.
+Carson is an outsider governance runtime for repository hygiene and merge-readiness controls.
 
 Its design goal is operational discipline with minimal host-repository footprint.
 
-Audience: Butler contributors and advanced operators who need technical behaviour details.
+Audience: Carson contributors and advanced operators who need technical behaviour details.
 
-Common-user operations belong in `docs/butler_user_guide.md`.
+Common-user operations belong in `docs/carson_user_guide.md`.
 
-==Butler carries its own runtime assets and does not rely on Butler-owned files inside host repositories.==
+==Carson carries its own runtime assets and does not rely on Carson-owned files inside host repositories.==
 
 ## Scope and Boundaries
 
@@ -19,7 +19,7 @@ In scope:
 - local governance commands (`audit`, `sync`, `prune`, `hook`, `check`, `init`, `offboard`, `template`, `review`)
 - deterministic review gating and scheduled late-review sweeps through GitHub CLI
 - whole-file management of selected GitHub-native files (`.github/*`)
-- global hook installation under Butler runtime home
+- global hook installation under Carson runtime home
 - exact exit-status contract for automation use
 
 Out of scope:
@@ -27,29 +27,29 @@ Out of scope:
 - replacing GitHub as merge authority
 - host-repository business logic policy
 - merge execution or force merge decisions
-- host-repository Butler-specific configuration files
+- host-repository Carson-specific configuration files
 
 Boundary rules:
 
-- host repository must not contain Butler-owned artefacts (`.butler.yml`, `bin/butler`, `.tools/butler/*`)
-- host repository may contain GitHub-native policy files managed by Butler
+- host repository must not contain Carson-owned artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`)
+- host repository may contain GitHub-native policy files managed by Carson
 
 ## Module Relationships
 
-- `exe/butler`: primary executable entrypoint
-- `lib/butler/cli.rb`: command parsing and dispatch
-- `lib/butler/config.rb`: built-in runtime defaults and environment override handling
-- `lib/butler/runtime.rb`: runtime wiring, shared helpers, and concern loading
-- `lib/butler/runtime/local.rb`: local repository operations and hook/template/runtime boundary helpers
-- `lib/butler/runtime/audit.rb`: audit reporting, PR/check monitor report generation, and scope integrity guard
-- `lib/butler/runtime/review.rb`: review gate/review sweep command entrypoints
-- `lib/butler/runtime/review/data_access.rb`: GitHub query/pagination and payload normalisation
-- `lib/butler/runtime/review/gate_support.rb`: review gate snapshot/actionability/report helpers
-- `lib/butler/runtime/review/sweep_support.rb`: review sweep findings/tracking issue/report helpers
-- `lib/butler/runtime/review/query_text.rb`: GraphQL query text
-- `lib/butler/runtime/review/utility.rb`: shared parsing/matching helpers
-- `lib/butler/adapters/git.rb`: git process adapter
-- `lib/butler/adapters/github.rb`: GitHub CLI process adapter
+- `exe/carson`: primary executable entrypoint
+- `lib/carson/cli.rb`: command parsing and dispatch
+- `lib/carson/config.rb`: built-in runtime defaults and environment override handling
+- `lib/carson/runtime.rb`: runtime wiring, shared helpers, and concern loading
+- `lib/carson/runtime/local.rb`: local repository operations and hook/template/runtime boundary helpers
+- `lib/carson/runtime/audit.rb`: audit reporting, PR/check monitor report generation, and scope integrity guard
+- `lib/carson/runtime/review.rb`: review gate/review sweep command entrypoints
+- `lib/carson/runtime/review/data_access.rb`: GitHub query/pagination and payload normalisation
+- `lib/carson/runtime/review/gate_support.rb`: review gate snapshot/actionability/report helpers
+- `lib/carson/runtime/review/sweep_support.rb`: review sweep findings/tracking issue/report helpers
+- `lib/carson/runtime/review/query_text.rb`: GraphQL query text
+- `lib/carson/runtime/review/utility.rb`: shared parsing/matching helpers
+- `lib/carson/adapters/git.rb`: git process adapter
+- `lib/carson/adapters/github.rb`: GitHub CLI process adapter
 - `templates/.github/*`: canonical managed GitHub-native files
 - `assets/hooks/*`: canonical hook assets
 - `script/bootstrap_repo_defaults.sh`: branch-protection and secret bootstrap helper
@@ -66,7 +66,7 @@ Current line count reality:
 - `audit.rb`: audit state and monitor report writing
 - `review/*.rb`: gate/sweep concerns split by data access, gate logic, sweep logic, queries, and shared helpers
 
-Rails-derived split rule used by Butler:
+Rails-derived split rule used by Carson:
 
 - split by behaviour ownership, not arbitrary line count
 - keep one primary responsibility per file
@@ -76,15 +76,15 @@ Rails-derived split rule used by Butler:
 
 ## Core Flow
 
-1. For new repositories, run `butler init [repo_path]` to apply baseline setup in one command.
-2. Run `butler audit` to evaluate local policy state.
-3. If required, run `butler hook` then `butler check`.
-4. Keep local `main` aligned using `butler sync`.
-5. Remove stale local branches using `butler prune`.
-6. Keep managed `.github/*` files aligned using `butler template check` and `butler template apply`.
-7. Before merge recommendation, run `gh pr list --state open --limit 50` and `butler review gate`.
-8. Scheduled automation runs `butler review sweep` for late actionable review activity.
-9. If retiring Butler from a repository, run `butler offboard [repo_path]`.
+1. For new repositories, run `carson init [repo_path]` to apply baseline setup in one command.
+2. Run `carson audit` to evaluate local policy state.
+3. If required, run `carson hook` then `carson check`.
+4. Keep local `main` aligned using `carson sync`.
+5. Remove stale local branches using `carson prune`.
+6. Keep managed `.github/*` files aligned using `carson template check` and `carson template apply`.
+7. Before merge recommendation, run `gh pr list --state open --limit 50` and `carson review gate`.
+8. Scheduled automation runs `carson review sweep` for late actionable review activity.
+9. If retiring Carson from a repository, run `carson offboard [repo_path]`.
 
 Exit status contract:
 
@@ -96,57 +96,57 @@ Exit status contract:
 
 Mechanism:
 
-- Runtime checks host repository for forbidden Butler fingerprints.
+- Runtime checks host repository for forbidden Carson fingerprints.
 - Violations are reported as hard blocks before governance execution proceeds.
 
 Blocked host artefacts:
 
-- `.butler.yml`
-- `bin/butler`
-- `.tools/butler/*`
+- `.carson.yml`
+- `bin/carson`
+- `.tools/carson/*`
 - legacy marker artefacts from older template strategy
 
 Key code segments:
 
-- `block_if_outsider_fingerprints!` in `lib/butler/runtime/local.rb`
-- `outsider_fingerprint_violations` in `lib/butler/runtime/local.rb`
-- `legacy_marker_violations` in `lib/butler/runtime/local.rb`
+- `block_if_outsider_fingerprints!` in `lib/carson/runtime/local.rb`
+- `outsider_fingerprint_violations` in `lib/carson/runtime/local.rb`
+- `legacy_marker_violations` in `lib/carson/runtime/local.rb`
 
 Boundary:
 
-- Butler repository itself is exempt from this check so Butler can evolve its own codebase.
+- Carson repository itself is exempt from this check so Carson can evolve its own codebase.
 
 ## Feature: Global Hook Runtime
 
 Mechanism:
 
 - Hook assets are read from `assets/hooks/*`.
-- Hooks are installed to `~/.butler/hooks/<version>/`.
+- Hooks are installed to `~/.carson/hooks/<version>/`.
 - Repository `core.hooksPath` is set to that global path.
 
 Key code segments:
 
-- `hook!` in `lib/butler/runtime/local.rb`
-- `hooks_dir` in `lib/butler/runtime/local.rb`
-- `hook_template_path` in `lib/butler/runtime/local.rb`
-- `hooks_health_report` in `lib/butler/runtime/local.rb`
+- `hook!` in `lib/carson/runtime/local.rb`
+- `hooks_dir` in `lib/carson/runtime/local.rb`
+- `hook_template_path` in `lib/carson/runtime/local.rb`
+- `hooks_health_report` in `lib/carson/runtime/local.rb`
 
 Boundary:
 
-- Butler does not create `.githooks/*` inside host repositories.
+- Carson does not create `.githooks/*` inside host repositories.
 
 ## Feature: One-command initialisation (`init`)
 
 Mechanism:
 
 - `init` verifies the target path is a git repository.
-- It ensures Butler remote naming by using `github` when present or renaming `origin` to `github`.
+- It ensures Carson remote naming by using `github` when present or renaming `origin` to `github`.
 - It then executes baseline setup sequence: `hook`, `template apply`, `audit`.
 
 Key code segments:
 
-- `init!` in `lib/butler/runtime/local.rb`
-- `align_remote_name_for_butler!` in `lib/butler/runtime/local.rb`
+- `init!` in `lib/carson/runtime/local.rb`
+- `align_remote_name_for_carson!` in `lib/carson/runtime/local.rb`
 
 Boundary:
 
@@ -158,18 +158,18 @@ Boundary:
 Mechanism:
 
 - `offboard` verifies the target path is a git repository.
-- It unsets `core.hooksPath` only when the configured value points to Butler-managed hooks base path.
-- It removes Butler-managed template files and known Butler-specific legacy artefacts in the host repository.
+- It unsets `core.hooksPath` only when the configured value points to Carson-managed hooks base path.
+- It removes Carson-managed template files and known Carson-specific legacy artefacts in the host repository.
 
 Key code segments:
 
-- `offboard!` in `lib/butler/runtime/local.rb`
-- `disable_butler_hooks_path!` in `lib/butler/runtime/local.rb`
-- `offboard_cleanup_targets` in `lib/butler/runtime/local.rb`
+- `offboard!` in `lib/carson/runtime/local.rb`
+- `disable_carson_hooks_path!` in `lib/carson/runtime/local.rb`
+- `offboard_cleanup_targets` in `lib/carson/runtime/local.rb`
 
 Boundary:
 
-- `offboard` does not remove user-owned hook configurations that are not Butler-managed.
+- `offboard` does not remove user-owned hook configurations that are not Carson-managed.
 
 ## Feature: GitHub Template Management
 
@@ -186,8 +186,8 @@ Managed files:
 
 Workflow:
 
-1. Run `butler template check` to detect drift.
-2. Run `butler template apply` to write canonical content.
+1. Run `carson template check` to detect drift.
+2. Run `carson template apply` to write canonical content.
 
 Drift reasons:
 
@@ -196,15 +196,15 @@ Drift reasons:
 
 Key code segments:
 
-- `template_results` in `lib/butler/runtime/local.rb`
-- `template_result_for_file` in `lib/butler/runtime/local.rb`
-- `template_check!` in `lib/butler/runtime/local.rb`
-- `template_apply!` in `lib/butler/runtime/local.rb`
+- `template_results` in `lib/carson/runtime/local.rb`
+- `template_result_for_file` in `lib/carson/runtime/local.rb`
+- `template_check!` in `lib/carson/runtime/local.rb`
+- `template_apply!` in `lib/carson/runtime/local.rb`
 
 Boundary:
 
 - Managed files are GitHub-native host files.
-- Butler-specific marker syntax is not used.
+- Carson-specific marker syntax is not used.
 
 ## Feature: Review Gate and Review Sweep
 
@@ -216,14 +216,14 @@ Mechanism:
 
 Key code segments:
 
-- `review_gate!` in `lib/butler/runtime/review.rb`
-- `review_gate_snapshot` in `lib/butler/runtime/review/gate_support.rb`
-- `review_sweep!` in `lib/butler/runtime/review.rb`
-- `upsert_review_sweep_tracking_issue` in `lib/butler/runtime/review/sweep_support.rb`
+- `review_gate!` in `lib/carson/runtime/review.rb`
+- `review_gate_snapshot` in `lib/carson/runtime/review/gate_support.rb`
+- `review_sweep!` in `lib/carson/runtime/review.rb`
+- `upsert_review_sweep_tracking_issue` in `lib/carson/runtime/review/sweep_support.rb`
 
 Boundary:
 
-- Butler provides deterministic governance signals.
+- Carson provides deterministic governance signals.
 - Merge authority remains GitHub plus human judgement.
 
 ## Feature: Branch Hygiene and Main Sync
@@ -236,10 +236,10 @@ Mechanism:
 
 Key code segments:
 
-- `sync!` in `lib/butler/runtime/local.rb`
-- `prune!` in `lib/butler/runtime/local.rb`
-- `stale_local_branches` in `lib/butler/runtime/local.rb`
-- `force_delete_evidence_for_stale_branch` in `lib/butler/runtime/local.rb`
+- `sync!` in `lib/carson/runtime/local.rb`
+- `prune!` in `lib/carson/runtime/local.rb`
+- `stale_local_branches` in `lib/carson/runtime/local.rb`
+- `force_delete_evidence_for_stale_branch` in `lib/carson/runtime/local.rb`
 
 Insight:
 
@@ -249,52 +249,52 @@ Insight:
 
 Mechanism:
 
-- Runtime uses built-in defaults from `lib/butler/config.rb`.
-- Runtime optionally merges global user config from `~/.butler/config.json` (or `BUTLER_CONFIG_FILE` override).
-- Report output precedence is global `~/.cache/butler`, then `TMPDIR/butler` when `HOME` is invalid and `TMPDIR` is absolute, then `/tmp/butler`.
+- Runtime uses built-in defaults from `lib/carson/config.rb`.
+- Runtime optionally merges global user config from `~/.carson/config.json` (or `CARSON_CONFIG_FILE` override).
+- Report output precedence is global `~/.cache/carson`, then `TMPDIR/carson` when `HOME` is invalid and `TMPDIR` is absolute, then `/tmp/carson`.
 - Environment overrides exist for hooks path, scope/review policy fields, review timing, sweep window/states, and Ruby indentation policy.
 - Host repository configuration file loading is intentionally disabled.
 
 Key code segments:
 
-- `Butler::Config.default_data` in `lib/butler/config.rb`
-- `Butler::Config.apply_env_overrides` in `lib/butler/config.rb`
-- `Butler::Config#validate!` in `lib/butler/config.rb`
+- `Carson::Config.default_data` in `lib/carson/config.rb`
+- `Carson::Config.apply_env_overrides` in `lib/carson/config.rb`
+- `Carson::Config#validate!` in `lib/carson/config.rb`
 
 Boundary:
 
-- Customisation remains centralised in Butler runtime, not in host repositories.
+- Customisation remains centralised in Carson runtime, not in host repositories.
 
 ## Feature: FAQ
 
-Q: Why keep Butler outside host repositories?  
-A: It keeps host repositories clean and avoids Butler-specific operational drift.
+Q: Why keep Carson outside host repositories?  
+A: It keeps host repositories clean and avoids Carson-specific operational drift.
 
 Q: Why still write `.github/*` files in host repositories?  
 A: Those files are GitHub-native policy inputs required by GitHub workflows and review tooling.
 
-Q: Why does Butler block on `.butler.yml` now?  
-A: Outsider mode forbids host Butler configuration artefacts to preserve boundary clarity.
+Q: Why does Carson block on `.carson.yml` now?  
+A: Outsider mode forbids host Carson configuration artefacts to preserve boundary clarity.
 
 Q: Why install hooks globally instead of inside each repository?  
-A: It keeps Butler-owned hook assets outside host repositories while still enforcing local protections.
+A: It keeps Carson-owned hook assets outside host repositories while still enforcing local protections.
 
-Q: Can Butler still support deterministic CI behaviour?  
-A: Yes. CI pins exact Butler version and runs the same exit-status contract.
+Q: Can Carson still support deterministic CI behaviour?  
+A: Yes. CI pins exact Carson version and runs the same exit-status contract.
 
 ## References
 
 - `README.md`
 - `RELEASE.md`
 - `VERSION`
-- `butler.gemspec`
-- `lib/butler/cli.rb`
-- `lib/butler/config.rb`
-- `lib/butler/runtime.rb`
-- `lib/butler/runtime/local.rb`
-- `lib/butler/runtime/audit.rb`
-- `lib/butler/runtime/review.rb`
-- `lib/butler/runtime/review/*.rb`
+- `carson.gemspec`
+- `lib/carson/cli.rb`
+- `lib/carson/config.rb`
+- `lib/carson/runtime.rb`
+- `lib/carson/runtime/local.rb`
+- `lib/carson/runtime/audit.rb`
+- `lib/carson/runtime/review.rb`
+- `lib/carson/runtime/review/*.rb`
 - `assets/hooks/pre-commit`
 - `assets/hooks/pre-push`
 - `assets/hooks/pre-merge-commit`
@@ -302,25 +302,25 @@ A: Yes. CI pins exact Butler version and runs the same exit-status contract.
 
 ## Senior Technical Review (Merged)
 
-Scope: Butler codebase architecture and subsystem review.
+Scope: Carson codebase architecture and subsystem review.
 
-## 1) What Butler is, in architectural terms
+## 1) What Carson is, in architectural terms
 
-Butler is a Ruby gem that acts as an **outsider governance runtime**.
-Its key design choice is: keep Butler-owned operational artefacts outside client repositories, while still managing selected GitHub-native files inside them (`.github/*`).
+Carson is a Ruby gem that acts as an **outsider governance runtime**.
+Its key design choice is: keep Carson-owned operational artefacts outside client repositories, while still managing selected GitHub-native files inside them (`.github/*`).
 
 Primary statement of intent:
 - `README.md:3`
 - `README.md:44`
-- `docs/butler_tech_guide.md:13`
+- `docs/carson_tech_guide.md:13`
 
 ## 2) System structure at a glance
 
 ```mermaid
 flowchart LR
-  U["User or CI job"] --> E["exe/butler or exe/butler-to-merge"]
-  E --> C["Butler::CLI.start"]
-  C --> R["Butler::Runtime"]
+  U["User or CI job"] --> E["exe/carson"]
+  E --> C["Carson::CLI.start"]
+  C --> R["Carson::Runtime"]
 
   R --> LO["Local"]
   R --> AO["Audit"]
@@ -330,31 +330,31 @@ flowchart LR
   R --> H["Adapters::GitHub -> gh CLI"]
 
   LO --> HR["Host repo writes: .github/* and git core.hooksPath"]
-  LO --> GH["Global hooks: ~/.butler/hooks/<version>"]
-  AO --> RP["Reports: ~/.cache/butler/pr_report_latest.*"]
-  RO --> RR["Reports: ~/.cache/butler/review_*_latest.*"]
+  LO --> GH["Global hooks: ~/.carson/hooks/<version>"]
+  AO --> RP["Reports: ~/.cache/carson/pr_report_latest.*"]
+  RO --> RR["Reports: ~/.cache/carson/review_*_latest.*"]
 
   H --> API["GitHub APIs (PRs, checks, issues, labels)"]
 ```
 
 This diagram maps directly to:
-- entrypoints: `exe/butler:7`, `exe/butler-to-merge:8`
-- dispatch: `lib/butler/cli.rb:88`
-- runtime wiring: `lib/butler/runtime.rb:21`
-- concern split: `lib/butler/runtime.rb:164`
+- entrypoints: `exe/carson:7`, `exe/carson:8`
+- dispatch: `lib/carson/cli.rb:88`
+- runtime wiring: `lib/carson/runtime.rb:21`
+- concern split: `lib/carson/runtime.rb:164`
 
 ## 3) Codebase topology (what each area owns)
 
 | Area | Responsibility | Key file |
 |---|---|---|
-| Executables | CLI launchers (`butler`, `butler-to-merge`) | `exe/butler` |
-| CLI parsing | Parse args/subcommands, instantiate runtime, dispatch | `lib/butler/cli.rb` |
-| Runtime shell | Shared helpers, exit contract, adapters, report constants | `lib/butler/runtime.rb` |
-| Local governance | `sync`, `prune`, `hook`, `check`, `init`, `template` | `lib/butler/runtime/local.rb` |
-| Audit reporting | `audit`, PR/check monitor, scope integrity guard | `lib/butler/runtime/audit.rb` |
-| Review governance | `review gate`, `review sweep`, GraphQL/REST normalisation, issue upsert | `lib/butler/runtime/review.rb` + `lib/butler/runtime/review/*.rb` |
-| Config | Built-in defaults + global user config + env overrides + validation | `lib/butler/config.rb` |
-| Git/GitHub adapters | Process wrappers over `git` and `gh` | `lib/butler/adapters/git.rb`, `lib/butler/adapters/github.rb` |
+| Executables | CLI launchers (`carson`) | `exe/carson` |
+| CLI parsing | Parse args/subcommands, instantiate runtime, dispatch | `lib/carson/cli.rb` |
+| Runtime shell | Shared helpers, exit contract, adapters, report constants | `lib/carson/runtime.rb` |
+| Local governance | `sync`, `prune`, `hook`, `check`, `init`, `template` | `lib/carson/runtime/local.rb` |
+| Audit reporting | `audit`, PR/check monitor, scope integrity guard | `lib/carson/runtime/audit.rb` |
+| Review governance | `review gate`, `review sweep`, GraphQL/REST normalisation, issue upsert | `lib/carson/runtime/review.rb` + `lib/carson/runtime/review/*.rb` |
+| Config | Built-in defaults + global user config + env overrides + validation | `lib/carson/config.rb` |
+| Git/GitHub adapters | Process wrappers over `git` and `gh` | `lib/carson/adapters/git.rb`, `lib/carson/adapters/github.rb` |
 | Managed artefacts | Hook templates and `.github` templates | `assets/hooks/*`, `templates/.github/*` |
 | Automation and release | CI, sweep schedule, reusable policy, publish jobs | `.github/workflows/*` |
 | Smoke testing | End-to-end shell smoke suites | `script/ci_smoke.sh`, `script/review_smoke.sh` |
@@ -368,34 +368,34 @@ This diagram maps directly to:
 - `2`: policy block
 
 Defined centrally:
-- `lib/butler/runtime.rb:8`
+- `lib/carson/runtime.rb:8`
 
 This is one of the strongest design traits: all command surfaces consistently target this contract.
 
 ### Fixed report location
 
-- Primary: `~/.cache/butler`
-- Fallback 1: `$TMPDIR/butler` when `TMPDIR` is set to an absolute path
-- Fallback 2: `/tmp/butler` when no absolute `TMPDIR` is available
+- Primary: `~/.cache/carson`
+- Fallback 1: `$TMPDIR/carson` when `TMPDIR` is set to an absolute path
+- Fallback 2: `/tmp/carson` when no absolute `TMPDIR` is available
 
 Implemented in:
-- `lib/butler/runtime.rb:69`
+- `lib/carson/runtime.rb:69`
 
 ### Config strategy
 
-Butler intentionally avoids host-repo config files and uses built-in config + global user config + env overrides:
-- defaults: `lib/butler/config.rb:20`
-- global config load: `lib/butler/config.rb`
-- env overrides: `lib/butler/config.rb:115`
-- validation: `lib/butler/config.rb:127`
+Carson intentionally avoids host-repo config files and uses built-in config + global user config + env overrides:
+- defaults: `lib/carson/config.rb:20`
+- global config load: `lib/carson/config.rb`
+- env overrides: `lib/carson/config.rb:115`
+- validation: `lib/carson/config.rb:127`
 
 Notable configurable knobs:
-- hooks path via `BUTLER_HOOKS_BASE_PATH`
-- config file path via `BUTLER_CONFIG_FILE`
-- review disposition prefix via `BUTLER_REVIEW_DISPOSITION_PREFIX`
-- review timing via `BUTLER_REVIEW_WAIT_SECONDS`, `BUTLER_REVIEW_POLL_SECONDS`, `BUTLER_REVIEW_MAX_POLLS`
-- sweep window/states via `BUTLER_REVIEW_SWEEP_WINDOW_DAYS`, `BUTLER_REVIEW_SWEEP_STATES`
-- indentation policy via `BUTLER_RUBY_INDENTATION`
+- hooks path via `CARSON_HOOKS_BASE_PATH`
+- config file path via `CARSON_CONFIG_FILE`
+- review disposition prefix via `CARSON_REVIEW_DISPOSITION_PREFIX`
+- review timing via `CARSON_REVIEW_WAIT_SECONDS`, `CARSON_REVIEW_POLL_SECONDS`, `CARSON_REVIEW_MAX_POLLS`
+- sweep window/states via `CARSON_REVIEW_SWEEP_WINDOW_DAYS`, `CARSON_REVIEW_SWEEP_STATES`
+- indentation policy via `CARSON_RUBY_INDENTATION`
 
 ## 5) Command surface and internal dispatch
 
@@ -406,9 +406,9 @@ Notable configurable knobs:
 - subcommands for `init`, `template`, `review`
 
 Core file:
-- `lib/butler/cli.rb:5`
-- `lib/butler/cli.rb:41`
-- `lib/butler/cli.rb:91`
+- `lib/carson/cli.rb:5`
+- `lib/carson/cli.rb:41`
+- `lib/carson/cli.rb:91`
 
 ## 6) Local deep walkthrough (`sync`, `prune`, `hook`, `init`, `check`, `template`)
 
@@ -424,8 +424,8 @@ Flow:
 7. restore original branch in `ensure`
 
 Key refs:
-- `lib/butler/runtime/local.rb:4`
-- `lib/butler/runtime/local.rb:267`
+- `lib/carson/runtime/local.rb:4`
+- `lib/carson/runtime/local.rb:267`
 
 ### `prune!`
 
@@ -437,23 +437,23 @@ Force-delete path exists, but only with strict evidence:
 - GH evidence shows merged PR for exact branch tip SHA into main
 
 Key refs:
-- `lib/butler/runtime/local.rb:35`
-- `lib/butler/runtime/local.rb:355`
-- `lib/butler/runtime/local.rb:375`
-- `lib/butler/runtime/local.rb:391`
+- `lib/carson/runtime/local.rb:35`
+- `lib/carson/runtime/local.rb:355`
+- `lib/carson/runtime/local.rb:375`
+- `lib/carson/runtime/local.rb:391`
 
 ### `hook!` and `check!`
 
-- hooks are copied from Butler assets to `~/.butler/hooks/<version>`
+- hooks are copied from Carson assets to `~/.carson/hooks/<version>`
 - symlink hooks are explicitly blocked
 - `core.hooksPath` is set to managed path
 - `check!` is strict health check mode
 
 Key refs:
-- `lib/butler/runtime/local.rb:96`
-- `lib/butler/runtime/local.rb:149`
-- `lib/butler/runtime/local.rb:242`
-- `lib/butler/runtime/local.rb:309`
+- `lib/carson/runtime/local.rb:96`
+- `lib/carson/runtime/local.rb:149`
+- `lib/carson/runtime/local.rb:242`
+- `lib/carson/runtime/local.rb:309`
 
 ### `init!`
 
@@ -467,7 +467,7 @@ Orchestrates onboarding sequence:
 
 ```mermaid
 flowchart TD
-  I["butler init [repo_path]"] --> B["Outsider boundary check"]
+  I["carson init [repo_path]"] --> B["Outsider boundary check"]
   B --> G{"Inside git repo?"}
   G -- "No" --> E["Exit 1"]
   G -- "Yes" --> R["Align remote name"]
@@ -478,8 +478,8 @@ flowchart TD
 ```
 
 Key refs:
-- `lib/butler/runtime/local.rb:126`
-- `lib/butler/runtime/local.rb:449`
+- `lib/carson/runtime/local.rb:126`
+- `lib/carson/runtime/local.rb:449`
 
 ### `template_check!` / `template_apply!`
 
@@ -488,25 +488,25 @@ Key refs:
 - secure path resolve prevents traversal outside repo root
 
 Key refs:
-- `lib/butler/runtime/local.rb:159`
-- `lib/butler/runtime/local.rb:175`
-- `lib/butler/runtime/local.rb:227`
-- `lib/butler/runtime.rb:68`
+- `lib/carson/runtime/local.rb:159`
+- `lib/carson/runtime/local.rb:175`
+- `lib/carson/runtime/local.rb:227`
+- `lib/carson/runtime.rb:68`
 
 ## 7) Outsider boundary model (critical concept)
 
 Every governance command starts with `block_if_outsider_fingerprints!`:
-- blocks `.butler.yml`
-- blocks `bin/butler`
-- blocks `.tools/butler`
+- blocks `.carson.yml`
+- blocks `bin/carson`
+- blocks `.tools/carson`
 - scans for legacy marker token content
 
-And it exempts the Butler repository itself (`repo_root == tool_root`) so Butler can evolve its own code.
+And it exempts the Carson repository itself (`repo_root == tool_root`) so Carson can evolve its own code.
 
 Key refs:
-- `lib/butler/runtime/local.rb:314`
-- `lib/butler/runtime/local.rb:323`
-- `lib/butler/runtime/local.rb:338`
+- `lib/carson/runtime/local.rb:314`
+- `lib/carson/runtime/local.rb:323`
+- `lib/carson/runtime/local.rb:338`
 
 ## 8) Audit deep walkthrough
 
@@ -520,10 +520,10 @@ Key refs:
 - writes machine + human reports
 
 Key refs:
-- `lib/butler/runtime/audit.rb:4`
-- `lib/butler/runtime/audit.rb:50`
-- `lib/butler/runtime/audit.rb:134`
-- `lib/butler/runtime/audit.rb:193`
+- `lib/carson/runtime/audit.rb:4`
+- `lib/carson/runtime/audit.rb:50`
+- `lib/carson/runtime/audit.rb:134`
+- `lib/carson/runtime/audit.rb:193`
 
 Important nuance:
 - scope integrity `split_required` results now return `block` (exit 2), so mixed or mismatched non-doc scope changes are stopped before commit/push.
@@ -536,7 +536,7 @@ This file is the policy engine for merge readiness and late-review surveillance.
 ### `review gate`
 
 Core loop:
-1. find PR for current branch (or `BUTLER_PR_NUMBER` override)
+1. find PR for current branch (or `CARSON_PR_NUMBER` override)
 2. warm-up wait
 3. poll snapshots
 4. detect convergence using signature
@@ -564,8 +564,8 @@ Signature fields:
 - unacknowledged actionable URLs
 
 Key refs:
-- `lib/butler/runtime/review.rb`
-- `lib/butler/runtime/review/gate_support.rb`
+- `lib/carson/runtime/review.rb`
+- `lib/carson/runtime/review/gate_support.rb`
 
 ### Actionable classification model
 
@@ -576,16 +576,16 @@ Actionable items include:
 - then filtered by disposition acknowledgements authored by PR author
 
 Key refs:
-- `lib/butler/runtime/review/gate_support.rb`
-- `lib/butler/runtime/review/utility.rb`
+- `lib/carson/runtime/review/gate_support.rb`
+- `lib/carson/runtime/review/utility.rb`
 
 ### GraphQL + pagination strategy
 
-Butler fetches details from GraphQL and paginates `reviewThreads`, `comments`, and `reviews`, so gating decisions are based on complete connection sets.
+Carson fetches details from GraphQL and paginates `reviewThreads`, `comments`, and `reviews`, so gating decisions are based on complete connection sets.
 
 Key refs:
-- `lib/butler/runtime/review/data_access.rb`
-- `lib/butler/runtime/review/query_text.rb`
+- `lib/carson/runtime/review/data_access.rb`
+- `lib/carson/runtime/review/query_text.rb`
 
 ### `review sweep`
 
@@ -595,9 +595,9 @@ Key refs:
 - upserts one rolling tracking issue and label
 
 Key refs:
-- `lib/butler/runtime/review.rb`
-- `lib/butler/runtime/review/data_access.rb`
-- `lib/butler/runtime/review/sweep_support.rb`
+- `lib/carson/runtime/review.rb`
+- `lib/carson/runtime/review/data_access.rb`
+- `lib/carson/runtime/review/sweep_support.rb`
 
 ## 10) CI, distribution, and operational integration
 
@@ -618,11 +618,11 @@ Runs every 8 hours:
 
 ### Reusable host policy workflow
 
-Checks out host + Butler runtime, validates version, installs gem from source checkout, runs `butler hook`, `butler audit`, `butler review gate`.
+Checks out host + Carson runtime, validates version, installs gem from source checkout, runs `carson hook`, `carson audit`, `carson review gate`.
 
 File:
-- `.github/workflows/butler_policy.yml:4`
-- `.github/workflows/butler_policy.yml:63`
+- `.github/workflows/carson_policy.yml:4`
+- `.github/workflows/carson_policy.yml:63`
 
 ### Publish workflows
 

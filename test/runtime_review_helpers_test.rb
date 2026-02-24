@@ -1,7 +1,7 @@
 require_relative "test_helper"
 
 class RuntimeReviewHelpersTest < Minitest::Test
-	include ButlerTestSupport
+	include CarsonTestSupport
 
 	def setup
 		@runtime, @repo_root = build_runtime

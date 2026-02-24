@@ -4,10 +4,10 @@ set -euo pipefail
 usage() {
 	cat <<'USAGE'
 Usage:
-  script/install_global_butler.sh [options]
+  script/install_global_carson.sh [options]
 
 Options:
-  --version <semver>   Butler gem version to install (default: VERSION file)
+  --version <semver>   Carson gem version to install (default: VERSION file)
   --source <url>       Gem source URL (default: https://rubygems.pkg.github.com/wanghailei)
   --help               Show this message
 USAGE
@@ -54,20 +54,18 @@ mkdir -p "$cache_tmp_dir"
 export TMPDIR="$cache_tmp_dir"
 
 if ! ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (major > 4 || ( major == 4 && minor >= 0 )) ? 0 : 1 )'; then
-	echo "Butler install error: Ruby >= 4.0 is required (current: $(ruby -e 'print RUBY_VERSION'))." >&2
+	echo "Carson install error: Ruby >= 4.0 is required (current: $(ruby -e 'print RUBY_VERSION'))." >&2
 	exit 1
 fi
 
-gem install --user-install "butler-to-merge" -v "$version" --clear-sources --source "$source_url"
+gem install --user-install "carson" -v "$version" --clear-sources --source "$source_url"
 
 user_bin="$(ruby -e 'print Gem.user_dir')/bin"
 mkdir -p "$HOME/.local/bin"
-ln -sf "$user_bin/butler" "$HOME/.local/bin/butler"
-ln -sf "$user_bin/butler-to-merge" "$HOME/.local/bin/butler-to-merge"
+ln -sf "$user_bin/carson" "$HOME/.local/bin/carson"
 
-echo "Installed Butler ${version}"
-echo "Launcher linked: $HOME/.local/bin/butler"
-echo "Alias linked: $HOME/.local/bin/butler-to-merge"
+echo "Installed Carson ${version}"
+echo "Launcher linked: $HOME/.local/bin/carson"
 echo "Post-upgrade step (per governed repository):"
-echo "  butler hook && butler check"
-echo "This aligns core.hooksPath to ~/.butler/hooks/${version}."
+echo "  carson hook && carson check"
+echo "This aligns core.hooksPath to ~/.carson/hooks/${version}."

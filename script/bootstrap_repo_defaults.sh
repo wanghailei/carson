@@ -8,12 +8,12 @@ Usage:
 
 Options:
   --branch <name>             Branch to protect (default: main)
-  --checks <csv>              Required status checks, comma-separated (default: "Syntax and smoke tests,Butler policy")
-  --set-butler-read-token     Set BUTLER_REPO_READ_TOKEN from current gh auth token
+  --checks <csv>              Required status checks, comma-separated (default: "Syntax and smoke tests,Carson policy")
+  --set-carson-read-token     Set CARSON_REPO_READ_TOKEN from current gh auth token
 
 Examples:
-  script/bootstrap_repo_defaults.sh wanghailei/new-project --checks "Syntax and smoke tests,Butler policy,lint,test"
-  script/bootstrap_repo_defaults.sh wanghailei/new-project --set-butler-read-token
+  script/bootstrap_repo_defaults.sh wanghailei/new-project --checks "Syntax and smoke tests,Carson policy,lint,test"
+  script/bootstrap_repo_defaults.sh wanghailei/new-project --set-carson-read-token
 USAGE
 }
 
@@ -40,8 +40,8 @@ fi
 shift || true
 
 branch="main"
-checks_csv="Syntax and smoke tests,Butler policy"
-set_butler_read_token=0
+checks_csv="Syntax and smoke tests,Carson policy"
+set_carson_read_token=0
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -53,8 +53,8 @@ while [[ $# -gt 0 ]]; do
 			checks_csv="${2:-}"
 			shift 2
 			;;
-		--set-butler-read-token)
-			set_butler_read_token=1
+		--set-carson-read-token)
+			set_carson_read_token=1
 			shift
 			;;
 		--help|-h)
@@ -109,7 +109,7 @@ echo "required linear history: true"
 echo "allow force push: false"
 echo "allow deletion: false"
 
-if [[ "${set_butler_read_token}" -eq 1 ]]; then
-	gh auth token | gh secret set BUTLER_REPO_READ_TOKEN --repo "${repo_slug}"
-	echo "Set secret BUTLER_REPO_READ_TOKEN on ${repo_slug}"
+if [[ "${set_carson_read_token}" -eq 1 ]]; then
+	gh auth token | gh secret set CARSON_REPO_READ_TOKEN --repo "${repo_slug}"
+	echo "Set secret CARSON_REPO_READ_TOKEN on ${repo_slug}"
 fi

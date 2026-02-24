@@ -1,6 +1,0 @@
-require_relative "butler/version"
-require_relative "butler/config"
-require_relative "butler/adapters/git"
-require_relative "butler/adapters/github"
-require_relative "butler/runtime"
-require_relative "butler/cli"

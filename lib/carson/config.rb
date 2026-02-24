@@ -1,10 +1,10 @@
 require "json"
 
-module Butler
+module Carson
 	class ConfigError < StandardError
 	end
 
-	# Config is built-in only for outsider mode; host repositories do not carry Butler config files.
+	# Config is built-in only for outsider mode; host repositories do not carry Carson config files.
 	class Config
 		attr_reader :git_remote, :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
 			:path_groups, :template_managed_files,
@@ -27,12 +27,12 @@ module Butler
 					"protected_branches" => [ "main", "master" ]
 				},
 				"hooks" => {
-					"base_path" => "~/.butler/hooks",
+					"base_path" => "~/.carson/hooks",
 					"required_hooks" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
 				},
 				"scope" => {
 					"path_groups" => {
-						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "assets/hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "butler.gemspec" ],
+						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "assets/hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "carson.gemspec" ],
 						"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
 						"test" => [ "test/**", "spec/**", "features/**" ],
 						"domain" => [ "app/**", "db/**", "config/**" ],
@@ -53,8 +53,8 @@ module Butler
 						"states" => [ "open", "closed" ]
 					},
 					"tracking_issue" => {
-						"title" => "Butler review sweep findings",
-						"label" => "butler-review-sweep"
+						"title" => "Carson review sweep findings",
+						"label" => "carson-review-sweep"
 					}
 				},
 				"style" => {
@@ -76,13 +76,13 @@ module Butler
 		end
 
 		def self.global_config_path( repo_root: )
-			override = ENV.fetch( "BUTLER_CONFIG_FILE", "" ).to_s.strip
+			override = ENV.fetch( "CARSON_CONFIG_FILE", "" ).to_s.strip
 			return File.expand_path( override ) unless override.empty?
 
 			home = ENV.fetch( "HOME", "" ).to_s.strip
 			return "" unless home.start_with?( "/" )
 
-			File.join( home, ".butler", "config.json" )
+			File.join( home, ".carson", "config.json" )
 		end
 
 		def self.deep_merge( base:, overlay: )
@@ -113,20 +113,20 @@ module Butler
 		def self.apply_env_overrides( data: )
 			copy = deep_dup_value( value: data )
 			hooks = fetch_hash_section( data: copy, key: "hooks" )
-			hooks_path = ENV.fetch( "BUTLER_HOOKS_BASE_PATH", "" ).to_s.strip
+			hooks_path = ENV.fetch( "CARSON_HOOKS_BASE_PATH", "" ).to_s.strip
 			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
 			review = fetch_hash_section( data: copy, key: "review" )
-			review[ "wait_seconds" ] = env_integer( key: "BUTLER_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
-			review[ "poll_seconds" ] = env_integer( key: "BUTLER_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
-			review[ "max_polls" ] = env_integer( key: "BUTLER_REVIEW_MAX_POLLS", fallback: review.fetch( "max_polls" ) )
-			disposition_prefix = ENV.fetch( "BUTLER_REVIEW_DISPOSITION_PREFIX", "" ).to_s.strip
+			review[ "wait_seconds" ] = env_integer( key: "CARSON_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
+			review[ "poll_seconds" ] = env_integer( key: "CARSON_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
+			review[ "max_polls" ] = env_integer( key: "CARSON_REVIEW_MAX_POLLS", fallback: review.fetch( "max_polls" ) )
+			disposition_prefix = ENV.fetch( "CARSON_REVIEW_DISPOSITION_PREFIX", "" ).to_s.strip
 			review[ "required_disposition_prefix" ] = disposition_prefix unless disposition_prefix.empty?
 			sweep = fetch_hash_section( data: review, key: "sweep" )
-			sweep[ "window_days" ] = env_integer( key: "BUTLER_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
-			states = ENV.fetch( "BUTLER_REVIEW_SWEEP_STATES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
+			sweep[ "window_days" ] = env_integer( key: "CARSON_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
+			states = ENV.fetch( "CARSON_REVIEW_SWEEP_STATES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
 			sweep[ "states" ] = states unless states.empty?
 			style = fetch_hash_section( data: copy, key: "style" )
-			ruby_indentation = ENV.fetch( "BUTLER_RUBY_INDENTATION", "" ).to_s.strip
+			ruby_indentation = ENV.fetch( "CARSON_RUBY_INDENTATION", "" ).to_s.strip
 			style[ "ruby_indentation" ] = ruby_indentation unless ruby_indentation.empty?
 			copy
 		end
