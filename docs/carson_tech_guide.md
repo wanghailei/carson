@@ -104,13 +104,11 @@ Blocked host artefacts:
 - `.carson.yml`
 - `bin/carson`
 - `.tools/carson/*`
-- legacy marker artefacts from older template strategy
 
 Key code segments:
 
 - `block_if_outsider_fingerprints!` in `lib/carson/runtime/local.rb`
 - `outsider_fingerprint_violations` in `lib/carson/runtime/local.rb`
-- `legacy_marker_violations` in `lib/carson/runtime/local.rb`
 
 Boundary:
 
@@ -159,7 +157,7 @@ Mechanism:
 
 - `offboard` verifies the target path is a git repository.
 - It unsets `core.hooksPath` only when the configured value points to Carson-managed hooks base path.
-- It removes Carson-managed template files and known Carson-specific legacy artefacts in the host repository.
+- It removes Carson-managed template files and known Carson-specific artefacts in the host repository.
 
 Key code segments:
 
@@ -499,7 +497,6 @@ Every governance command starts with `block_if_outsider_fingerprints!`:
 - blocks `.carson.yml`
 - blocks `bin/carson`
 - blocks `.tools/carson`
-- scans for legacy marker token content
 
 And it exempts the Carson repository itself (`repo_root == tool_root`) so Carson can evolve its own code.
 
@@ -654,6 +651,6 @@ File:
 ### Trade-offs / hotspots
 
 - review governance remains the most complex subsystem, now split across `review/*.rb` concern files.
-- outsider legacy-marker detection now prioritises `git grep` on tracked files and scans changed/untracked candidates; this reduces full-tree read cost.
+- outsider boundary checks focus on explicit Carson-owned files in host repositories.
 - Configuration is intentionally centralised and opinionated; this reduces drift but also limits per-repo adaptability.
 - Heavy dependence on `gh` runtime availability and auth quality for review features.
