@@ -234,7 +234,7 @@ carson version
 #### Upgrade steps
 
 ```bash
-gem install carson-governance
+gem install carson
 carson version
 ```
 
@@ -264,7 +264,7 @@ carson version
 #### What changed
 
 - Renamed Carson gem package from `carson-governance` to `carson` (CLI command remains `carson`).
-- Added CLI alias command `carson-to-merge` (primary command remains `carson`).
+- Removed the `butler-to-merge` CLI alias.
 - Renamed reusable workflow to `.github/workflows/carson_policy.yml`.
 - Removed report output environment override `CARSON_REPORT_DIR`.
 - Report output is standardised to `~/.cache/carson` when `HOME` is valid.
@@ -352,7 +352,7 @@ carson version
 #### Upgrade steps
 
 ```bash
-gem install --user-install carson-governance -v 0.3.0
+gem install --user-install carson -v 0.3.0
 mkdir -p ~/.local/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.local/bin/carson
 carson version
