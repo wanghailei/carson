@@ -39,7 +39,7 @@ For Carson implementation details, use `docs/carson_tech_guide.md`.
 ### Option A (recommended): install from RubyGems
 
 ```bash
-gem install --user-install carson -v 0.6.1
+gem install --user-install carson -v 0.7.0
 ```
 
 If your shell cannot find `carson`, add your Ruby user bin directory:
@@ -64,7 +64,7 @@ carson version
 
 Expected result:
 
-- version prints `0.6.1` (or newer)
+- version prints `0.7.0` (or newer)
 - executable `carson` is available
 
 ## 2) Configure your first repository
@@ -79,7 +79,7 @@ carson init /local/path/of/repo
 
 `init` performs:
 
-- remote alignment (`origin` to `github` when required)
+- remote alignment using configured `git.remote` (default `github`)
 - hook installation under `~/.carson/hooks/<version>/`
 - repository `core.hooksPath` alignment to Carson global hooks
 - commit-time governance gate via managed `pre-commit` hook (`carson audit`)
@@ -102,14 +102,14 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.6.1
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.7.0
     with:
-      carson_ref: "v0.6.1"
-      carson_version: "0.6.1"
+      carson_ref: "v0.7.0"
+      carson_version: "0.7.0"
 ```
 
 Then set required checks in repository branch protection to include `Carson policy`.
-When adopting newer Carson releases, update both the workflow commit SHA and `carson_version` together.
+When adopting newer Carson releases, update both the workflow ref and `carson_version` together.
 
 ### Optional: one-command GitHub defaults bootstrap
 
