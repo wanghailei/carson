@@ -14,8 +14,7 @@ Release-note scope rule:
 - Refactored runtime concerns from `*Ops` naming to neutral modules (`Local`, `Audit`, `Review`), and split review governance internals into dedicated support files.
 - Added global user configuration loading from `~/.butler/config.json` with deterministic precedence:
   built-in defaults, then global config file, then environment overrides.
-- Changed default scope branch pattern to lane-first:
-  `^(?<lane>tool|ui|module|feature|fix|test)/(?<slug>.+)$`.
+- Removed branch-name scope policy coupling; scope integrity now evaluates changed paths only (via `scope.path_groups`).
 - Changed default review acknowledgement prefix from `Codex:` to `Disposition:`.
 - Added Ruby stdlib unit tests for deterministic helper logic and integrated them in CI.
 - Replaced static indentation regex checks with policy-based guard script (`script/ruby_indentation_guard.rb`).
@@ -32,12 +31,11 @@ Release-note scope rule:
 #### What users must do now
 
 1. Upgrade to `0.6.0` where you pin Butler explicitly.
-2. If you relied on `codex/...` branches, set `BUTLER_SCOPE_BRANCH_PATTERN` (or `scope.branch_pattern` in `~/.butler/config.json`) to preserve legacy behaviour.
-3. If you relied on `Codex:` acknowledgement comments, set `BUTLER_REVIEW_DISPOSITION_PREFIX=Codex:` (or `review.required_disposition_prefix` in `~/.butler/config.json`).
+2. If you relied on `Codex:` acknowledgement comments, set `BUTLER_REVIEW_DISPOSITION_PREFIX=Codex:` (or `review.required_disposition_prefix` in `~/.butler/config.json`).
 
 #### Breaking or removed behaviour
 
-- Default branch-policy matching no longer assumes `codex/...`.
+- Branch-name policy matching has been removed; branch names are informational only.
 - Default review acknowledgement prefix no longer assumes `Codex:`.
 - `docs/butler_evo_plan.md` has been removed from the repository.
 
@@ -59,7 +57,7 @@ butler version
 - New canonical global config path: `~/.butler/config.json`.
 - New path override env var: `BUTLER_CONFIG_FILE`.
 - Added policy env overrides:
-  `BUTLER_SCOPE_BRANCH_PATTERN`, `BUTLER_REVIEW_DISPOSITION_PREFIX`, `BUTLER_RUBY_INDENTATION`.
+  `BUTLER_REVIEW_DISPOSITION_PREFIX`, `BUTLER_RUBY_INDENTATION`.
 - Style policy supports `tabs`, `spaces`, or `either` through configuration.
 
 #### Verification evidence

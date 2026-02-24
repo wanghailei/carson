@@ -49,8 +49,8 @@ class RuntimeAuditScopeTest < Minitest::Test
 
 	def test_scope_integrity_is_branch_name_agnostic
 		files = [ "lib/butler/config.rb" ]
-		scope_one = @runtime.send( :scope_integrity_status, files: files, branch: "feature/hook-upgrade" )
-		scope_two = @runtime.send( :scope_integrity_status, files: files, branch: "codex/tool/hook-upgrade" )
+		scope_one = @runtime.send( :scope_integrity_status, files: files, branch: "hook-upgrade" )
+		scope_two = @runtime.send( :scope_integrity_status, files: files, branch: "runtime-review-cleanup" )
 		assert_equal scope_one.fetch( :status ), scope_two.fetch( :status )
 		assert_equal scope_one.fetch( :split_required ), scope_two.fetch( :split_required )
 		assert_equal scope_one.fetch( :core_groups ), scope_two.fetch( :core_groups )
