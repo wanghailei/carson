@@ -513,6 +513,7 @@ Key refs:
 - hooks health
 - main sync state
 - PR/check monitor (via `gh`)
+- default-branch CI baseline (`gh` check-runs + workflow evidence)
 - scope integrity guard
 - writes machine + human reports
 

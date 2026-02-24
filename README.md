@@ -84,6 +84,8 @@ carson audit
 carson prune
 ```
 
+`carson audit` now includes a default-branch CI baseline gate and blocks when the default branch has failing checks, pending checks, or workflow files with no check-run evidence.
+
 Before recommending merge:
 
 ```bash
