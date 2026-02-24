@@ -5,6 +5,55 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `docs/carson_user_guide.md`.
 
+## 0.7.0 (2026-02-24)
+
+### User Overview
+
+#### What changed
+
+- Removed marker-token content scanning from outsider boundary checks.
+- Outsider boundary checks now target only explicit Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson`).
+- Cleaned historical wording from documentation, smoke labels, and test fixtures.
+- Clarified `github` as the canonical git remote name in onboarding guidance.
+- Updated user-facing install and CI pin examples to `0.7.0`.
+
+#### Why users should care
+
+- Boundary enforcement is simpler and easier to reason about.
+- Operational guidance now reflects configurable remote naming via `git.remote`.
+- Install/pin examples now match the current Carson baseline.
+
+#### What users must do now
+
+1. Upgrade to `0.7.0` where Carson is pinned.
+2. If you use a custom remote name, align Carson `git.remote` with that remote.
+3. Update CI `carson_version` and `carson_ref` pins to `0.7.0` / `v0.7.0`.
+
+#### Breaking or removed behaviour
+
+- Marker-token content no longer contributes to outsider boundary policy blocks.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install carson -v 0.7.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.local/bin/carson
+carson version
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- CLI command surface unchanged.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+- Outsider boundary scan now checks explicit artefact paths only.
+
+#### Verification evidence
+
+- PR #44 merged with green required checks (`Carson governance`, `Syntax and smoke tests`).
+
 ## 0.6.1 (2026-02-24)
 
 ### User Overview

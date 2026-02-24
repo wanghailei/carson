@@ -138,7 +138,7 @@ Boundary:
 Mechanism:
 
 - `init` verifies the target path is a git repository.
-- It ensures Carson remote naming by using `github` when present or renaming `origin` to `github`.
+- It ensures Carson remote naming against configured `git.remote` (default `github`), renaming `origin` when appropriate.
 - It then executes baseline setup sequence: `hook`, `template apply`, `audit`.
 
 Key code segments:
