@@ -338,7 +338,7 @@ flowchart LR
 ```
 
 This diagram maps directly to:
-- entrypoints: `exe/carson:7`, `exe/carson:8`
+- entrypoint: `exe/carson:7`
 - dispatch: `lib/carson/cli.rb:88`
 - runtime wiring: `lib/carson/runtime.rb:21`
 - concern split: `lib/carson/runtime.rb:164`
