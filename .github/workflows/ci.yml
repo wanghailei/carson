@@ -1,4 +1,4 @@
-name: Butler CI
+name: Carson CI
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   governance:
-    name: Butler governance
+    name: Carson governance
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,7 +21,7 @@ jobs:
         with:
           ruby-version: "4.0"
 
-      - name: Align remote name for Butler
+      - name: Align remote name for Carson
         run: |
           if ! git remote get-url github >/dev/null 2>&1; then
             git remote rename origin github
@@ -30,8 +30,8 @@ jobs:
       - name: Review gate
         env:
           GH_TOKEN: ${{ github.token }}
-          BUTLER_PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: ruby exe/butler review gate
+          CARSON_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: ruby exe/carson review gate
 
   smoke:
     name: Syntax and smoke tests
@@ -48,8 +48,8 @@ jobs:
 
       - name: Ruby syntax check
         run: |
-          ruby -c exe/butler
-          ruby -c lib/butler.rb
+          ruby -c exe/carson
+          ruby -c lib/carson.rb
 
       - name: Ruby indentation guard
         run: ruby script/ruby_indentation_guard.rb
@@ -71,5 +71,5 @@ jobs:
             exit 1
           fi
 
-      - name: Butler smoke tests
+      - name: Carson smoke tests
         run: bash script/ci_smoke.sh

@@ -1,11 +1,11 @@
-# Butler runtime wiring and shared helper layer.
+# Carson runtime wiring and shared helper layer.
 # Centralises command-neutral concerns such as output contracts, path resolution,
 # adapter invocation, and report-location policy.
 require "fileutils"
 require "json"
 require "time"
 
-module Butler
+module Carson
 	class Runtime
 		# Shared exit-code contract used by all commands and CI smoke assertions.
 		EXIT_OK = 0
@@ -76,19 +76,19 @@ module Butler
 		end
 
 		# Resolves report output precedence:
-		# 1) ~/.cache/butler when HOME is an absolute path
-		# 2) TMPDIR/butler when HOME is invalid and TMPDIR is absolute
-		# 3) /tmp/butler as final safety fallback
+		# 1) ~/.cache/carson when HOME is an absolute path
+		# 2) TMPDIR/carson when HOME is invalid and TMPDIR is absolute
+		# 3) /tmp/carson as final safety fallback
 		def report_dir_path
 			home = ENV.fetch( "HOME", "" ).to_s
-			return File.join( home, ".cache", "butler" ) if absolute_env_path?( path: home )
+			return File.join( home, ".cache", "carson" ) if absolute_env_path?( path: home )
 
 			tmpdir = ENV.fetch( "TMPDIR", "" ).to_s
-			return File.join( tmpdir, "butler" ) if absolute_env_path?( path: tmpdir )
+			return File.join( tmpdir, "carson" ) if absolute_env_path?( path: tmpdir )
 
-			"/tmp/butler"
+			"/tmp/carson"
 		rescue StandardError
-			"/tmp/butler"
+			"/tmp/carson"
 		end
 
 		# Treats empty or non-absolute environment paths as invalid.

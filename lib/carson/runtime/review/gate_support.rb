@@ -1,4 +1,4 @@
-module Butler
+module Carson
 	class Runtime
 		module Review
 			module GateSupport
@@ -167,7 +167,7 @@ end
 # Human-readable review gate report for merge-readiness evidence.
 def render_review_gate_markdown( report: )
 	lines = []
-	lines << "# Butler Review Gate Report"
+	lines << "# Carson Review Gate Report"
 	lines << ""
 	lines << "- Generated at: #{report.fetch( :generated_at )}"
 	lines << "- Branch: #{report.fetch( :branch )}"

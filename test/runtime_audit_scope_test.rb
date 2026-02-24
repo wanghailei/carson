@@ -1,7 +1,7 @@
 require_relative "test_helper"
 
 class RuntimeAuditScopeTest < Minitest::Test
-	include ButlerTestSupport
+	include CarsonTestSupport
 
 	def setup
 		@runtime, @repo_root = build_runtime
@@ -12,7 +12,7 @@ class RuntimeAuditScopeTest < Minitest::Test
 	end
 
 	def test_pattern_matches_directory_prefix
-		result = @runtime.send( :pattern_matches_path?, pattern: "lib/**", path: "lib/butler/runtime.rb" )
+		result = @runtime.send( :pattern_matches_path?, pattern: "lib/**", path: "lib/carson/runtime.rb" )
 		assert_equal true, result
 	end
 
@@ -24,7 +24,7 @@ class RuntimeAuditScopeTest < Minitest::Test
 	def test_scope_integrity_passes_for_single_core_group_with_supporting_tests
 		scope = @runtime.send(
 			:scope_integrity_status,
-			files: [ "lib/butler/config.rb", "test/runtime_audit_scope_test.rb", "README.md" ],
+			files: [ "lib/carson/config.rb", "test/runtime_audit_scope_test.rb", "README.md" ],
 			branch: "feature/hook-upgrade"
 		)
 		assert_equal "ok", scope.fetch( :status )
@@ -36,7 +36,7 @@ class RuntimeAuditScopeTest < Minitest::Test
 	def test_scope_integrity_requires_split_for_multiple_core_groups
 		scope = @runtime.send(
 			:scope_integrity_status,
-			files: [ "lib/butler/config.rb", "app/models/user.rb" ],
+			files: [ "lib/carson/config.rb", "app/models/user.rb" ],
 			branch: "any/branch-name"
 		)
 		assert_equal true, scope.fetch( :split_required )
@@ -48,7 +48,7 @@ class RuntimeAuditScopeTest < Minitest::Test
 	end
 
 	def test_scope_integrity_is_branch_name_agnostic
-		files = [ "lib/butler/config.rb" ]
+		files = [ "lib/carson/config.rb" ]
 		scope_one = @runtime.send( :scope_integrity_status, files: files, branch: "hook-upgrade" )
 		scope_two = @runtime.send( :scope_integrity_status, files: files, branch: "runtime-review-cleanup" )
 		assert_equal scope_one.fetch( :status ), scope_two.fetch( :status )

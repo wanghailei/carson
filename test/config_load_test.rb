@@ -1,15 +1,15 @@
 require_relative "test_helper"
 
 class ConfigLoadTest < Minitest::Test
-	include ButlerTestSupport
+	include CarsonTestSupport
 
 	def test_default_scope_path_groups_include_install_script_under_tool
-		config = Butler::Config.load( repo_root: Dir.pwd )
+		config = Carson::Config.load( repo_root: Dir.pwd )
 		assert_includes config.path_groups.fetch( "tool" ), "install.sh"
 	end
 
 	def test_env_overrides_global_config_values
-		Dir.mktmpdir( "butler-config-test", butler_tmp_root ) do |dir|
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
 			File.write(
 				config_path,
@@ -20,8 +20,8 @@ class ConfigLoadTest < Minitest::Test
 					}
 				)
 			)
-			with_env( "BUTLER_CONFIG_FILE" => config_path, "BUTLER_REVIEW_DISPOSITION_PREFIX" => "Env:", "BUTLER_RUBY_INDENTATION" => "either" ) do
-				config = Butler::Config.load( repo_root: dir )
+			with_env( "CARSON_CONFIG_FILE" => config_path, "CARSON_REVIEW_DISPOSITION_PREFIX" => "Env:", "CARSON_RUBY_INDENTATION" => "either" ) do
+				config = Carson::Config.load( repo_root: dir )
 				assert_equal "Env:", config.review_disposition_prefix
 				assert_equal "either", config.ruby_indentation
 			end
@@ -29,21 +29,21 @@ class ConfigLoadTest < Minitest::Test
 	end
 
 	def test_invalid_global_config_raises_config_error
-		Dir.mktmpdir( "butler-config-test", butler_tmp_root ) do |dir|
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
 			File.write( config_path, "{invalid-json" )
-			with_env( "BUTLER_CONFIG_FILE" => config_path ) do
-				assert_raises( Butler::ConfigError ) { Butler::Config.load( repo_root: dir ) }
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				assert_raises( Carson::ConfigError ) { Carson::Config.load( repo_root: dir ) }
 			end
 		end
 	end
 
 	def test_invalid_global_config_shape_raises_config_error
-		Dir.mktmpdir( "butler-config-test", butler_tmp_root ) do |dir|
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
 			File.write( config_path, JSON.generate( { "review" => "invalid" } ) )
-			with_env( "BUTLER_CONFIG_FILE" => config_path ) do
-				assert_raises( Butler::ConfigError ) { Butler::Config.load( repo_root: dir ) }
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				assert_raises( Carson::ConfigError ) { Carson::Config.load( repo_root: dir ) }
 			end
 		end
 	end

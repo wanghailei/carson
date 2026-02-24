@@ -2,10 +2,10 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-butler_bin="$repo_root/exe/butler"
+carson_bin="$repo_root/exe/carson"
 
-run_butler() {
-	HOME="$tmp_root/home" ruby "$butler_bin" "$@"
+run_carson() {
+	HOME="$tmp_root/home" ruby "$carson_bin" "$@"
 }
 
 exit_text() {
@@ -39,9 +39,9 @@ expect_exit() {
 
 default_tmp_base="$HOME/.cache/tmp"
 mkdir -p "$default_tmp_base" 2>/dev/null || default_tmp_base="/tmp"
-tmp_base="${BUTLER_TMP_BASE:-$default_tmp_base}"
+tmp_base="${CARSON_TMP_BASE:-$default_tmp_base}"
 mkdir -p "$tmp_base"
-tmp_root="$(mktemp -d "$tmp_base/butler-review-smoke.XXXXXX")"
+tmp_root="$(mktemp -d "$tmp_base/carson-review-smoke.XXXXXX")"
 mkdir -p "$tmp_root/home"
 cleanup() {
 	rm -rf "$tmp_root"
@@ -63,9 +63,9 @@ cat > "$mock_bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-scenario="${BUTLER_MOCK_GH_SCENARIO:-}"
-state_dir="${BUTLER_MOCK_GH_STATE_DIR:?}"
-log_file="${BUTLER_MOCK_GH_LOG_FILE:?}"
+scenario="${CARSON_MOCK_GH_SCENARIO:-}"
+state_dir="${CARSON_MOCK_GH_STATE_DIR:?}"
+log_file="${CARSON_MOCK_GH_LOG_FILE:?}"
 mkdir -p "$state_dir"
 printf '%s\n' "$*" >> "$log_file"
 
@@ -236,7 +236,7 @@ JSON
           sweep_findings)
             if [[ -f "$state_dir/issue_created" ]]; then
               cat <<JSON
-[{"number":501,"title":"Butler review sweep findings","state":"OPEN","url":"https://github.com/mock-org/mock-repo/issues/501","labels":[]}]
+[{"number":501,"title":"Carson review sweep findings","state":"OPEN","url":"https://github.com/mock-org/mock-repo/issues/501","labels":[]}]
 JSON
             else
               echo "[]"
@@ -244,7 +244,7 @@ JSON
             ;;
           sweep_clear)
             cat <<JSON
-[{"number":501,"title":"Butler review sweep findings","state":"OPEN","url":"https://github.com/mock-org/mock-repo/issues/501","labels":[]}]
+[{"number":501,"title":"Carson review sweep findings","state":"OPEN","url":"https://github.com/mock-org/mock-repo/issues/501","labels":[]}]
 JSON
             ;;
           *)
@@ -281,10 +281,10 @@ chmod +x "$mock_bin/gh"
 
 cd "$work_repo"
 git switch -c main >/dev/null
-git config user.name "Butler Review Smoke"
-git config user.email "butler-review-smoke@example.com"
+git config user.name "Carson Review Smoke"
+git config user.email "carson-review-smoke@example.com"
 git remote rename origin github
-printf "# Butler Review Smoke Repo\n" > README.md
+printf "# Carson Review Smoke Repo\n" > README.md
 git add README.md
 git commit -m "initial commit" >/dev/null
 git push -u github main >/dev/null
@@ -297,15 +297,15 @@ run_with_mock() {
 	mkdir -p "$mock_state"
 	: > "$mock_log"
 	PATH="$mock_bin:$PATH" \
-		BUTLER_MOCK_GH_SCENARIO="$scenario" \
-		BUTLER_MOCK_GH_STATE_DIR="$mock_state" \
-		BUTLER_MOCK_GH_LOG_FILE="$mock_log" \
-		BUTLER_REVIEW_WAIT_SECONDS="0" \
-		BUTLER_REVIEW_POLL_SECONDS="0" \
-		BUTLER_REVIEW_MAX_POLLS="3" \
-		BUTLER_REVIEW_SWEEP_WINDOW_DAYS="3" \
-		BUTLER_REVIEW_SWEEP_STATES="open,closed" \
-		run_butler "$@"
+		CARSON_MOCK_GH_SCENARIO="$scenario" \
+		CARSON_MOCK_GH_STATE_DIR="$mock_state" \
+		CARSON_MOCK_GH_LOG_FILE="$mock_log" \
+		CARSON_REVIEW_WAIT_SECONDS="0" \
+		CARSON_REVIEW_POLL_SECONDS="0" \
+		CARSON_REVIEW_MAX_POLLS="3" \
+		CARSON_REVIEW_SWEEP_WINDOW_DAYS="3" \
+		CARSON_REVIEW_SWEEP_STATES="open,closed" \
+		run_carson "$@"
 }
 
 expect_exit 2 "review gate blocks unresolved threads" run_with_mock gate_unresolved review gate
@@ -331,4 +331,4 @@ if ! grep -q "issue close" "$mock_log"; then
 fi
 echo "PASS: review sweep closed tracking issue on clear run"
 
-echo "Butler review smoke tests passed."
+echo "Carson review smoke tests passed."
