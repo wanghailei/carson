@@ -58,7 +58,7 @@ Commit generated `.github/*` files in the client repository.
 
 ## CI quick start (pinned)
 
-In client repositories, pin the reusable workflow to an immutable commit SHA and pin the Carson version explicitly.
+In client repositories, pin the reusable workflow to an explicit release ref and pin the Carson version explicitly.
 
 ```yaml
 name: Carson policy

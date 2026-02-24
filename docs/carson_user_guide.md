@@ -109,7 +109,7 @@ jobs:
 ```
 
 Then set required checks in repository branch protection to include `Carson policy`.
-When adopting newer Carson releases, update both the workflow commit SHA and `carson_version` together.
+When adopting newer Carson releases, update both the workflow ref and `carson_version` together.
 
 ### Optional: one-command GitHub defaults bootstrap
 
