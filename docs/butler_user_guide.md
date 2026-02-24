@@ -39,7 +39,7 @@ For Butler implementation details, use `docs/butler_tech_guide.md`.
 ### Option A (recommended): install from RubyGems
 
 ```bash
-gem install --user-install butler-to-merge -v 0.6.0
+gem install --user-install butler-to-merge -v 0.6.1
 ```
 
 If your shell cannot find `butler`, add your Ruby user bin directory:
@@ -64,7 +64,7 @@ butler version
 
 Expected result:
 
-- version prints `0.6.0` (or newer)
+- version prints `0.6.1` (or newer)
 - executable `butler` is available
 - alias `butler-to-merge` is available
 
@@ -103,9 +103,9 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/butler/.github/workflows/butler_policy.yml@9dafd1b32042dc064b9cea743fd02c933d2322a8
+    uses: wanghailei/butler/.github/workflows/butler_policy.yml@<commit-sha-for-v0.6.1>
     with:
-      butler_version: "0.6.0"
+      butler_version: "0.6.1"
 ```
 
 Then set required checks in repository branch protection to include `Butler policy`.
