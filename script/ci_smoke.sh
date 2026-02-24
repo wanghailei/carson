@@ -16,6 +16,12 @@ run_carson_with_mock_gh() {
 	PATH="$mock_bin:$PATH" run_carson "$@"
 }
 
+run_carson_with_mock_gh_scenario() {
+	local scenario="$1"
+	shift
+	CARSON_MOCK_GH_SCENARIO="$scenario" PATH="$mock_bin:$PATH" run_carson "$@"
+}
+
 run_carson_with_report_env() {
 	local report_home="$1"
 	local report_tmpdir="$2"
@@ -81,9 +87,59 @@ cat > "$mock_bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+scenario="${CARSON_MOCK_GH_SCENARIO:-default}"
+
 if [[ "${1:-}" == "--version" ]]; then
 	echo "gh version mock"
 	exit 0
+fi
+
+if [[ "$scenario" == "baseline_block_failing" || "$scenario" == "baseline_block_pending" || "$scenario" == "baseline_block_no_evidence" ]]; then
+	if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+		echo "mock: no pull request for branch" >&2
+		exit 1
+	fi
+
+	if [[ "${1:-}" == "api" ]]; then
+		endpoint="${2:-}"
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+/commits/[^/]+/check-runs$ ]]; then
+			if [[ "$scenario" == "baseline_block_failing" ]]; then
+				cat <<JSON
+{"total_count":1,"check_runs":[{"name":"Schema contract","status":"completed","conclusion":"failure","html_url":"https://github.com/mock/mock-repo/actions/runs/11","app":{"name":"GitHub Actions"}}]}
+JSON
+			elif [[ "$scenario" == "baseline_block_pending" ]]; then
+				cat <<JSON
+{"total_count":1,"check_runs":[{"name":"CI smoke","status":"in_progress","conclusion":null,"html_url":"https://github.com/mock/mock-repo/actions/runs/12","app":{"name":"GitHub Actions"}}]}
+JSON
+			else
+				cat <<JSON
+{"total_count":0,"check_runs":[]}
+JSON
+			fi
+			exit 0
+		fi
+
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+/branches/ ]]; then
+			cat <<JSON
+{"name":"main","commit":{"sha":"abc123def456"}}
+JSON
+			exit 0
+		fi
+
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+/contents/.github/workflows$ ]]; then
+			cat <<JSON
+[{"name":"ci.yml","type":"file"},{"name":"carson_policy.yml","type":"file"}]
+JSON
+			exit 0
+		fi
+
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+$ ]]; then
+			cat <<JSON
+{"default_branch":"main"}
+JSON
+			exit 0
+		fi
+	fi
 fi
 
 if [[ "${1:-}" == "api" && "${2:-}" == repos/*/pulls ]]; then
@@ -218,6 +274,9 @@ expect_exit 2 "check blocks before hooks are installed" run_carson check
 expect_exit 0 "sync keeps local main aligned to github/main" run_carson sync
 expect_exit 0 "hook installs required hooks to global runtime path" run_carson hook
 expect_exit 0 "check passes after hook install" run_carson check
+expect_exit 2 "audit blocks when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
+expect_exit 2 "audit blocks when default-branch baseline has pending check-runs" run_carson_with_mock_gh_scenario baseline_block_pending audit
+expect_exit 2 "audit blocks when default-branch workflows have no check-run evidence" run_carson_with_mock_gh_scenario baseline_block_no_evidence audit
 for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 	if [[ ! -x "$tmp_root/global-hooks/$expected_carson_version/$required_hook" ]]; then
 		echo "FAIL: required hook missing or non-executable: $required_hook" >&2

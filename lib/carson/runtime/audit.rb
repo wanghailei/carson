@@ -1,3 +1,5 @@
+require "cgi"
+
 module Carson
 	class Runtime
 		module Audit
@@ -37,10 +39,19 @@ module Carson
 				print_header "PR and Required Checks (gh)"
 				monitor_report = pr_and_check_report
 				audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
+				print_header "Default Branch CI Baseline (gh)"
+				default_branch_baseline = default_branch_ci_baseline_report
+				audit_state = "block" if default_branch_baseline.fetch( :status ) == "block"
+				audit_state = "attention" if audit_state == "ok" && default_branch_baseline.fetch( :status ) != "ok"
 				scope_guard = print_scope_integrity_guard
 				audit_state = "block" if scope_guard.fetch( :split_required )
 				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
-				write_and_print_pr_monitor_report( report: monitor_report.merge( audit_status: audit_state ) )
+				write_and_print_pr_monitor_report(
+					report: monitor_report.merge(
+						default_branch_baseline: default_branch_baseline,
+						audit_status: audit_state
+					)
+				)
 				print_header "Audit Result"
 				puts_line "status: #{audit_state}"
 				puts_line( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
@@ -115,11 +126,179 @@ module Carson
 				report.dig( :checks, :pending ).each { |entry| puts_line "check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
 				report[ :status ] = "attention" if report.dig( :checks, :failing_count ).positive? || report.dig( :checks, :pending_count ).positive?
 				report
+				rescue JSON::ParserError => e
+					report[ :status ] = "skipped"
+					report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
+					puts_line "SKIP: #{report.fetch( :skip_reason )}"
+					report
+				end
+
+			# Evaluates default-branch CI health so stale workflow drift blocks before merge.
+			def default_branch_ci_baseline_report
+				report = {
+				status: "ok",
+				skip_reason: nil,
+				repository: nil,
+				default_branch: nil,
+				head_sha: nil,
+				workflows_total: 0,
+				check_runs_total: 0,
+				failing_count: 0,
+				pending_count: 0,
+				no_check_evidence: false,
+				failing: [],
+				pending: []
+				}
+				unless gh_available?
+					report[ :status ] = "skipped"
+					report[ :skip_reason ] = "gh CLI not available in PATH"
+					puts_line "baseline: SKIP (#{report.fetch( :skip_reason )})"
+					return report
+				end
+				owner, repo = repository_coordinates
+				report[ :repository ] = "#{owner}/#{repo}"
+				repository_data = gh_json_payload!(
+				"api", "repos/#{owner}/#{repo}",
+				"--method", "GET",
+				fallback: "unable to read repository metadata for #{owner}/#{repo}"
+				)
+				default_branch = blank_to( value: repository_data[ "default_branch" ], default: config.main_branch )
+				report[ :default_branch ] = default_branch
+				branch_data = gh_json_payload!(
+				"api", "repos/#{owner}/#{repo}/branches/#{CGI.escape( default_branch )}",
+				"--method", "GET",
+				fallback: "unable to read default branch #{default_branch}"
+				)
+				head_sha = branch_data.dig( "commit", "sha" ).to_s.strip
+				raise "default branch #{default_branch} has no commit SHA" if head_sha.empty?
+				report[ :head_sha ] = head_sha
+				workflow_entries = default_branch_workflow_entries(
+				owner: owner,
+				repo: repo,
+				default_branch: default_branch
+				)
+				report[ :workflows_total ] = workflow_entries.count
+				check_runs_payload = gh_json_payload!(
+				"api", "repos/#{owner}/#{repo}/commits/#{head_sha}/check-runs",
+				"--method", "GET",
+				fallback: "unable to read check-runs for #{default_branch}@#{head_sha}"
+				)
+				check_runs = Array( check_runs_payload[ "check_runs" ] )
+				failing, pending = partition_default_branch_check_runs( check_runs: check_runs )
+				report[ :check_runs_total ] = check_runs.count
+				report[ :failing ] = normalise_default_branch_check_entries( entries: failing )
+				report[ :pending ] = normalise_default_branch_check_entries( entries: pending )
+				report[ :failing_count ] = report.fetch( :failing ).count
+				report[ :pending_count ] = report.fetch( :pending ).count
+				report[ :no_check_evidence ] = report.fetch( :workflows_total ).positive? && report.fetch( :check_runs_total ).zero?
+				report[ :status ] = "block" if report.fetch( :failing_count ).positive?
+				report[ :status ] = "block" if report.fetch( :pending_count ).positive?
+				report[ :status ] = "block" if report.fetch( :no_check_evidence )
+				puts_line "default_branch_repository: #{report.fetch( :repository )}"
+				puts_line "default_branch_name: #{report.fetch( :default_branch )}"
+				puts_line "default_branch_head_sha: #{report.fetch( :head_sha )}"
+				puts_line "default_branch_workflows_total: #{report.fetch( :workflows_total )}"
+				puts_line "default_branch_check_runs_total: #{report.fetch( :check_runs_total )}"
+				puts_line "default_branch_failing: #{report.fetch( :failing_count )}"
+				puts_line "default_branch_pending: #{report.fetch( :pending_count )}"
+				report.fetch( :failing ).each { |entry| puts_line "default_branch_check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				report.fetch( :pending ).each { |entry| puts_line "default_branch_check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				if report.fetch( :no_check_evidence )
+					puts_line "ACTION: default branch has workflow files but no check-runs; align workflow triggers and branch protection check names."
+				end
+				report
 			rescue JSON::ParserError => e
 				report[ :status ] = "skipped"
 				report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
-				puts_line "SKIP: #{report.fetch( :skip_reason )}"
+				puts_line "baseline: SKIP (#{report.fetch( :skip_reason )})"
 				report
+			rescue StandardError => e
+				report[ :status ] = "skipped"
+				report[ :skip_reason ] = e.message
+				puts_line "baseline: SKIP (#{report.fetch( :skip_reason )})"
+				report
+			end
+
+			# Reads JSON API payloads and raises a detailed error when gh reports non-success.
+			def gh_json_payload!( *args, fallback: )
+				stdout_text, stderr_text, success, = gh_run( *args )
+				unless success
+					error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: fallback )
+					raise error_text
+				end
+				JSON.parse( stdout_text )
+			end
+
+			# Reads workflow files from default branch; missing workflow directory is valid and returns none.
+			def default_branch_workflow_entries( owner:, repo:, default_branch: )
+				stdout_text, stderr_text, success, = gh_run(
+				"api", "repos/#{owner}/#{repo}/contents/.github/workflows",
+				"--method", "GET",
+				"-f", "ref=#{default_branch}"
+				)
+				unless success
+					error_text = gh_error_text(
+					stdout_text: stdout_text,
+					stderr_text: stderr_text,
+					fallback: "unable to read workflow files for #{default_branch}"
+					)
+					return [] if error_text.match?( /\b404\b/ )
+					raise error_text
+				end
+				payload = JSON.parse( stdout_text )
+				Array( payload ).select do |entry|
+					entry.is_a?( Hash ) &&
+						entry[ "type" ].to_s == "file" &&
+						entry[ "name" ].to_s.match?( /\.ya?ml\z/i )
+				end
+			end
+
+			# Splits default-branch check-runs into failing and pending policy buckets.
+			def partition_default_branch_check_runs( check_runs: )
+				failing = []
+				pending = []
+				Array( check_runs ).each do |entry|
+					if default_branch_check_run_failing?( entry: entry )
+						failing << entry
+					elsif default_branch_check_run_pending?( entry: entry )
+						pending << entry
+					end
+				end
+				[ failing, pending ]
+			end
+
+			# Failing means completed with a non-successful conclusion.
+			def default_branch_check_run_failing?( entry: )
+				status = entry[ "status" ].to_s.strip.downcase
+				conclusion = entry[ "conclusion" ].to_s.strip.downcase
+				status == "completed" && !conclusion.empty? && !%w[success neutral skipped].include?( conclusion )
+			end
+
+			# Pending includes non-completed checks and completed checks missing conclusion.
+			def default_branch_check_run_pending?( entry: )
+				status = entry[ "status" ].to_s.strip.downcase
+				conclusion = entry[ "conclusion" ].to_s.strip.downcase
+				return true if status.empty?
+				return true unless status == "completed"
+
+				conclusion.empty?
+			end
+
+			# Normalises default-branch check-runs to report layout used by markdown output.
+			def normalise_default_branch_check_entries( entries: )
+				Array( entries ).map do |entry|
+					state = if entry[ "status" ].to_s.strip.downcase == "completed"
+						blank_to( value: entry[ "conclusion" ], default: "UNKNOWN" )
+					else
+						blank_to( value: entry[ "status" ], default: "UNKNOWN" )
+					end
+					{
+					workflow: blank_to( value: entry.dig( "app", "name" ), default: "workflow" ),
+					name: blank_to( value: entry[ "name" ], default: "check" ),
+					state: state.upcase,
+					link: entry[ "html_url" ].to_s
+					}
+				end
 			end
 
 			# Writes monitor report artefacts and prints their locations.
@@ -185,6 +364,37 @@ module Carson
 					lines << "- none"
 				else
 					checks.fetch( :pending ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+				end
+				lines << ""
+				lines << "## Default Branch CI Baseline"
+				baseline = report[ :default_branch_baseline ]
+				if baseline.nil?
+					lines << "- not available"
+				else
+					lines << "- Status: #{baseline.fetch( :status )}"
+					lines << "- Skip reason: #{baseline.fetch( :skip_reason )}" unless baseline.fetch( :skip_reason ).nil?
+					lines << "- Repository: #{baseline.fetch( :repository )}" unless baseline.fetch( :repository ).nil?
+					lines << "- Branch: #{baseline.fetch( :default_branch )}" unless baseline.fetch( :default_branch ).nil?
+					lines << "- Head SHA: #{baseline.fetch( :head_sha )}" unless baseline.fetch( :head_sha ).nil?
+					lines << "- Workflow files: #{baseline.fetch( :workflows_total )}"
+					lines << "- Check-runs: #{baseline.fetch( :check_runs_total )}"
+					lines << "- Failing: #{baseline.fetch( :failing_count )}"
+					lines << "- Pending: #{baseline.fetch( :pending_count )}"
+					lines << "- No check evidence: #{baseline.fetch( :no_check_evidence )}"
+					lines << ""
+					lines << "### Baseline Failing"
+					if baseline.fetch( :failing ).empty?
+						lines << "- none"
+					else
+						baseline.fetch( :failing ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+					end
+					lines << ""
+					lines << "### Baseline Pending"
+					if baseline.fetch( :pending ).empty?
+						lines << "- none"
+					else
+						baseline.fetch( :pending ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+					end
 				end
 				lines << ""
 				lines.join( "\n" )

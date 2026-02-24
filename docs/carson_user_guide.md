@@ -182,6 +182,8 @@ carson sync
 carson audit
 ```
 
+`carson audit` includes a default-branch CI baseline gate. It returns exit `2` when the default branch shows failing or pending checks, or when workflow files exist but no check-run evidence is present.
+
 ### Before push or PR update
 
 ```bash
