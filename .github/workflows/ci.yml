@@ -40,6 +40,9 @@ jobs:
             ruby exe/carson lint setup --source test/fixtures/lint_policy_source --force
           fi
 
+      - name: Hook
+        run: ruby exe/carson hook
+
       - name: Audit
         env:
           GH_TOKEN: ${{ github.token }}
