@@ -206,8 +206,10 @@ module Carson
 				base_ref = ENV.fetch( "GITHUB_BASE_REF", "" ).to_s.strip
 				return nil if base_ref.empty?
 
-				git_run( "fetch", "--no-tags", "--depth", "1", "origin", base_ref )
-				candidates = [ "origin/#{base_ref}" ]
+				remote_name = config.git_remote.to_s.strip
+				remote_name = "origin" if remote_name.empty?
+				git_run( "fetch", "--no-tags", "--depth", "1", remote_name, base_ref )
+				candidates = [ "#{remote_name}/#{base_ref}" ]
 				candidates.each do |base|
 					stdout_text, _, success, = git_run(
 						"diff", "--name-only", "--diff-filter=ACMRTUXB", "#{base}...HEAD"
