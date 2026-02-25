@@ -12,6 +12,10 @@ on:
         description: Exact Carson gem version expected in VERSION
         required: true
         type: string
+    secrets:
+      CARSON_READ_TOKEN:
+        description: Read token for private lint-policy source repository.
+        required: false
 
 jobs:
   governance:
@@ -26,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: host
+          fetch-depth: 0
 
       - name: Checkout Carson runtime
         uses: actions/checkout@v4
@@ -62,7 +67,10 @@ jobs:
 
       - name: Carson audit
         working-directory: host
+        env:
+          CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
         run: |
+          carson lint setup --source https://github.com/wanghailei/ai.git --ref main --force
           carson hook
           carson audit
 

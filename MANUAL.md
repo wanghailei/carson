@@ -13,7 +13,7 @@ This manual is for users who need to install Carson, configure repository govern
 Recommended installation path:
 
 ```bash
-gem install --user-install carson -v 0.7.0
+gem install --user-install carson -v 0.8.0
 ```
 
 If `carson` is not found after installation:
@@ -34,6 +34,16 @@ Expected result:
 
 ## Configure your first repository
 Assume your repository path is `/local/path/of/repo`.
+
+Prepare your global lint policy baseline first:
+
+```bash
+carson lint setup --source /path/to/ai-policy-repo
+```
+
+`lint setup` expects the source to contain `CODING/` and writes policy files to `~/AI/CODING/`.
+Use `--ref <git-ref>` when `--source` is a git URL.
+Use `--force` to overwrite existing `~/AI/CODING` files.
 
 Run baseline initialisation:
 
@@ -62,19 +72,23 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.7.0
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.8.0
+    secrets:
+      CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
     with:
-      carson_ref: "v0.7.0"
-      carson_version: "0.7.0"
+      carson_ref: "v0.8.0"
+      carson_version: "0.8.0"
 ```
 
 When upgrading Carson, update both `carson_ref` and `carson_version` together.
+`CARSON_READ_TOKEN` must have read access to `wanghailei/ai` so CI can run `carson lint setup`.
 
 ## Daily operations
 Start of work:
 
 ```bash
 carson sync
+carson lint setup --source /path/to/ai-policy-repo
 carson audit
 ```
 

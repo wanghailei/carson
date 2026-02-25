@@ -9,7 +9,7 @@ carson_bin="$repo_root/exe/carson"
 
 # Shared launch helpers for Carson invocations in smoke scenarios.
 run_carson() {
-	HOME="$tmp_root/home" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$carson_bin" "$@"
+	HOME="$tmp_root/home" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
 }
 
 run_carson_with_mock_gh() {
@@ -22,11 +22,17 @@ run_carson_with_mock_gh_scenario() {
 	CARSON_MOCK_GH_SCENARIO="$scenario" PATH="$mock_bin:$PATH" run_carson "$@"
 }
 
+run_carson_with_config() {
+	local config_path="$1"
+	shift
+	HOME="$tmp_root/home" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$config_path" ruby "$carson_bin" "$@"
+}
+
 run_carson_with_report_env() {
 	local report_home="$1"
 	local report_tmpdir="$2"
 	shift 2
-	HOME="$report_home" TMPDIR="$report_tmpdir" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" ruby "$carson_bin" "$@"
+	HOME="$report_home" TMPDIR="$report_tmpdir" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
 }
 
 exit_text() {
@@ -68,6 +74,52 @@ mkdir -p "$tmp_root/home"
 export HOME="$tmp_root/home"
 export CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks"
 export CARSON_BIN="$carson_bin"
+lint_ok_script="$tmp_root/lint_ok.rb"
+cat > "$lint_ok_script" <<'EOF'
+#!/usr/bin/env ruby
+exit 0
+EOF
+chmod +x "$lint_ok_script"
+smoke_config_path="$tmp_root/carson-config.json"
+cat > "$smoke_config_path" <<EOF
+{
+  "lint": {
+    "languages": {
+      "ruby": {
+        "enabled": true,
+        "globs": ["**/*.rb"],
+        "command": ["$lint_ok_script", "{files}"],
+        "config_files": ["$lint_ok_script"]
+      },
+      "javascript": {
+        "enabled": false,
+        "globs": ["**/*.js"],
+        "command": ["node", "/tmp/unused.js", "{files}"],
+        "config_files": ["/tmp/unused.js"]
+      },
+      "css": {
+        "enabled": false,
+        "globs": ["**/*.css"],
+        "command": ["node", "/tmp/unused.js", "{files}"],
+        "config_files": ["/tmp/unused.js"]
+      },
+      "html": {
+        "enabled": false,
+        "globs": ["**/*.html"],
+        "command": ["node", "/tmp/unused.js", "{files}"],
+        "config_files": ["/tmp/unused.js"]
+      },
+      "erb": {
+        "enabled": false,
+        "globs": ["**/*.erb"],
+        "command": ["ruby", "/tmp/unused.rb", "{files}"],
+        "config_files": ["/tmp/unused.rb"]
+      }
+    }
+  }
+}
+EOF
+export CARSON_CONFIG_FILE="$smoke_config_path"
 cleanup() {
 	rm -rf "$tmp_root"
 }
@@ -327,6 +379,111 @@ expect_exit 2 "template check reports drift when managed github files are missin
 expect_exit 0 "template apply writes managed github files" run_carson template apply
 expect_exit 0 "template check passes after apply" run_carson template check
 expect_exit 1 "unknown command returns runtime/configuration error" run_carson template lint
+expect_exit 1 "lint setup requires explicit source argument" run_carson lint setup
+
+setup_source="$tmp_root/ai-source"
+mkdir -p "$setup_source/CODING/ruby"
+cat > "$setup_source/CODING/ruby/lint.rb" <<'EOF'
+#!/usr/bin/env ruby
+exit 0
+EOF
+chmod +x "$setup_source/CODING/ruby/lint.rb"
+setup_config_path="$tmp_root/lint-setup-config.json"
+cat > "$setup_config_path" <<EOF
+{
+  "lint": {
+    "languages": {
+      "ruby": {
+        "enabled": true,
+        "globs": ["**/*.rb"],
+        "command": ["ruby", "~/AI/CODING/ruby/lint.rb", "{files}"],
+        "config_files": ["~/AI/CODING/ruby/lint.rb"]
+      },
+      "javascript": {
+        "enabled": false,
+        "globs": ["**/*.js"],
+        "command": ["node", "/tmp/unused.js", "{files}"],
+        "config_files": ["/tmp/unused.js"]
+      },
+      "css": {
+        "enabled": false,
+        "globs": ["**/*.css"],
+        "command": ["node", "/tmp/unused.js", "{files}"],
+        "config_files": ["/tmp/unused.js"]
+      },
+      "html": {
+        "enabled": false,
+        "globs": ["**/*.html"],
+        "command": ["node", "/tmp/unused.js", "{files}"],
+        "config_files": ["/tmp/unused.js"]
+      },
+      "erb": {
+        "enabled": false,
+        "globs": ["**/*.erb"],
+        "command": ["ruby", "/tmp/unused.rb", "{files}"],
+        "config_files": ["/tmp/unused.rb"]
+      }
+    }
+  }
+}
+EOF
+expect_exit 0 "lint setup copies coding policy from local source" run_carson_with_config "$setup_config_path" lint setup --source "$setup_source"
+if [[ ! -f "$tmp_root/home/AI/CODING/ruby/lint.rb" ]]; then
+	echo "FAIL: lint setup did not create ~/AI/CODING/ruby/lint.rb" >&2
+	exit 1
+fi
+echo "PASS: lint setup created ~/AI/CODING/ruby/lint.rb"
+
+setup_git_source="$tmp_root/ai-source-git"
+cp -R "$setup_source" "$setup_git_source"
+git init "$setup_git_source" >/dev/null
+git -C "$setup_git_source" config user.name "Carson CI"
+git -C "$setup_git_source" config user.email "carson-ci@example.com"
+git -C "$setup_git_source" add .
+git -C "$setup_git_source" commit -m "seed coding policy" >/dev/null
+git -C "$setup_git_source" branch -M main
+expect_exit 0 "lint setup clones coding policy from git URL" run_carson_with_config "$setup_config_path" lint setup --source "file://$setup_git_source" --ref main --force
+
+git switch -c feature/lint-policy-block >/dev/null
+mkdir -p lib
+printf "lint policy block\n" > lib/lint_policy_block.rb
+git add lib/lint_policy_block.rb
+missing_config_path="$tmp_root/lint-missing-config.json"
+cat > "$missing_config_path" <<EOF
+{
+  "lint": {
+    "languages": {
+      "ruby": {
+        "enabled": true,
+        "globs": ["**/*.rb"],
+        "command": ["$lint_ok_script", "{files}"],
+        "config_files": ["$tmp_root/missing-policy.rb"]
+      }
+    }
+  }
+}
+EOF
+expect_exit 2 "audit blocks when required lint config file is missing" run_carson_with_config "$missing_config_path" audit
+missing_command_path="$tmp_root/lint-missing-command.json"
+cat > "$missing_command_path" <<EOF
+{
+  "lint": {
+    "languages": {
+      "ruby": {
+        "enabled": true,
+        "globs": ["**/*.rb"],
+        "command": ["missing-carson-lint-command", "{files}"],
+        "config_files": ["$lint_ok_script"]
+      }
+    }
+  }
+}
+EOF
+expect_exit 2 "audit blocks when lint command is unavailable" run_carson_with_config "$missing_command_path" audit
+expect_exit 0 "audit passes lint gate with available command and config" run_carson audit
+git reset --hard HEAD >/dev/null
+git switch main >/dev/null
+git branch -D feature/lint-policy-block >/dev/null
 
 # Validate report directory fallback precedence for invalid HOME.
 tmpdir_report_root="$tmp_root/custom-tmpdir"

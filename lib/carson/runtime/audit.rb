@@ -1,4 +1,5 @@
 require "cgi"
+require "open3"
 
 module Carson
 	class Runtime
@@ -15,6 +16,9 @@ module Carson
 				print_header "Hooks"
 				hooks_ok = hooks_health_report
 				audit_state = "block" unless hooks_ok
+				print_header "Local Lint Quality"
+				local_lint_quality = local_lint_quality_report
+				audit_state = "block" if local_lint_quality.fetch( :status ) == "block"
 				print_header "Main Sync Status"
 				ahead_count, behind_count, main_error = main_sync_counts
 				if main_error
@@ -46,12 +50,13 @@ module Carson
 				scope_guard = print_scope_integrity_guard
 				audit_state = "block" if scope_guard.fetch( :split_required )
 				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
-				write_and_print_pr_monitor_report(
-					report: monitor_report.merge(
-						default_branch_baseline: default_branch_baseline,
-						audit_status: audit_state
+					write_and_print_pr_monitor_report(
+						report: monitor_report.merge(
+							local_lint_quality: local_lint_quality,
+							default_branch_baseline: default_branch_baseline,
+							audit_status: audit_state
+						)
 					)
-				)
 				print_header "Audit Result"
 				puts_line "status: #{audit_state}"
 				puts_line( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
@@ -132,6 +137,235 @@ module Carson
 					puts_line "SKIP: #{report.fetch( :skip_reason )}"
 					report
 				end
+
+			# Enforces configured multi-language lint policy before governance passes.
+			def local_lint_quality_report
+				target_files, target_source = lint_target_files
+				report = {
+					status: "ok",
+					skip_reason: nil,
+					target_source: target_source,
+					target_files_count: target_files.count,
+					blocking_languages: 0,
+					languages: []
+				}
+				puts_line "lint_target_source: #{target_source}"
+				puts_line "lint_target_files_total: #{target_files.count}"
+				config.lint_languages.each do |language, entry|
+					language_report = lint_language_report(
+						language: language,
+						entry: entry,
+						target_files: target_files
+					)
+					report.fetch( :languages ) << language_report
+					next unless language_report.fetch( :status ) == "block"
+
+					report[ :status ] = "block"
+					report[ :blocking_languages ] += 1
+				end
+				puts_line "lint_blocking_languages: #{report.fetch( :blocking_languages )}"
+				report
+			rescue StandardError => e
+				report ||= {
+					status: "block",
+					skip_reason: nil,
+					target_source: "unknown",
+					target_files_count: 0,
+					blocking_languages: 0,
+					languages: []
+				}
+				report[ :status ] = "block"
+				report[ :skip_reason ] = e.message
+				puts_line "BLOCK: local lint quality check failed (#{e.message})."
+				report
+			end
+
+			# File selection precedence:
+			# 1) staged files for local commit-time execution
+			# 2) PR changed files in GitHub pull_request events
+			# 3) full repository tracked files in GitHub non-PR events
+			# 4) local working-tree changed files as fallback
+			def lint_target_files
+				staged = existing_repo_files( paths: staged_files )
+				return [ staged, "staged" ] unless staged.empty?
+
+				if github_pull_request_event?
+					files = lint_target_files_for_pull_request
+					return [ files, "github_pull_request" ] unless files.nil?
+					puts_line "WARN: unable to resolve pull request changed files; falling back to full repository files."
+				end
+
+				if github_actions_environment?
+					return [ lint_target_files_for_non_pr_ci, "github_full_repository" ]
+				end
+
+				[ existing_repo_files( paths: changed_files ), "working_tree" ]
+			end
+
+			def lint_target_files_for_pull_request
+				base_ref = ENV.fetch( "GITHUB_BASE_REF", "" ).to_s.strip
+				return nil if base_ref.empty?
+
+				git_run( "fetch", "--no-tags", "--depth", "1", "origin", base_ref )
+				candidates = [ "origin/#{base_ref}" ]
+				candidates.each do |base|
+					stdout_text, _, success, = git_run(
+						"diff", "--name-only", "--diff-filter=ACMRTUXB", "#{base}...HEAD"
+					)
+					next unless success
+
+					paths = stdout_text.lines.map { |line| line.to_s.strip }.reject( &:empty? )
+					return existing_repo_files( paths: paths )
+				end
+				nil
+			end
+
+			def lint_target_files_for_non_pr_ci
+				stdout_text = git_capture!( "ls-files" )
+				paths = stdout_text.lines.map { |line| line.to_s.strip }.reject( &:empty? )
+				existing_repo_files( paths: paths )
+			end
+
+			def github_actions_environment?
+				ENV.fetch( "GITHUB_ACTIONS", "" ).to_s.strip.casecmp( "true" ).zero?
+			end
+
+			def github_pull_request_event?
+				return false unless github_actions_environment?
+
+				event_name = ENV.fetch( "GITHUB_EVENT_NAME", "" ).to_s.strip
+				[ "pull_request", "pull_request_target" ].include?( event_name )
+			end
+
+			def existing_repo_files( paths: )
+				Array( paths ).map do |relative|
+					next if relative.to_s.strip.empty?
+					absolute = resolve_repo_path!( relative_path: relative, label: "lint target file #{relative}" )
+					next unless File.file?( absolute )
+					relative
+				end.compact.uniq
+			end
+
+			def lint_language_report( language:, entry:, target_files: )
+				globs = entry.fetch( :globs )
+				candidate_files = Array( target_files ).select do |path|
+					globs.any? { |pattern| pattern_matches_path?( pattern: pattern, path: path ) }
+				end
+				report = {
+					language: language,
+					enabled: entry.fetch( :enabled ),
+					status: "ok",
+					reason: nil,
+					file_count: candidate_files.count,
+					files: candidate_files,
+					command: entry.fetch( :command ),
+					config_files: entry.fetch( :config_files ),
+					exit_code: 0
+				}
+				puts_line "lint_language: #{language} enabled=#{report.fetch( :enabled )} files=#{report.fetch( :file_count )}"
+				return report unless report.fetch( :enabled )
+				return report if candidate_files.empty?
+
+				missing_config_files = entry.fetch( :config_files ).reject { |path| File.file?( path ) }
+				unless missing_config_files.empty?
+					report[ :status ] = "block"
+					report[ :reason ] = "missing config files: #{missing_config_files.join( ', ' )}"
+					report[ :exit_code ] = EXIT_BLOCK
+					puts_line "lint_#{language}_status: block"
+					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
+					puts_line "ACTION: run carson lint setup --source <path-or-git-url> to prepare ~/AI/CODING policy files."
+					return report
+				end
+
+				command = Array( entry.fetch( :command ) )
+				command_name = command.first.to_s.strip
+				if command_name.empty?
+					report[ :status ] = "block"
+					report[ :reason ] = "missing lint command"
+					report[ :exit_code ] = EXIT_BLOCK
+					puts_line "lint_#{language}_status: block"
+					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
+					return report
+				end
+				unless command_available_for_lint?( command_name: command_name )
+					report[ :status ] = "block"
+					report[ :reason ] = "command not available: #{command_name}"
+					report[ :exit_code ] = EXIT_BLOCK
+					puts_line "lint_#{language}_status: block"
+					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
+					return report
+				end
+
+				args = expanded_lint_command_args( command: command, files: candidate_files )
+				stdout_text, stderr_text, success, exit_code = local_command( *args )
+				report[ :exit_code ] = exit_code
+				unless success
+					report[ :status ] = "block"
+					report[ :reason ] = summarise_command_output(
+						stdout_text: stdout_text,
+						stderr_text: stderr_text,
+						fallback: "lint command failed for #{language}"
+					)
+				end
+				puts_line "lint_#{language}_status: #{report.fetch( :status )}"
+				puts_line "lint_#{language}_exit: #{report.fetch( :exit_code )}"
+				puts_line "lint_#{language}_reason: #{report.fetch( :reason )}" unless report.fetch( :reason ).nil?
+				report
+			end
+
+			def command_available_for_lint?( command_name: )
+				return false if command_name.to_s.strip.empty?
+
+				if command_name.include?( "/" )
+					path = if command_name.start_with?( "~" )
+						File.expand_path( command_name )
+					elsif command_name.start_with?( "/" )
+						command_name
+					else
+						File.expand_path( command_name, repo_root )
+					end
+					return File.executable?( path )
+				end
+				path_entries = ENV.fetch( "PATH", "" ).split( File::PATH_SEPARATOR )
+				path_entries.any? do |entry|
+					next false if entry.to_s.strip.empty?
+					File.executable?( File.join( entry, command_name ) )
+				end
+			end
+
+			def expanded_lint_command_args( command:, files: )
+				expanded_command = Array( command ).map do |arg|
+					text = arg.to_s
+					if text == "{files}"
+						text
+					elsif text.start_with?( "~" )
+						File.expand_path( text )
+					elsif text.include?( "/" ) && !text.start_with?( "/" )
+						File.expand_path( text, repo_root )
+					else
+						text
+					end
+				end
+				if expanded_command.include?( "{files}" )
+					return expanded_command.flat_map { |arg| arg == "{files}" ? Array( files ) : arg }
+				end
+
+				expanded_command + Array( files )
+			end
+
+			# Local command runner for repository-context tools used by audit lint checks.
+			def local_command( *args )
+				stdout_text, stderr_text, status = Open3.capture3( *args, chdir: repo_root )
+				[ stdout_text, stderr_text, status.success?, status.exitstatus ]
+			end
+
+			# Compacts command output to one-line diagnostics for audit logs and JSON report payloads.
+			def summarise_command_output( stdout_text:, stderr_text:, fallback: )
+				combined = [ stderr_text.to_s, stdout_text.to_s ].join( "\n" )
+				lines = combined.lines.map { |line| line.to_s.strip }.reject( &:empty? )
+				return fallback if lines.empty?
+				lines.first( 12 ).join( " | " )
+			end
 
 			# Evaluates default-branch CI health so stale workflow drift blocks before merge.
 			def default_branch_ci_baseline_report
@@ -364,6 +598,28 @@ module Carson
 					lines << "- none"
 				else
 					checks.fetch( :pending ).each { |entry| lines << "- #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (#{entry.fetch( :state )}) #{entry.fetch( :link )}".strip }
+				end
+				lines << ""
+				lines << "## Local Lint Quality"
+				lint_quality = report[ :local_lint_quality ]
+				if lint_quality.nil?
+					lines << "- not available"
+				else
+					lines << "- Status: #{lint_quality.fetch( :status )}"
+					lines << "- Skip reason: #{lint_quality.fetch( :skip_reason )}" unless lint_quality.fetch( :skip_reason ).nil?
+					lines << "- Target source: #{lint_quality.fetch( :target_source )}"
+					lines << "- Target files: #{lint_quality.fetch( :target_files_count )}"
+					lines << "- Blocking languages: #{lint_quality.fetch( :blocking_languages )}"
+					lines << ""
+					lines << "### Language Results"
+					if lint_quality.fetch( :languages ).empty?
+						lines << "- none"
+					else
+						lint_quality.fetch( :languages ).each do |entry|
+							lines << "- #{entry.fetch( :language )}: status=#{entry.fetch( :status )} files=#{entry.fetch( :file_count )} exit=#{entry.fetch( :exit_code )}"
+							lines << "  reason: #{entry.fetch( :reason )}" unless entry.fetch( :reason ).nil?
+						end
+					end
 				end
 				lines << ""
 				lines << "## Default Branch CI Baseline"
