@@ -20,5 +20,5 @@ Gem::Specification.new do |spec|
 	spec.bindir = "exe"
 	spec.executables = [ "carson" ]
 	spec.require_paths = [ "lib" ]
-	spec.files = Dir.glob( "{lib,exe,templates,assets,script,docs,.github}/**/*", File::FNM_DOTMATCH ).select { |path| File.file?( path ) } + [ "README.md", "RELEASE.md", "VERSION", "carson.gemspec" ]
+	spec.files = Dir.glob( "{lib,exe,templates,assets,script,docs,.github}/**/*", File::FNM_DOTMATCH ).select { |path| File.file?( path ) } + [ "README.md", "MANUAL.md", "API.md", "RELEASE.md", "VERSION", "carson.gemspec" ]
 end

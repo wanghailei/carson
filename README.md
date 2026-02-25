@@ -10,7 +10,8 @@ This model is effective because ownership stays explicit: Carson runtime assets 
 ## Quickstart
 Prerequisites:
 - Ruby `>= 4.0`
-- `gem`, `git`, and `gh` available in `PATH`
+- `gem` and `git` available in `PATH`
+- `gh` available in `PATH` for PR/check reporting (recommended, not required for core local commands)
 
 ```bash
 gem install --user-install carson -v 0.7.0

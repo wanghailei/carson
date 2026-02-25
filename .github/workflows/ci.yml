@@ -59,14 +59,14 @@ jobs:
 
       - name: Legacy naming guard
         run: |
-          if rg -n '\bcommon\b' README.md docs lib script templates .github exe RELEASE.md; then
+          if rg -n '\bcommon\b' README.md MANUAL.md API.md RELEASE.md docs lib script templates .github exe; then
             echo "legacy naming token detected" >&2
             exit 1
           fi
 
       - name: Local path privacy guard
         run: |
-          if rg -n '(/(Users|home)/[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+)' README.md RELEASE.md docs lib script templates .github exe; then
+          if rg -n '(/(Users|home)/[A-Za-z0-9._-]+|[A-Za-z]:\\Users\\[A-Za-z0-9._-]+)' README.md MANUAL.md API.md RELEASE.md docs lib script templates .github exe; then
             echo "machine-specific local path detected; use ~/ paths in docs and source examples" >&2
             exit 1
           fi
