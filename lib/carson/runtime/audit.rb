@@ -58,7 +58,7 @@ module Carson
 				audit_state == "block" ? EXIT_BLOCK : EXIT_OK
 			end
 
-			private
+		private
 			def pr_and_check_report
 				report = {
 				generated_at: Time.now.utc.iso8601,

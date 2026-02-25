@@ -2,7 +2,7 @@ module Carson
 	class Runtime
 		module Review
 			module Utility
-				private
+			private
 # Returns matching risk keywords using case-insensitive whole-word matching.
 def matched_risk_keywords( text: )
 	text_value = text.to_s

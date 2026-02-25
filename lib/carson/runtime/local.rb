@@ -276,7 +276,7 @@ module Carson
 				error_count.positive? ? EXIT_ERROR : EXIT_OK
 			end
 
-			private
+		private
 
 			def template_results
 				config.template_managed_files.map { |managed_file| template_result_for_file( managed_file: managed_file ) }

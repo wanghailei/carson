@@ -48,7 +48,7 @@ class ConfigLoadTest < Minitest::Test
 		end
 	end
 
-	private
+private
 
 	def with_env( pairs )
 		previous = {}
