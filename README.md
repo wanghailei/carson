@@ -1,124 +1,40 @@
 # Carson
 
-Carson is an outsider governance runtime for GitHub repositories.
+Carson is an outsider governance runtime for teams that need predictable GitHub policy controls without placing Carson-owned tooling inside client repositories.
 
-It runs from your workstation, applies governance consistently, and avoids placing Carson-owned tooling inside client repositories.
+## Introduction
+Repository governance often drifts over time: local protections weaken, review actions are missed, and policy checks become inconsistent between contributors.
+Carson solves this by running from your workstation or CI, applying a deterministic governance baseline, and managing only selected GitHub-native policy files where necessary.
+This model is effective because ownership stays explicit: Carson runtime assets remain outside host repositories, while merge authority remains with GitHub branch protection and human review.
 
-## Why Carson
-
-- keeps GitHub as merge authority
-- enforces local hard protection and review discipline
-- provides deterministic governance checks with stable exit codes
-- keeps host repositories clean from Carson runtime artefacts
-
-## Quick start (about 10 minutes)
-
-### 1) Prerequisites
-
+## Quickstart
+Prerequisites:
 - Ruby `>= 4.0`
 - `gem`, `git`, and `gh` available in `PATH`
 
-### 2) Install Carson
-
 ```bash
 gem install --user-install carson -v 0.7.0
-```
-
-If `carson` is not found after install:
-
-```bash
-export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
-```
-
-### 3) Verify installation
-
-```bash
 carson version
-```
-
-Expected: `0.7.0` (or newer).
-
-### 4) Bootstrap one repository
-
-```bash
 carson init /local/path/of/repo
 ```
 
-Expected outcomes:
+Expected result:
+- `carson version` prints `0.7.0` (or newer).
+- `carson init` aligns remote naming, installs Carson-managed hooks, synchronises managed `.github/*` files, and runs an initial audit.
+- Your repository is ready for daily governance commands.
 
-- remote aligned to configured `git.remote` (default `github`)
-- hooks installed under `~/.carson/hooks/<version>/`
-- commit-time governance gate enabled via managed `pre-commit` hook
-- `.github` managed files synced
-- initial audit executed
+## Where to Read Next
+- User manual: `MANUAL.md`
+- API reference: `API.md`
+- Release notes: `RELEASE.md`
 
-### 5) Commit managed GitHub files
+## Core Capabilities
+- Outsider boundary enforcement that blocks Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`).
+- Deterministic governance checks with stable exit codes for local and CI automation.
+- Managed `.github/*` template synchronisation with drift detection and repair.
+- Review governance controls (`review gate`, `review sweep`) for actionable feedback handling.
+- Local branch hygiene and fast-forward sync workflow (`sync`, `prune`).
 
-Commit generated `.github/*` files in the client repository.
-
-## CI quick start (pinned)
-
-In client repositories, pin the reusable workflow to an explicit release ref and pin the Carson version explicitly.
-
-```yaml
-name: Carson policy
-
-on:
-  pull_request:
-
-jobs:
-  governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.7.0
-    with:
-      carson_ref: "v0.7.0"
-      carson_version: "0.7.0"
-```
-
-When upgrading Carson, update both values together.
-
-## Daily minimum
-
-```bash
-carson sync
-carson audit
-carson prune
-```
-
-`carson audit` now includes a default-branch CI baseline gate and blocks when the default branch has failing checks, pending checks, or workflow files with no check-run evidence.
-
-Before recommending merge:
-
-```bash
-carson review gate
-```
-
-For scheduled late-review monitoring (for example every 8 hours in CI):
-
-```bash
-carson review sweep
-```
-
-## Outsider boundary
-
-Blocked Carson fingerprints in host repositories:
-
-- `.carson.yml`
-- `bin/carson`
-- `.tools/carson/*`
-
-Allowed managed persistence:
-
-- selected GitHub-native files under `.github/*`
-
-## Exit contract
-
-- `0 - OK`
-- `1 - runtime/configuration error`
-- `2 - policy blocked (hard stop)`
-
-## Where to read next
-
-- user onboarding and workflows: `docs/carson_user_guide.md`
-- technical behaviour and architecture: `docs/carson_tech_guide.md`
-- contributor/internal install path: `docs/carson_dev_guide.md`
-- version history and migration notes: `RELEASE.md`
+## Support
+- Open or track issues: <https://github.com/wanghailei/carson/issues>
+- Review version-specific upgrade actions: `RELEASE.md`
