@@ -21,7 +21,7 @@ The `pre-commit` hook runs `carson audit` before every commit. The same `carson 
 `carson review gate` blocks merge until every actionable reviewer comment — risk keywords, change requests — has been formally acknowledged by the PR author. No more "I missed that comment" after merge.
 
 **Template consistency.**
-Carson keeps PR templates and AI coding guidelines identical across all governed repositories. Drift is detected on every audit; `carson template apply` repairs it.
+Carson keeps PR templates and AI coding guidelines identical across all governed repositories. `carson template check` detects drift; `carson template apply` repairs it.
 
 **Centralised lint policy.**
 Lint rules come from a single policy source you control. Carson owns the lint execution path — repo-local config overrides are hard-blocked so teams cannot silently weaken the baseline.
