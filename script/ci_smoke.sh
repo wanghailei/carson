@@ -382,12 +382,11 @@ expect_exit 1 "unknown command returns runtime/configuration error" run_carson t
 expect_exit 1 "lint setup requires explicit source argument" run_carson lint setup
 
 setup_source="$tmp_root/ai-source"
-mkdir -p "$setup_source/CODING/ruby"
-cat > "$setup_source/CODING/ruby/lint.rb" <<'EOF'
-#!/usr/bin/env ruby
-exit 0
+mkdir -p "$setup_source/CODING"
+cat > "$setup_source/CODING/rubocop.yml" <<'EOF'
+AllCops:
+  DisabledByDefault: true
 EOF
-chmod +x "$setup_source/CODING/ruby/lint.rb"
 setup_config_path="$tmp_root/lint-setup-config.json"
 cat > "$setup_config_path" <<EOF
 {
@@ -396,8 +395,8 @@ cat > "$setup_config_path" <<EOF
       "ruby": {
         "enabled": true,
         "globs": ["**/*.rb"],
-        "command": ["ruby", "~/AI/CODING/ruby/lint.rb", "{files}"],
-        "config_files": ["~/AI/CODING/ruby/lint.rb"]
+        "command": ["ruby", "$repo_root/lib/carson/policy/ruby/lint.rb", "{files}"],
+        "config_files": ["~/AI/CODING/rubocop.yml"]
       },
       "javascript": {
         "enabled": false,
@@ -428,11 +427,11 @@ cat > "$setup_config_path" <<EOF
 }
 EOF
 expect_exit 0 "lint setup copies coding policy from local source" run_carson_with_config "$setup_config_path" lint setup --source "$setup_source"
-if [[ ! -f "$tmp_root/home/AI/CODING/ruby/lint.rb" ]]; then
-	echo "FAIL: lint setup did not create ~/AI/CODING/ruby/lint.rb" >&2
+if [[ ! -f "$tmp_root/home/AI/CODING/rubocop.yml" ]]; then
+	echo "FAIL: lint setup did not create ~/AI/CODING/rubocop.yml" >&2
 	exit 1
 fi
-echo "PASS: lint setup created ~/AI/CODING/ruby/lint.rb"
+echo "PASS: lint setup created ~/AI/CODING/rubocop.yml"
 
 setup_git_source="$tmp_root/ai-source-git"
 cp -R "$setup_source" "$setup_git_source"
