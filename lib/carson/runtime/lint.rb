@@ -110,7 +110,8 @@ module Carson
 				home = ENV.fetch( "HOME", "" ).to_s.strip
 				if home.start_with?( "/" )
 					path = File.join( home, ".cache", "carson" )
-					return path if FileUtils.mkdir_p( path )
+					FileUtils.mkdir_p( path )
+					return path
 				end
 				"/tmp/carson"
 			rescue StandardError
