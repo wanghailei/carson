@@ -40,7 +40,7 @@ Local repository is clean on `main`; no open PRs.
 
 6. Fresh install status:
 Carson `0.8.0` is installed locally.
-Executable is on `PATH`: `/Users/Hailei/.rbenv/shims/carson`.
+Executable is on `PATH`: `~/.rbenv/shims/carson`.
 `carson version` returns `0.8.0`.
 Fresh isolated smoke verification (lint setup, hook, and check) passed.
 
