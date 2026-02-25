@@ -2,7 +2,7 @@ module Carson
 	class Runtime
 		module Review
 			module SweepSupport
-				private
+			private
 def sweep_findings_for_pull_request( details: )
 	pr_author = details.dig( :author, :login ).to_s
 	state = details.fetch( :state )

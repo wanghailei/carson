@@ -1,0 +1,6 @@
+AllCops:
+  NewCops: enable
+
+Layout/AccessModifierIndentation:
+  Enabled: true
+  EnforcedStyle: outdent

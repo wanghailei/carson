@@ -3,7 +3,7 @@ require_relative "../lib/carson/config"
 
 module Carson
 	module RubyIndentationGuard
-		module_function
+	module_function
 
 		def run!
 			repo_root = File.expand_path( "..", __dir__ )

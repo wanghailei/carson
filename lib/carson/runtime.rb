@@ -31,7 +31,7 @@ module Carson
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
 		end
 
-		private
+	private
 
 		attr_reader :repo_root, :tool_root, :out, :err, :config, :git_adapter, :github_adapter
 

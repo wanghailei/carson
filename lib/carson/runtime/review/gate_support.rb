@@ -2,7 +2,7 @@ module Carson
 	class Runtime
 		module Review
 			module GateSupport
-				private
+			private
 			def wait_for_review_warmup
 				return unless config.review_wait_seconds.positive?
 				puts_line "warmup_wait_seconds: #{config.review_wait_seconds}"

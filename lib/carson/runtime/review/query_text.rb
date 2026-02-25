@@ -2,7 +2,7 @@ module Carson
 	class Runtime
 		module Review
 			module QueryText
-				private
+			private
 			def pull_request_connection_page_query( connection_name: )
 				case connection_name
 				when "comments"

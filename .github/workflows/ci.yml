@@ -51,6 +51,11 @@ jobs:
           ruby -c exe/carson
           ruby -c lib/carson.rb
 
+      - name: RuboCop access modifier indentation
+        run: |
+          gem install rubocop --no-document
+          rubocop --config .rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
+
       - name: Ruby indentation guard
         run: ruby script/ruby_indentation_guard.rb
 
