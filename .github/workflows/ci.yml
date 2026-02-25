@@ -32,7 +32,13 @@ jobs:
       - name: Lint policy setup
         env:
           CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
-        run: ruby exe/carson lint setup --source https://github.com/wanghailei/ai.git --ref main --force
+        run: |
+          if [ -n "${CARSON_READ_TOKEN:-}" ]; then
+            ruby exe/carson lint setup --source https://github.com/wanghailei/ai.git --ref main --force
+          else
+            echo "CARSON_READ_TOKEN is unset; using repository fixture lint policy source." >&2
+            ruby exe/carson lint setup --source test/fixtures/lint_policy_source --force
+          fi
 
       - name: Audit
         env:
