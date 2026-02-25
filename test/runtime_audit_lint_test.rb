@@ -101,6 +101,36 @@ class RuntimeAuditLintTest < Minitest::Test
 		end
 	end
 
+	def test_lint_target_files_for_pull_request_uses_configured_remote_name
+		policy_script = executable_script( name: "lint_ok", body: "#!/usr/bin/env ruby\nexit 0\n" )
+		runtime = build_runtime_with_lint_config(
+			command: [ policy_script, "{files}" ],
+			config_files: [ policy_script ]
+		)
+
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "branch", "-M", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "github", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "github", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "switch", "-c", "feature/lint-target", out: File::NULL, err: File::NULL )
+
+		FileUtils.mkdir_p( File.join( @repo_root, "lib" ) )
+		File.write( File.join( @repo_root, "lib", "feature_change.rb" ), "puts :feature\n" )
+		system( "git", "-C", @repo_root, "add", "lib/feature_change.rb", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "commit", "-m", "feature", out: File::NULL, err: File::NULL )
+
+		with_env(
+			"GITHUB_ACTIONS" => "true",
+			"GITHUB_EVENT_NAME" => "pull_request",
+			"GITHUB_BASE_REF" => "main"
+		) do
+			files, source = runtime.send( :lint_target_files )
+			assert_equal "github_pull_request", source
+			assert_includes files, "lib/feature_change.rb"
+		end
+	end
+
 private
 
 	def stage_ruby_file( relative_path:, content: )
