@@ -14,14 +14,14 @@ Prerequisites:
 - `gh` available in `PATH` for PR/check reporting (recommended, not required for core local commands)
 
 ```bash
-gem install --user-install carson -v 0.9.0
+gem install --user-install carson -v 1.0.0
 carson version
 carson lint setup --source /path/to/ai-policy-repo
 carson init /local/path/of/repo
 ```
 
 Expected result:
-- `carson version` prints `0.9.0` (or newer).
+- `carson version` prints `1.0.0` (or newer).
 - `carson lint setup` seeds `~/AI/CODING` from your explicit source.
 - Ruby lint policy data is sourced from `~/AI/CODING/rubocop.yml`; Ruby lint execution stays Carson-owned.
 - Policy files live directly under `~/AI/CODING/` (no per-language subdirectories).
