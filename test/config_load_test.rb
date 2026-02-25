@@ -8,6 +8,13 @@ class ConfigLoadTest < Minitest::Test
 		assert_includes config.path_groups.fetch( "tool" ), "install.sh"
 	end
 
+	def test_default_lint_languages_include_core_language_keys
+		config = Carson::Config.load( repo_root: Dir.pwd )
+		%w[ruby javascript css html erb].each do |language|
+			assert_includes config.lint_languages.keys, language
+		end
+	end
+
 	def test_env_overrides_global_config_values
 		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
@@ -42,6 +49,87 @@ class ConfigLoadTest < Minitest::Test
 		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
 			File.write( config_path, JSON.generate( { "review" => "invalid" } ) )
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				assert_raises( Carson::ConfigError ) { Carson::Config.load( repo_root: dir ) }
+			end
+		end
+	end
+
+	def test_lint_languages_override_loads_custom_command_and_paths
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
+			config_path = File.join( dir, "config.json" )
+			File.write(
+				config_path,
+				JSON.generate(
+					{
+						"lint" => {
+							"languages" => {
+								"ruby" => {
+									"enabled" => true,
+									"globs" => [ "**/*.rb" ],
+									"command" => [ "ruby", "~/AI/CODING/ruby/custom_lint.rb", "{files}" ],
+									"config_files" => [ "~/AI/CODING/ruby/custom_lint.rb" ]
+								}
+							}
+						}
+					}
+				)
+			)
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				config = Carson::Config.load( repo_root: dir )
+				ruby_entry = config.lint_languages.fetch( "ruby" )
+				assert_equal [ "ruby", "~/AI/CODING/ruby/custom_lint.rb", "{files}" ], ruby_entry.fetch( :command )
+				assert_equal [ File.expand_path( "~/AI/CODING/ruby/custom_lint.rb" ) ], ruby_entry.fetch( :config_files )
+			end
+		end
+	end
+
+	def test_invalid_lint_command_shape_raises_config_error
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
+			config_path = File.join( dir, "config.json" )
+			File.write(
+				config_path,
+				JSON.generate(
+					{
+						"lint" => {
+							"languages" => {
+								"ruby" => {
+									"enabled" => true,
+									"globs" => [ "**/*.rb" ],
+									"command" => "invalid",
+									"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+								}
+							}
+						}
+					}
+				)
+			)
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				assert_raises( Carson::ConfigError ) { Carson::Config.load( repo_root: dir ) }
+			end
+		end
+	end
+
+	def test_invalid_lint_globs_raises_config_error
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
+			config_path = File.join( dir, "config.json" )
+			File.write(
+				config_path,
+				JSON.generate(
+					{
+						"lint" => {
+							"languages" => {
+								"ruby" => {
+									"enabled" => true,
+									"globs" => [],
+									"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
+									"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+								}
+							}
+						}
+					}
+				)
+			)
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				assert_raises( Carson::ConfigError ) { Carson::Config.load( repo_root: dir ) }
 			end

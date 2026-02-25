@@ -177,5 +177,6 @@ module Carson
 end
 
 require_relative "runtime/local"
+require_relative "runtime/lint"
 require_relative "runtime/audit"
 require_relative "runtime/review"
