@@ -2,7 +2,7 @@ module Carson
 	class Runtime
 		module Review
 			module DataAccess
-				private
+			private
 			def pull_request_details( owner:, repo:, pr_number: )
 				node = pull_request_details_node( owner: owner, repo: repo, pr_number: pr_number )
 				paginate_pull_request_connections!( owner: owner, repo: repo, pr_number: pr_number, node: node )
