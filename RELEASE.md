@@ -15,7 +15,7 @@ Release-note scope rule:
 - Added `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` to seed `~/AI/CODING`.
 - `carson audit` now enforces custom lint policy deterministically for staged/local and CI target files.
 - Updated CI workflows to bootstrap lint policy from `wanghailei/ai` using `CARSON_READ_TOKEN`.
-- Added CI naming guard to block legacy pre-rename token reintroduction outside historical notes.
+- Added CI naming guard to block legacy pre-rename token reintroduction outside historical release notes.
 
 #### Why users should care
 
