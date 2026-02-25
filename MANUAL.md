@@ -13,7 +13,7 @@ This manual is for users who need to install Carson, configure repository govern
 Recommended installation path:
 
 ```bash
-gem install --user-install carson -v 0.8.0
+gem install --user-install carson -v 0.9.0
 ```
 
 If `carson` is not found after installation:
@@ -42,8 +42,15 @@ carson lint setup --source /path/to/ai-policy-repo
 ```
 
 `lint setup` expects the source to contain `CODING/` and writes policy files to `~/AI/CODING/`.
+For Ruby, the required policy file is `CODING/rubocop.yml`.
+Language policy files are expected directly under `CODING/` (flat layout, no language subfolders).
 Use `--ref <git-ref>` when `--source` is a git URL.
 Use `--force` to overwrite existing `~/AI/CODING` files.
+
+Audit policy notes:
+- Ruby lint policy data lives only in `~/AI/CODING/rubocop.yml`; execution logic is Carson-owned.
+- Client repositories must not contain repo-local `.rubocop.yml`; `carson audit` blocks when it exists.
+- Non-Ruby language entries remain configured but disabled by default.
 
 Run baseline initialisation:
 
@@ -72,16 +79,18 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v0.8.0
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml.8.1
     secrets:
       CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
     with:
-      carson_ref: "v0.8.0"
-      carson_version: "0.8.0"
+      carson_ref: "v0.9.0"
+      carson_version: "0.9.0"
+      rubocop_version: "1.81.0"
 ```
 
 When upgrading Carson, update both `carson_ref` and `carson_version` together.
 `CARSON_READ_TOKEN` must have read access to `wanghailei/ai` so CI can run `carson lint setup`.
+The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows (including BOS) for deterministic checks.
 
 ## Daily operations
 Start of work:

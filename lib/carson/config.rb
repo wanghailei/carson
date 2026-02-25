@@ -67,36 +67,37 @@ module Carson
 			end
 
 			def self.default_lint_languages_data
+				ruby_runner = File.expand_path( "policy/ruby/lint.rb", __dir__ )
 				{
 					"ruby" => {
 						"enabled" => true,
 						"globs" => [ "**/*.rb", "Gemfile", "*.gemspec", "Rakefile" ],
-						"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
-						"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+						"command" => [ "ruby", ruby_runner, "{files}" ],
+						"config_files" => [ "~/AI/CODING/rubocop.yml" ]
 					},
 					"javascript" => {
-						"enabled" => true,
+						"enabled" => false,
 						"globs" => [ "**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx" ],
-						"command" => [ "node", "~/AI/CODING/javascript/lint.js", "{files}" ],
-						"config_files" => [ "~/AI/CODING/javascript/lint.js" ]
+						"command" => [ "node", "~/AI/CODING/javascript.lint.js", "{files}" ],
+						"config_files" => [ "~/AI/CODING/javascript.lint.js" ]
 					},
 					"css" => {
-						"enabled" => true,
+						"enabled" => false,
 						"globs" => [ "**/*.css" ],
-						"command" => [ "node", "~/AI/CODING/css/lint.js", "{files}" ],
-						"config_files" => [ "~/AI/CODING/css/lint.js" ]
+						"command" => [ "node", "~/AI/CODING/css.lint.js", "{files}" ],
+						"config_files" => [ "~/AI/CODING/css.lint.js" ]
 					},
 					"html" => {
-						"enabled" => true,
+						"enabled" => false,
 						"globs" => [ "**/*.html" ],
-						"command" => [ "node", "~/AI/CODING/html/lint.js", "{files}" ],
-						"config_files" => [ "~/AI/CODING/html/lint.js" ]
+						"command" => [ "node", "~/AI/CODING/html.lint.js", "{files}" ],
+						"config_files" => [ "~/AI/CODING/html.lint.js" ]
 					},
 					"erb" => {
-						"enabled" => true,
+						"enabled" => false,
 						"globs" => [ "**/*.erb" ],
-						"command" => [ "ruby", "~/AI/CODING/erb/lint.rb", "{files}" ],
-						"config_files" => [ "~/AI/CODING/erb/lint.rb" ]
+						"command" => [ "ruby", "~/AI/CODING/erb.lint.rb", "{files}" ],
+						"config_files" => [ "~/AI/CODING/erb.lint.rb" ]
 					}
 				}
 			end

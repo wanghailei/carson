@@ -12,6 +12,11 @@ on:
         description: Exact Carson gem version expected in VERSION
         required: true
         type: string
+      rubocop_version:
+        description: Exact RuboCop gem version installed before Carson audit.
+        required: false
+        type: string
+        default: "1.81.0"
     secrets:
       CARSON_READ_TOKEN:
         description: Read token for private lint-policy source repository.
@@ -57,6 +62,9 @@ jobs:
           cd carson
           gem build carson.gemspec
           gem install --local "carson-${{ inputs.carson_version }}.gem"
+
+      - name: Install pinned RuboCop
+        run: gem install rubocop -v "${{ inputs.rubocop_version }}" --no-document
 
       - name: Align remote name for Carson
         working-directory: host
