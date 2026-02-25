@@ -17,6 +17,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Align remote name for Carson
+        run: |
+          if ! git remote get-url github >/dev/null 2>&1; then
+            git remote rename origin github
+          fi
+
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
