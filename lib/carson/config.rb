@@ -299,7 +299,12 @@ module Carson
 
 			def normalize_lint_language_entry( language:, raw_entry: )
 				{
-					enabled: fetch_optional_boolean( hash: raw_entry, key: "enabled", default: true ),
+					enabled: fetch_optional_boolean(
+						hash: raw_entry,
+						key: "enabled",
+						default: true,
+						key_path: "lint.languages.#{language}.enabled"
+					),
 					globs: normalize_lint_globs( language: language, value: raw_entry[ "globs" ] ),
 					command: normalize_lint_command( language: language, value: raw_entry[ "command" ] ),
 					config_files: normalize_lint_config_files( language: language, value: raw_entry[ "config_files" ] )
@@ -331,12 +336,12 @@ module Carson
 				end
 			end
 
-			def fetch_optional_boolean( hash:, key:, default: )
+			def fetch_optional_boolean( hash:, key:, default:, key_path: nil )
 				value = hash.fetch( key, default )
 				return true if value == true
 				return false if value == false
 
-				raise ConfigError, "config key #{key} must be boolean"
+				raise ConfigError, "config key #{key_path || key} must be boolean"
 			end
 	end
 end

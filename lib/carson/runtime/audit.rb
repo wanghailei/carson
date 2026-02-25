@@ -206,20 +206,30 @@ module Carson
 				base_ref = ENV.fetch( "GITHUB_BASE_REF", "" ).to_s.strip
 				return nil if base_ref.empty?
 
-				remote_name = config.git_remote.to_s.strip
-				remote_name = "origin" if remote_name.empty?
-				git_run( "fetch", "--no-tags", "--depth", "1", remote_name, base_ref )
-				candidates = [ "#{remote_name}/#{base_ref}" ]
-				candidates.each do |base|
-					stdout_text, _, success, = git_run(
-						"diff", "--name-only", "--diff-filter=ACMRTUXB", "#{base}...HEAD"
-					)
-					next unless success
+				preferred_remote = config.git_remote.to_s.strip
+				remote_name = nil
 
-					paths = stdout_text.lines.map { |line| line.to_s.strip }.reject( &:empty? )
-					return existing_repo_files( paths: paths )
+				remotes_stdout, _, remotes_success, = git_run( "remote" )
+				if remotes_success
+					available_remotes = remotes_stdout.lines.map { |line| line.to_s.strip }.reject( &:empty? )
+					candidates = [ preferred_remote, "origin", "github" ].map( &:to_s ).map( &:strip ).reject( &:empty? ).uniq
+					remote_name = candidates.find { |candidate| available_remotes.include?( candidate ) }
+					remote_name ||= available_remotes.first unless available_remotes.empty?
 				end
-				nil
+
+				remote_name ||= ( preferred_remote.empty? ? "origin" : preferred_remote )
+
+				_, _, fetch_success, = git_run( "fetch", "--no-tags", "--depth", "1", remote_name, base_ref )
+				return nil unless fetch_success
+
+				base = "#{remote_name}/#{base_ref}"
+				stdout_text, _, success, = git_run(
+					"diff", "--name-only", "--diff-filter=ACMRTUXB", "#{base}...HEAD"
+				)
+				return nil unless success
+
+				paths = stdout_text.lines.map { |line| line.to_s.strip }.reject( &:empty? )
+				existing_repo_files( paths: paths )
 			end
 
 			def lint_target_files_for_non_pr_ci
