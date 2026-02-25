@@ -7,6 +7,16 @@ Repository governance often drifts over time: local protections weaken, review a
 Carson solves this by running from your workstation or CI, applying a deterministic governance baseline, and managing only selected GitHub-native policy files where necessary.
 This model is effective because ownership stays explicit: Carson runtime assets remain outside host repositories, while merge authority remains with GitHub branch protection and human review.
 
+## Core Capabilities
+- Outsider boundary enforcement that blocks Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`).
+- Deterministic governance checks with stable exit codes for local and CI automation.
+- Ruby lint governance from `~/AI/CODING/rubocop.yml` with Carson-owned execution and deterministic local/CI blocking.
+- Hard policy block when a client repository contains repo-local `.rubocop.yml`.
+- Non-Ruby lint language entries remain present but disabled by default in this phase.
+- Managed `.github/*` template synchronisation with drift detection and repair.
+- Review governance controls (`review gate`, `review sweep`) for actionable feedback handling.
+- Local branch hygiene and fast-forward sync workflow (`sync`, `prune`).
+
 ## Quickstart
 Prerequisites:
 - Ruby `>= 4.0`
@@ -32,16 +42,6 @@ Expected result:
 - User manual: `MANUAL.md`
 - API reference: `API.md`
 - Release notes: `RELEASE.md`
-
-## Core Capabilities
-- Outsider boundary enforcement that blocks Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`).
-- Deterministic governance checks with stable exit codes for local and CI automation.
-- Ruby lint governance from `~/AI/CODING/rubocop.yml` with Carson-owned execution and deterministic local/CI blocking.
-- Hard policy block when a client repository contains repo-local `.rubocop.yml`.
-- Non-Ruby lint language entries remain present but disabled by default in this phase.
-- Managed `.github/*` template synchronisation with drift detection and repair.
-- Review governance controls (`review gate`, `review sweep`) for actionable feedback handling.
-- Local branch hygiene and fast-forward sync workflow (`sync`, `prune`).
 
 ## Support
 - Open or track issues: <https://github.com/wanghailei/carson/issues>
