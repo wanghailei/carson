@@ -23,6 +23,7 @@ Supported commands:
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
+| `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` | Seed or refresh `~/AI/CODING` policy files from an explicit source. |
 | `carson review gate` | Block until actionable review findings are resolved or convergence timeout is reached. |
 | `carson review sweep` | Scan recent PR activity and update a rolling tracking issue for late actionable feedback. |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts and detach Carson hooks path where applicable. |
@@ -59,6 +60,39 @@ Environment overrides:
 - `CARSON_REVIEW_SWEEP_WINDOW_DAYS`
 - `CARSON_REVIEW_SWEEP_STATES`
 - `CARSON_RUBY_INDENTATION`
+
+`lint.languages` schema:
+
+```json
+{
+  "lint": {
+    "languages": {
+      "ruby": {
+        "enabled": true,
+        "globs": ["**/*.rb"],
+        "command": ["ruby", "~/AI/CODING/ruby/lint.rb", "{files}"],
+        "config_files": ["~/AI/CODING/ruby/lint.rb"]
+      }
+    }
+  }
+}
+```
+
+`lint.languages` semantics:
+- `enabled`: boolean toggle per language.
+- `globs`: file-match patterns applied to the selected audit target set.
+- `command`: argv array executed without shell interpolation.
+- `config_files`: required files that must exist before lint runs.
+- `{files}` token: replaced with matched files; if omitted, matched files are appended at the end of argv.
+
+Lint target file source precedence in `carson audit`:
+- staged files for local commit-time execution.
+- PR changed files in GitHub `pull_request` events.
+- full repository tracked files in GitHub non-PR events.
+- local working-tree changes as fallback.
+
+Private-source clone token for `carson lint setup`:
+- `CARSON_READ_TOKEN` (used when `--source` points to a private GitHub repository).
 
 ## Output interface
 Report output directory precedence:

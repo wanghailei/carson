@@ -5,6 +5,61 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 0.8.0 (2026-02-25)
+
+### User Overview
+
+#### What changed
+
+- Added config-driven multi-language lint governance via `lint.languages` in `~/.carson/config.json`.
+- Added `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` to seed `~/AI/CODING`.
+- `carson audit` now enforces custom lint policy deterministically for staged/local and CI target files.
+- Updated CI workflows to bootstrap lint policy from `wanghailei/ai` using `CARSON_READ_TOKEN`.
+- Added CI naming guard to block legacy `butler` token reintroduction outside historical notes.
+
+#### Why users should care
+
+- Your own lint policy source (`~/AI/CODING`) is now enforced in both local hooks and GitHub checks.
+- Drift between developer environments and CI lint behaviour is reduced by explicit setup and policy checks.
+- Missing lint tools, missing policy files, or lint violations now stop merge-readiness with deterministic exits.
+
+#### What users must do now
+
+1. Upgrade Carson to `0.8.0`.
+2. Run `carson lint setup --source <path-or-git-url>` on each machine that runs Carson locally.
+3. Add `CARSON_READ_TOKEN` repository secret where CI calls Carson reusable workflow.
+4. Update CI pins to `carson_ref: v0.8.0` and `carson_version: 0.8.0`.
+
+#### Breaking or removed behaviour
+
+- `carson audit` now hard-blocks when configured language lint command/tool is unavailable for targeted files.
+- `carson audit` now hard-blocks when configured lint policy files are missing for targeted files.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install carson -v 0.8.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.local/bin/carson
+carson version
+carson lint setup --source /path/to/ai-policy-repo
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- Added CLI command: `carson lint setup`.
+- Added config schema section: `lint.languages`.
+- Audit target selection precedence added for local, PR CI, and non-PR CI.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+
+#### Verification evidence
+
+- Added unit coverage for lint config parsing, lint audit policy states, and lint setup source modes.
+- Extended smoke coverage for lint setup (`--source` required, local source, git URL source).
+- Extended smoke coverage for audit blocks on missing lint policy files and missing lint commands.
+
 ## 0.7.0 (2026-02-24)
 
 ### User Overview

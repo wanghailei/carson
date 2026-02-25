@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
@@ -26,6 +28,16 @@ jobs:
           if ! git remote get-url github >/dev/null 2>&1; then
             git remote rename origin github
           fi
+
+      - name: Lint policy setup
+        env:
+          CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
+        run: ruby exe/carson lint setup --source https://github.com/wanghailei/ai.git --ref main --force
+
+      - name: Audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ruby exe/carson audit
 
       - name: Review gate
         env:
@@ -40,6 +52,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
@@ -66,6 +80,13 @@ jobs:
         run: |
           if rg -n '\bcommon\b' README.md MANUAL.md API.md RELEASE.md docs lib script templates .github exe; then
             echo "legacy naming token detected" >&2
+            exit 1
+          fi
+
+      - name: Legacy outsider naming guard
+        run: |
+          if rg -n -i '\bb[u][t][l][e][r]\b' README.md MANUAL.md API.md docs lib script templates .github exe test assets; then
+            echo "legacy pre-rename token detected outside historical release notes" >&2
             exit 1
           fi
 

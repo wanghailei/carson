@@ -7,7 +7,7 @@ module Carson
 	# Config is built-in only for outsider mode; host repositories do not carry Carson config files.
 	class Config
 		attr_reader :git_remote, :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:path_groups, :template_managed_files,
+			:path_groups, :template_managed_files, :lint_languages,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation
@@ -42,6 +42,9 @@ module Carson
 				"template" => {
 					"managed_files" => [ ".github/copilot-instructions.md", ".github/pull_request_template.md" ]
 				},
+				"lint" => {
+					"languages" => default_lint_languages_data
+				},
 				"review" => {
 					"wait_seconds" => 60,
 					"poll_seconds" => 15,
@@ -60,8 +63,43 @@ module Carson
 				"style" => {
 					"ruby_indentation" => "tabs"
 				}
-			}
-		end
+				}
+			end
+
+			def self.default_lint_languages_data
+				{
+					"ruby" => {
+						"enabled" => true,
+						"globs" => [ "**/*.rb", "Gemfile", "*.gemspec", "Rakefile" ],
+						"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
+						"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+					},
+					"javascript" => {
+						"enabled" => true,
+						"globs" => [ "**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx" ],
+						"command" => [ "node", "~/AI/CODING/javascript/lint.js", "{files}" ],
+						"config_files" => [ "~/AI/CODING/javascript/lint.js" ]
+					},
+					"css" => {
+						"enabled" => true,
+						"globs" => [ "**/*.css" ],
+						"command" => [ "node", "~/AI/CODING/css/lint.js", "{files}" ],
+						"config_files" => [ "~/AI/CODING/css/lint.js" ]
+					},
+					"html" => {
+						"enabled" => true,
+						"globs" => [ "**/*.html" ],
+						"command" => [ "node", "~/AI/CODING/html/lint.js", "{files}" ],
+						"config_files" => [ "~/AI/CODING/html/lint.js" ]
+					},
+					"erb" => {
+						"enabled" => true,
+						"globs" => [ "**/*.erb" ],
+						"command" => [ "ruby", "~/AI/CODING/erb/lint.rb", "{files}" ],
+						"config_files" => [ "~/AI/CODING/erb/lint.rb" ]
+					}
+				}
+			end
 
 		def self.load_global_config_data( repo_root: )
 			path = global_config_path( repo_root: repo_root )
@@ -157,6 +195,9 @@ module Carson
 			@path_groups = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "path_groups" ).transform_values { |value| normalize_patterns( value: value ) }
 
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
+			@lint_languages = normalize_lint_languages(
+				languages_hash: fetch_hash( hash: fetch_hash( hash: data, key: "lint" ), key: "languages" )
+			)
 
 			review_hash = fetch_hash( hash: data, key: "review" )
 			@review_wait_seconds = fetch_non_negative_integer( hash: review_hash, key: "wait_seconds" )
@@ -185,6 +226,7 @@ module Carson
 				raise ConfigError, "hooks.base_path cannot be empty" if hooks_base_path.empty?
 				raise ConfigError, "hooks.required_hooks cannot be empty" if required_hooks.empty?
 				raise ConfigError, "scope.path_groups cannot be empty" if path_groups.empty?
+				raise ConfigError, "lint.languages cannot be empty" if lint_languages.empty?
 				raise ConfigError, "review.required_disposition_prefix cannot be empty" if review_disposition_prefix.empty?
 				raise ConfigError, "review.risk_keywords cannot be empty" if review_risk_keywords.empty?
 				raise ConfigError, "review.sweep.states must contain one or both of open, closed" if ( review_sweep_states - [ "open", "closed" ] ).any? || review_sweep_states.empty?
@@ -240,6 +282,61 @@ module Carson
 				patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
 				raise ConfigError, "scope.path_groups entries must contain at least one glob" if patterns.empty?
 				patterns
+			end
+
+			def normalize_lint_languages( languages_hash: )
+				raise ConfigError, "lint.languages must be an object" unless languages_hash.is_a?( Hash )
+				normalised = {}
+				languages_hash.each do |language_key, raw_entry|
+					language = language_key.to_s.strip.downcase
+					raise ConfigError, "lint.languages contains blank language key" if language.empty?
+					raise ConfigError, "lint.languages.#{language} must be an object" unless raw_entry.is_a?( Hash )
+
+					normalised[ language ] = normalize_lint_language_entry( language: language, raw_entry: raw_entry )
+				end
+				normalised
+			end
+
+			def normalize_lint_language_entry( language:, raw_entry: )
+				{
+					enabled: fetch_optional_boolean( hash: raw_entry, key: "enabled", default: true ),
+					globs: normalize_lint_globs( language: language, value: raw_entry[ "globs" ] ),
+					command: normalize_lint_command( language: language, value: raw_entry[ "command" ] ),
+					config_files: normalize_lint_config_files( language: language, value: raw_entry[ "config_files" ] )
+				}
+			end
+
+			def normalize_lint_globs( language:, value: )
+				raise ConfigError, "lint.languages.#{language}.globs must be an array" unless value.is_a?( Array )
+				patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
+				raise ConfigError, "lint.languages.#{language}.globs must contain at least one pattern" if patterns.empty?
+				patterns
+			end
+
+			def normalize_lint_command( language:, value: )
+				raise ConfigError, "lint.languages.#{language}.command must be an array" unless value.is_a?( Array )
+				command = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
+				raise ConfigError, "lint.languages.#{language}.command must contain at least one argument" if command.empty?
+				command
+			end
+
+			def normalize_lint_config_files( language:, value: )
+				raise ConfigError, "lint.languages.#{language}.config_files must be an array" unless value.is_a?( Array )
+				files = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
+				raise ConfigError, "lint.languages.#{language}.config_files must contain at least one path" if files.empty?
+				files.map do |path|
+					expanded = path.start_with?( "~" ) ? File.expand_path( path ) : path
+					raise ConfigError, "lint.languages.#{language}.config_files entries must be absolute paths or ~/ paths" unless expanded.start_with?( "/" )
+					expanded
+				end
+			end
+
+			def fetch_optional_boolean( hash:, key:, default: )
+				value = hash.fetch( key, default )
+				return true if value == true
+				return false if value == false
+
+				raise ConfigError, "config key #{key} must be boolean"
 			end
 	end
 end

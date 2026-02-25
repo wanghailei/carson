@@ -14,5 +14,6 @@ fi
 if ! "${carson_command[@]}" audit; then
 	echo "Carson policy: commit blocked by governance audit." >&2
 	echo "Resolve reported policy blocks before committing." >&2
+	echo "If lint policy files are missing, run: carson lint setup --source <path-or-git-url>" >&2
 	exit 1
 fi

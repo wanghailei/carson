@@ -14,13 +14,15 @@ Prerequisites:
 - `gh` available in `PATH` for PR/check reporting (recommended, not required for core local commands)
 
 ```bash
-gem install --user-install carson -v 0.7.0
+gem install --user-install carson -v 0.8.0
 carson version
+carson lint setup --source /path/to/ai-policy-repo
 carson init /local/path/of/repo
 ```
 
 Expected result:
-- `carson version` prints `0.7.0` (or newer).
+- `carson version` prints `0.8.0` (or newer).
+- `carson lint setup` seeds `~/AI/CODING` from your explicit source.
 - `carson init` aligns remote naming, installs Carson-managed hooks, synchronises managed `.github/*` files, and runs an initial audit.
 - Your repository is ready for daily governance commands.
 
@@ -32,6 +34,7 @@ Expected result:
 ## Core Capabilities
 - Outsider boundary enforcement that blocks Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`).
 - Deterministic governance checks with stable exit codes for local and CI automation.
+- Custom multi-language lint governance from `~/AI/CODING` with deterministic local and CI blocking.
 - Managed `.github/*` template synchronisation with drift detection and repair.
 - Review governance controls (`review gate`, `review sweep`) for actionable feedback handling.
 - Local branch hygiene and fast-forward sync workflow (`sync`, `prune`).
