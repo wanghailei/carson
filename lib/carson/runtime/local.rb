@@ -471,41 +471,42 @@ module Carson
 				error_text.to_s.downcase.include?( "not fully merged" )
 			end
 
-				# Guarded force-delete policy for stale branches:
-				# 1) safe delete failure must be merge-related (`not fully merged`),
-				# 2) gh must confirm at least one merged PR for this exact branch into configured main.
-				def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
-					return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
-					return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
+			# Guarded force-delete policy for stale branches:
+			# 1) safe delete failure must be merge-related (`not fully merged`),
+			# 2) gh must confirm at least one merged PR for this exact branch into configured main.
+			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
+				return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
+				return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
 
-					tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
-					unless tip_sha_success
-						error_text = tip_sha_error.to_s.strip
-						error_text = "unable to read local branch tip sha" if error_text.empty?
-						return [ nil, error_text ]
-					end
-					branch_tip_sha = tip_sha_text.to_s.strip
-					return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
-
-					merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+				unless tip_sha_success
+					error_text = tip_sha_error.to_s.strip
+					error_text = "unable to read local branch tip sha" if error_text.empty?
+					return [ nil, error_text ]
 				end
+				branch_tip_sha = tip_sha_text.to_s.strip
+				return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
+
+				merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+			end
 
 			# Finds merged PR evidence for the exact local branch tip; this blocks old-PR false positives.
 			def merged_pr_for_branch( branch:, branch_tip_sha: )
 				owner, repo = repository_coordinates
 				results = []
 				page = 1
+				max_pages = 50
 				loop do
 					stdout_text, stderr_text, success, = gh_run(
-					"api", "repos/#{owner}/#{repo}/pulls",
-					"--method", "GET",
-					"-f", "state=closed",
-					"-f", "base=#{config.main_branch}",
-					"-f", "head=#{owner}:#{branch}",
-					"-f", "sort=updated",
-					"-f", "direction=desc",
-					"-f", "per_page=100",
-					"-f", "page=#{page}"
+						"api", "repos/#{owner}/#{repo}/pulls",
+						"--method", "GET",
+						"-f", "state=closed",
+						"-f", "base=#{config.main_branch}",
+						"-f", "head=#{owner}:#{branch}",
+						"-f", "sort=updated",
+						"-f", "direction=desc",
+						"-f", "per_page=100",
+						"-f", "page=#{page}"
 					)
 					unless success
 						error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
@@ -523,11 +524,14 @@ module Carson
 						next if merged_at.nil?
 
 						results << {
-						number: entry[ "number" ],
-						url: entry[ "html_url" ].to_s,
-						merged_at: merged_at.utc.iso8601,
-						head_sha: entry.dig( "head", "sha" ).to_s
+							number: entry[ "number" ],
+							url: entry[ "html_url" ].to_s,
+							merged_at: merged_at.utc.iso8601,
+							head_sha: entry.dig( "head", "sha" ).to_s
 						}
+					end
+					if page >= max_pages
+						return [ nil, "merged PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ]
 					end
 					page += 1
 				end
@@ -541,7 +545,6 @@ module Carson
 				[ nil, e.message ]
 			end
 
-			# Thin `gh` monitor for PR and required checks; local audit continues on API gaps.
 			def working_tree_clean?
 				git_capture!( "status", "--porcelain" ).strip.empty?
 			end
