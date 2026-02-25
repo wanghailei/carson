@@ -12,7 +12,7 @@ This model is effective because ownership stays explicit: Carson runtime assets 
 - Deterministic governance checks with stable exit codes for local and CI automation.
 - Ruby lint governance from `~/AI/CODING/rubocop.yml` with Carson-owned execution and deterministic local/CI blocking.
 - Hard policy block when a client repository contains repo-local `.rubocop.yml`.
-- Non-Ruby lint language entries remain present but disabled by default in this phase.
+- Non-Ruby lint language entries are present but disabled by default.
 - Managed `.github/*` template synchronisation with drift detection and repair.
 - Review governance controls (`review gate`, `review sweep`) for actionable feedback handling.
 - Local branch hygiene and fast-forward sync workflow (`sync`, `prune`).
