@@ -3,6 +3,52 @@
 ## Audience
 This document is for Carson contributors and internal maintainers who need architecture, runtime contract, and development workflow guidance.
 
+## Housemove handoff snapshot (2026-02-25)
+1. Product identity:
+Product name is Carson.
+Canonical repository is `wanghailei/carson` (local checkout directory may still use an older folder name).
+
+2. Locked operating model:
+Carson is outsider-only: no Carson-owned artefacts should live in client repositories.
+Allowed persistence in client repositories is GitHub-native managed files only.
+Runtime is `rbenv` Ruby `>= 4.0`.
+Exit contract is fixed:
+- `0 - OK`
+- `1 - runtime/configuration error`
+- `2 - policy blocked (hard stop)`
+
+3. Governance and review policy:
+Merge readiness is blocked by unresolved actionable review items (`review gate`).
+Scheduled late-comment detection exists (`review sweep`).
+Disposition replies must reference target URLs and use the configured prefix.
+Branch hygiene and prune policy is enforced.
+
+4. Major delivered versions:
+`v0.7.0` release/tag published.
+`v0.8.0` release/tag published.
+`0.8.0` adds custom multi-language lint governance:
+- `carson lint setup --source ...`
+- `~/.carson/config.json` `lint.languages`
+- deterministic blocking on missing config, missing tooling, and lint failures
+- local plus GitHub CI enforcement
+
+5. Latest integration outcome:
+PR `#49` merged to `main` at commit `19b0713`.
+Required checks passed before merge (`Carson governance`, `Syntax and smoke tests`).
+Review threads were resolved and disposition acknowledgements completed.
+Local repository is clean on `main`; no open PRs.
+
+6. Fresh install status:
+Carson `0.8.0` is installed locally.
+Executable is on `PATH`: `/Users/Hailei/.rbenv/shims/carson`.
+`carson version` returns `0.8.0`.
+Fresh isolated smoke verification (lint setup, hook, and check) passed.
+
+7. Lessons promoted:
+Never put markdown/backticks directly into shell CLI body strings.
+Always use temp files plus `--body-file` or `--notes-file` for PR/release text.
+Temp artefacts should go to `~/.cache` by default, with `/tmp` only as fallback.
+
 ## Architectural overview
 Primary runtime structure:
 - `exe/carson`: executable entrypoint.
