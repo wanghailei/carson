@@ -136,6 +136,33 @@ class ConfigLoadTest < Minitest::Test
 		end
 	end
 
+	def test_invalid_lint_enabled_type_raises_config_error_with_full_path
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
+			config_path = File.join( dir, "config.json" )
+			File.write(
+				config_path,
+				JSON.generate(
+					{
+						"lint" => {
+							"languages" => {
+								"ruby" => {
+									"enabled" => "yes",
+									"globs" => [ "**/*.rb" ],
+									"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
+									"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+								}
+							}
+						}
+					}
+				)
+			)
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				error = assert_raises( Carson::ConfigError ) { Carson::Config.load( repo_root: dir ) }
+				assert_match( /lint\.languages\.ruby\.enabled/, error.message )
+			end
+		end
+	end
+
 private
 
 	def with_env( pairs )
