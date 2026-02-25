@@ -21,7 +21,7 @@ class RuntimeLintSetupTest < Minitest::Test
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: source_root, ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert File.file?( File.join( @tmp_dir, "AI", "CODING", "ruby", "lint.rb" ) )
+			assert File.file?( File.join( @tmp_dir, "AI", "CODING", "rubocop.yml" ) )
 		end
 	end
 
@@ -32,7 +32,7 @@ class RuntimeLintSetupTest < Minitest::Test
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: "file://#{source_repo}", ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert File.file?( File.join( @tmp_dir, "AI", "CODING", "ruby", "lint.rb" ) )
+			assert File.file?( File.join( @tmp_dir, "AI", "CODING", "rubocop.yml" ) )
 		end
 	end
 
@@ -44,12 +44,12 @@ class RuntimeLintSetupTest < Minitest::Test
 		end
 	end
 
-	def test_lint_setup_blocks_when_required_policy_files_are_still_missing
-		source_root = build_source_tree( include_javascript: false )
-		runtime = build_runtime_for_setup( include_javascript: true )
+	def test_lint_setup_returns_runtime_error_when_required_ruby_policy_file_is_missing
+		source_root = build_source_tree( include_javascript: false, include_ruby: false )
+		runtime = build_runtime_for_setup( include_javascript: false )
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: source_root, ref: "main", force: false )
-			assert_equal Carson::Runtime::EXIT_BLOCK, status
+			assert_equal Carson::Runtime::EXIT_ERROR, status
 		end
 	end
 
@@ -61,8 +61,8 @@ private
 			"ruby" => {
 				"enabled" => true,
 				"globs" => [ "**/*.rb" ],
-				"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
-				"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+				"command" => [ "ruby", "/tmp/carson-ruby-lint.rb", "{files}" ],
+				"config_files" => [ "~/AI/CODING/rubocop.yml" ]
 			},
 			"javascript" => {
 				"enabled" => false,
@@ -93,8 +93,8 @@ private
 			languages[ "javascript" ] = {
 				"enabled" => true,
 				"globs" => [ "**/*.js" ],
-				"command" => [ "node", "~/AI/CODING/javascript/lint.js", "{files}" ],
-				"config_files" => [ "~/AI/CODING/javascript/lint.js" ]
+				"command" => [ "node", "~/AI/CODING/javascript.lint.js", "{files}" ],
+				"config_files" => [ "~/AI/CODING/javascript.lint.js" ]
 			}
 		end
 		File.write( config_path, JSON.generate( { "lint" => { "languages" => languages } } ) )
@@ -108,13 +108,14 @@ private
 		end
 	end
 
-	def build_source_tree( include_javascript: )
+	def build_source_tree( include_javascript:, include_ruby: true )
 		source_root = File.join( @tmp_dir, "source" )
-		FileUtils.mkdir_p( File.join( source_root, "CODING", "ruby" ) )
-		File.write( File.join( source_root, "CODING", "ruby", "lint.rb" ), "#!/usr/bin/env ruby\nexit 0\n" )
+		FileUtils.mkdir_p( File.join( source_root, "CODING" ) )
+		if include_ruby
+			File.write( File.join( source_root, "CODING", "rubocop.yml" ), "AllCops:\n  DisabledByDefault: true\n" )
+		end
 		if include_javascript
-			FileUtils.mkdir_p( File.join( source_root, "CODING", "javascript" ) )
-			File.write( File.join( source_root, "CODING", "javascript", "lint.js" ), "process.exit( 0 )\n" )
+			File.write( File.join( source_root, "CODING", "javascript.lint.js" ), "process.exit( 0 )\n" )
 		end
 		source_root
 	end

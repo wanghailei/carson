@@ -5,6 +5,61 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 0.9.0 (2026-02-25)
+
+### User Overview
+
+#### What changed
+
+- Ruby lint policy path is now flat: source `CODING/rubocop.yml`, runtime `~/AI/CODING/rubocop.yml`.
+- Ruby lint execution now runs through Carson-owned runtime code (`lib/carson/policy/ruby/lint.rb`).
+- `carson audit` now hard-blocks outsider repositories that include repo-local `.rubocop.yml`.
+- Default non-Ruby lint policy entries remain present but disabled, and use flat file names (`javascript.lint.js`, `css.lint.js`, `html.lint.js`, `erb.lint.rb`).
+- Carson governance workflows now install a pinned RuboCop version before audit execution.
+
+#### Why users should care
+
+- Policy ownership is explicit: `~/AI/CODING` stores policy data, while Carson owns execution logic.
+- A flat policy layout removes language-subdirectory drift and simplifies setup.
+- Repo-local RuboCop policy overrides are now blocked to keep governance deterministic.
+
+#### What users must do now
+
+1. Upgrade Carson to `0.9.0`.
+2. Ensure your policy source provides `CODING/rubocop.yml` and rerun `carson lint setup --source <path-or-git-url> --force`.
+3. Remove repo-local `.rubocop.yml` files from governed repositories.
+4. If you use Carson reusable workflow pins, set `carson_ref: v0.9.0`, `carson_version: 0.9.0`, and `rubocop_version`.
+
+#### Breaking or removed behaviour
+
+- Carson no longer uses `CODING/ruby/rubocop.yml` as the default Ruby policy source path.
+- Carson no longer defaults non-Ruby policy paths to language subdirectories under `CODING/`.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install carson -v 0.9.0
+mkdir -p ~/.local/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.local/bin/carson
+carson version
+carson lint setup --source /path/to/ai-policy-repo --force
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- Default Ruby lint `config_files` path changed to `~/AI/CODING/rubocop.yml`.
+- Default Ruby lint `command` now invokes Carson-owned runner code.
+- Default non-Ruby lint policy paths now use flat file names under `~/AI/CODING/`.
+- `carson audit` now blocks repo-local `.rubocop.yml` in outsider mode.
+- Exit status contract remains unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+
+#### Verification evidence
+
+- Ruby unit suite passed on Ruby `4.0.1` (`41 runs, 126 assertions, 0 failures`).
+- Carson smoke suite passed on Ruby `4.0.1` (`Carson smoke tests passed.`).
+
 ## 0.8.0 (2026-02-25)
 
 ### User Overview

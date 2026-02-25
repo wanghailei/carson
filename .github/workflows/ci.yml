@@ -8,6 +8,8 @@ jobs:
   governance:
     name: Carson governance
     runs-on: ubuntu-latest
+    env:
+      RUBOCOP_VERSION: "1.81.0"
     permissions:
       contents: read
       pull-requests: read
@@ -22,6 +24,9 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
+
+      - name: Install pinned RuboCop
+        run: gem install rubocop -v "$RUBOCOP_VERSION" --no-document
 
       - name: Align remote name for Carson
         run: |
@@ -57,6 +62,8 @@ jobs:
   smoke:
     name: Syntax and smoke tests
     runs-on: ubuntu-latest
+    env:
+      RUBOCOP_VERSION: "1.81.0"
 
     steps:
       - name: Checkout
@@ -76,7 +83,7 @@ jobs:
 
       - name: RuboCop access modifier indentation
         run: |
-          gem install rubocop --no-document
+          gem install rubocop -v "$RUBOCOP_VERSION" --no-document
           rubocop --config .rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
 
       - name: Ruby indentation guard

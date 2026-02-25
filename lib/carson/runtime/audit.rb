@@ -275,6 +275,18 @@ module Carson
 					exit_code: 0
 				}
 				puts_line "lint_language: #{language} enabled=#{report.fetch( :enabled )} files=#{report.fetch( :file_count )}"
+				if language == "ruby" && outsider_mode?
+					local_rubocop_path = File.join( repo_root, ".rubocop.yml" )
+					if File.file?( local_rubocop_path )
+						report[ :status ] = "block"
+						report[ :reason ] = "repo-local RuboCop config is forbidden: #{relative_path( local_rubocop_path )}; remove it and use ~/AI/CODING/rubocop.yml."
+						report[ :exit_code ] = EXIT_BLOCK
+						puts_line "lint_#{language}_status: block"
+						puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
+						puts_line "ACTION: remove .rubocop.yml from this repository and run carson lint setup --source <path-or-git-url>."
+						return report
+					end
+				end
 				return report unless report.fetch( :enabled )
 				return report if candidate_files.empty?
 
