@@ -529,12 +529,29 @@ module Carson
 							merged_at: merged_at.utc.iso8601,
 							head_sha: entry.dig( "head", "sha" ).to_s
 						}
+						end
+						if page >= max_pages
+							probe_stdout_text, probe_stderr_text, probe_success, = gh_run(
+								"api", "repos/#{owner}/#{repo}/pulls",
+								"--method", "GET",
+								"-f", "state=closed",
+								"-f", "base=#{config.main_branch}",
+								"-f", "head=#{owner}:#{branch}",
+								"-f", "sort=updated",
+								"-f", "direction=desc",
+								"-f", "per_page=100",
+								"-f", "page=#{page + 1}"
+							)
+							unless probe_success
+								error_text = gh_error_text( stdout_text: probe_stdout_text, stderr_text: probe_stderr_text, fallback: "unable to verify merged PR pagination limit for branch #{branch}" )
+								return [ nil, error_text ]
+							end
+							probe_nodes = Array( JSON.parse( probe_stdout_text ) )
+							return [ nil, "merged PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ] unless probe_nodes.empty?
+							break
+						end
+						page += 1
 					end
-					if page >= max_pages
-						return [ nil, "merged PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ]
-					end
-					page += 1
-				end
 				latest = results.max_by { |item| item.fetch( :merged_at ) }
 				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
 
