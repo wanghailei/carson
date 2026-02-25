@@ -3,7 +3,7 @@
 Release-note scope rule:
 
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
-- Operational usage guides live in `docs/carson_user_guide.md`.
+- Operational usage guides live in `MANUAL.md` and `API.md`.
 
 ## 0.7.0 (2026-02-24)
 
