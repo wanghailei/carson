@@ -286,21 +286,4 @@ private
 		runtime
 	end
 
-	def with_env( pairs )
-		previous = {}
-		pairs.each do |key, value|
-			previous[ key ] = ENV.key?( key ) ? ENV.fetch( key ) : :__missing__
-			ENV[ key ] = value
-		end
-		yield
-	ensure
-		pairs.each_key do |key|
-			value = previous.fetch( key )
-			if value == :__missing__
-				ENV.delete( key )
-			else
-				ENV[ key ] = value
-			end
-		end
-	end
 end

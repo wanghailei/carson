@@ -12,6 +12,7 @@ module Carson
 			include GateSupport
 			include SweepSupport
 			include Utility
+
 			def review_gate!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -24,32 +25,32 @@ module Carson
 				owner, repo = repository_coordinates
 				pr_number_override = carson_pr_number_override
 				pr_summary =
-				if pr_number_override.nil?
-					current_pull_request_for_branch( branch_name: current_branch )
-				else
-					details = pull_request_details( owner: owner, repo: repo, pr_number: pr_number_override )
-					{
-					number: details.fetch( :number ),
-					title: details.fetch( :title ),
-					url: details.fetch( :url ),
-					state: details.fetch( :state )
-					}
-				end
+					if pr_number_override.nil?
+						current_pull_request_for_branch( branch_name: current_branch )
+					else
+						details = pull_request_details( owner: owner, repo: repo, pr_number: pr_number_override )
+						{
+							number: details.fetch( :number ),
+							title: details.fetch( :title ),
+							url: details.fetch( :url ),
+							state: details.fetch( :state )
+						}
+					end
 				if pr_summary.nil?
 					puts_line "BLOCK: no pull request found for branch #{current_branch}."
 					report = {
-					generated_at: Time.now.utc.iso8601,
-					branch: current_branch,
-					status: "block",
-					converged: false,
-					wait_seconds: config.review_wait_seconds,
-					poll_seconds: config.review_poll_seconds,
-					max_polls: config.review_max_polls,
-					block_reasons: [ "no pull request found for current branch" ],
-					pr: nil,
-					unresolved_threads: [],
-					actionable_top_level: [],
-					unacknowledged_actionable: []
+						generated_at: Time.now.utc.iso8601,
+						branch: current_branch,
+						status: "block",
+						converged: false,
+						wait_seconds: config.review_wait_seconds,
+						poll_seconds: config.review_poll_seconds,
+						max_polls: config.review_max_polls,
+						block_reasons: [ "no pull request found for current branch" ],
+						pr: nil,
+						unresolved_threads: [],
+						actionable_top_level: [],
+						unacknowledged_actionable: []
 					}
 					write_review_gate_report( report: report )
 					return EXIT_BLOCK
@@ -89,24 +90,24 @@ module Carson
 				end
 
 				report = {
-				generated_at: Time.now.utc.iso8601,
-				branch: current_branch,
-				status: block_reasons.empty? ? "ok" : "block",
-				converged: converged,
-				wait_seconds: config.review_wait_seconds,
-				poll_seconds: config.review_poll_seconds,
-				max_polls: config.review_max_polls,
-				poll_attempts: poll_attempts,
-				block_reasons: block_reasons,
-				pr: {
-				number: pr_summary.fetch( :number ),
-				title: pr_summary.fetch( :title ),
-				url: pr_summary.fetch( :url ),
-				state: pr_summary.fetch( :state )
-				},
-				unresolved_threads: last_snapshot.fetch( :unresolved_threads ),
-				actionable_top_level: last_snapshot.fetch( :actionable_top_level ),
-				unacknowledged_actionable: last_snapshot.fetch( :unacknowledged_actionable )
+					generated_at: Time.now.utc.iso8601,
+					branch: current_branch,
+					status: block_reasons.empty? ? "ok" : "block",
+					converged: converged,
+					wait_seconds: config.review_wait_seconds,
+					poll_seconds: config.review_poll_seconds,
+					max_polls: config.review_max_polls,
+					poll_attempts: poll_attempts,
+					block_reasons: block_reasons,
+					pr: {
+						number: pr_summary.fetch( :number ),
+						title: pr_summary.fetch( :title ),
+						url: pr_summary.fetch( :url ),
+						state: pr_summary.fetch( :state )
+					},
+					unresolved_threads: last_snapshot.fetch( :unresolved_threads ),
+					actionable_top_level: last_snapshot.fetch( :actionable_top_level ),
+					unacknowledged_actionable: last_snapshot.fetch( :unacknowledged_actionable )
 				}
 				write_review_gate_report( report: report )
 				if block_reasons.empty?
@@ -149,15 +150,15 @@ module Carson
 				findings.sort_by! { |item| [ item.fetch( :pr_number ), item.fetch( :created_at ).to_s, item.fetch( :url ) ] }
 				issue_result = upsert_review_sweep_tracking_issue( owner: owner, repo: repo, findings: findings )
 				report = {
-				generated_at: Time.now.utc.iso8601,
-				status: findings.empty? ? "ok" : "block",
-				window_days: config.review_sweep_window_days,
-				states: config.review_sweep_states,
-				cutoff_time: cutoff_time.utc.iso8601,
-				candidate_count: pull_requests.count,
-				finding_count: findings.count,
-				findings: findings,
-				tracking_issue: issue_result
+					generated_at: Time.now.utc.iso8601,
+					status: findings.empty? ? "ok" : "block",
+					window_days: config.review_sweep_window_days,
+					states: config.review_sweep_states,
+					cutoff_time: cutoff_time.utc.iso8601,
+					candidate_count: pull_requests.count,
+					finding_count: findings.count,
+					findings: findings,
+					tracking_issue: issue_result
 				}
 				write_review_sweep_report( report: report )
 				puts_line "finding_count: #{findings.count}"

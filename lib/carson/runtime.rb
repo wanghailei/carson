@@ -27,7 +27,7 @@ module Carson
 			@out = out
 			@err = err
 			@config = Config.load( repo_root: repo_root )
-			@git_adapter = Adapters::Git.new( repo_root: repo_root, out: out, err: err )
+			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
 		end
 

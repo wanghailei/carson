@@ -70,4 +70,13 @@ class RuntimeAuditScopeTest < Minitest::Test
 		assert_equal "ok", scope.fetch( :status )
 		assert_equal [ "tool" ], scope.fetch( :core_groups )
 	end
+
+	def test_build_runtime_supports_outsider_mode_when_tool_root_differs
+		runtime = nil
+		repo_root = nil
+		runtime, repo_root = build_runtime( tool_root: File.expand_path( "..", __dir__ ) )
+		assert_equal true, runtime.send( :outsider_mode? )
+	ensure
+		destroy_runtime_repo( repo_root: repo_root ) unless repo_root.nil?
+	end
 end
