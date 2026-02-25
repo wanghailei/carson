@@ -42,14 +42,14 @@ Configuration contract:
 Local setup:
 
 ```bash
-bundle install
-bundle exec ruby -v
+ruby -v
+gem build carson.gemspec
 ```
 
 Run test suite:
 
 ```bash
-bundle exec ruby -Itest -e 'Dir.glob("test/**/*_test.rb").sort.each { |path| require File.expand_path(path) }'
+ruby -Itest -e 'Dir.glob("test/**/*_test.rb").sort.each { |path| require File.expand_path(path) }'
 ```
 
 Run smoke verification:
