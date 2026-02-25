@@ -190,7 +190,24 @@ module Carson
 						end
 
 						break if stop_paging
-						raise "review sweep pull request pagination exceeded safety limit (#{max_pages} pages)" if page >= max_pages
+						if page >= max_pages
+							probe_stdout_text, probe_stderr_text, probe_success, = gh_run(
+								"api", "repos/#{owner}/#{repo}/pulls",
+								"--method", "GET",
+								"-f", "state=all",
+								"-f", "sort=updated",
+								"-f", "direction=desc",
+								"-f", "per_page=100",
+								"-f", "page=#{page + 1}"
+							)
+							unless probe_success
+								error_text = gh_error_text( stdout_text: probe_stdout_text, stderr_text: probe_stderr_text, fallback: "unable to verify review sweep pagination limit" )
+								raise error_text
+							end
+							probe_nodes = Array( JSON.parse( probe_stdout_text ) )
+							raise "review sweep pull request pagination exceeded safety limit (#{max_pages} pages)" unless probe_nodes.empty?
+							break
+						end
 
 						page += 1
 					end
