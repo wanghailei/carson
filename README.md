@@ -14,15 +14,17 @@ Prerequisites:
 - `gh` available in `PATH` for PR/check reporting (recommended, not required for core local commands)
 
 ```bash
-gem install --user-install carson -v 0.8.0
+gem install --user-install carson -v 0.9.0
 carson version
 carson lint setup --source /path/to/ai-policy-repo
 carson init /local/path/of/repo
 ```
 
 Expected result:
-- `carson version` prints `0.8.0` (or newer).
+- `carson version` prints `0.9.0` (or newer).
 - `carson lint setup` seeds `~/AI/CODING` from your explicit source.
+- Ruby lint policy data is sourced from `~/AI/CODING/rubocop.yml`; Ruby lint execution stays Carson-owned.
+- Policy files live directly under `~/AI/CODING/` (no per-language subdirectories).
 - `carson init` aligns remote naming, installs Carson-managed hooks, synchronises managed `.github/*` files, and runs an initial audit.
 - Your repository is ready for daily governance commands.
 
@@ -34,7 +36,9 @@ Expected result:
 ## Core Capabilities
 - Outsider boundary enforcement that blocks Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`).
 - Deterministic governance checks with stable exit codes for local and CI automation.
-- Custom multi-language lint governance from `~/AI/CODING` with deterministic local and CI blocking.
+- Ruby lint governance from `~/AI/CODING/rubocop.yml` with Carson-owned execution and deterministic local/CI blocking.
+- Hard policy block when a client repository contains repo-local `.rubocop.yml`.
+- Non-Ruby lint language entries remain present but disabled by default in this phase.
 - Managed `.github/*` template synchronisation with drift detection and repair.
 - Review governance controls (`review gate`, `review sweep`) for actionable feedback handling.
 - Local branch hygiene and fast-forward sync workflow (`sync`, `prune`).

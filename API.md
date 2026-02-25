@@ -70,8 +70,8 @@ Environment overrides:
       "ruby": {
         "enabled": true,
         "globs": ["**/*.rb"],
-        "command": ["ruby", "~/AI/CODING/ruby/lint.rb", "{files}"],
-        "config_files": ["~/AI/CODING/ruby/lint.rb"]
+        "command": ["ruby", "/absolute/path/to/carson/lib/carson/policy/ruby/lint.rb", "{files}"],
+        "config_files": ["~/AI/CODING/rubocop.yml"]
       }
     }
   }
@@ -84,6 +84,9 @@ Environment overrides:
 - `command`: argv array executed without shell interpolation.
 - `config_files`: required files that must exist before lint runs.
 - `{files}` token: replaced with matched files; if omitted, matched files are appended at the end of argv.
+- Default Ruby policy source is `~/AI/CODING/rubocop.yml`; Ruby execution logic is Carson-owned.
+- Client repositories containing repo-local `.rubocop.yml` are hard-blocked by `carson audit` in outsider mode.
+- Non-Ruby language entries (`javascript`, `css`, `html`, `erb`) are present but disabled by default.
 
 Lint target file source precedence in `carson audit`:
 - staged files for local commit-time execution.
@@ -93,6 +96,12 @@ Lint target file source precedence in `carson audit`:
 
 Private-source clone token for `carson lint setup`:
 - `CARSON_READ_TOKEN` (used when `--source` points to a private GitHub repository).
+
+Ruby source requirement for `carson lint setup` (when Ruby lint is enabled):
+- `CODING/rubocop.yml` must exist in the source tree.
+
+Policy layout requirement:
+- Language policy files are stored directly under `CODING/` and copied to `~/AI/CODING/` without language subdirectories.
 
 ## Output interface
 Report output directory precedence:

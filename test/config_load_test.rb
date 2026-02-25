@@ -15,6 +15,29 @@ class ConfigLoadTest < Minitest::Test
 		end
 	end
 
+	def test_default_ruby_lint_uses_carson_runner_and_global_rubocop_policy
+		config = Carson::Config.load( repo_root: Dir.pwd )
+		ruby_entry = config.lint_languages.fetch( "ruby" )
+		expected_runner = File.expand_path( "../lib/carson/policy/ruby/lint.rb", __dir__ )
+		assert_equal [ "ruby", expected_runner, "{files}" ], ruby_entry.fetch( :command )
+		assert_equal [ File.expand_path( "~/AI/CODING/rubocop.yml" ) ], ruby_entry.fetch( :config_files )
+	end
+
+	def test_non_ruby_lint_languages_are_disabled_by_default
+		config = Carson::Config.load( repo_root: Dir.pwd )
+		expected_files = {
+			"javascript" => "~/AI/CODING/javascript.lint.js",
+			"css" => "~/AI/CODING/css.lint.js",
+			"html" => "~/AI/CODING/html.lint.js",
+			"erb" => "~/AI/CODING/erb.lint.rb"
+		}
+		expected_files.each do |language, expected_file|
+			entry = config.lint_languages.fetch( language )
+			assert_equal false, entry.fetch( :enabled )
+			assert_equal [ File.expand_path( expected_file ) ], entry.fetch( :config_files )
+		end
+	end
+
 	def test_env_overrides_global_config_values
 		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
@@ -67,8 +90,8 @@ class ConfigLoadTest < Minitest::Test
 								"ruby" => {
 									"enabled" => true,
 									"globs" => [ "**/*.rb" ],
-									"command" => [ "ruby", "~/AI/CODING/ruby/custom_lint.rb", "{files}" ],
-									"config_files" => [ "~/AI/CODING/ruby/custom_lint.rb" ]
+									"command" => [ "ruby", "~/AI/CODING/custom_ruby_lint.rb", "{files}" ],
+									"config_files" => [ "~/AI/CODING/custom_ruby_lint.rb" ]
 								}
 							}
 						}
@@ -78,8 +101,8 @@ class ConfigLoadTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				config = Carson::Config.load( repo_root: dir )
 				ruby_entry = config.lint_languages.fetch( "ruby" )
-				assert_equal [ "ruby", "~/AI/CODING/ruby/custom_lint.rb", "{files}" ], ruby_entry.fetch( :command )
-				assert_equal [ File.expand_path( "~/AI/CODING/ruby/custom_lint.rb" ) ], ruby_entry.fetch( :config_files )
+				assert_equal [ "ruby", "~/AI/CODING/custom_ruby_lint.rb", "{files}" ], ruby_entry.fetch( :command )
+				assert_equal [ File.expand_path( "~/AI/CODING/custom_ruby_lint.rb" ) ], ruby_entry.fetch( :config_files )
 			end
 		end
 	end
@@ -97,7 +120,7 @@ class ConfigLoadTest < Minitest::Test
 									"enabled" => true,
 									"globs" => [ "**/*.rb" ],
 									"command" => "invalid",
-									"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+									"config_files" => [ "~/AI/CODING/rubocop.yml" ]
 								}
 							}
 						}
@@ -122,8 +145,8 @@ class ConfigLoadTest < Minitest::Test
 								"ruby" => {
 									"enabled" => true,
 									"globs" => [],
-									"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
-									"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+									"command" => [ "ruby", "~/AI/CODING/custom_ruby_lint.rb", "{files}" ],
+									"config_files" => [ "~/AI/CODING/rubocop.yml" ]
 								}
 							}
 						}
@@ -148,8 +171,8 @@ class ConfigLoadTest < Minitest::Test
 								"ruby" => {
 									"enabled" => "yes",
 									"globs" => [ "**/*.rb" ],
-									"command" => [ "ruby", "~/AI/CODING/ruby/lint.rb", "{files}" ],
-									"config_files" => [ "~/AI/CODING/ruby/lint.rb" ]
+									"command" => [ "ruby", "~/AI/CODING/custom_ruby_lint.rb", "{files}" ],
+									"config_files" => [ "~/AI/CODING/rubocop.yml" ]
 								}
 							}
 						}

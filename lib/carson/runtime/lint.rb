@@ -46,7 +46,7 @@ module Carson
 						puts_line "missing_lint_policy_file: language=#{entry.fetch( :language )} path=#{entry.fetch( :path )}"
 					end
 					puts_line "ACTION: update source CODING policy files, rerun carson lint setup, then rerun carson audit."
-					EXIT_BLOCK
+					EXIT_ERROR
 				ensure
 					cleanup&.call
 				end
