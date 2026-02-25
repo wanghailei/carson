@@ -5,7 +5,7 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 0.9.0 (2026-02-25)
+## 1.0.0 (2026-02-25)
 
 ### User Overview
 
@@ -25,10 +25,10 @@ Release-note scope rule:
 
 #### What users must do now
 
-1. Upgrade Carson to `0.9.0`.
+1. Upgrade Carson to `1.0.0`.
 2. Ensure your policy source provides `CODING/rubocop.yml` and rerun `carson lint setup --source <path-or-git-url> --force`.
 3. Remove repo-local `.rubocop.yml` files from governed repositories.
-4. If you use Carson reusable workflow pins, set `carson_ref: v0.9.0`, `carson_version: 0.9.0`, and `rubocop_version`.
+4. If you use Carson reusable workflow pins, set `carson_ref: v1.0.0`, `carson_version: 1.0.0`, and `rubocop_version`.
 
 #### Breaking or removed behaviour
 
@@ -38,7 +38,7 @@ Release-note scope rule:
 #### Upgrade steps
 
 ```bash
-gem install --user-install carson -v 0.9.0
+gem install --user-install carson -v 1.0.0
 mkdir -p ~/.local/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.local/bin/carson
 carson version

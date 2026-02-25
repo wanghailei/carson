@@ -13,7 +13,7 @@ This manual is for users who need to install Carson, configure repository govern
 Recommended installation path:
 
 ```bash
-gem install --user-install carson -v 0.9.0
+gem install --user-install carson -v 1.0.0
 ```
 
 If `carson` is not found after installation:
@@ -83,8 +83,8 @@ jobs:
     secrets:
       CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
     with:
-      carson_ref: "v0.9.0"
-      carson_version: "0.9.0"
+      carson_ref: "v1.0.0"
+      carson_version: "1.0.0"
       rubocop_version: "1.81.0"
 ```
 
