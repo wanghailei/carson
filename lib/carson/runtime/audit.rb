@@ -543,15 +543,8 @@ module Carson
 
 			# Separates check-run entries into critical and advisory buckets based on configured advisory names.
 			def separate_advisory_check_entries( entries:, advisory_names: )
-				critical = []
-				advisory = []
-				Array( entries ).each do |entry|
-					name = entry[ "name" ].to_s.strip
-					if advisory_names.any? { |pattern| name == pattern }
-						advisory << entry
-					else
-						critical << entry
-					end
+				advisory, critical = Array( entries ).partition do |entry|
+					advisory_names.include?( entry[ "name" ].to_s.strip )
 				end
 				[ critical, advisory ]
 			end
