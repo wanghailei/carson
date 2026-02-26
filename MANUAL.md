@@ -1,19 +1,14 @@
 # Carson Manual
 
-This manual is for users who need to install Carson, configure repository governance, and run a stable daily operating cadence.
-
-## Prerequisites
-- Ruby `>= 4.0`
-- `gem` in `PATH`
-- `git` in `PATH`
-- `gh` in `PATH` (recommended for full review governance features)
+This manual covers installation, first-time setup, CI configuration, and daily operations.
+For the mental model and command overview, see `README.md`. For formal interface definitions, see `API.md`.
 
 ## Install Carson
 
-Recommended installation path:
+Prerequisites: Ruby `>= 4.0`, `gem` and `git` in `PATH`. `gh` (GitHub CLI) recommended for full review governance.
 
 ```bash
-gem install --user-install carson -v 1.0.0
+gem install --user-install carson
 ```
 
 If `carson` is not found after installation:
@@ -22,53 +17,53 @@ If `carson` is not found after installation:
 export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
 ```
 
-Verify installation:
+Verify:
 
 ```bash
 carson version
 ```
 
-Expected result:
-- Carson version is printed.
-- The `carson` command is available in your shell.
+## First-Time Setup
 
-## Configure your first repository
-Assume your repository path is `/local/path/of/repo`.
+### Step 1: Prepare your lint policy
 
-Prepare your global lint policy baseline first:
+Carson enforces lint rules from a central policy source — a directory or git repository you control that contains a `CODING/` folder. For Ruby governance, the required file is `CODING/rubocop.yml`.
+
+Run `lint setup` to copy policy files into `~/AI/CODING/`:
 
 ```bash
-carson lint setup --source /path/to/ai-policy-repo
+carson lint setup --source /path/to/your-policy-repo
 ```
 
-`lint setup` expects the source to contain `CODING/` and writes policy files to `~/AI/CODING/`.
-For Ruby, the required policy file is `CODING/rubocop.yml`.
-Language policy files are expected directly under `CODING/` (flat layout, no language subfolders).
-Use `--ref <git-ref>` when `--source` is a git URL.
-Use `--force` to overwrite existing `~/AI/CODING` files.
+After this command, `~/AI/CODING/rubocop.yml` exists and is ready for Carson to use. Every governed repository will reference these same policy files — this is how Carson keeps lint consistent.
 
-Audit policy notes:
-- Ruby lint policy data lives only in `~/AI/CODING/rubocop.yml`; execution logic is Carson-owned.
-- Client repositories must not contain repo-local `.rubocop.yml`; `carson audit` blocks when it exists.
-- Non-Ruby language entries remain configured but disabled by default.
+Options:
+- `--source <path-or-git-url>` — where to read policy files from (required).
+- `--ref <git-ref>` — branch or tag when `--source` is a git URL.
+- `--force` — overwrite existing `~/AI/CODING` files.
 
-Run baseline initialisation:
+Policy layout: language config files sit directly under `CODING/` (flat layout, no language subfolders). Non-Ruby entries are present but disabled by default.
+
+### Step 2: Onboard a repository
 
 ```bash
-carson init /local/path/of/repo
+carson init /path/to/your-repo
 ```
 
 `init` performs:
-- remote alignment using configured `git.remote` (default `github`)
-- hook installation under `~/.carson/hooks/<version>/`
-- repository `core.hooksPath` alignment to Carson global hooks
-- commit-time governance gate via managed `pre-commit` hook
-- managed `.github/*` template synchronisation
-- initial governance audit
+- Remote alignment using configured `git.remote` (default `github`).
+- Hook installation under `~/.carson/hooks/<version>/`.
+- Repository `core.hooksPath` alignment to Carson global hooks.
+- Commit-time governance gate via managed `pre-commit` hook.
+- Managed `.github/*` template synchronisation.
+- Initial governance audit.
 
-After `init`, commit generated `.github/*` changes in your repository.
+### Step 3: Commit generated files
 
-## Pin Carson in CI
+After `init`, commit the generated `.github/*` changes in your repository. From this point the repository is governed.
+
+## CI Setup
+
 Use the reusable workflow with explicit release pins:
 
 ```yaml
@@ -79,7 +74,7 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml.8.1
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v1.0.0
     secrets:
       CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
     with:
@@ -88,20 +83,22 @@ jobs:
       rubocop_version: "1.81.0"
 ```
 
-When upgrading Carson, update both `carson_ref` and `carson_version` together.
-`CARSON_READ_TOKEN` must have read access to `wanghailei/ai` so CI can run `carson lint setup`.
-The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows (including BOS) for deterministic checks.
+Notes:
+- When upgrading Carson, update both `carson_ref` and `carson_version` together.
+- `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint setup`.
+- The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
 
-## Daily operations
-Start of work:
+## Daily Operations
+
+**Start of work:**
 
 ```bash
-carson sync
-carson lint setup --source /path/to/ai-policy-repo
-carson audit
+carson sync                                          # fast-forward local main
+carson lint setup --source /path/to/your-policy-repo # refresh policy if needed
+carson audit                                         # full governance check
 ```
 
-Before push or PR update:
+**Before push or PR update:**
 
 ```bash
 carson audit
@@ -114,57 +111,77 @@ If template drift is detected:
 carson template apply
 ```
 
-Before merge recommendation:
+**Before merge:**
 
 ```bash
-gh pr list --state open --limit 50
 carson review gate
 ```
 
-Scheduled late-review monitoring:
+**Periodic maintenance:**
 
 ```bash
-carson review sweep
+carson review sweep    # update tracking issue for late review feedback
+carson prune           # remove stale local branches
 ```
 
-Local branch clean-up:
+## Configuration
 
-```bash
-carson prune
-```
+Default global config path: `~/.carson/config.json`.
 
-## Exit contract
-- `0`: success
-- `1`: runtime or configuration error
-- `2`: policy blocked (hard stop)
+Precedence (highest wins): environment variables > config file > built-in defaults.
 
-Treat exit `2` as a mandatory stop until the policy violation is resolved.
+Override the config file path with `CARSON_CONFIG_FILE=/absolute/path/to/config.json`.
+
+Common environment overrides:
+
+| Variable | Purpose |
+|---|---|
+| `CARSON_HOOKS_BASE_PATH` | Custom hooks installation directory. |
+| `CARSON_REVIEW_WAIT_SECONDS` | Initial wait before first review poll. |
+| `CARSON_REVIEW_POLL_SECONDS` | Interval between review polls. |
+| `CARSON_REVIEW_MAX_POLLS` | Maximum review poll attempts. |
+| `CARSON_REVIEW_DISPOSITION_PREFIX` | Required prefix for disposition comments. |
+| `CARSON_REVIEW_SWEEP_WINDOW_DAYS` | Lookback window for review sweep. |
+| `CARSON_REVIEW_SWEEP_STATES` | PR states to include in sweep. |
+| `CARSON_RUBY_INDENTATION` | Ruby indentation policy (`tabs`, `spaces`, or `either`). |
+
+For the full configuration schema and `lint.languages` definition, see `API.md`.
 
 ## Troubleshooting
-`carson: command not found`
+
+**`carson: command not found`**
 - Confirm Ruby and gem installation.
 - Confirm `$(ruby -e 'print Gem.user_dir')/bin` is in `PATH`.
 
-`review gate` fails on actionable comments
+**`review gate` fails on actionable comments**
 - Respond with a valid disposition comment using the required prefix.
 - Re-run `carson review gate`.
 
-Template drift blocks
+**Template drift blocks**
 
 ```bash
 carson template apply
 carson template check
 ```
 
-## Offboard from a repository
+**Audit blocks on repo-local `.rubocop.yml`**
+- Carson hard-blocks governed repositories that contain their own `.rubocop.yml`. Remove the repo-local file and rely on the central policy in `~/AI/CODING/rubocop.yml`.
+
+**Hook version mismatch after upgrade**
+- Run `carson refresh` to re-apply hooks and templates for the new Carson version.
+
+## Offboard a Repository
+
 To retire Carson from a repository:
 
 ```bash
-carson offboard /local/path/of/repo
+carson offboard /path/to/your-repo
 ```
 
 This removes Carson-managed host artefacts and unsets `core.hooksPath` when it points to Carson-managed global hooks.
 
-## Related documents
-- Interface reference: `API.md`
+## Related Documents
+
+- Mental model and command overview: `README.md`
+- Formal interface contract: `API.md`
 - Release notes: `RELEASE.md`

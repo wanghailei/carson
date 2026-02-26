@@ -1,43 +1,80 @@
 # Carson
 
-Enforce the same governance rules across every repository you manage — from a single install, without polluting any of them with governance tooling.
+Named after the head butler of Downton Abbey, Carson is your repositories' master butler — you write the code, Carson manages everything else. From commit-time checks through merge-readiness on GitHub to cleaning up locally afterwards, Carson runs the household with discipline and professional standards, without ever overstepping.
 
 ## The Problem
 
 If you govern more than a handful of repositories, you know the pattern: lint configs drift between repos, PR templates go stale, reviewer feedback gets quietly ignored, and what passes on a developer's laptop fails in CI.
 The usual fix is to copy governance scripts into each repository. That works until you need to update them — now you are maintaining dozens of copies, each free to diverge.
 
-## What Carson Does
+## How Carson Works
 
-Carson is a governance runtime that lives on your workstation and in CI, never inside the repositories it governs. You install it once, point it at each repository, and it enforces a consistent baseline — same checks, same rules, same exit codes — everywhere.
+Carson is a governance runtime that lives on your workstation and in CI, never inside the repositories it governs. You focus on writing code; Carson handles the rest — enforcing lint policy, gating merges on unresolved review comments, synchronising templates, and keeping your local branches clean. This separation is its defining trait — called the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a *governed repository* (also called a **host repository** — any git repo that Carson manages).
 
-**One command to onboard a repo.**
-`carson init` installs git hooks, synchronises PR and AI-coding templates, and runs a first governance audit. From that point, every commit is checked automatically.
+```
+┌─────────────────────────────────────┐
+│  Your workstation                   │
+│                                     │
+│  ~/.carson/          Carson config  │
+│  ~/.carson/hooks/    Git hooks      │
+│  ~/AI/CODING/        Lint policy    │
+│  ~/.cache/carson/    Audit reports  │
+│                                     │
+│  carson audit ───► governs ────►  repo-A/
+│                                   repo-B/
+│                                   repo-C/
+│                                     │
+│  Governed repos get only:           │
+│    .github/* templates (committed)  │
+│    core.hooksPath → ~/.carson/hooks │
+└─────────────────────────────────────┘
+```
 
-**Same checks locally and in CI.**
-The `pre-commit` hook runs `carson audit` before every commit. The same `carson audit` runs in your GitHub Actions workflow. If it passes locally, it passes in CI. No surprises.
+The data flow:
 
-**Review accountability.**
-`carson review gate` blocks merge until every actionable reviewer comment — risk keywords, change requests — has been formally acknowledged by the PR author. No more "I missed that comment" after merge.
+1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/AI/CODING/` via `carson lint setup`.
+2. `carson init` installs git hooks, synchronises `.github/*` templates, and runs a first governance audit on a host repository.
+3. From that point, every commit triggers `carson audit` through the managed `pre-commit` hook. The same `carson audit` runs in GitHub Actions. If it passes locally, it passes in CI.
+4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment — risk keywords, change requests — has been formally acknowledged by the PR author through a **disposition comment** (a reply with a configured prefix, e.g. `Disposition: ...`).
+5. `carson audit` also checks **scope integrity** — verifying that staged changes stay within expected feature/module path boundaries — and confirms that no Carson artefacts have leaked into the host repository (the outsider boundary).
 
-**Template consistency.**
-Carson keeps PR templates and AI coding guidelines identical across all governed repositories. `carson template check` detects drift; `carson template apply` repairs it.
+All governance checks are **advisory checks**: they produce deterministic pass/block results (exit `0` or `2`) that CI and hooks consume, but Carson never force-merges or bypasses GitHub's own merge authority.
 
-**Centralised lint policy.**
-Lint rules come from a single policy source you control. Carson owns the lint execution path — repo-local config overrides are hard-blocked so teams cannot silently weaken the baseline.
+## Commands at a Glance
 
-**Branch hygiene.**
-`carson sync` fast-forwards your local main. `carson prune` removes branches whose upstream is gone, including squash-merged branches verified through the GitHub API.
+**Setup** — run once per machine or per repository:
 
-**Clean boundary.**
-No Carson scripts, config files, or governance payloads are ever placed inside your repositories. Carson actively blocks if it detects its own artefacts in a host repo.
+| Command | What it does |
+|---|---|
+| `carson lint setup` | Seed `~/AI/CODING/` from your policy source. |
+| `carson init` | One-command baseline: hooks + templates + first audit. |
+| `carson hook` | Install or refresh Carson-managed global hooks. |
+| `carson refresh` | Re-apply hooks, templates, and audit after upgrading Carson. |
+| `carson offboard` | Remove Carson from a repository. |
 
-## When to Use Carson
+**Daily** — regular development workflow:
 
-- A platform team standardising policy across many product repositories — one governance flow for all of them, no per-repo tooling.
-- A consultancy governing client repositories you do not own — enforce rules without committing your tooling into their repos.
-- A regulated engineering team that needs auditable, reproducible gates — every merge decision has a deterministic pass/block result.
-- A solo developer who wants the same lint and review discipline everywhere — without maintaining governance scripts in each project.
+| Command | What it does |
+|---|---|
+| `carson audit` | Full governance check (also runs automatically on every commit). |
+| `carson sync` | Fast-forward local `main` from remote. |
+| `carson prune` | Remove stale local branches whose upstream is gone. |
+| `carson template check` | Detect drift between managed and host `.github/*` files. |
+| `carson template apply` | Repair drifted `.github/*` files. |
+
+**Review** — PR merge readiness:
+
+| Command | What it does |
+|---|---|
+| `carson review gate` | Block or approve merge based on unresolved review comments. |
+| `carson review sweep` | Scan recent PRs and update a tracking issue for late feedback. |
+
+**Info**:
+
+| Command | What it does |
+|---|---|
+| `carson version` | Print installed version. |
+| `carson check` | Run governance checks against current repository state. |
 
 ## Quickstart
 
@@ -48,12 +85,18 @@ Prerequisites: Ruby `>= 4.0`, `git`, and `gem` in your PATH.
 # Install
 gem install --user-install carson
 carson version
+```
 
-# Prepare your lint policy baseline
-carson lint setup --source /local/path/of/policy-repo
+**Prepare your lint policy.** A policy source is any directory (or git URL) that contains a `CODING/` folder with your lint configuration files. For Ruby, the required file is `CODING/rubocop.yml`. Carson copies these into `~/AI/CODING/` so that every governed repository uses the same rules:
 
-# Onboard a repository
-carson init /local/path/of/repo
+```bash
+carson lint setup --source /path/to/your-policy-repo
+```
+
+**Onboard a repository:**
+
+```bash
+carson init /path/to/your-repo
 ```
 
 After `carson init`, your repository has:
@@ -67,16 +110,21 @@ Commit the generated `.github/*` changes, and the repository is governed.
 
 ```bash
 carson sync                 # fast-forward local main
-carson audit                # full governance check (also runs on every commit via hook)
+carson audit                # full governance check
 carson review gate          # block or approve merge based on review status
 carson prune                # clean up stale local branches
 ```
 
 ## Where to Read Next
-- User manual: `MANUAL.md`
-- API reference: `API.md`
-- Release notes: `RELEASE.md`
+
+- **MANUAL.md** — installation, first-time setup, CI configuration, daily operations, troubleshooting.
+- **API.md** — formal interface contract: commands, exit codes, configuration schema.
+- **RELEASE.md** — version history and upgrade actions.
+- **docs/define.md** — product definition and scope.
+- **docs/design.md** — experience and brand design.
+- **docs/develop.md** — contributor guide: architecture, development workflow.
 
 ## Support
+
 - Open or track issues: <https://github.com/wanghailei/carson/issues>
 - Review version-specific upgrade actions: `RELEASE.md`

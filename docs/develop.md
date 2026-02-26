@@ -1,9 +1,11 @@
 # Carson Development Guide
 
 ## Audience
+
 This document is for Carson contributors and internal maintainers who need architecture, runtime contract, and development workflow guidance.
 
-## Architectural overview
+## Architectural Overview
+
 Primary runtime structure:
 - `exe/carson`: executable entrypoint.
 - `lib/carson/cli.rb`: command parsing and dispatch.
@@ -14,7 +16,8 @@ Primary runtime structure:
 - `lib/carson/config.rb`: defaults, config loading, environment overrides, and validation.
 - `lib/carson/adapters/git.rb`, `lib/carson/adapters/github.rb`: process adapters for `git` and `gh`.
 
-## Runtime contracts
+## Runtime Contracts
+
 Exit status contract:
 - `0`: success
 - `1`: runtime/configuration error
@@ -29,7 +32,18 @@ Configuration contract:
 - override path via `CARSON_CONFIG_FILE`
 - precedence: built-in defaults, then global config file, then environment overrides
 
-## Core command flow
+## Merge-Readiness Model
+
+A PR is merge-ready when three independent conditions are satisfied:
+
+1. **`carson audit` passes (exit 0)** — governance is clean. This covers lint policy compliance, scope integrity (staged changes stay within expected path boundaries), and outsider boundary enforcement (no Carson artefacts in the host repo). Carson owns this entirely.
+2. **`carson review gate` passes (exit 0)** — all actionable review comments are resolved. Every risk keyword and change request from reviewers has a disposition comment from the PR author. Carson owns this entirely.
+3. **All GitHub required status checks green** — the repository's own CI: test suite, build steps, type checking, and any other checks the repository defines. Carson does not own these; it queries their status via `gh`.
+
+The first two are Carson-governed. The third is repository-governed. All three must pass before Carson can safely merge. Without the third condition, Carson could merge a PR that passes governance but has failing tests.
+
+## Core Command Flow
+
 1. `init` sets baseline (`hook`, `template apply`, `audit`) for a target repository.
 2. `audit` evaluates governance state and policy compliance.
 3. `sync` fast-forwards local `main` from configured remote.
@@ -38,7 +52,8 @@ Configuration contract:
 6. `review sweep` updates rolling tracking for late actionable review activity.
 7. `offboard` removes Carson-managed host artefacts and Carson hook linkage.
 
-## Development workflow
+## Development Workflow
+
 Local setup:
 
 ```bash
@@ -66,21 +81,26 @@ Source installation for dogfooding:
 carson version
 ```
 
-## Release and compatibility notes
+## Release and Compatibility Notes
+
 - Keep CLI behaviour backwards-compatible where possible.
 - Document user-visible deltas and migration steps in `RELEASE.md`.
 - Keep example version pins in root docs aligned with `VERSION`.
 
-## Internal guardrails
+## Internal Guardrails
+
 - Maintain outsider runtime boundary; do not introduce Carson-owned host artefacts.
 - Prefer deterministic outputs suitable for CI parsing and operational triage.
 - Keep command responsibilities grouped by behaviour ownership rather than arbitrary line count targets.
 
 ## References
-- `README.md`
-- `MANUAL.md`
-- `API.md`
-- `RELEASE.md`
+
+- `README.md` — mental model, command overview, quickstart.
+- `MANUAL.md` — installation, daily operations, troubleshooting.
+- `API.md` — formal interface contract.
+- `RELEASE.md` — version history.
+- `docs/define.md` — product definition and scope.
+- `docs/design.md` — experience and brand design.
 - `VERSION`
 - `lib/carson/cli.rb`
 - `lib/carson/runtime.rb`

@@ -1,6 +1,7 @@
 # Carson API
 
 This document defines Carson's user-facing interface contract for CLI commands, configuration inputs, and exit behaviour.
+For operational usage and daily workflows, see `MANUAL.md`.
 
 ## Command interface
 
@@ -10,26 +11,42 @@ Command form:
 carson <command> [subcommand] [arguments]
 ```
 
-Supported commands:
+### Setup commands
+
+| Command | Purpose |
+|---|---|
+| `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` | Seed or refresh `~/AI/CODING` policy files from an explicit source. |
+| `carson init [repo_path]` | Apply one-command baseline setup for a target git repository. |
+| `carson hook` | Install or refresh Carson-managed global hooks. |
+| `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. |
+| `carson offboard [repo_path]` | Remove Carson-managed host artefacts and detach Carson hooks path where applicable. |
+
+### Daily commands
+
+| Command | Purpose |
+|---|---|
+| `carson audit` | Evaluate governance status and generate report output. |
+| `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
+| `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
+| `carson template check` | Detect drift between managed templates and host `.github/*` files. |
+| `carson template apply` | Write canonical managed template content into host `.github/*` files. |
+
+### Review commands
+
+| Command | Purpose |
+|---|---|
+| `carson review gate` | Block until actionable review findings are resolved or convergence timeout is reached. |
+| `carson review sweep` | Scan recent PR activity and update a rolling tracking issue for late actionable feedback. |
+
+### Info commands
 
 | Command | Purpose |
 |---|---|
 | `carson version` | Print installed Carson version. |
-| `carson init [repo_path]` | Apply one-command baseline setup for a target git repository. |
-| `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
-| `carson audit` | Evaluate governance status and generate report output. |
-| `carson hook` | Install or refresh Carson-managed global hooks. |
 | `carson check` | Run governance checks against current repository state. |
-| `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
-| `carson template check` | Detect drift between managed templates and host `.github/*` files. |
-| `carson template apply` | Write canonical managed template content into host `.github/*` files. |
-| `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` | Seed or refresh `~/AI/CODING` policy files from an explicit source. |
-| `carson review gate` | Block until actionable review findings are resolved or convergence timeout is reached. |
-| `carson review sweep` | Scan recent PR activity and update a rolling tracking issue for late actionable feedback. |
-| `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. |
-| `carson offboard [repo_path]` | Remove Carson-managed host artefacts and detach Carson hooks path where applicable. |
 
 ## Exit status contract
+
 - `0`: success
 - `1`: runtime/configuration/command error
 - `2`: policy blocked (hard stop)
@@ -37,6 +54,7 @@ Supported commands:
 Automation and CI integrations should treat exit `2` as an expected policy failure signal.
 
 ## Repository boundary contract
+
 Blocked Carson artefacts in host repositories:
 - `.carson.yml`
 - `bin/carson`
@@ -46,6 +64,7 @@ Allowed Carson-managed persistence in host repositories:
 - selected GitHub-native files under `.github/*`
 
 ## Configuration interface
+
 Default global configuration path:
 - `~/.carson/config.json`
 
@@ -105,11 +124,13 @@ Policy layout requirement:
 - Language policy files are stored directly under `CODING/` and copied to `~/AI/CODING/` without language subdirectories.
 
 ## Output interface
+
 Report output directory precedence:
 - `~/.cache/carson`
 - `TMPDIR/carson` (used when `HOME` is invalid and `TMPDIR` is absolute)
 - `/tmp/carson` (fallback)
 
 ## Versioning and compatibility
+
 - Pin Carson in automation by explicit release and version pair (`carson_ref`, `carson_version`).
 - Review upgrade actions in `RELEASE.md` before moving to a newer minor or major version.
