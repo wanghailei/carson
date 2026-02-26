@@ -166,10 +166,10 @@ module Carson
 			review[ "required_disposition_prefix" ] = disposition_prefix unless disposition_prefix.empty?
 			sweep = fetch_hash_section( data: review, key: "sweep" )
 			sweep[ "window_days" ] = env_integer( key: "CARSON_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
-			states = ENV.fetch( "CARSON_REVIEW_SWEEP_STATES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
+			states = env_string_array( key: "CARSON_REVIEW_SWEEP_STATES" )
 			sweep[ "states" ] = states unless states.empty?
 			audit = fetch_hash_section( data: copy, key: "audit" )
-			advisory_names = ENV.fetch( "CARSON_AUDIT_ADVISORY_CHECK_NAMES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
+			advisory_names = env_string_array( key: "CARSON_AUDIT_ADVISORY_CHECK_NAMES" )
 			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
 			style = fetch_hash_section( data: copy, key: "style" )
 			ruby_indentation = ENV.fetch( "CARSON_RUBY_INDENTATION", "" ).to_s.strip
@@ -190,6 +190,10 @@ module Carson
 			Integer( text )
 		rescue ArgumentError, TypeError
 			fallback
+		end
+
+		def self.env_string_array( key: )
+			ENV.fetch( key, "" ).split( "," ).map( &:strip ).reject( &:empty? )
 		end
 
 		def initialize( data: )
