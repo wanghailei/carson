@@ -3,8 +3,10 @@
 ## Product statement
 Carson is an outsider governance runtime that keeps repository governance consistent without embedding Carson-owned runtime artefacts inside client repositories.
 
+Named after Carson the head butler of Downton Abbey, Carson embodies the same role for your repositories: you write the code, Carson manages everything else — from commit-time checks through merge-readiness on GitHub to cleaning up your local workspace afterwards. Like a master butler, Carson runs the household with strict discipline and professional standards, but never oversteps — it prepares everything for the merge decision without making it, and keeps the estate (your repositories) in impeccable order without owning it.
+
 ## Problem statement
-Repository controls degrade when local workflows diverge, review handling is inconsistent, or policy checks are treated as optional. Teams need a repeatable governance layer that is strict enough for enterprise stability while remaining operationally practical.
+Repository controls degrade when local workflows diverge, review handling is inconsistent, or policy checks are treated as optional. Developers should focus on writing code, not on manually running lint checks, chasing unresolved review comments, keeping templates in sync, or pruning stale branches. Teams need a repeatable governance layer that is strict enough for enterprise stability while remaining operationally practical — one that takes over the entire housekeeping burden so developers never think about it.
 
 ## Target outcomes
 - Deterministic governance checks for local and CI operation.
