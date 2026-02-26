@@ -1,11 +1,14 @@
 name: Carson CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 jobs:
   governance:
+    if: github.event_name == 'pull_request'
     name: Carson governance
     runs-on: ubuntu-latest
     env:
