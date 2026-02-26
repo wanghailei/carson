@@ -74,7 +74,7 @@ All governance checks are **advisory checks**: they produce deterministic pass/b
 | Command | What it does |
 |---|---|
 | `carson version` | Print installed version. |
-| `carson check` | Run governance checks against current repository state. |
+| `carson check` | Verify Carson-managed hook installation and repository setup. |
 
 ## Quickstart
 
