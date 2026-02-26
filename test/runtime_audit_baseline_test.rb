@@ -47,4 +47,46 @@ class RuntimeAuditBaselineTest < Minitest::Test
 		assert_equal false, failing
 		assert_equal false, pending
 	end
+
+	def test_separate_advisory_check_entries_splits_by_name
+		entries = [
+			{ "name" => "Carson governance", "status" => "completed", "conclusion" => "failure" },
+			{ "name" => "Scheduled review sweep", "status" => "completed", "conclusion" => "failure" },
+			{ "name" => "CI build", "status" => "completed", "conclusion" => "failure" }
+		]
+		critical, advisory = @runtime.send(
+			:separate_advisory_check_entries,
+			entries: entries,
+			advisory_names: [ "Scheduled review sweep" ]
+		)
+		assert_equal 2, critical.count
+		assert_equal 1, advisory.count
+		assert_equal "Scheduled review sweep", advisory.first[ "name" ]
+	end
+
+	def test_separate_advisory_check_entries_empty_advisory_names_keeps_all_critical
+		entries = [
+			{ "name" => "Scheduled review sweep", "status" => "completed", "conclusion" => "failure" }
+		]
+		critical, advisory = @runtime.send(
+			:separate_advisory_check_entries,
+			entries: entries,
+			advisory_names: []
+		)
+		assert_equal 1, critical.count
+		assert_equal 0, advisory.count
+	end
+
+	def test_separate_advisory_check_entries_no_match_keeps_all_critical
+		entries = [
+			{ "name" => "CI build", "status" => "completed", "conclusion" => "failure" }
+		]
+		critical, advisory = @runtime.send(
+			:separate_advisory_check_entries,
+			entries: entries,
+			advisory_names: [ "Scheduled review sweep" ]
+		)
+		assert_equal 1, critical.count
+		assert_equal 0, advisory.count
+	end
 end

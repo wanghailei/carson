@@ -403,9 +403,13 @@ module Carson
 				check_runs_total: 0,
 				failing_count: 0,
 				pending_count: 0,
+				advisory_failing_count: 0,
+				advisory_pending_count: 0,
 				no_check_evidence: false,
 				failing: [],
-				pending: []
+				pending: [],
+				advisory_failing: [],
+				advisory_pending: []
 				}
 				unless gh_available?
 					report[ :status ] = "skipped"
@@ -443,15 +447,23 @@ module Carson
 				)
 				check_runs = Array( check_runs_payload[ "check_runs" ] )
 				failing, pending = partition_default_branch_check_runs( check_runs: check_runs )
+				advisory_names = config.audit_advisory_check_names
+				critical_failing, advisory_failing = separate_advisory_check_entries( entries: failing, advisory_names: advisory_names )
+				critical_pending, advisory_pending = separate_advisory_check_entries( entries: pending, advisory_names: advisory_names )
 				report[ :check_runs_total ] = check_runs.count
-				report[ :failing ] = normalise_default_branch_check_entries( entries: failing )
-				report[ :pending ] = normalise_default_branch_check_entries( entries: pending )
+				report[ :failing ] = normalise_default_branch_check_entries( entries: critical_failing )
+				report[ :pending ] = normalise_default_branch_check_entries( entries: critical_pending )
+				report[ :advisory_failing ] = normalise_default_branch_check_entries( entries: advisory_failing )
+				report[ :advisory_pending ] = normalise_default_branch_check_entries( entries: advisory_pending )
 				report[ :failing_count ] = report.fetch( :failing ).count
 				report[ :pending_count ] = report.fetch( :pending ).count
+				report[ :advisory_failing_count ] = report.fetch( :advisory_failing ).count
+				report[ :advisory_pending_count ] = report.fetch( :advisory_pending ).count
 				report[ :no_check_evidence ] = report.fetch( :workflows_total ).positive? && report.fetch( :check_runs_total ).zero?
 				report[ :status ] = "block" if report.fetch( :failing_count ).positive?
 				report[ :status ] = "block" if report.fetch( :pending_count ).positive?
 				report[ :status ] = "block" if report.fetch( :no_check_evidence )
+				report[ :status ] = "attention" if report.fetch( :status ) == "ok" && ( report.fetch( :advisory_failing_count ).positive? || report.fetch( :advisory_pending_count ).positive? )
 				puts_line "default_branch_repository: #{report.fetch( :repository )}"
 				puts_line "default_branch_name: #{report.fetch( :default_branch )}"
 				puts_line "default_branch_head_sha: #{report.fetch( :head_sha )}"
@@ -459,8 +471,12 @@ module Carson
 				puts_line "default_branch_check_runs_total: #{report.fetch( :check_runs_total )}"
 				puts_line "default_branch_failing: #{report.fetch( :failing_count )}"
 				puts_line "default_branch_pending: #{report.fetch( :pending_count )}"
+				puts_line "default_branch_advisory_failing: #{report.fetch( :advisory_failing_count )}"
+				puts_line "default_branch_advisory_pending: #{report.fetch( :advisory_pending_count )}"
 				report.fetch( :failing ).each { |entry| puts_line "default_branch_check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
 				report.fetch( :pending ).each { |entry| puts_line "default_branch_check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				report.fetch( :advisory_failing ).each { |entry| puts_line "default_branch_check_advisory_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (advisory) #{entry.fetch( :link )}".strip }
+				report.fetch( :advisory_pending ).each { |entry| puts_line "default_branch_check_advisory_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (advisory) #{entry.fetch( :link )}".strip }
 				if report.fetch( :no_check_evidence )
 					puts_line "ACTION: default branch has workflow files but no check-runs; align workflow triggers and branch protection check names."
 				end
@@ -523,6 +539,21 @@ module Carson
 					end
 				end
 				[ failing, pending ]
+			end
+
+			# Separates check-run entries into critical and advisory buckets based on configured advisory names.
+			def separate_advisory_check_entries( entries:, advisory_names: )
+				critical = []
+				advisory = []
+				Array( entries ).each do |entry|
+					name = entry[ "name" ].to_s.strip
+					if advisory_names.any? { |pattern| name == pattern }
+						advisory << entry
+					else
+						critical << entry
+					end
+				end
+				[ critical, advisory ]
 			end
 
 			# Failing means completed with a non-successful conclusion.
