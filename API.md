@@ -43,7 +43,7 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson version` | Print installed Carson version. |
-| `carson check` | Run governance checks against current repository state. |
+| `carson check` | Verify Carson-managed hook installation and repository setup. |
 
 ## Exit status contract
 
