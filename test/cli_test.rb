@@ -15,6 +15,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def refresh!
+			@calls << :refresh
+			Carson::Runtime::EXIT_OK
+		end
+
 		def template_check!
 			@calls << :template_check
 			Carson::Runtime::EXIT_OK
@@ -131,6 +136,36 @@ class CLITest < Minitest::Test
 			},
 			runtime.lint_args
 		)
+	end
+
+	def test_parse_args_refresh_without_path
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "refresh" ], out: out, err: err )
+		assert_equal "refresh", parsed.fetch( :command )
+		assert_nil parsed.fetch( :repo_root )
+	end
+
+	def test_parse_args_refresh_with_path
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "refresh", "/some/path" ], out: out, err: err )
+		assert_equal "refresh", parsed.fetch( :command )
+		assert_equal "/some/path", parsed.fetch( :repo_root )
+	end
+
+	def test_parse_args_refresh_too_many_arguments
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "refresh", "/a", "/b" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_refresh_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "refresh" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ :refresh ], runtime.calls
 	end
 
 	def test_dispatch_rejects_unknown_command

@@ -187,6 +187,31 @@ module Carson
 				audit_status
 			end
 
+			# Re-applies hooks, templates, and audit after upgrading Carson.
+			def refresh!
+				fingerprint_status = block_if_outsider_fingerprints!
+				return fingerprint_status unless fingerprint_status.nil?
+
+				print_header "Refresh"
+				unless inside_git_work_tree?
+					puts_line "ERROR: #{repo_root} is not a git repository."
+					return EXIT_ERROR
+				end
+				hook_status = hook!
+				return hook_status unless hook_status == EXIT_OK
+
+				template_status = template_apply!
+				return template_status unless template_status == EXIT_OK
+
+				audit_status = audit!
+				if audit_status == EXIT_OK
+					puts_line "OK: Carson refresh completed for #{repo_root}."
+				elsif audit_status == EXIT_BLOCK
+					puts_line "BLOCK: Carson refresh completed with policy blocks; resolve and rerun carson audit."
+				end
+				audit_status
+			end
+
 			# Removes Carson-managed repository integration so a host repository can retire Carson cleanly.
 			def offboard!
 				print_header "Offboard"

@@ -26,6 +26,7 @@ Supported commands:
 | `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` | Seed or refresh `~/AI/CODING` policy files from an explicit source. |
 | `carson review gate` | Block until actionable review findings are resolved or convergence timeout is reached. |
 | `carson review sweep` | Scan recent PR activity and update a rolling tracking issue for late actionable feedback. |
+| `carson refresh [repo_path]` | Re-apply hooks and templates after upgrading Carson. |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts and detach Carson hooks path where applicable. |
 
 ## Exit status contract

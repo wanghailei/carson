@@ -44,7 +44,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [audit|sync|prune|hook|check|init [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|version]"
+				opts.banner = "Usage: carson [audit|sync|prune|hook|check|init [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|version]"
 			end
 		end
 
@@ -65,7 +65,7 @@ module Carson
 			when "version"
 				parser.parse!( argv )
 				{ command: "version" }
-			when "init", "offboard"
+			when "init", "refresh", "offboard"
 				parse_repo_path_command( command: command, argv: argv, parser: parser, err: err )
 			when "template"
 				parse_named_subcommand( command: command, usage: "check|apply", argv: argv, parser: parser, err: err )
@@ -164,6 +164,8 @@ module Carson
 				runtime.check!
 			when "init"
 				runtime.init!
+			when "refresh"
+				runtime.refresh!
 			when "offboard"
 				runtime.offboard!
 			when "template:check"
