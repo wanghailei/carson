@@ -10,7 +10,8 @@ module Carson
 			:path_groups, :template_managed_files, :lint_languages,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
-			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation
+			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation,
+			:audit_advisory_check_names
 
 		def self.load( repo_root: )
 			base_data = default_data
@@ -59,6 +60,9 @@ module Carson
 						"title" => "Carson review sweep findings",
 						"label" => "carson-review-sweep"
 					}
+				},
+				"audit" => {
+					"advisory_check_names" => [ "Scheduled review sweep" ]
 				},
 				"style" => {
 					"ruby_indentation" => "tabs"
@@ -164,6 +168,9 @@ module Carson
 			sweep[ "window_days" ] = env_integer( key: "CARSON_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
 			states = ENV.fetch( "CARSON_REVIEW_SWEEP_STATES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
 			sweep[ "states" ] = states unless states.empty?
+			audit = fetch_hash_section( data: copy, key: "audit" )
+			advisory_names = ENV.fetch( "CARSON_AUDIT_ADVISORY_CHECK_NAMES", "" ).split( "," ).map( &:strip ).reject( &:empty? )
+			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
 			style = fetch_hash_section( data: copy, key: "style" )
 			ruby_indentation = ENV.fetch( "CARSON_RUBY_INDENTATION", "" ).to_s.strip
 			style[ "ruby_indentation" ] = ruby_indentation unless ruby_indentation.empty?
@@ -212,6 +219,8 @@ module Carson
 			tracking_issue_hash = fetch_hash( hash: review_hash, key: "tracking_issue" )
 			@review_tracking_issue_title = fetch_string( hash: tracking_issue_hash, key: "title" )
 			@review_tracking_issue_label = fetch_string( hash: tracking_issue_hash, key: "label" )
+			audit_hash = fetch_hash( hash: data, key: "audit" )
+			@audit_advisory_check_names = fetch_optional_string_array( hash: audit_hash, key: "advisory_check_names" )
 			style_hash = fetch_hash( hash: data, key: "style" )
 			@ruby_indentation = fetch_string( hash: style_hash, key: "ruby_indentation" ).downcase
 
@@ -257,6 +266,13 @@ module Carson
 				array = value.map { |entry| entry.to_s.strip }.reject( &:empty? )
 				raise ConfigError, "config key #{key} cannot be empty" if array.empty?
 				array
+			end
+
+			def fetch_optional_string_array( hash:, key: )
+				value = hash[ key ]
+				return [] if value.nil?
+				raise ConfigError, "config key #{key} must be an array" unless value.is_a?( Array )
+				value.map { |entry| entry.to_s.strip }.reject( &:empty? )
 			end
 
 			def fetch_non_negative_integer( hash:, key: )
