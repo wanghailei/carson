@@ -1,6 +1,6 @@
 # Carson
 
-Named after the head butler of Downton Abbey, Carson is your repositories' master butler — you write the code, Carson manages everything else. From commit-time checks through merge-readiness on GitHub to cleaning up locally afterwards, Carson runs the household with discipline and professional standards, without ever overstepping.
+Named after the head of household in Downton Abbey, Carson is your repositories' master of ceremony — you write the code, Carson manages everything else. From commit-time checks through merge-readiness on GitHub to cleaning up locally afterwards, Carson runs the household with discipline and professional standards, without ever overstepping.
 
 ## The Problem
 

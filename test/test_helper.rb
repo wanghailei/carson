@@ -45,3 +45,5 @@ module CarsonTestSupport
 		end
 	end
 end
+
+ENV["CARSON_CONFIG_FILE"] = File.join( Dir.tmpdir, "carson-nonexistent-test-config.json" )
