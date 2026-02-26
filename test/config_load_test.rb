@@ -159,6 +159,18 @@ class ConfigLoadTest < Minitest::Test
 		end
 	end
 
+	def test_default_advisory_check_names_includes_scheduled_review_sweep
+		config = Carson::Config.load( repo_root: Dir.pwd )
+		assert_includes config.audit_advisory_check_names, "Scheduled review sweep"
+	end
+
+	def test_advisory_check_names_env_override
+		with_env( "CARSON_AUDIT_ADVISORY_CHECK_NAMES" => "Custom sweep,Other check" ) do
+			config = Carson::Config.load( repo_root: Dir.pwd )
+			assert_equal [ "Custom sweep", "Other check" ], config.audit_advisory_check_names
+		end
+	end
+
 	def test_invalid_lint_enabled_type_raises_config_error_with_full_path
 		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )
