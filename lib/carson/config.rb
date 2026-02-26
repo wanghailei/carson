@@ -62,7 +62,7 @@ module Carson
 					}
 				},
 				"audit" => {
-					"advisory_check_names" => [ "Scheduled review sweep" ]
+					"advisory_check_names" => [ "Scheduled review sweep", "Carson governance" ]
 				},
 				"style" => {
 					"ruby_indentation" => "tabs"
