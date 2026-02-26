@@ -9,7 +9,7 @@ carson_bin="$repo_root/exe/carson"
 
 # Shared launch helpers for Carson invocations in smoke scenarios.
 run_carson() {
-	HOME="$tmp_root/home" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
+	HOME="$tmp_root/fakehome" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
 }
 
 run_carson_with_mock_gh() {
@@ -25,7 +25,7 @@ run_carson_with_mock_gh_scenario() {
 run_carson_with_config() {
 	local config_path="$1"
 	shift
-	HOME="$tmp_root/home" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$config_path" ruby "$carson_bin" "$@"
+	HOME="$tmp_root/fakehome" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$config_path" ruby "$carson_bin" "$@"
 }
 
 run_carson_with_report_env() {
@@ -70,8 +70,8 @@ mkdir -p "$default_tmp_base" 2>/dev/null || default_tmp_base="/tmp"
 tmp_base="${CARSON_TMP_BASE:-$default_tmp_base}"
 mkdir -p "$tmp_base"
 tmp_root="$(mktemp -d "$tmp_base/carson-ci.XXXXXX")"
-mkdir -p "$tmp_root/home"
-export HOME="$tmp_root/home"
+mkdir -p "$tmp_root/fakehome"
+export HOME="$tmp_root/fakehome"
 export CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks"
 export CARSON_BIN="$carson_bin"
 lint_ok_script="$tmp_root/lint_ok.rb"
@@ -427,7 +427,7 @@ cat > "$setup_config_path" <<EOF
 }
 EOF
 expect_exit 0 "lint setup copies coding policy from local source" run_carson_with_config "$setup_config_path" lint setup --source "$setup_source"
-if [[ ! -f "$tmp_root/home/AI/CODING/rubocop.yml" ]]; then
+if [[ ! -f "$tmp_root/fakehome/AI/CODING/rubocop.yml" ]]; then
 	echo "FAIL: lint setup did not create ~/AI/CODING/rubocop.yml" >&2
 	exit 1
 fi
