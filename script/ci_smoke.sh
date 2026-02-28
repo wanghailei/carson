@@ -396,7 +396,7 @@ cat > "$setup_config_path" <<EOF
         "enabled": true,
         "globs": ["**/*.rb"],
         "command": ["ruby", "$repo_root/lib/carson/policy/ruby/lint.rb", "{files}"],
-        "config_files": ["~/AI/CODING/rubocop.yml"]
+        "config_files": ["~/.carson/lint/rubocop.yml"]
       },
       "javascript": {
         "enabled": false,
@@ -427,11 +427,11 @@ cat > "$setup_config_path" <<EOF
 }
 EOF
 expect_exit 0 "lint setup copies coding policy from local source" run_carson_with_config "$setup_config_path" lint setup --source "$setup_source"
-if [[ ! -f "$tmp_root/fakehome/AI/CODING/rubocop.yml" ]]; then
-	echo "FAIL: lint setup did not create ~/AI/CODING/rubocop.yml" >&2
+if [[ ! -f "$tmp_root/fakehome/.carson/lint/rubocop.yml" ]]; then
+	echo "FAIL: lint setup did not create ~/.carson/lint/rubocop.yml" >&2
 	exit 1
 fi
-echo "PASS: lint setup created ~/AI/CODING/rubocop.yml"
+echo "PASS: lint setup created ~/.carson/lint/rubocop.yml"
 
 setup_git_source="$tmp_root/ai-source-git"
 cp -R "$setup_source" "$setup_git_source"

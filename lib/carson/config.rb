@@ -77,31 +77,31 @@ module Carson
 						"enabled" => true,
 						"globs" => [ "**/*.rb", "Gemfile", "*.gemspec", "Rakefile" ],
 						"command" => [ "ruby", ruby_runner, "{files}" ],
-						"config_files" => [ "~/AI/CODING/rubocop.yml" ]
+						"config_files" => [ "~/.carson/lint/rubocop.yml" ]
 					},
 					"javascript" => {
 						"enabled" => false,
 						"globs" => [ "**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx" ],
-						"command" => [ "node", "~/AI/CODING/javascript.lint.js", "{files}" ],
-						"config_files" => [ "~/AI/CODING/javascript.lint.js" ]
+						"command" => [ "node", "~/.carson/lint/javascript.lint.js", "{files}" ],
+						"config_files" => [ "~/.carson/lint/javascript.lint.js" ]
 					},
 					"css" => {
 						"enabled" => false,
 						"globs" => [ "**/*.css" ],
-						"command" => [ "node", "~/AI/CODING/css.lint.js", "{files}" ],
-						"config_files" => [ "~/AI/CODING/css.lint.js" ]
+						"command" => [ "node", "~/.carson/lint/css.lint.js", "{files}" ],
+						"config_files" => [ "~/.carson/lint/css.lint.js" ]
 					},
 					"html" => {
 						"enabled" => false,
 						"globs" => [ "**/*.html" ],
-						"command" => [ "node", "~/AI/CODING/html.lint.js", "{files}" ],
-						"config_files" => [ "~/AI/CODING/html.lint.js" ]
+						"command" => [ "node", "~/.carson/lint/html.lint.js", "{files}" ],
+						"config_files" => [ "~/.carson/lint/html.lint.js" ]
 					},
 					"erb" => {
 						"enabled" => false,
 						"globs" => [ "**/*.erb" ],
-						"command" => [ "ruby", "~/AI/CODING/erb.lint.rb", "{files}" ],
-						"config_files" => [ "~/AI/CODING/erb.lint.rb" ]
+						"command" => [ "ruby", "~/.carson/lint/erb.lint.rb", "{files}" ],
+						"config_files" => [ "~/.carson/lint/erb.lint.rb" ]
 					}
 				}
 			end

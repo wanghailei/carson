@@ -76,12 +76,12 @@ module Carson
 		end
 
 		# Resolves report output precedence:
-		# 1) ~/.cache/carson when HOME is an absolute path
+		# 1) ~/.carson/cache when HOME is an absolute path
 		# 2) TMPDIR/carson when HOME is invalid and TMPDIR is absolute
 		# 3) /tmp/carson as final safety fallback
 		def report_dir_path
 			home = ENV.fetch( "HOME", "" ).to_s
-			return File.join( home, ".cache", "carson" ) if absolute_env_path?( path: home )
+			return File.join( home, ".carson", "cache" ) if absolute_env_path?( path: home )
 
 			tmpdir = ENV.fetch( "TMPDIR", "" ).to_s
 			return File.join( tmpdir, "carson" ) if absolute_env_path?( path: tmpdir )

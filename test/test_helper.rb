@@ -7,7 +7,7 @@ require_relative "../lib/carson"
 
 module CarsonTestSupport
 	def carson_tmp_root
-		candidate = File.join( Dir.home, ".cache", "carson-test" )
+		candidate = File.join( Dir.home, ".carson", "test" )
 		FileUtils.mkdir_p( candidate )
 		candidate
 	rescue StandardError

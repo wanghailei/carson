@@ -8,7 +8,7 @@ EXIT_ERROR = 1
 EXIT_BLOCK = 2
 
 def rubocop_config_path
-	File.expand_path( "~/AI/CODING/rubocop.yml" )
+	File.expand_path( "~/.carson/lint/rubocop.yml" )
 end
 
 def print_stream( io, text )
