@@ -5,7 +5,7 @@ require "tmpdir"
 module Carson
 	class Runtime
 		module Lint
-			# Prepares canonical lint policy files under ~/AI/CODING from an explicit source.
+			# Prepares canonical lint policy files under ~/.carson/lint from an explicit source.
 			def lint_setup!( source:, ref: "main", force: false )
 				print_header "Lint Setup"
 				source_text = source.to_s.strip
@@ -109,7 +109,7 @@ module Carson
 			def cache_workspace_root
 				home = ENV.fetch( "HOME", "" ).to_s.strip
 				if home.start_with?( "/" )
-					path = File.join( home, ".cache", "carson" )
+					path = File.join( home, ".carson", "cache" )
 					FileUtils.mkdir_p( path )
 					return path
 				end
@@ -122,7 +122,7 @@ module Carson
 				home = ENV.fetch( "HOME", "" ).to_s.strip
 				raise "HOME must be an absolute path for lint setup" unless home.start_with?( "/" )
 
-				File.join( home, "AI", "CODING" )
+				File.join( home, ".carson", "lint" )
 			end
 
 			def copy_lint_coding_tree( source_coding_dir:, target_coding_dir:, force: )

@@ -91,7 +91,7 @@ if [[ ! -x "$user_bin/carson" ]]; then
 	fail "Carson install error: expected executables not found in $user_bin."
 fi
 
-home_bin="$home_root/.local/bin"
+home_bin="$home_root/.carson/bin"
 mkdir -p "$home_bin"
 
 carson_link="$home_bin/carson"

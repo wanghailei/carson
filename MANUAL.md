@@ -29,18 +29,18 @@ carson version
 
 Carson enforces lint rules from a central policy source — a directory or git repository you control that contains a `CODING/` folder. For Ruby governance, the required file is `CODING/rubocop.yml`.
 
-Run `lint setup` to copy policy files into `~/AI/CODING/`:
+Run `lint setup` to copy policy files into `~/.carson/lint/`:
 
 ```bash
 carson lint setup --source /path/to/your-policy-repo
 ```
 
-After this command, `~/AI/CODING/rubocop.yml` exists and is ready for Carson to use. Every governed repository will reference these same policy files — this is how Carson keeps lint consistent.
+After this command, `~/.carson/lint/rubocop.yml` exists and is ready for Carson to use. Every governed repository will reference these same policy files — this is how Carson keeps lint consistent.
 
 Options:
 - `--source <path-or-git-url>` — where to read policy files from (required).
 - `--ref <git-ref>` — branch or tag when `--source` is a git URL.
-- `--force` — overwrite existing `~/AI/CODING` files.
+- `--force` — overwrite existing `~/.carson/lint` files.
 
 Policy layout: language config files sit directly under `CODING/` (flat layout, no language subfolders). Non-Ruby entries are present but disabled by default.
 
@@ -165,7 +165,7 @@ carson template check
 ```
 
 **Audit blocks on repo-local `.rubocop.yml`**
-- Carson hard-blocks governed repositories that contain their own `.rubocop.yml`. Remove the repo-local file and rely on the central policy in `~/AI/CODING/rubocop.yml`.
+- Carson hard-blocks governed repositories that contain their own `.rubocop.yml`. Remove the repo-local file and rely on the central policy in `~/.carson/lint/rubocop.yml`.
 
 **Hook version mismatch after upgrade**
 - Run `carson refresh` to re-apply hooks and templates for the new Carson version.

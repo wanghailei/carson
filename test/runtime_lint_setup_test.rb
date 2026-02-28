@@ -21,7 +21,7 @@ class RuntimeLintSetupTest < Minitest::Test
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: source_root, ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert File.file?( File.join( @tmp_dir, "AI", "CODING", "rubocop.yml" ) )
+			assert File.file?( File.join( @tmp_dir, ".carson", "lint", "rubocop.yml" ) )
 		end
 	end
 
@@ -32,7 +32,7 @@ class RuntimeLintSetupTest < Minitest::Test
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: "file://#{source_repo}", ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert File.file?( File.join( @tmp_dir, "AI", "CODING", "rubocop.yml" ) )
+			assert File.file?( File.join( @tmp_dir, ".carson", "lint", "rubocop.yml" ) )
 		end
 	end
 
@@ -62,7 +62,7 @@ private
 				"enabled" => true,
 				"globs" => [ "**/*.rb" ],
 				"command" => [ "ruby", "/tmp/carson-ruby-lint.rb", "{files}" ],
-				"config_files" => [ "~/AI/CODING/rubocop.yml" ]
+				"config_files" => [ "~/.carson/lint/rubocop.yml" ]
 			},
 			"javascript" => {
 				"enabled" => false,
@@ -93,8 +93,8 @@ private
 			languages[ "javascript" ] = {
 				"enabled" => true,
 				"globs" => [ "**/*.js" ],
-				"command" => [ "node", "~/AI/CODING/javascript.lint.js", "{files}" ],
-				"config_files" => [ "~/AI/CODING/javascript.lint.js" ]
+				"command" => [ "node", "~/.carson/lint/javascript.lint.js", "{files}" ],
+				"config_files" => [ "~/.carson/lint/javascript.lint.js" ]
 			}
 		end
 		File.write( config_path, JSON.generate( { "lint" => { "languages" => languages } } ) )

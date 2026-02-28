@@ -61,11 +61,11 @@ fi
 gem install --user-install "carson" -v "$version" --clear-sources --source "$source_url"
 
 user_bin="$(ruby -e 'print Gem.user_dir')/bin"
-mkdir -p "$HOME/.local/bin"
-ln -sf "$user_bin/carson" "$HOME/.local/bin/carson"
+mkdir -p "$HOME/.carson/bin"
+ln -sf "$user_bin/carson" "$HOME/.carson/bin/carson"
 
 echo "Installed Carson ${version}"
-echo "Launcher linked: $HOME/.local/bin/carson"
+echo "Launcher linked: $HOME/.carson/bin/carson"
 echo "Post-upgrade step (per governed repository):"
 echo "  carson hook && carson check"
 echo "This aligns core.hooksPath to ~/.carson/hooks/${version}."

@@ -122,7 +122,7 @@ module Carson
 				opts.banner = "Usage: carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]"
 				opts.on( "--source SOURCE", "Source repository path or git URL that contains CODING/" ) { |value| options[ :source ] = value.to_s.strip }
 				opts.on( "--ref REF", "Git ref used when --source is a git URL (default: main)" ) { |value| options[ :ref ] = value.to_s.strip }
-				opts.on( "--force", "Overwrite existing files in ~/AI/CODING" ) { options[ :force ] = true }
+				opts.on( "--force", "Overwrite existing files in ~/.carson/lint" ) { options[ :force ] = true }
 			end
 			lint_parser.parse!( argv )
 			if options.fetch( :source ).to_s.empty?

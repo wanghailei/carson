@@ -5,6 +5,51 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 1.1.0
+
+### User Overview
+
+#### What changed
+
+- All Carson home-directory paths consolidated under `~/.carson/`:
+  - Lint policy files: `~/AI/CODING/` moved to `~/.carson/lint/`.
+  - Audit reports and cache: `~/.cache/carson/` moved to `~/.carson/cache/`.
+  - Launcher symlink: `~/.local/bin/carson` moved to `~/.carson/bin/carson`.
+
+#### Why users should care
+
+- Carson now uses a single top-level directory (`~/.carson/`) for all state. Uninstalling is `rm -rf ~/.carson` plus `gem uninstall carson`.
+- No more scattered paths across `~/.cache`, `~/.local/bin`, and `~/AI`.
+
+#### What users must do now
+
+1. Upgrade Carson to `1.1.0`.
+2. Update PATH: replace `~/.local/bin` with `~/.carson/bin` in your shell profile.
+3. Rerun `carson lint setup --source <path-or-git-url> --force` to populate `~/.carson/lint/`.
+4. Optionally clean up old paths: `rm -rf ~/.cache/carson ~/AI/CODING ~/.local/bin/carson`.
+
+#### Breaking or removed behaviour
+
+- `~/AI/CODING/` is no longer the default lint policy directory.
+- `~/.cache/carson/` is no longer the default report output directory.
+- `~/.local/bin/carson` is no longer the default launcher symlink location.
+- Users with custom `lint.languages` entries in `~/.carson/config.json` pointing to `~/AI/CODING/` must update those paths.
+
+#### Upgrade steps
+
+```bash
+gem install --user-install carson -v 1.1.0
+mkdir -p ~/.carson/bin
+ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.carson/bin/carson
+export PATH="$HOME/.carson/bin:$PATH"
+carson version
+carson lint setup --source /path/to/your-policy-repo --force
+```
+
+Add the `PATH` export to your shell profile so it persists across sessions.
+
+---
+
 ## 1.0.0 (2026-02-25)
 
 ### User Overview

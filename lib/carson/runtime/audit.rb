@@ -279,7 +279,7 @@ module Carson
 					local_rubocop_path = File.join( repo_root, ".rubocop.yml" )
 					if File.file?( local_rubocop_path )
 						report[ :status ] = "block"
-						report[ :reason ] = "repo-local RuboCop config is forbidden: #{relative_path( local_rubocop_path )}; remove it and use ~/AI/CODING/rubocop.yml."
+						report[ :reason ] = "repo-local RuboCop config is forbidden: #{relative_path( local_rubocop_path )}; remove it and use ~/.carson/lint/rubocop.yml."
 						report[ :exit_code ] = EXIT_BLOCK
 						puts_line "lint_#{language}_status: block"
 						puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
@@ -297,7 +297,7 @@ module Carson
 					report[ :exit_code ] = EXIT_BLOCK
 					puts_line "lint_#{language}_status: block"
 					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
-					puts_line "ACTION: run carson lint setup --source <path-or-git-url> to prepare ~/AI/CODING policy files."
+					puts_line "ACTION: run carson lint setup --source <path-or-git-url> to prepare ~/.carson/lint policy files."
 					return report
 				end
 

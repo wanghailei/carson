@@ -30,7 +30,7 @@ class RuntimeAuditLintTest < Minitest::Test
 			ruby_entry = report.fetch( :languages ).find { |entry| entry.fetch( :language ) == "ruby" }
 			assert_equal "block", ruby_entry.fetch( :status )
 			assert_match( /missing config files/, ruby_entry.fetch( :reason ) )
-			assert_match( /AI\/CODING\/rubocop\.yml/, ruby_entry.fetch( :reason ) )
+			assert_match( /\.carson\/lint\/rubocop\.yml/, ruby_entry.fetch( :reason ) )
 		end
 	end
 
@@ -222,7 +222,7 @@ private
 	end
 
 	def write_global_rubocop_config
-		path = File.join( ENV.fetch( "HOME" ), "AI", "CODING", "rubocop.yml" )
+		path = File.join( ENV.fetch( "HOME" ), ".carson", "lint", "rubocop.yml" )
 		FileUtils.mkdir_p( File.dirname( path ) )
 		File.write( path, "AllCops:\n  DisabledByDefault: true\n" )
 	end
@@ -245,7 +245,7 @@ private
 	def build_runtime_with_carson_ruby_runner
 		build_runtime_with_lint_config(
 			command: [ RbConfig.ruby, File.expand_path( "../lib/carson/policy/ruby/lint.rb", __dir__ ), "{files}" ],
-			config_files: [ "~/AI/CODING/rubocop.yml" ]
+			config_files: [ "~/.carson/lint/rubocop.yml" ]
 		)
 	end
 

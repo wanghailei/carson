@@ -17,8 +17,8 @@ Carson is a governance runtime that lives on your workstation and in CI, never i
 │                                     │
 │  ~/.carson/          Carson config  │
 │  ~/.carson/hooks/    Git hooks      │
-│  ~/AI/CODING/        Lint policy    │
-│  ~/.cache/carson/    Audit reports  │
+│  ~/.carson/lint/     Lint policy    │
+│  ~/.carson/cache/    Audit reports  │
 │                                     │
 │  carson audit ───► governs ────►  repo-A/
 │                                   repo-B/
@@ -32,7 +32,7 @@ Carson is a governance runtime that lives on your workstation and in CI, never i
 
 The data flow:
 
-1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/AI/CODING/` via `carson lint setup`.
+1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/.carson/lint/` via `carson lint setup`.
 2. `carson init` installs git hooks, synchronises `.github/*` templates, and runs a first governance audit on a host repository.
 3. From that point, every commit triggers `carson audit` through the managed `pre-commit` hook. The same `carson audit` runs in GitHub Actions. If it passes locally, it passes in CI.
 4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment — risk keywords, change requests — has been formally acknowledged by the PR author through a **disposition comment** (a reply with a configured prefix, e.g. `Disposition: ...`).
@@ -46,7 +46,7 @@ All governance checks are **advisory checks**: they produce deterministic pass/b
 
 | Command | What it does |
 |---|---|
-| `carson lint setup` | Seed `~/AI/CODING/` from your policy source. |
+| `carson lint setup` | Seed `~/.carson/lint/` from your policy source. |
 | `carson init` | One-command baseline: hooks + templates + first audit. |
 | `carson hook` | Install or refresh Carson-managed global hooks. |
 | `carson refresh` | Re-apply hooks, templates, and audit after upgrading Carson. |
@@ -87,7 +87,7 @@ gem install --user-install carson
 carson version
 ```
 
-**Prepare your lint policy.** A policy source is any directory (or git URL) that contains a `CODING/` folder with your lint configuration files. For Ruby, the required file is `CODING/rubocop.yml`. Carson copies these into `~/AI/CODING/` so that every governed repository uses the same rules:
+**Prepare your lint policy.** A policy source is any directory (or git URL) that contains a `CODING/` folder with your lint configuration files. For Ruby, the required file is `CODING/rubocop.yml`. Carson copies these into `~/.carson/lint/` so that every governed repository uses the same rules:
 
 ```bash
 carson lint setup --source /path/to/your-policy-repo
