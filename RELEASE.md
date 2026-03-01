@@ -42,8 +42,8 @@ gem install --user-install carson -v 1.1.0
 mkdir -p ~/.carson/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.carson/bin/carson
 export PATH="$HOME/.carson/bin:$PATH"
-carson version
-carson lint setup --source /path/to/your-policy-repo --force
+$HOME/.carson/bin/carson version
+$HOME/.carson/bin/carson lint setup --source /path/to/your-policy-repo --force
 ```
 
 Add the `PATH` export to your shell profile so it persists across sessions.
