@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="icon.svg" width="128" alt="Carson">
-</p>
+<img src="icon.svg" width="141" alt="Carson">
 
 # ⧓ Carson
 
