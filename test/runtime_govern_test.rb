@@ -345,7 +345,7 @@ class RuntimeGovernTest < Minitest::Test
 		with_env( "CARSON_CONFIG_FILE" => "" ) do
 			c = Carson::Config.load( repo_root: "." )
 			assert_equal [], c.govern_repos
-			assert_equal false, c.govern_merge_authority
+			assert_equal true, c.govern_merge_authority
 			assert_equal "merge", c.govern_merge_method
 			assert_equal "auto", c.govern_agent_provider
 		end
