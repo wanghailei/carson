@@ -137,6 +137,24 @@ The loop is built-in and cross-platform — no cron, launchd, or Task Scheduler 
 
 Each cycle runs independently: if one cycle fails (network error, GitHub API timeout), the error is logged and the next cycle proceeds normally. Press `Ctrl-C` to stop — Carson exits cleanly with a cycle count summary.
 
+## Merge Method and Linear History
+
+Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. The options are `merge`, `squash`, and `rebase` (default: `merge`). Set this in `~/.carson/config.json`:
+
+```json
+{
+  "govern": {
+    "merge": {
+      "method": "rebase"
+    }
+  }
+}
+```
+
+**Recommended practice:** enable "Require linear history" in your GitHub branch protection rules for `main`, and set Carson's merge method to `rebase`. This keeps the commit graph clean — every commit sits on a single line, is individually bisectable, and `git log --oneline` tells the full story without merge noise. With linear history enforced, GitHub rejects merge commits and squash merges automatically, so only rebase works.
+
+If your GitHub repo has linear history enabled and Carson's merge method is set to `merge` or `squash`, govern will fail when it tries to auto-merge a ready PR. Match the two settings.
+
 ## Configuration
 
 Default global config path: `~/.carson/config.json`.

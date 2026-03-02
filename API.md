@@ -40,6 +40,8 @@ carson <command> [subcommand] [arguments]
 
 `--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
+`govern.merge.method` accepts `merge`, `squash`, or `rebase` (default: `merge`). When the target repository enforces linear history on its default branch, only `rebase` is accepted by GitHub — set `govern.merge.method` to `rebase` to match.
+
 ### Review commands
 
 | Command | Purpose |
