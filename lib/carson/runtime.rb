@@ -3,6 +3,7 @@
 # adapter invocation, and report-location policy.
 require "fileutils"
 require "json"
+require "open3"
 require "time"
 
 module Carson
@@ -180,3 +181,4 @@ require_relative "runtime/local"
 require_relative "runtime/lint"
 require_relative "runtime/audit"
 require_relative "runtime/review"
+require_relative "runtime/govern"

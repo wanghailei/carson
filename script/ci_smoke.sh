@@ -582,6 +582,197 @@ printf 'runtime\n' > .tools/carson/README
 expect_exit 2 "outsider boundary blocks host repo .tools/carson" run_carson audit
 rm -rf .tools
 
+# Govern and housekeep smoke tests.
+cd "$work_repo"
+original_hooks_path_govern="$(git config --get core.hooksPath || true)"
+git config core.hooksPath .git/hooks
+git add -A >/dev/null
+git commit -m "commit templates for govern smoke tests" >/dev/null
+git push github main >/dev/null
+if [[ -n "$original_hooks_path_govern" ]]; then
+	git config core.hooksPath "$original_hooks_path_govern"
+else
+	git config --unset core.hooksPath 2>/dev/null || true
+fi
+expect_exit 0 "housekeep completes sync and prune" run_carson_with_mock_gh housekeep
+expect_exit 0 "govern --dry-run completes with no open PRs" run_carson_with_mock_gh govern --dry-run
+govern_output="$(run_carson_with_mock_gh govern --dry-run --json)"
+if [[ "$govern_output" != *"dry_run"* ]]; then
+	echo "FAIL: govern --dry-run --json did not produce JSON output" >&2
+	echo "actual output: $govern_output" >&2
+	exit 1
+fi
+echo "PASS: govern --dry-run --json produces structured output"
+
+# Govern with mock PR data: ready PR in dry-run.
+cat > "$mock_bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--version" ]]; then
+	echo "gh version mock"
+	exit 0
+fi
+if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+	cat <<'JSON'
+[{"number":42,"title":"Ready PR","headRefName":"feature/ready","url":"https://github.com/mock/mock-repo/pull/42","statusCheckRollup":[{"state":"SUCCESS","conclusion":"SUCCESS"}],"reviewDecision":"APPROVED"}]
+JSON
+	exit 0
+fi
+echo "unsupported gh invocation: $*" >&2
+exit 1
+GHEOF
+chmod +x "$mock_bin/gh"
+
+govern_ready_output="$(run_carson_with_mock_gh govern --dry-run)"
+if [[ "$govern_ready_output" != *"ready"* ]]; then
+	echo "FAIL: govern --dry-run did not classify ready PR" >&2
+	echo "actual output: $govern_ready_output" >&2
+	exit 1
+fi
+if [[ "$govern_ready_output" != *"would_merge"* ]]; then
+	echo "FAIL: govern --dry-run did not recommend would_merge for ready PR" >&2
+	echo "actual output: $govern_ready_output" >&2
+	exit 1
+fi
+echo "PASS: govern --dry-run classifies ready PR and recommends would_merge"
+
+# Govern with failing CI PR.
+cat > "$mock_bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--version" ]]; then
+	echo "gh version mock"
+	exit 0
+fi
+if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+	cat <<'JSON'
+[{"number":43,"title":"Failing PR","headRefName":"feature/fail","url":"https://github.com/mock/mock-repo/pull/43","statusCheckRollup":[{"state":"FAILURE","conclusion":"FAILURE"}],"reviewDecision":"APPROVED"}]
+JSON
+	exit 0
+fi
+echo "unsupported gh invocation: $*" >&2
+exit 1
+GHEOF
+chmod +x "$mock_bin/gh"
+
+govern_fail_output="$(run_carson_with_mock_gh govern --dry-run)"
+if [[ "$govern_fail_output" != *"ci_failing"* ]]; then
+	echo "FAIL: govern --dry-run did not classify CI-failing PR" >&2
+	echo "actual output: $govern_fail_output" >&2
+	exit 1
+fi
+echo "PASS: govern --dry-run classifies CI-failing PR"
+
+# Restore original mock gh for remaining tests.
+cat > "$mock_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+scenario="${CARSON_MOCK_GH_SCENARIO:-default}"
+
+if [[ "${1:-}" == "--version" ]]; then
+	echo "gh version mock"
+	exit 0
+fi
+
+if [[ "$scenario" == "baseline_block_failing" || "$scenario" == "baseline_block_pending" || "$scenario" == "baseline_block_no_evidence" ]]; then
+	if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+		echo "mock: no pull request for branch" >&2
+		exit 1
+	fi
+
+	if [[ "${1:-}" == "api" ]]; then
+		endpoint="${2:-}"
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+/commits/[^/]+/check-runs$ ]]; then
+			if [[ "$scenario" == "baseline_block_failing" ]]; then
+				cat <<JSON
+{"total_count":1,"check_runs":[{"name":"Schema contract","status":"completed","conclusion":"failure","html_url":"https://github.com/mock/mock-repo/actions/runs/11","app":{"name":"GitHub Actions"}}]}
+JSON
+			elif [[ "$scenario" == "baseline_block_pending" ]]; then
+				cat <<JSON
+{"total_count":1,"check_runs":[{"name":"CI smoke","status":"in_progress","conclusion":null,"html_url":"https://github.com/mock/mock-repo/actions/runs/12","app":{"name":"GitHub Actions"}}]}
+JSON
+			else
+				cat <<JSON
+{"total_count":0,"check_runs":[]}
+JSON
+			fi
+			exit 0
+		fi
+
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+/branches/ ]]; then
+			cat <<JSON
+{"name":"main","commit":{"sha":"abc123def456"}}
+JSON
+			exit 0
+		fi
+
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+/contents/.github/workflows$ ]]; then
+			cat <<JSON
+[{"name":"ci.yml","type":"file"},{"name":"carson_policy.yml","type":"file"}]
+JSON
+			exit 0
+		fi
+
+		if [[ "$endpoint" =~ ^repos/[^/]+/[^/]+$ ]]; then
+			cat <<JSON
+{"default_branch":"main"}
+JSON
+			exit 0
+		fi
+	fi
+fi
+
+if [[ "${1:-}" == "api" && "${2:-}" == repos/*/pulls ]]; then
+	head_filter=""
+	page_number="1"
+	while [[ "$#" -gt 0 ]]; do
+		if [[ "$1" == "-f" ]]; then
+			field="${2:-}"
+			case "$field" in
+				head=*) head_filter="${field#head=}" ;;
+				page=*) page_number="${field#page=}" ;;
+			esac
+			shift 2
+		else
+			shift
+		fi
+	done
+
+	if [[ "$page_number" != "1" ]]; then
+		echo "[]"
+		exit 0
+	fi
+
+	if [[ "$head_filter" == "local:tool/stale-prune-squash" ]]; then
+		tip_sha="$(git rev-parse --verify tool/stale-prune-squash 2>/dev/null || true)"
+		cat <<JSON
+[{"number":999,"html_url":"https://github.com/mock/mock-repo/pull/999","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"tool/stale-prune-squash","sha":"$tip_sha"},"base":{"ref":"main"}}]
+JSON
+		exit 0
+	fi
+
+	if [[ "$head_filter" == "local:tool/stale-prune-no-evidence" ]]; then
+		cat <<JSON
+[{"number":1000,"html_url":"https://github.com/mock/mock-repo/pull/1000","merged_at":"2026-02-17T00:00:00Z","head":{"ref":"tool/stale-prune-no-evidence","sha":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"},"base":{"ref":"main"}}]
+JSON
+		exit 0
+	fi
+
+	echo "[]"
+	exit 0
+fi
+
+if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+	echo "[]"
+	exit 0
+fi
+
+echo "unsupported gh invocation: $*" >&2
+exit 1
+EOF
+chmod +x "$mock_bin/gh"
+
 # Include dedicated review smoke suite from CI smoke entrypoint.
 cd "$repo_root"
 bash script/review_smoke.sh
