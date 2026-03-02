@@ -84,10 +84,13 @@ jobs:
           ruby -c exe/carson
           ruby -c lib/carson.rb
 
+      - name: Lint policy setup
+        run: ruby exe/carson lint setup --source test/fixtures/lint_policy_source --force
+
       - name: RuboCop access modifier indentation
         run: |
           gem install rubocop -v "$RUBOCOP_VERSION" --no-document
-          rubocop --config .rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
+          rubocop --config ~/.carson/lint/rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
 
       - name: Ruby indentation guard
         run: ruby script/ruby_indentation_guard.rb
