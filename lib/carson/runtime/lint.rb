@@ -7,7 +7,8 @@ module Carson
 		module Lint
 			# Prepares canonical lint policy files under ~/.carson/lint from an explicit source.
 			def lint_setup!( source:, ref: "main", force: false )
-				print_header "Lint Setup"
+				puts_verbose ""
+				puts_verbose "[Lint Setup]"
 				source_text = source.to_s.strip
 				if source_text.empty?
 					puts_line "ERROR: lint setup requires --source <path-or-git-url>."
@@ -29,12 +30,12 @@ module Carson
 						target_coding_dir: target_coding_dir,
 						force: force
 					)
-					puts_line "lint_setup_source: #{source_text}"
-					puts_line "lint_setup_ref: #{ref_text}" if lint_source_git_url?( source: source_text )
-					puts_line "lint_setup_target: #{target_coding_dir}"
-					puts_line "lint_setup_created: #{copy_result.fetch( :created )}"
-					puts_line "lint_setup_updated: #{copy_result.fetch( :updated )}"
-					puts_line "lint_setup_skipped: #{copy_result.fetch( :skipped )}"
+					puts_verbose "lint_setup_source: #{source_text}"
+					puts_verbose "lint_setup_ref: #{ref_text}" if lint_source_git_url?( source: source_text )
+					puts_verbose "lint_setup_target: #{target_coding_dir}"
+					puts_verbose "lint_setup_created: #{copy_result.fetch( :created )}"
+					puts_verbose "lint_setup_updated: #{copy_result.fetch( :updated )}"
+					puts_verbose "lint_setup_skipped: #{copy_result.fetch( :skipped )}"
 
 					missing_policy = missing_lint_policy_files
 					if missing_policy.empty?
@@ -43,7 +44,7 @@ module Carson
 					end
 
 					missing_policy.each do |entry|
-						puts_line "missing_lint_policy_file: language=#{entry.fetch( :language )} path=#{entry.fetch( :path )}"
+						puts_verbose "missing_lint_policy_file: language=#{entry.fetch( :language )} path=#{entry.fetch( :path )}"
 					end
 					puts_line "ACTION: update source CODING policy files, rerun carson lint setup, then rerun carson audit."
 					EXIT_ERROR

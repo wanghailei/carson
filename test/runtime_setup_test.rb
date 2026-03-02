@@ -179,7 +179,8 @@ private
 			tool_root: File.expand_path( "..", __dir__ ),
 			out: out,
 			err: err,
-			in_stream: input
+			in_stream: input,
+			verbose: true
 		)
 	end
 

@@ -14,12 +14,12 @@ module CarsonTestSupport
 		"/tmp"
 	end
 
-	def build_runtime( tool_root: nil )
+	def build_runtime( tool_root: nil, verbose: true )
 		repo_root = Dir.mktmpdir( "carson-runtime-test", carson_tmp_root )
 		out = StringIO.new
 		err = StringIO.new
 		resolved_tool_root = tool_root.nil? ? repo_root : tool_root
-		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: resolved_tool_root, out: out, err: err )
+		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: resolved_tool_root, out: out, err: err, verbose: verbose )
 		[ runtime, repo_root ]
 	end
 

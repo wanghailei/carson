@@ -202,10 +202,10 @@ module Carson
 						json_name: REVIEW_SWEEP_REPORT_JSON,
 						renderer: method( :render_review_sweep_markdown )
 					)
-					puts_line "review_sweep_report_markdown: #{markdown_path}"
-					puts_line "review_sweep_report_json: #{json_path}"
+					puts_verbose "review_sweep_report_markdown: #{markdown_path}"
+					puts_verbose "review_sweep_report_json: #{json_path}"
 				rescue StandardError => e
-					puts_line "review_sweep_report_write: SKIP (#{e.message})"
+					puts_verbose "review_sweep_report_write: SKIP (#{e.message})"
 				end
 
 				# Human-readable scheduled sweep report.

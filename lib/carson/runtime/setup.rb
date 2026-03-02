@@ -4,7 +4,8 @@ module Carson
 			WELL_KNOWN_REMOTES = %w[origin github upstream].freeze
 
 			def setup!
-				print_header "Setup"
+				puts_verbose ""
+				puts_verbose "[Setup]"
 
 				unless inside_git_work_tree?
 					puts_line "WARN: not a git repository. Skipping remote and branch detection."
@@ -43,19 +44,19 @@ module Carson
 				choices = {}
 				if detected && detected != config.git_remote
 					choices[ "git.remote" ] = detected
-					puts_line "detected_remote: #{detected}"
+					puts_verbose "detected_remote: #{detected}"
 				elsif detected
-					puts_line "detected_remote: #{detected}"
+					puts_verbose "detected_remote: #{detected}"
 				else
-					puts_line "detected_remote: none"
+					puts_verbose "detected_remote: none"
 				end
 
 				branch = detect_main_branch
 				if branch && branch != config.main_branch
 					choices[ "git.main_branch" ] = branch
-					puts_line "detected_main_branch: #{branch}"
+					puts_verbose "detected_main_branch: #{branch}"
 				elsif branch
-					puts_line "detected_main_branch: #{branch}"
+					puts_verbose "detected_main_branch: #{branch}"
 				end
 
 				write_setup_config( choices: choices )
@@ -103,8 +104,8 @@ module Carson
 				puts_line ""
 				puts_line "Workflow style"
 				options = [
-					{ label: "trunk — commit directly to main (default)", value: "trunk" },
-					{ label: "branch — enforce PR-only merges", value: "branch" }
+					{ label: "branch — enforce PR-only merges (default)", value: "branch" },
+					{ label: "trunk — commit directly to main", value: "trunk" }
 				]
 				prompt_choice( options: options, default: 0 )
 			end

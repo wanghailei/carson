@@ -16,7 +16,11 @@ module Carson
 			def review_gate!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
-				print_header "Review Gate"
+				puts_verbose ""
+				puts_verbose "[Review Gate]"
+				unless verbose?
+					puts_line "Review Gate"
+				end
 				unless gh_available?
 					puts_line "ERROR: gh CLI not available in PATH."
 					return EXIT_ERROR
@@ -67,13 +71,13 @@ module Carson
 					snapshot = review_gate_snapshot( owner: owner, repo: repo, pr_number: pr_summary.fetch( :number ) )
 					last_snapshot = snapshot
 					signature = review_gate_signature( snapshot: snapshot )
-					puts_line "poll_attempt: #{poll_attempts}/#{config.review_max_polls}"
-					puts_line "latest_activity: #{snapshot.fetch( :latest_activity ) || 'unknown'}"
-					puts_line "unresolved_threads: #{snapshot.fetch( :unresolved_threads ).count}"
-					puts_line "unacknowledged_actionable: #{snapshot.fetch( :unacknowledged_actionable ).count}"
+					puts_verbose "poll_attempt: #{poll_attempts}/#{config.review_max_polls}"
+					puts_verbose "latest_activity: #{snapshot.fetch( :latest_activity ) || 'unknown'}"
+					puts_verbose "unresolved_threads: #{snapshot.fetch( :unresolved_threads ).count}"
+					puts_verbose "unacknowledged_actionable: #{snapshot.fetch( :unacknowledged_actionable ).count}"
 					if !last_signature.nil? && signature == last_signature
 						converged = true
-						puts_line "convergence: stable"
+						puts_verbose "convergence: stable"
 						break
 					end
 					last_signature = signature
@@ -110,6 +114,9 @@ module Carson
 					unacknowledged_actionable: last_snapshot.fetch( :unacknowledged_actionable )
 				}
 				write_review_gate_report( report: report )
+				unless verbose?
+					puts_line "Polling... (converged after #{poll_attempts} attempt#{plural_suffix( count: poll_attempts )})"
+				end
 				if block_reasons.empty?
 					puts_line "OK: review gate passed."
 					return EXIT_OK
@@ -128,7 +135,8 @@ module Carson
 			def review_sweep!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
-				print_header "Review Sweep"
+				puts_verbose ""
+				puts_verbose "[Review Sweep]"
 				unless gh_available?
 					puts_line "ERROR: gh CLI not available in PATH."
 					return EXIT_ERROR
@@ -137,8 +145,8 @@ module Carson
 				owner, repo = repository_coordinates
 				cutoff_time = Time.now.utc - ( config.review_sweep_window_days * 86_400 )
 				pull_requests = recent_pull_requests_for_sweep( owner: owner, repo: repo, cutoff_time: cutoff_time )
-				puts_line "window_days: #{config.review_sweep_window_days}"
-				puts_line "candidate_prs: #{pull_requests.count}"
+				puts_verbose "window_days: #{config.review_sweep_window_days}"
+				puts_verbose "candidate_prs: #{pull_requests.count}"
 				findings = []
 
 				pull_requests.each do |entry|

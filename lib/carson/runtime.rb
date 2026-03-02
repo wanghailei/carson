@@ -23,13 +23,13 @@ module Carson
 		DISPOSITION_TOKENS = %w[accepted rejected deferred].freeze
 
 		# Runtime wiring for repository context, tool paths, and output streams.
-		def initialize( repo_root:, tool_root:, out:, err:, in_stream: $stdin )
+		def initialize( repo_root:, tool_root:, out:, err:, in_stream: $stdin, verbose: false )
 			@repo_root = repo_root
 			@tool_root = tool_root
 			@out = out
 			@err = err
 			@in = in_stream
-			@concise = false
+			@verbose = verbose
 			@config = Config.load( repo_root: repo_root )
 			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
@@ -39,9 +39,14 @@ module Carson
 
 		attr_reader :repo_root, :tool_root, :out, :err, :in, :config, :git_adapter, :github_adapter
 
-		# Returns true when output should be minimal (used by onboard/refresh).
-		def concise?
-			@concise
+		# Returns true when full diagnostic output is enabled via --verbose.
+		def verbose?
+			@verbose
+		end
+
+		# Prints a line only when verbose mode is active.
+		def puts_verbose( message )
+			puts_line( message ) if verbose?
 		end
 
 		# Runs a block with all output captured (suppressed from the user).
