@@ -280,14 +280,14 @@ git clone "$remote_repo" "$init_repo" >/dev/null
 	git switch main >/dev/null 2>&1 || git switch -c main --track origin/main >/dev/null 2>&1 || git switch -c main >/dev/null
 )
 cd "$repo_root"
-expect_exit 0 "init initialises repo path and renames origin remote" run_carson init "$init_repo"
+expect_exit 0 "onboard initialises repo path and renames origin remote" run_carson onboard "$init_repo"
 if ! git -C "$init_repo" remote get-url github >/dev/null 2>&1; then
 	echo "FAIL: init did not align remote name to github" >&2
 	exit 1
 fi
 echo "PASS: init aligned remote name to github"
 cd "$init_repo"
-expect_exit 0 "check passes after init" run_carson check
+expect_exit 0 "inspect passes after onboard" run_carson inspect
 previous_hooks_dir="$tmp_root/previous-hooks/$expected_carson_version"
 mkdir -p "$previous_hooks_dir"
 cp "$tmp_root/global-hooks/$expected_carson_version/"* "$previous_hooks_dir/"
@@ -322,10 +322,10 @@ expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 
 # Validate core setup flows (check/sync/hook/template).
 cd "$work_repo"
-expect_exit 2 "check blocks before hooks are installed" run_carson check
+expect_exit 2 "inspect blocks before hooks are installed" run_carson inspect
 expect_exit 0 "sync keeps local main aligned to github/main" run_carson sync
-expect_exit 0 "hook installs required hooks to global runtime path" run_carson hook
-expect_exit 0 "check passes after hook install" run_carson check
+expect_exit 0 "prepare installs required hooks to global runtime path" run_carson prepare
+expect_exit 0 "inspect passes after prepare install" run_carson inspect
 expect_exit 2 "audit blocks when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
 expect_exit 2 "audit blocks when default-branch baseline has pending check-runs" run_carson_with_mock_gh_scenario baseline_block_pending audit
 expect_exit 2 "audit blocks when default-branch workflows have no check-run evidence" run_carson_with_mock_gh_scenario baseline_block_no_evidence audit

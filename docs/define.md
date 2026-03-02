@@ -15,7 +15,7 @@ Repository controls degrade when local workflows diverge, review handling is inc
 - Predictable onboarding and daily operation for repository maintainers.
 
 ## In-scope capabilities
-- Local governance commands (`init`, `audit`, `sync`, `prune`, `hook`, `check`, `template`, `review`, `offboard`).
+- Local governance commands (`onboard`, `audit`, `sync`, `prune`, `prepare`, `inspect`, `template`, `review`, `offboard`).
 - Review governance via `review gate` and `review sweep`.
 - Whole-file management of selected GitHub-native policy files under `.github/*`.
 - Strict exit status contract suitable for automation.
@@ -32,7 +32,7 @@ Repository controls degrade when local workflows diverge, review handling is inc
 - CI owners needing deterministic pass/fail policy signals.
 
 ## Success criteria
-- New repository can reach governed baseline through one command (`carson init`).
+- New repository can reach governed baseline through one command (`carson onboard`).
 - Daily governance cadence is short and repeatable.
 - Policy failures are actionable and deterministic.
 - Host repositories remain free of Carson-owned runtime fingerprints.

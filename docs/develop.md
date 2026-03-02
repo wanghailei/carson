@@ -121,9 +121,73 @@ Before dispatching an agent, Carson gathers evidence specific to the objective:
 
 When checks are pending and the PR was recently updated (within `govern.check_wait` seconds, default 30), Carson classifies the PR as `pending` and skips it. This prevents premature dispatch while GitHub bots and CI are still posting results.
 
+## User Journey — Full Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  1. INSTALL & ONBOARD                                           │
+│                                                                 │
+│  gem install carson                                             │
+│  carson lint setup --source <policy-repo>                       │
+│  carson onboard /path/to/repo                                   │
+│    ├── prepare  (copy hooks, write workflow_style flag)          │
+│    ├── template apply  (sync .github/* files)                   │
+│    ├── audit  (first governance check)                          │
+│    └── guidance  (print workflow style, config hints)            │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  2. LOCAL WORK                                                  │
+│                                                                 │
+│  code → git add → git commit                                    │
+│    ├── pre-commit hook  → carson audit (lint, scope, boundary)  │
+│    └── prepare-commit-msg hook                                  │
+│         ├── trunk mode  → allow (exit 0)                        │
+│         └── branch mode → block commits on main/master          │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  3. PUSH & PR                                                   │
+│                                                                 │
+│  git push                                                       │
+│    └── pre-push hook                                            │
+│         ├── trunk mode  → allow (exit 0)                        │
+│         └── branch mode → block direct push to main/master      │
+│  → GitHub CI runs carson audit (same checks as local)           │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  4. REVIEW GATE                                                 │
+│                                                                 │
+│  carson review gate                                             │
+│    ├── quick-check  → if all resolved, skip warmup              │
+│    ├── warmup       → wait (default 10s) for bot posts          │
+│    ├── poll loop    → snapshot, compare, converge               │
+│    │    └── bot-aware: skip comments from configured bots       │
+│    └── verdict      → OK (merge-ready) or BLOCK (reasons)       │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  5. GOVERN CYCLE                                                │
+│                                                                 │
+│  carson govern                                                  │
+│    ├── list open PRs across portfolio (gh pr list)              │
+│    ├── classify each PR (CI / review / audit status)            │
+│    │    ├── ready        → merge + housekeep                    │
+│    │    ├── ci_failing   → gather CI logs → dispatch agent      │
+│    │    ├── review_blocked → gather findings → dispatch agent   │
+│    │    └── pending      → skip (wait for checks)               │
+│    ├── housekeep (sync main + prune stale branches)             │
+│    └── next cycle picks up agent push results                   │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  6. MAINTENANCE                                                 │
+│                                                                 │
+│  carson refresh     (re-apply hooks + templates after upgrade)  │
+│  carson review sweep (scan recent PRs for late feedback)        │
+│  carson offboard    (remove Carson from a repository)           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ## Core Command Flow
 
-1. `init` sets baseline (`hook`, `template apply`, `audit`) for a target repository.
+1. `onboard` sets baseline (`prepare`, `template apply`, `audit`) for a target repository.
 2. `audit` evaluates governance state and policy compliance.
 3. `sync` fast-forwards local `main` from configured remote.
 4. `prune` removes stale local branches tracking deleted upstream refs.

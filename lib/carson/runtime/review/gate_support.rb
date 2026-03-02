@@ -4,10 +4,16 @@ module Carson
 			module GateSupport
 			private
 
-				def wait_for_review_warmup
+				def wait_for_review_warmup( owner:, repo:, pr_number: )
 					return unless config.review_wait_seconds.positive?
+					quick = review_gate_snapshot( owner: owner, repo: repo, pr_number: pr_number )
+					if quick[ :unresolved_threads ].empty? && quick[ :unacknowledged_actionable ].empty?
+						puts_line "warmup_skip: all threads resolved"
+						return quick
+					end
 					puts_line "warmup_wait_seconds: #{config.review_wait_seconds}"
 					sleep config.review_wait_seconds
+					nil
 				end
 
 				# Poll delay between consecutive snapshot reads during convergence checks.
@@ -60,6 +66,10 @@ module Carson
 					}
 				end
 
+				def bot_username?( author: )
+					config.review_bot_usernames.any? { |bot| bot.downcase == author.to_s.downcase }
+				end
+
 				def unresolved_thread_entries( details: )
 					Array( details.fetch( :review_threads ) ).each_with_index.map do |thread, index|
 						next if thread.fetch( :is_resolved )
@@ -67,6 +77,7 @@ module Carson
 						next if thread.fetch( :is_outdated )
 						comments = thread.fetch( :comments )
 						first_comment = comments.first || {}
+						next if bot_username?( author: first_comment.fetch( :author, "" ) )
 						latest_time = comments.map { |entry| entry.fetch( :created_at ) }.max.to_s
 						{
 							url: blank_to( value: first_comment.fetch( :url, "" ), default: "#{details.fetch( :url )}#thread-#{index + 1}" ),
@@ -83,6 +94,7 @@ module Carson
 					items = []
 					Array( details.fetch( :comments ) ).each do |comment|
 						next if comment.fetch( :author ) == pr_author
+						next if bot_username?( author: comment.fetch( :author ) )
 						next if disposition_prefixed?( text: comment.fetch( :body ) )
 						hits = matched_risk_keywords( text: comment.fetch( :body ) )
 						next if hits.empty?
@@ -96,6 +108,7 @@ module Carson
 					end
 					Array( details.fetch( :reviews ) ).each do |review|
 						next if review.fetch( :author ) == pr_author
+						next if bot_username?( author: review.fetch( :author ) )
 						next if disposition_prefixed?( text: review.fetch( :body ) )
 						hits = matched_risk_keywords( text: review.fetch( :body ) )
 						changes_requested = review.fetch( :state ) == "CHANGES_REQUESTED"

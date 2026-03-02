@@ -10,8 +10,10 @@ module Carson
 			:path_groups, :template_managed_files, :lint_languages,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
-			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation,
+			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
+			:ruby_indentation,
 			:audit_advisory_check_names,
+			:workflow_style,
 			:govern_repos, :govern_merge_authority, :govern_merge_method,
 			:govern_agent_provider, :govern_dispatch_state_path,
 			:govern_check_wait
@@ -49,8 +51,12 @@ module Carson
 				"lint" => {
 					"languages" => default_lint_languages_data
 				},
+				"workflow" => {
+					"style" => "trunk"
+				},
 				"review" => {
-					"wait_seconds" => 60,
+					"bot_usernames" => [],
+					"wait_seconds" => 10,
 					"poll_seconds" => 15,
 					"max_polls" => 20,
 					"required_disposition_prefix" => "Disposition:",
@@ -175,6 +181,9 @@ module Carson
 			hooks = fetch_hash_section( data: copy, key: "hooks" )
 			hooks_path = ENV.fetch( "CARSON_HOOKS_BASE_PATH", "" ).to_s.strip
 			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
+			workflow = fetch_hash_section( data: copy, key: "workflow" )
+			workflow_style = ENV.fetch( "CARSON_WORKFLOW_STYLE", "" ).to_s.strip
+			workflow[ "style" ] = workflow_style unless workflow_style.empty?
 			review = fetch_hash_section( data: copy, key: "review" )
 			review[ "wait_seconds" ] = env_integer( key: "CARSON_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
 			review[ "poll_seconds" ] = env_integer( key: "CARSON_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
@@ -185,6 +194,8 @@ module Carson
 			sweep[ "window_days" ] = env_integer( key: "CARSON_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
 			states = env_string_array( key: "CARSON_REVIEW_SWEEP_STATES" )
 			sweep[ "states" ] = states unless states.empty?
+			bot_usernames = env_string_array( key: "CARSON_REVIEW_BOT_USERNAMES" )
+			review[ "bot_usernames" ] = bot_usernames unless bot_usernames.empty?
 			audit = fetch_hash_section( data: copy, key: "audit" )
 			advisory_names = env_string_array( key: "CARSON_AUDIT_ADVISORY_CHECK_NAMES" )
 			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
@@ -240,6 +251,9 @@ module Carson
 				languages_hash: fetch_hash( hash: fetch_hash( hash: data, key: "lint" ), key: "languages" )
 			)
 
+			workflow_hash = fetch_hash( hash: data, key: "workflow" )
+			@workflow_style = fetch_string( hash: workflow_hash, key: "style" ).downcase
+
 			review_hash = fetch_hash( hash: data, key: "review" )
 			@review_wait_seconds = fetch_non_negative_integer( hash: review_hash, key: "wait_seconds" )
 			@review_poll_seconds = fetch_non_negative_integer( hash: review_hash, key: "poll_seconds" )
@@ -252,6 +266,7 @@ module Carson
 			tracking_issue_hash = fetch_hash( hash: review_hash, key: "tracking_issue" )
 			@review_tracking_issue_title = fetch_string( hash: tracking_issue_hash, key: "title" )
 			@review_tracking_issue_label = fetch_string( hash: tracking_issue_hash, key: "label" )
+			@review_bot_usernames = fetch_optional_string_array( hash: review_hash, key: "bot_usernames" )
 			audit_hash = fetch_hash( hash: data, key: "audit" )
 			@audit_advisory_check_names = fetch_optional_string_array( hash: audit_hash, key: "advisory_check_names" )
 			style_hash = fetch_hash( hash: data, key: "style" )
@@ -287,6 +302,7 @@ module Carson
 				raise ConfigError, "review.sweep.states cannot contain duplicates" unless review_sweep_states.uniq.length == review_sweep_states.length
 				raise ConfigError, "review.tracking_issue.title cannot be empty" if review_tracking_issue_title.empty?
 				raise ConfigError, "review.tracking_issue.label cannot be empty" if review_tracking_issue_label.empty?
+				raise ConfigError, "workflow.style must be one of trunk, branch" unless [ "trunk", "branch" ].include?( workflow_style )
 				raise ConfigError, "style.ruby_indentation must be one of tabs, spaces, either" unless [ "tabs", "spaces", "either" ].include?( ruby_indentation )
 				raise ConfigError, "govern.merge.method must be one of merge, squash, rebase" unless [ "merge", "squash", "rebase" ].include?( govern_merge_method )
 				raise ConfigError, "govern.agent.provider must be one of auto, codex, claude" unless [ "auto", "codex", "claude" ].include?( govern_agent_provider )

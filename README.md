@@ -61,8 +61,8 @@ The data flow:
 | Command | What it does |
 |---|---|
 | `carson lint setup` | Seed `~/.carson/lint/` from your policy source. |
-| `carson init` | One-command baseline: hooks + templates + first audit. |
-| `carson hook` | Install or refresh Carson-managed global hooks. |
+| `carson onboard` | One-command baseline: hooks + templates + first audit. |
+| `carson prepare` | Install or refresh Carson-managed global hooks. |
 | `carson refresh` | Re-apply hooks, templates, and audit after upgrading Carson. |
 | `carson offboard` | Remove Carson from a repository. |
 
@@ -88,7 +88,7 @@ The data flow:
 | Command | What it does |
 |---|---|
 | `carson version` | Print installed version. |
-| `carson check` | Verify Carson-managed hook installation and repository setup. |
+| `carson inspect` | Verify Carson-managed hook installation and repository setup. |
 
 ## Quickstart
 
@@ -110,10 +110,10 @@ carson lint setup --source /path/to/your-policy-repo
 **Onboard a repository:**
 
 ```bash
-carson init /path/to/your-repo
+carson onboard /path/to/your-repo
 ```
 
-After `carson init`, your repository has:
+After `carson onboard`, your repository has:
 - Git hooks that run `carson audit` on every commit.
 - Managed `.github/*` templates synchronised from Carson.
 - An initial governance audit report.

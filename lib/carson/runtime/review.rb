@@ -56,10 +56,10 @@ module Carson
 					return EXIT_BLOCK
 				end
 
-				wait_for_review_warmup
+				pre_snapshot = wait_for_review_warmup( owner: owner, repo: repo, pr_number: pr_summary.fetch( :number ) )
 				converged = false
-				last_snapshot = nil
-				last_signature = nil
+				last_snapshot = pre_snapshot
+				last_signature = pre_snapshot.nil? ? nil : review_gate_signature( snapshot: pre_snapshot )
 				poll_attempts = 0
 
 				config.review_max_polls.times do |index|

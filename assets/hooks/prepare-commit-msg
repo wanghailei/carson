@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+hooks_dir="$(cd "$(dirname "$0")" && pwd)"
+style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "trunk")"
+[ "$style" = "trunk" ] && exit 0
+
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$branch_name" == "main" || "$branch_name" == "master" ]]; then
 	echo "Carson policy: direct commits on ${branch_name} are blocked. Work on a feature branch and merge via PR." >&2
