@@ -8,7 +8,7 @@ module Carson
 			def build_prompt( work_order: )
 				parts = []
 				parts << "You are an automated coding agent dispatched by Carson to fix an issue on a pull request."
-				parts << "Repository: #{sanitize( work_order.repo )}"
+				parts << "Repository: #{sanitize( File.basename( work_order.repo ) )}"
 				parts << "<pr_branch>#{sanitize( work_order.branch )}</pr_branch>"
 				parts << "PR: ##{work_order.pr_number}"
 				parts << "Objective: #{work_order.objective}"
