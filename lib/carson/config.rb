@@ -71,7 +71,7 @@ module Carson
 					}
 				},
 				"audit" => {
-					"advisory_check_names" => [ "Scheduled review sweep", "Carson governance" ]
+					"advisory_check_names" => [ "Scheduled review sweep", "Carson governance", "Tag, release, publish" ]
 				},
 				"govern" => {
 					"repos" => [],
