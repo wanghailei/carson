@@ -2,7 +2,7 @@
 set -euo pipefail
 
 hooks_dir="$(cd "$(dirname "$0")" && pwd)"
-style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "trunk")"
+style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "branch")"
 [ "$style" = "trunk" ] && exit 0
 
 remote_name="${1:-unknown}"

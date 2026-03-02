@@ -53,7 +53,7 @@ module Carson
 					"languages" => default_lint_languages_data
 				},
 				"workflow" => {
-					"style" => "trunk"
+					"style" => "branch"
 				},
 				"review" => {
 					"bot_usernames" => [],
