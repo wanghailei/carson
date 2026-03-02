@@ -4,6 +4,7 @@
 require "fileutils"
 require "json"
 require "open3"
+require "stringio"
 require "time"
 
 module Carson
@@ -28,6 +29,7 @@ module Carson
 			@out = out
 			@err = err
 			@in = in_stream
+			@concise = false
 			@config = Config.load( repo_root: repo_root )
 			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
@@ -36,6 +38,22 @@ module Carson
 	private
 
 		attr_reader :repo_root, :tool_root, :out, :err, :in, :config, :git_adapter, :github_adapter
+
+		# Returns true when output should be minimal (used by onboard/refresh).
+		def concise?
+			@concise
+		end
+
+		# Runs a block with all output captured (suppressed from the user).
+		# Returns the block's return value; output is silently discarded.
+		def with_captured_output
+			saved_out, saved_err = @out, @err
+			@out = StringIO.new
+			@err = StringIO.new
+			yield
+		ensure
+			@out, @err = saved_out, saved_err
+		end
 
 		# Current local branch name.
 		def current_branch

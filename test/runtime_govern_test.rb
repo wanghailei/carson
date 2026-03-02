@@ -1020,8 +1020,8 @@ class RuntimeGovernTest < Minitest::Test
 				)
 				runtime.onboard!
 				output = out.string
-				assert_includes output, "Carson is ready. Current workflow: trunk"
-				assert_includes output, "Run carson refresh after changing config."
+				assert_includes output, "Carson is ready. Workflow: trunk"
+				assert_includes output, "Reconfigure anytime: carson setup"
 			end
 		end
 	end
