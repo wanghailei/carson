@@ -60,7 +60,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CARSON_PR_NUMBER: ${{ github.event.pull_request.number }}
-          CARSON_REVIEW_BOT_USERNAMES: "gemini-code-assist[bot]"
+          CARSON_REVIEW_BOT_USERNAMES: "gemini-code-assist"
         run: ruby exe/carson review gate
 
   smoke:
