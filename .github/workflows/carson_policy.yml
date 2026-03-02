@@ -66,13 +66,6 @@ jobs:
       - name: Install pinned RuboCop
         run: gem install rubocop -v "${{ inputs.rubocop_version }}" --no-document
 
-      - name: Align remote name for Carson
-        working-directory: host
-        run: |
-          if ! git remote get-url github >/dev/null 2>&1; then
-            git remote rename origin github
-          fi
-
       - name: Carson audit
         working-directory: host
         env:
