@@ -44,7 +44,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [audit|sync|prune|hook|check|init [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|version]"
+				opts.banner = "Usage: carson [audit|sync|prune|hook|check|init [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json]|housekeep|version]"
 			end
 		end
 
@@ -73,6 +73,8 @@ module Carson
 				parse_lint_subcommand( argv: argv, parser: parser, err: err )
 			when "review"
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
+			when "govern"
+				parse_govern_subcommand( argv: argv, err: err )
 			else
 				parser.parse!( argv )
 				{ command: command }
@@ -147,6 +149,33 @@ module Carson
 			{ command: :invalid }
 		end
 
+		def self.parse_govern_subcommand( argv:, err: )
+			options = {
+				dry_run: false,
+				json: false
+			}
+			govern_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson govern [--dry-run] [--json]"
+				opts.on( "--dry-run", "Run all checks but do not merge or dispatch" ) { options[ :dry_run ] = true }
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			govern_parser.parse!( argv )
+			unless argv.empty?
+				err.puts "Unexpected arguments for govern: #{argv.join( ' ' )}"
+				err.puts govern_parser
+				return { command: :invalid }
+			end
+			{
+				command: "govern",
+				dry_run: options.fetch( :dry_run ),
+				json: options.fetch( :json )
+			}
+		rescue OptionParser::ParseError => e
+			err.puts e.message
+			err.puts govern_parser
+			{ command: :invalid }
+		end
+
 		def self.dispatch( parsed:, runtime: )
 			command = parsed.fetch( :command )
 			return Runtime::EXIT_ERROR if command == :invalid
@@ -182,6 +211,13 @@ module Carson
 				runtime.review_gate!
 			when "review:sweep"
 				runtime.review_sweep!
+			when "govern"
+				runtime.govern!(
+					dry_run: parsed.fetch( :dry_run, false ),
+					json_output: parsed.fetch( :json, false )
+				)
+			when "housekeep"
+				runtime.housekeep!
 			else
 				runtime.send( :puts_line, "Unknown command: #{command}" )
 				Runtime::EXIT_ERROR

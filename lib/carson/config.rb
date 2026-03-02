@@ -11,7 +11,9 @@ module Carson
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation,
-			:audit_advisory_check_names
+			:audit_advisory_check_names,
+			:govern_repos, :govern_merge_authority, :govern_merge_method,
+			:govern_agent_provider, :govern_dispatch_state_path
 
 		def self.load( repo_root: )
 			base_data = default_data
@@ -63,6 +65,19 @@ module Carson
 				},
 				"audit" => {
 					"advisory_check_names" => [ "Scheduled review sweep", "Carson governance" ]
+				},
+				"govern" => {
+					"repos" => [],
+					"merge" => {
+						"authority" => false,
+						"method" => "merge"
+					},
+					"agent" => {
+						"provider" => "auto",
+						"codex" => {},
+						"claude" => {}
+					},
+					"dispatch_state_path" => "~/.carson/govern/dispatch_state.json"
 				},
 				"style" => {
 					"ruby_indentation" => "tabs"
@@ -174,6 +189,17 @@ module Carson
 			style = fetch_hash_section( data: copy, key: "style" )
 			ruby_indentation = ENV.fetch( "CARSON_RUBY_INDENTATION", "" ).to_s.strip
 			style[ "ruby_indentation" ] = ruby_indentation unless ruby_indentation.empty?
+			govern = fetch_hash_section( data: copy, key: "govern" )
+			govern_repos = env_string_array( key: "CARSON_GOVERN_REPOS" )
+			govern[ "repos" ] = govern_repos unless govern_repos.empty?
+			merge = fetch_hash_section( data: govern, key: "merge" )
+			govern_authority = ENV.fetch( "CARSON_GOVERN_MERGE_AUTHORITY", "" ).to_s.strip
+			merge[ "authority" ] = ( govern_authority == "true" ) unless govern_authority.empty?
+			govern_method = ENV.fetch( "CARSON_GOVERN_MERGE_METHOD", "" ).to_s.strip
+			merge[ "method" ] = govern_method unless govern_method.empty?
+			agent = fetch_hash_section( data: govern, key: "agent" )
+			govern_provider = ENV.fetch( "CARSON_GOVERN_AGENT_PROVIDER", "" ).to_s.strip
+			agent[ "provider" ] = govern_provider unless govern_provider.empty?
 			copy
 		end
 
@@ -228,6 +254,16 @@ module Carson
 			style_hash = fetch_hash( hash: data, key: "style" )
 			@ruby_indentation = fetch_string( hash: style_hash, key: "ruby_indentation" ).downcase
 
+			govern_hash = fetch_hash( hash: data, key: "govern" )
+			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |p| safe_expand_path( p ) }
+			govern_merge_hash = fetch_hash( hash: govern_hash, key: "merge" )
+			@govern_merge_authority = fetch_optional_boolean( hash: govern_merge_hash, key: "authority", default: false, key_path: "govern.merge.authority" )
+			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
+			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
+			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
+			dispatch_path = govern_hash.fetch( "dispatch_state_path", "~/.carson/govern/dispatch_state.json" ).to_s
+			@govern_dispatch_state_path = safe_expand_path( dispatch_path )
+
 			validate!
 		end
 
@@ -248,6 +284,8 @@ module Carson
 				raise ConfigError, "review.tracking_issue.title cannot be empty" if review_tracking_issue_title.empty?
 				raise ConfigError, "review.tracking_issue.label cannot be empty" if review_tracking_issue_label.empty?
 				raise ConfigError, "style.ruby_indentation must be one of tabs, spaces, either" unless [ "tabs", "spaces", "either" ].include?( ruby_indentation )
+				raise ConfigError, "govern.merge.method must be one of merge, squash, rebase" unless [ "merge", "squash", "rebase" ].include?( govern_merge_method )
+				raise ConfigError, "govern.agent.provider must be one of auto, codex, claude" unless [ "auto", "codex", "claude" ].include?( govern_agent_provider )
 			end
 
 			def fetch_hash( hash:, key: )
@@ -363,6 +401,14 @@ module Carson
 				return false if value == false
 
 				raise ConfigError, "config key #{key_path || key} must be boolean"
+			end
+
+			def safe_expand_path( path )
+				return path unless path.start_with?( "~" )
+
+				File.expand_path( path )
+			rescue ArgumentError
+				path
 			end
 	end
 end
