@@ -4,12 +4,10 @@ module Carson
 		private
 
 			BODY_LIMIT = 2_000
-			SKILL_PATH = File.expand_path( "../../../SKILL.md", __dir__ ).freeze
 
 			def build_prompt( work_order: )
 				parts = []
 				parts << "You are an automated coding agent dispatched by Carson to fix an issue on a pull request."
-				parts << skill_preamble
 				parts << "Repository: #{sanitize( File.basename( work_order.repo ) )}"
 				parts << "<pr_branch>#{sanitize( work_order.branch )}</pr_branch>"
 				parts << "PR: ##{work_order.pr_number}"
@@ -57,10 +55,6 @@ module Carson
 				text[ -BODY_LIMIT.. ]
 			end
 
-			def skill_preamble
-				return "" unless File.exist?( SKILL_PATH )
-				"IMPORTANT: Before starting work, read the Carson governance skill file at: #{SKILL_PATH}"
-			end
 		end
 	end
 end
