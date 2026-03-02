@@ -40,7 +40,7 @@ carson <command> [subcommand] [arguments]
 
 `--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
-`govern.merge.method` accepts `merge`, `squash`, or `rebase` (default: `merge`). When the target repository enforces linear history on its default branch, only `rebase` is accepted by GitHub — set `govern.merge.method` to `rebase` to match.
+`govern.merge.method` accepts `squash`, `merge`, or `rebase` (default: `squash`). Squash keeps main linear — one PR, one commit. When the target repository enforces linear history via branch protection, only `rebase` is accepted by GitHub — set `govern.merge.method` to `rebase` to match.
 
 ### Review commands
 
@@ -72,7 +72,11 @@ Blocked Carson artefacts in host repositories:
 - `.tools/carson/*`
 
 Allowed Carson-managed persistence in host repositories:
-- selected GitHub-native files under `.github/*`
+- `.github/carson-instructions.md` — governance baseline (source of truth)
+- `.github/copilot-instructions.md` — agent discovery pointer for Copilot
+- `.github/CLAUDE.md` — agent discovery pointer for Claude Code
+- `.github/AGENTS.md` — agent discovery pointer for Codex
+- `.github/pull_request_template.md` — PR template
 
 ## Configuration interface
 
