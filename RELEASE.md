@@ -5,7 +5,7 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 2.2.0 — Butler Command Renames, Workflow Style, Review Gate UX, Continuous Govern
+## 2.3.0 — Continuous Govern Loop + Brand Badge
 
 ### What changed
 
@@ -16,7 +16,7 @@ Release-note scope rule:
 
 ### What users must do now
 
-1. Upgrade Carson to `2.2.0`.
+1. Upgrade Carson to `2.3.0`.
 2. Run `carson refresh` in each governed repository to update hooks for the new command names.
 3. Optionally use `carson govern --loop 300` for unattended continuous governance.
 
