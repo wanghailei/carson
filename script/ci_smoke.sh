@@ -304,7 +304,10 @@ if git config --get core.hooksPath >/dev/null 2>&1; then
 	exit 1
 fi
 for removed_path in \
+	".github/carson-instructions.md" \
 	".github/copilot-instructions.md" \
+	".github/CLAUDE.md" \
+	".github/AGENTS.md" \
 	".github/pull_request_template.md" \
 	".github/workflows/carson-governance.yml" \
 	".github/workflows/carson_policy.yml" \

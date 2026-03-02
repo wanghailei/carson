@@ -46,7 +46,7 @@ module Carson
 					}
 				},
 				"template" => {
-					"managed_files" => [ ".github/copilot-instructions.md", ".github/pull_request_template.md" ]
+					"managed_files" => [ ".github/carson-instructions.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md" ]
 				},
 				"lint" => {
 					"languages" => default_lint_languages_data
