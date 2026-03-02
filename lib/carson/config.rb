@@ -77,7 +77,7 @@ module Carson
 					"repos" => [],
 					"merge" => {
 						"authority" => true,
-						"method" => "merge"
+						"method" => "squash"
 					},
 					"agent" => {
 						"provider" => "auto",
