@@ -5,6 +5,64 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.4.0 — Agent Skill Injection + Scope Guard Reform
+
+### What changed
+
+- **SKILL.md injected into agent prompts.** Carson now embeds the full SKILL.md content into every dispatched agent work order. Codex and Claude receive Carson governance knowledge without any files inside the governed repository — the outsider principle holds.
+- **SKILL.md added.** A new agent interface document covering commands, exit codes, output interpretation, config, and common scenarios. Ships with the gem.
+- **Scope integrity guard is advisory only.** The cross-boundary check no longer blocks commits. Commits should be grouped by feature intent, not file type. The scope guard still prints diagnostics but never prevents a commit.
+- **App icon.** Added `icon.svg` (⧓ black bowtie mark) with centered display in README.
+- **Hooks moved to repo root.** `assets/hooks/` → `hooks/`. The `assets/` directory is removed.
+
+### What users must do now
+
+1. Upgrade Carson to `2.4.0`.
+2. Run `carson prepare` in each governed repository.
+
+### Breaking or removed behaviour
+
+- Scope integrity guard no longer hard-blocks commits with multiple core module groups. If you relied on this as a gate, it is now advisory only.
+- `assets/` directory removed. Hook templates now live at `hooks/` in the gem root.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+carson prepare
+carson govern --dry-run
+```
+
+### Engineering Appendix
+
+#### Modified components
+
+- `lib/carson/adapters/prompt.rb` — reads SKILL.md at build time and wraps it in `<carson_skill>` XML tags in the agent prompt.
+- `lib/carson/runtime/audit.rb` — removed `split_required` hard-block escalation; scope guard status capped at `attention`.
+- `lib/carson/runtime/local.rb` — hook template path updated from `assets/hooks` to `hooks`.
+- `lib/carson/config.rb` — scope path updated from `assets/hooks/**` to `hooks/**`.
+- `carson.gemspec` — glob updated, `SKILL.md` and `icon.svg` added to files list.
+- `script/ci_smoke.sh` — scope guard smoke test expects advisory exit instead of block.
+
+#### New files
+
+- `SKILL.md` — agent interface document, shipped with the gem.
+- `icon.svg` — app icon.
+
+#### Public interface and config changes
+
+- No new CLI commands or config keys.
+- Exit status contract unchanged.
+
+#### Verification evidence
+
+- All CI checks pass across PRs #70–#73.
+
+---
+
 ## 2.3.0 — Continuous Govern Loop + Brand Badge
 
 ### What changed
