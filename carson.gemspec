@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
 	spec.bindir = "exe"
 	spec.executables = [ "carson" ]
 	spec.require_paths = [ "lib" ]
-	spec.files = Dir.glob( "{lib,exe,templates,assets}/**/*", File::FNM_DOTMATCH ).select { |path| File.file?( path ) } + [
+	spec.files = Dir.glob( "{lib,exe,templates,hooks}/**/*", File::FNM_DOTMATCH ).select { |path| File.file?( path ) } + [
 		".github/copilot-instructions.md",
 		".github/pull_request_template.md",
 		".github/workflows/carson_policy.yml",
