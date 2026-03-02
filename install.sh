@@ -82,9 +82,14 @@ if [[ ! -f "$gem_file" ]]; then
 	fail "Carson install error: expected gem file '$gem_file' was not created."
 fi
 
-if ! gem install --user-install --local "$gem_file"; then
+# Suppress the RubyGems PATH warning — Carson symlinks the executable to
+# ~/.carson/bin so the gem bin directory does not need to be in PATH.
+gem_stderr_file="$work_dir/gem_stderr"
+if ! gem install --user-install --local "$gem_file" 2>"$gem_stderr_file"; then
+	cat "$gem_stderr_file" >&2
 	fail "Carson install error: failed to install gem '$gem_file'."
 fi
+grep -v -e "WARNING:.*in your PATH" -e "gem executables.*will not run" "$gem_stderr_file" >&2 || true
 
 user_bin="$(ruby -e 'print Gem.user_dir')/bin"
 if [[ ! -x "$user_bin/carson" ]]; then

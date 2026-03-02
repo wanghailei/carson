@@ -58,7 +58,17 @@ if ! ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (ma
 	exit 1
 fi
 
-gem install --user-install "carson" -v "$version" --clear-sources --source "$source_url"
+# Suppress the RubyGems PATH warning — Carson symlinks the executable to
+# ~/.carson/bin so the gem bin directory does not need to be in PATH.
+gem_stderr_file="$(mktemp "${TMPDIR%/}/carson-gem-stderr-XXXXXX")"
+if ! gem install --user-install "carson" -v "$version" --clear-sources --source "$source_url" 2>"$gem_stderr_file"; then
+	cat "$gem_stderr_file" >&2
+	rm -f "$gem_stderr_file"
+	echo "Carson install error: failed to install gem." >&2
+	exit 1
+fi
+grep -v -e "WARNING:.*in your PATH" -e "gem executables.*will not run" "$gem_stderr_file" >&2 || true
+rm -f "$gem_stderr_file"
 
 user_bin="$(ruby -e 'print Gem.user_dir')/bin"
 mkdir -p "$HOME/.carson/bin"
