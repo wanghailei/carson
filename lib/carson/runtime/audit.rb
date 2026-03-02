@@ -205,18 +205,10 @@ module Carson
 				base_ref = ENV.fetch( "GITHUB_BASE_REF", "" ).to_s.strip
 				return nil if base_ref.empty?
 
-				preferred_remote = config.git_remote.to_s.strip
-				remote_name = nil
-
-				remotes_stdout, _, remotes_success, = git_run( "remote" )
-				if remotes_success
-					available_remotes = remotes_stdout.lines.map { |line| line.to_s.strip }.reject( &:empty? )
-					candidates = [ preferred_remote, "origin", "github" ].map( &:to_s ).map( &:strip ).reject( &:empty? ).uniq
-					remote_name = candidates.find { |candidate| available_remotes.include?( candidate ) }
-					remote_name ||= available_remotes.first unless available_remotes.empty?
+				remote_name = config.git_remote
+				unless git_remote_exists?( remote_name: remote_name )
+					remote_name = "origin" if git_remote_exists?( remote_name: "origin" )
 				end
-
-				remote_name ||= ( preferred_remote.empty? ? "origin" : preferred_remote )
 
 				_, _, fetch_success, = git_run( "fetch", "--no-tags", "--depth", "1", remote_name, base_ref )
 				return nil unless fetch_success

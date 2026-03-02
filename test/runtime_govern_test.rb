@@ -252,11 +252,10 @@ class RuntimeGovernTest < Minitest::Test
 			system( "git", "-C", work_repo, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", work_repo, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
 			system( "git", "-C", work_repo, "switch", "-c", "main", out: File::NULL, err: File::NULL )
-			system( "git", "-C", work_repo, "remote", "rename", "origin", "github", out: File::NULL, err: File::NULL )
 			File.write( File.join( work_repo, "README.md" ), "test\n" )
 			system( "git", "-C", work_repo, "add", "README.md", out: File::NULL, err: File::NULL )
 			system( "git", "-C", work_repo, "commit", "-m", "init", out: File::NULL, err: File::NULL )
-			system( "git", "-C", work_repo, "push", "-u", "github", "main", out: File::NULL, err: File::NULL )
+			system( "git", "-C", work_repo, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
 			with_env(
 				"HOME" => tmp_dir,

@@ -161,7 +161,7 @@ module Carson
 				inspect!
 			end
 
-			# One-command onboarding for new repositories: align remote naming, install hooks,
+			# One-command onboarding for new repositories: detect remote, install hooks,
 			# apply templates, and produce a first audit report.
 			def onboard!
 				fingerprint_status = block_if_outsider_fingerprints!
@@ -172,7 +172,17 @@ module Carson
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
-				align_remote_name_for_carson!
+
+				unless global_config_exists?
+					if self.in.respond_to?( :tty? ) && self.in.tty?
+						setup_status = setup!
+						return setup_status unless setup_status == EXIT_OK
+					else
+						silent_setup!
+					end
+				end
+
+				report_detected_remote!
 				hook_status = prepare!
 				return hook_status unless hook_status == EXIT_OK
 
@@ -661,30 +671,20 @@ module Carson
 				end
 			end
 
-			# Ensures Carson expected remote naming (`github`) while keeping existing
-			# repositories safe when neither `github` nor `origin` exists.
-			def align_remote_name_for_carson!
+			# Verifies configured remote exists and logs status without mutating remotes.
+			def report_detected_remote!
 				if git_remote_exists?( remote_name: config.git_remote )
 					puts_line "remote_ok: #{config.git_remote}"
-					return
+				else
+					puts_line "WARN: remote '#{config.git_remote}' not found; run carson setup to configure."
 				end
-				if git_remote_exists?( remote_name: "origin" )
-					git_system!( "remote", "rename", "origin", config.git_remote )
-					puts_line "remote_renamed: origin -> #{config.git_remote}"
-					return
-				end
-				puts_line "WARN: no #{config.git_remote} or origin remote configured; continue with local baseline only."
 			end
-
 
 			def print_onboarding_guidance
 				puts_line ""
 				puts_line "Carson is ready. Current workflow: #{config.workflow_style}"
 				puts_line ""
-				puts_line "Customise in ~/.carson/config.json:"
-				puts_line "  { \"workflow\": { \"style\": \"branch\" } }  — enforce PR-only merges"
-				puts_line "  { \"workflow\": { \"style\": \"trunk\" } }   — allow direct main commits (default)"
-				puts_line ""
+				puts_line "Reconfigure anytime with: carson setup"
 				puts_line "Run carson refresh after changing config."
 			end
 

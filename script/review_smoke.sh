@@ -283,11 +283,10 @@ cd "$work_repo"
 git switch -c main >/dev/null
 git config user.name "Carson Review Smoke"
 git config user.email "carson-review-smoke@example.com"
-git remote rename origin github
 printf "# Carson Review Smoke Repo\n" > README.md
 git add README.md
 git commit -m "initial commit" >/dev/null
-git push -u github main >/dev/null
+git push -u origin main >/dev/null
 git switch -c tool/review-smoke >/dev/null
 
 run_with_mock() {

@@ -264,12 +264,11 @@ cd "$work_repo"
 git switch -c main >/dev/null
 git config user.name "Carson CI"
 git config user.email "carson-ci@example.com"
-git remote rename origin github
 
 printf "# Carson Smoke Repo\n" > README.md
 git add README.md
 git commit -m "initial commit" >/dev/null
-git push -u github main >/dev/null
+git push -u origin main >/dev/null
 
 git clone "$remote_repo" "$init_repo" >/dev/null
 (
@@ -280,12 +279,12 @@ git clone "$remote_repo" "$init_repo" >/dev/null
 	git switch main >/dev/null 2>&1 || git switch -c main --track origin/main >/dev/null 2>&1 || git switch -c main >/dev/null
 )
 cd "$repo_root"
-expect_exit 0 "onboard initialises repo path and renames origin remote" run_carson onboard "$init_repo"
-if ! git -C "$init_repo" remote get-url github >/dev/null 2>&1; then
-	echo "FAIL: init did not align remote name to github" >&2
+expect_exit 0 "onboard initialises repo path and detects origin remote" run_carson onboard "$init_repo"
+if ! git -C "$init_repo" remote get-url origin >/dev/null 2>&1; then
+	echo "FAIL: onboard did not detect origin remote" >&2
 	exit 1
 fi
-echo "PASS: init aligned remote name to github"
+echo "PASS: onboard detected origin remote"
 cd "$init_repo"
 expect_exit 0 "inspect passes after onboard" run_carson inspect
 previous_hooks_dir="$tmp_root/previous-hooks/$expected_carson_version"
@@ -326,7 +325,7 @@ expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 # Validate core setup flows (check/sync/hook/template).
 cd "$work_repo"
 expect_exit 2 "inspect blocks before hooks are installed" run_carson inspect
-expect_exit 0 "sync keeps local main aligned to github/main" run_carson sync
+expect_exit 0 "sync keeps local main aligned to origin/main" run_carson sync
 expect_exit 0 "prepare installs required hooks to global runtime path" run_carson prepare
 expect_exit 0 "inspect passes after prepare install" run_carson inspect
 expect_exit 2 "audit blocks when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
@@ -503,9 +502,9 @@ echo "PASS: report path falls back to /tmp/carson when HOME and TMPDIR are inval
 
 # Stale-branch prune behaviour: safe removal without force evidence.
 git switch -c tool/stale-prune >/dev/null
-git push -u github tool/stale-prune >/dev/null
+git push -u origin tool/stale-prune >/dev/null
 git switch main >/dev/null
-git push github --delete tool/stale-prune >/dev/null
+git push origin --delete tool/stale-prune >/dev/null
 
 expect_exit 0 "prune deletes stale local branches safely" run_carson prune
 if git show-ref --verify --quiet refs/heads/tool/stale-prune; then
@@ -520,19 +519,19 @@ mkdir -p lib
 printf "stale squash candidate\n" > lib/stale_squash.rb
 git add lib/stale_squash.rb
 git commit -m "stale squash candidate branch" >/dev/null
-git push -u github tool/stale-prune-squash >/dev/null
+git push -u origin tool/stale-prune-squash >/dev/null
 git switch main >/dev/null
 original_hooks_path="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
 git merge --squash tool/stale-prune-squash >/dev/null 2>&1
 git commit -m "squash-merge tool/stale-prune-squash into main" >/dev/null
-git push github main >/dev/null
+git push origin main >/dev/null
 if [[ -n "$original_hooks_path" ]]; then
 	git config core.hooksPath "$original_hooks_path"
 else
 	git config --unset core.hooksPath
 fi
-git push github --delete tool/stale-prune-squash >/dev/null
+git push origin --delete tool/stale-prune-squash >/dev/null
 
 expect_exit 0 "prune force-deletes stale branch when merged PR evidence exists" run_carson_with_mock_gh prune
 if git show-ref --verify --quiet refs/heads/tool/stale-prune-squash; then
@@ -547,9 +546,9 @@ mkdir -p lib
 printf "stale no-evidence candidate\n" > lib/stale_no_evidence.rb
 git add lib/stale_no_evidence.rb
 git commit -m "stale no-evidence candidate branch" >/dev/null
-git push -u github tool/stale-prune-no-evidence >/dev/null
+git push -u origin tool/stale-prune-no-evidence >/dev/null
 git switch main >/dev/null
-git push github --delete tool/stale-prune-no-evidence >/dev/null
+git push origin --delete tool/stale-prune-no-evidence >/dev/null
 
 expect_exit 0 "prune skips force-delete when merged PR evidence does not match branch tip" run_carson_with_mock_gh prune
 if ! git show-ref --verify --quiet refs/heads/tool/stale-prune-no-evidence; then
@@ -583,7 +582,7 @@ original_hooks_path_govern="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
 git add -A >/dev/null
 git commit -m "commit templates for govern smoke tests" >/dev/null
-git push github main >/dev/null
+git push origin main >/dev/null
 if [[ -n "$original_hooks_path_govern" ]]; then
 	git config core.hooksPath "$original_hooks_path_govern"
 else

@@ -22,11 +22,12 @@ module Carson
 		DISPOSITION_TOKENS = %w[accepted rejected deferred].freeze
 
 		# Runtime wiring for repository context, tool paths, and output streams.
-		def initialize( repo_root:, tool_root:, out:, err: )
+		def initialize( repo_root:, tool_root:, out:, err:, in_stream: $stdin )
 			@repo_root = repo_root
 			@tool_root = tool_root
 			@out = out
 			@err = err
+			@in = in_stream
 			@config = Config.load( repo_root: repo_root )
 			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
@@ -34,7 +35,7 @@ module Carson
 
 	private
 
-		attr_reader :repo_root, :tool_root, :out, :err, :config, :git_adapter, :github_adapter
+		attr_reader :repo_root, :tool_root, :out, :err, :in, :config, :git_adapter, :github_adapter
 
 		# Current local branch name.
 		def current_branch
@@ -187,3 +188,4 @@ require_relative "runtime/lint"
 require_relative "runtime/audit"
 require_relative "runtime/review"
 require_relative "runtime/govern"
+require_relative "runtime/setup"

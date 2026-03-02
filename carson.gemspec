@@ -19,6 +19,18 @@ Gem::Specification.new do |spec|
 		"documentation_uri" => "https://github.com/wanghailei/carson/blob/main/MANUAL.md"
 	}
 
+	spec.post_install_message = <<~MSG
+
+		\u29D3 Carson at your service.
+
+		  Step into your project directory and run:
+
+		    carson onboard
+
+		  I'll walk you through everything from there.
+
+	MSG
+
 	spec.bindir = "exe"
 	spec.executables = [ "carson" ]
 	spec.require_paths = [ "lib" ]
