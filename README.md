@@ -1,46 +1,60 @@
 # Carson
 
-Named after the head of household in Downton Abbey, Carson is your repositories' master of ceremony — you write the code, Carson manages everything else. From commit-time checks through merge-readiness on GitHub to cleaning up locally afterwards, Carson runs the household with discipline and professional standards, without ever overstepping.
+Named after the head of household in Downton Abbey, Carson is your repositories' autonomous governance runtime — you write the code, Carson manages everything else. From commit-time checks through PR triage, agent dispatch, merge, and cleanup, Carson runs the household with discipline and professional standards. Carson itself has no intelligence — it follows a deterministic decision tree. The intelligence comes from the coding agents it dispatches (Codex, Claude) to fix problems.
 
 ## The Problem
 
-If you govern more than a handful of repositories, you know the pattern: lint configs drift between repos, PR templates go stale, reviewer feedback gets quietly ignored, and what passes on a developer's laptop fails in CI.
-The usual fix is to copy governance scripts into each repository. That works until you need to update them — now you are maintaining dozens of copies, each free to diverge.
+If you govern more than a handful of repositories, you know the pattern: lint configs drift between repos, PR templates go stale, reviewer feedback gets quietly ignored, and what passes on a developer's laptop fails in CI. Across a portfolio of projects with coding agents producing many PRs, you become the bottleneck — manually checking results, dispatching fixes, clicking merge, and cleaning up.
 
 ## How Carson Works
 
-Carson is a governance runtime that lives on your workstation and in CI, never inside the repositories it governs. You focus on writing code; Carson handles the rest — enforcing lint policy, gating merges on unresolved review comments, synchronising templates, and keeping your local branches clean. This separation is its defining trait — called the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a *governed repository* (also called a **host repository** — any git repo that Carson manages).
+Carson is an autonomous governance runtime that lives on your workstation and in CI, never inside the repositories it governs. It operates at two levels:
+
+**Per-commit governance** — Carson enforces lint policy, gates merges on unresolved review comments, synchronises templates, and keeps your local branches clean. Every commit triggers `carson audit` through managed hooks; the same checks run in GitHub Actions.
+
+**Portfolio-level autonomy** — `carson govern` is a scheduled triage loop that scans all your repositories, classifies every open PR, and acts: merge what's ready, dispatch coding agents (Codex or Claude) to fix what's failing, and escalate what needs human judgement. One command, all your projects, unmanned.
 
 ```
-┌─────────────────────────────────────┐
-│  Your workstation                   │
-│                                     │
-│  ~/.carson/          Carson config  │
-│  ~/.carson/hooks/    Git hooks      │
-│  ~/.carson/lint/     Lint policy    │
-│  ~/.carson/cache/    Audit reports  │
-│                                     │
-│  carson audit ───► governs ────►  repo-A/
-│                                   repo-B/
-│                                   repo-C/
-│                                     │
-│  Governed repos get only:           │
-│    .github/* templates (committed)  │
-│    core.hooksPath → ~/.carson/hooks │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────�┐
+│  Your workstation                             │
+│                                               │
+│  ~/.carson/            Carson config          │
+│  ~/.carson/hooks/      Git hooks              │
+│  ~/.carson/lint/       Lint policy            │
+│  ~/.carson/cache/      Reports                │
+│  ~/.carson/govern/     Dispatch state         │
+│                                               │
+│  carson govern ──► for each repo:             │
+│    1. List open PRs (gh)                      │
+│    2. Classify: CI / review / audit status    │
+│    3. Act: merge | dispatch agent | escalate  │
+│    4. Housekeep: sync + prune                 │
+│                                               │
+│  Governed repos:  repo-A/  repo-B/  repo-C/   │
+│    .github/* templates (committed)            │
+│    core.hooksPath → ~/.carson/hooks           │
+└──────────────────────────────────────────────┘
 ```
+
+This separation is Carson's defining trait — the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a governed repository.
 
 The data flow:
 
 1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/.carson/lint/` via `carson lint setup`.
 2. `carson init` installs git hooks, synchronises `.github/*` templates, and runs a first governance audit on a host repository.
 3. From that point, every commit triggers `carson audit` through the managed `pre-commit` hook. The same `carson audit` runs in GitHub Actions. If it passes locally, it passes in CI.
-4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment — risk keywords, change requests — has been formally acknowledged by the PR author through a **disposition comment** (a reply with a configured prefix, e.g. `Disposition: ...`).
-5. `carson audit` also checks **scope integrity** — verifying that staged changes stay within expected feature/module path boundaries — and confirms that no Carson artefacts have leaked into the host repository (the outsider boundary).
-
-All governance checks are **advisory checks**: they produce deterministic pass/block results (exit `0` or `2`) that CI and hooks consume, but Carson never force-merges or bypasses GitHub's own merge authority.
+4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment has been formally acknowledged by the PR author through a **disposition comment**.
+5. `carson govern` triages all open PRs across your portfolio. Ready PRs are merged and housekept. Failing PRs get a coding agent dispatched to fix them. Stuck PRs are escalated for your attention.
 
 ## Commands at a Glance
+
+**Govern** — autonomous portfolio management:
+
+| Command | What it does |
+|---|---|
+| `carson govern` | Triage all open PRs: merge ready ones, dispatch agents for failures, escalate the rest. |
+| `carson govern --dry-run` | Show what Carson would do without taking action. |
+| `carson housekeep` | Sync main + prune stale branches (also runs automatically after govern merges). |
 
 **Setup** — run once per machine or per repository:
 
@@ -109,9 +123,16 @@ Commit the generated `.github/*` changes, and the repository is governed.
 **Daily workflow:**
 
 ```bash
-carson sync                 # fast-forward local main
+carson govern --dry-run     # see what Carson would do across all repos
+carson govern               # triage PRs, merge ready ones, dispatch agents, housekeep
+```
+
+Or the individual commands if you prefer manual control:
+
+```bash
 carson audit                # full governance check
 carson review gate          # block or approve merge based on review status
+carson sync                 # fast-forward local main
 carson prune                # clean up stale local branches
 ```
 

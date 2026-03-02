@@ -5,36 +5,37 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 1.2.0
+## 1.2.0 — Autonomous Governance
 
-### User Overview
+### Architectural shift
 
-#### What changed
+Carson 1.2.0 is an architectural change. Prior versions were a passive governance tool: Carson checked, reported, and blocked — but you still had to triage PRs, dispatch fixes, click merge, and clean up. Across a portfolio of repositories with coding agents producing many PRs, you were the bottleneck.
 
-- Added `carson govern [--dry-run] [--json]` — portfolio-level PR triage that scans repos, classifies each open PR by CI/review/audit status, and takes appropriate action (merge, dispatch agent, or escalate).
-- Added `carson housekeep` — standalone sync + prune for post-merge cleanup.
-- Added agent dispatch adapters for Codex and Claude CLIs, with work-order/result contracts and dispatch state tracking.
-- Added `govern` configuration section: repo list, merge authority/method, agent provider selection.
+Carson is now an autonomous governance runtime. `carson govern` is a portfolio-level triage loop that scans every governed repository, classifies each open PR by CI/review/audit status, and acts: merge what's ready, dispatch a coding agent (Codex or Claude) to fix what's failing, and escalate what needs human judgement. After merging, it housekeeps — syncing main and pruning stale branches.
 
-#### Why users should care
+The per-commit governance (audit, lint, review gate, scope integrity) is unchanged. What's new is the layer above: Carson now orchestrates the full lifecycle from PR to merge to cleanup.
 
-- One command (`carson govern --dry-run`) shows merge-readiness across all your projects.
-- `carson housekeep` replaces manual `carson sync` + `carson prune` sequences.
-- When merge authority is enabled, Carson autonomously merges ready PRs and cleans up.
-- Agent dispatch lets Carson fix CI failures and review blocks without human intervention.
+### What changed
 
-#### What users must do now
+- `carson govern [--dry-run] [--json]` — portfolio-level PR triage loop.
+- `carson housekeep` — standalone sync + prune for post-merge cleanup.
+- Agent dispatch adapters for Codex and Claude CLIs, with work-order/result contracts and dispatch state tracking at `~/.carson/govern/dispatch_state.json`.
+- `govern` configuration section: repo list, merge authority/method, agent provider selection.
+- Merge authority is on by default — Carson merges ready PRs autonomously.
+- `.rubocop.yml` removed from repository; lint config now lives at `~/.carson/lint/rubocop.yml` per Carson's own policy.
+
+### What users must do now
 
 1. Upgrade Carson to `1.2.0`.
 2. Run `carson refresh` in each governed repository to update hooks.
 3. Optionally configure `govern.repos` in `~/.carson/config.json` to enable multi-repo portfolio mode.
-4. Start with `carson govern --dry-run` to verify triage before enabling merge authority.
+4. Run `carson govern --dry-run` to see what Carson would do across your portfolio.
 
-#### Breaking or removed behaviour
+### Breaking or removed behaviour
 
-- None. All existing commands and configuration are unchanged.
+- `.rubocop.yml` is no longer in the repository. All repos use `~/.carson/lint/rubocop.yml`.
 
-#### Upgrade steps
+### Upgrade steps
 
 ```bash
 cd ~/Dev/carson
@@ -47,10 +48,21 @@ carson govern --dry-run
 
 ### Engineering Appendix
 
+#### New components
+
+- `lib/carson/runtime/govern.rb` — portfolio triage loop, PR classification, merge, housekeep orchestration.
+- `lib/carson/adapters/agent.rb` — work-order/result data contracts (`WorkOrder`, `Result`).
+- `lib/carson/adapters/codex.rb` — Codex CLI adapter via `Open3.capture3`.
+- `lib/carson/adapters/claude.rb` — Claude CLI adapter via `Open3.capture3`.
+
+#### Decision tree
+
+For each open PR in each governed repo: CI green? Review gate pass? Audit pass? All yes → merge + housekeep. CI failing → dispatch agent. Review blocked → dispatch agent. Other → escalate.
+
 #### Public interface and config changes
 
 - Added CLI commands: `govern [--dry-run] [--json]`, `housekeep`.
-- Added config section: `govern.repos`, `govern.merge.authority`, `govern.merge.method`, `govern.agent.provider`, `govern.dispatch_state_path`.
+- Added config section: `govern.repos`, `govern.merge.authority` (default: `true`), `govern.merge.method`, `govern.agent.provider`, `govern.dispatch_state_path`.
 - Added env overrides: `CARSON_GOVERN_REPOS`, `CARSON_GOVERN_MERGE_AUTHORITY`, `CARSON_GOVERN_MERGE_METHOD`, `CARSON_GOVERN_AGENT_PROVIDER`.
 - Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
 
