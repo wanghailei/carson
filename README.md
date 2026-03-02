@@ -43,7 +43,7 @@ This separation is Carson's defining trait — the **outsider boundary**: no Car
 The data flow:
 
 1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/.carson/lint/` via `carson lint setup`.
-2. `carson init` installs git hooks, synchronises `.github/*` templates, and runs a first governance audit on a host repository.
+2. `carson onboard` installs git hooks, synchronises `.github/*` templates, and runs a first governance audit on a host repository.
 3. From that point, every commit triggers `carson audit` through the managed `pre-commit` hook. The same `carson audit` runs in GitHub Actions. If it passes locally, it passes in CI.
 4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment has been formally acknowledged by the PR author through a **disposition comment**.
 5. `carson govern` triages all open PRs across your portfolio. Ready PRs are merged and housekept. Failing PRs get a coding agent dispatched to fix them. Stuck PRs are escalated for your attention.

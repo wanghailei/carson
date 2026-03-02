@@ -160,7 +160,7 @@ Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. Th
 
 **When to use other methods:**
 
-- `rebase` — if you want to preserve individual commits from the branch on main. Requires "Require linear history" in GitHub branch protection. GitHub rejects merge commits and squash merges when this is enabled.
+- `rebase` — if you want to preserve individual commits from the branch on main. Both `squash` and `rebase` are compatible with GitHub's "Require linear history" branch protection — only `merge` is rejected.
 - `merge` — if you want explicit merge commits. This creates a non-linear graph but preserves branch topology.
 
 **Important:** Carson's merge method must match your GitHub repository's allowed merge types. If your repo only allows squash merges and Carson is set to `merge`, govern will fail when it tries to auto-merge. Check your repository settings under Settings > General > Pull Requests.
