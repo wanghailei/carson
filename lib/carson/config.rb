@@ -261,7 +261,7 @@ module Carson
 			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
-			dispatch_path = govern_hash.fetch( "dispatch_state_path", "~/.carson/govern/dispatch_state.json" ).to_s
+			dispatch_path = govern_hash.fetch( "dispatch_state_path" ).to_s
 			@govern_dispatch_state_path = safe_expand_path( dispatch_path )
 
 			validate!

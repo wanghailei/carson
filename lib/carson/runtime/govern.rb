@@ -210,7 +210,7 @@ module Carson
 				[ "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED" ].include?( state.upcase )
 			end
 
-			# Runs carson audit on the PR's branch. Returns [:pass/:fail, detail].
+			# Checks if the PR's branch is available locally and defers audit. Returns [:pass/:fail, detail].
 			def check_audit_status( pr:, repo_path: )
 				branch = pr[ "headRefName" ].to_s
 				stdout_text, stderr_text, status = Open3.capture3(
@@ -335,12 +335,14 @@ module Carson
 				puts_line "    agent result: #{result.status} — #{result.summary.to_s[0, 120]}"
 			end
 
-			# Runs housekeep in a specific repo context.
+			# Runs housekeep in the given repo after a successful merge.
 			def housekeep_repo!( repo_path: )
-				return if repo_path == self.repo_root
-
-				rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
-				rt.housekeep!
+				if repo_path == self.repo_root
+					housekeep!
+				else
+					rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
+					rt.housekeep!
+				end
 			end
 
 			# Selects which agent provider to use based on config and availability.
