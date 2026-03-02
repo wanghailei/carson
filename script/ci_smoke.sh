@@ -250,9 +250,9 @@ expected_carson_version="$(cat "$repo_root/VERSION")"
 for arg in "version" "--version"; do
 	description="version output for '${arg}'"
 	actual_version="$(run_carson "$arg")"
-	if [[ "$actual_version" != "$expected_carson_version" ]]; then
+	if [[ "$actual_version" != "⧓ $expected_carson_version" ]]; then
 		echo "FAIL: ${description} mismatch" >&2
-		echo "expected: ${expected_carson_version}" >&2
+		echo "expected: ⧓ ${expected_carson_version}" >&2
 		echo "actual:   ${actual_version}" >&2
 		exit 1
 	fi

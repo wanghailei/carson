@@ -79,7 +79,7 @@ jobs:
           CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
         run: |
           carson lint setup --source https://github.com/wanghailei/ai.git --ref main --force
-          carson hook
+          carson prepare
           carson audit
 
       - name: Carson review gate
