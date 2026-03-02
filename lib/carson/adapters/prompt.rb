@@ -59,8 +59,7 @@ module Carson
 
 			def skill_preamble
 				return "" unless File.exist?( SKILL_PATH )
-				content = File.read( SKILL_PATH ).strip
-				"<carson_skill>\n#{content}\n</carson_skill>"
+				"IMPORTANT: Before starting work, read the Carson governance skill file at: #{SKILL_PATH}"
 			end
 		end
 	end
