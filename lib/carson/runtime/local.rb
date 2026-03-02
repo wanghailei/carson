@@ -336,7 +336,7 @@ module Carson
 
 			# Canonical hook template location inside Carson repository.
 			def hook_template_path( hook_name: )
-				File.join( tool_root, "assets", "hooks", hook_name )
+				File.join( tool_root, "hooks", hook_name )
 			end
 
 			# Reports full hook health and can enforce stricter action messaging in `check`.

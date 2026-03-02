@@ -38,7 +38,7 @@ module Carson
 				},
 				"scope" => {
 					"path_groups" => {
-						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "assets/hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "carson.gemspec" ],
+						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "carson.gemspec" ],
 						"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
 						"test" => [ "test/**", "spec/**", "features/**" ],
 						"domain" => [ "app/**", "db/**", "config/**" ],
