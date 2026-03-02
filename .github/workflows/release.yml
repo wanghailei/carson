@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+
+jobs:
+  release:
+    name: Tag, release, publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists
+        id: check
+        run: |
+          if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes
+        if: steps.check.outputs.exists == 'false'
+        id: notes
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          # Extract the section for this version from RELEASE.md
+          # Matches from "## <version>" until the next "## " or "---" separator
+          awk -v ver="$version" '
+            BEGIN { found=0; printing=0 }
+            /^## / {
+              if (printing) exit
+              if (index($0, ver)) { found=1; printing=1; next }
+            }
+            /^---$/ { if (printing) exit }
+            printing { print }
+          ' RELEASE.md > /tmp/release_notes.md
+          # Fallback if extraction is empty
+          if [ ! -s /tmp/release_notes.md ]; then
+            echo "Release $version" > /tmp/release_notes.md
+          fi
+
+      - name: Create GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "Carson ${{ steps.version.outputs.version }}" \
+            --notes-file /tmp/release_notes.md
+
+      - name: Setup Ruby
+        if: steps.check.outputs.exists == 'false'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+
+      - name: Build gem
+        if: steps.check.outputs.exists == 'false'
+        run: gem build carson.gemspec
+
+      - name: Publish gem to RubyGems
+        if: steps.check.outputs.exists == 'false'
+        uses: rubygems/release-gem@v1
