@@ -11,7 +11,7 @@ Gem::Specification.new do |spec|
 	spec.description = "Carson runs outside host repositories and applies governance checks, review gates, and managed GitHub-native files."
 	spec.homepage = "https://github.com/wanghailei/carson"
 	spec.license = "MIT"
-	spec.required_ruby_version = ">= 4.0"
+	spec.required_ruby_version = ">= 3.4"
 	spec.metadata = {
 		"source_code_uri" => "https://github.com/wanghailei/carson",
 		"changelog_uri" => "https://github.com/wanghailei/carson/blob/main/RELEASE.md",
