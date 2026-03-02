@@ -5,6 +5,48 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.8.1 — Onboard UX and Install Cleanup
+
+### What changed
+
+- **Concise onboard output.** `carson onboard` now prints a clean 8-line summary instead of verbose internal state (hook paths, template statuses, config lines). Tells users what happened, what needs attention, and what to do next.
+- **Graceful handling of fresh repos.** Onboard no longer fails with a fatal error on repositories with no commits yet.
+- **Suppressed RubyGems PATH warning.** The misleading `WARNING: You don't have ... in your PATH, gem executables will not run` message from `gem install --user-install` is now suppressed during installation. Carson symlinks the executable to `~/.carson/bin`, making the gem bin directory irrelevant.
+
+### What users must do now
+
+1. Upgrade Carson to `2.8.1`.
+
+### Breaking or removed behaviour
+
+- None.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+```
+
+### Engineering Appendix
+
+#### Modified components
+
+- `lib/carson/runtime.rb` — added `concise?` flag and `with_captured_output` helper for suppressing sub-command detail during onboard.
+- `lib/carson/runtime/local.rb` — rewrote `onboard!` to use concise orchestration (`onboard_apply!`), added `onboard_report_remote!` and `onboard_run_audit!` helpers, added `unless concise?` guards to `prepare!` and `template_apply!`.
+- `install.sh` — capture `gem install` stderr and filter out RubyGems PATH warning.
+- `script/install_global_carson.sh` — same PATH warning suppression.
+- `test/runtime_govern_test.rb` — updated onboard output assertions.
+
+#### Public interface and config changes
+
+- No new CLI commands or config keys.
+- Exit status contract unchanged.
+
+---
+
 ## 2.8.0 — Interactive Setup and Remote Detection
 
 ### What changed
