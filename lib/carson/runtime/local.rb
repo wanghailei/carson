@@ -153,25 +153,30 @@ module Carson
 					target_path = File.join( hooks_dir, hook_name )
 					FileUtils.cp( source_path, target_path )
 					FileUtils.chmod( 0o755, target_path )
-					puts_line "hook_written: #{relative_path( target_path )}"
+					puts_line "hook_written: #{relative_path( target_path )}" unless concise?
 				end
 				git_system!( "config", "core.hooksPath", hooks_dir )
 				File.write( File.join( hooks_dir, "workflow_style" ), config.workflow_style )
-				puts_line "configured_hooks_path: #{hooks_dir}"
+				puts_line "configured_hooks_path: #{hooks_dir}" unless concise?
+				return EXIT_OK if concise?
+
 				inspect!
 			end
 
 			# One-command onboarding for new repositories: detect remote, install hooks,
-			# apply templates, and produce a first audit report.
+			# apply templates, and run initial audit.
 			def onboard!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Onboard"
 				unless inside_git_work_tree?
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
+
+				repo_name = File.basename( repo_root )
+				puts_line ""
+				puts_line "Onboarding #{repo_name}..."
 
 				unless global_config_exists?
 					if self.in.respond_to?( :tty? ) && self.in.tty?
@@ -182,21 +187,9 @@ module Carson
 					end
 				end
 
-				report_detected_remote!
-				hook_status = prepare!
-				return hook_status unless hook_status == EXIT_OK
-
-				template_status = template_apply!
-				return template_status unless template_status == EXIT_OK
-
-				audit_status = audit!
-				if audit_status == EXIT_OK
-					puts_line "OK: Carson onboard completed for #{repo_root}."
-				elsif audit_status == EXIT_BLOCK
-					puts_line "BLOCK: Carson onboard completed with policy blocks; resolve and rerun carson audit."
-				end
-				print_onboarding_guidance
-				audit_status
+				onboard_apply!
+			ensure
+				@concise = false
 			end
 
 			# Re-applies hooks, templates, and audit after upgrading Carson.
@@ -287,29 +280,29 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Template Sync Apply"
+				print_header "Template Sync Apply" unless concise?
 				results = template_results
 				applied = 0
 				results.each do |entry|
 					if entry.fetch( :status ) == "error"
-						puts_line "template_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}"
+						puts_line "template_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}" unless concise?
 						next
 					end
 
 					file_path = File.join( repo_root, entry.fetch( :file ) )
 					if entry.fetch( :status ) == "ok"
-						puts_line "template_file: #{entry.fetch( :file )} status=ok reason=in_sync"
+						puts_line "template_file: #{entry.fetch( :file )} status=ok reason=in_sync" unless concise?
 						next
 					end
 
 					FileUtils.mkdir_p( File.dirname( file_path ) )
 					File.write( file_path, entry.fetch( :applied_content ) )
-					puts_line "template_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}"
+					puts_line "template_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}" unless concise?
 					applied += 1
 				end
 
 				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
-				puts_line "template_apply_summary: updated=#{applied} error=#{error_count}"
+				puts_line "template_apply_summary: updated=#{applied} error=#{error_count}" unless concise?
 				error_count.positive? ? EXIT_ERROR : EXIT_OK
 			end
 
@@ -680,12 +673,66 @@ module Carson
 				end
 			end
 
-			def print_onboarding_guidance
+			# Concise onboard orchestration: hooks, templates, remote, audit, guidance.
+			def onboard_apply!
+				@concise = true
+
+				hook_status = prepare!
+				return hook_status unless hook_status == EXIT_OK
+				puts_line "Hooks installed (#{config.required_hooks.count} hooks)."
+
+				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
+				template_status = template_apply!
+				return template_status unless template_status == EXIT_OK
+				if template_drift_count.positive?
+					puts_line "Templates synced (#{template_drift_count} file#{plural_suffix( count: template_drift_count )} updated)."
+				else
+					puts_line "Templates in sync."
+				end
+
+				onboard_report_remote!
+				audit_status = onboard_run_audit!
+
 				puts_line ""
-				puts_line "Carson is ready. Current workflow: #{config.workflow_style}"
-				puts_line ""
-				puts_line "Reconfigure anytime with: carson setup"
-				puts_line "Run carson refresh after changing config."
+				puts_line "Carson is ready. Workflow: #{config.workflow_style}"
+				puts_line "Reconfigure anytime: carson setup"
+				audit_status
+			end
+
+			# Friendly remote status for onboard output.
+			def onboard_report_remote!
+				if git_remote_exists?( remote_name: config.git_remote )
+					puts_line "Remote: #{config.git_remote} (connected)."
+				else
+					puts_line "Remote not configured yet — carson setup will walk you through it."
+				end
+			end
+
+			# Runs audit with captured output; reports summary instead of full detail.
+			def onboard_run_audit!
+				audit_error = nil
+				audit_status = with_captured_output { audit! }
+			rescue StandardError => e
+				audit_error = e
+				audit_status = EXIT_OK
+			ensure
+				return onboard_print_audit_result( status: audit_status, error: audit_error )
+			end
+
+			def onboard_print_audit_result( status:, error: )
+				if error
+					if error.message.to_s.match?( /HEAD|rev-parse/ )
+						puts_line "No commits yet — run carson audit after your first commit."
+					else
+						puts_line "Audit skipped — run carson audit for details."
+					end
+					return EXIT_OK
+				end
+
+				if status == EXIT_BLOCK
+					puts_line "Some checks need attention — run carson audit for details."
+				end
+				status
 			end
 
 			# Uses `git remote get-url` as existence check to avoid parsing remote lists.
