@@ -337,23 +337,15 @@ for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 done
 echo "PASS: required hooks include pre-commit and are executable"
 
-git switch -c feature/scope-policy-block >/dev/null
+git switch -c feature/scope-policy-advisory >/dev/null
 mkdir -p app/models lib
 printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
 printf "scope enforcement mixed module smoke\n" > lib/scope_policy_tool_smoke.rb
 git add app/models/scope_policy_smoke.rb lib/scope_policy_tool_smoke.rb
-expect_exit 2 "audit blocks mixed module groups for staged non-doc files" run_carson audit
-set +e
-git commit -m "mixed module groups should fail pre-commit" >/dev/null 2>&1
-commit_status="$?"
-set -e
-if [[ "$commit_status" -eq 0 ]]; then
-	echo "FAIL: pre-commit hook should block commit on mixed module groups" >&2
-	exit 1
-fi
+expect_exit 0 "audit reports mixed module groups as advisory (not blocking)" run_carson audit
 git reset --hard HEAD >/dev/null
 git switch main >/dev/null
-git branch -D feature/scope-policy-block >/dev/null
+git branch -D feature/scope-policy-advisory >/dev/null
 
 git switch -c feature/staged-scope-only >/dev/null
 mkdir -p app/models lib
