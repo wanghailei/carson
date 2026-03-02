@@ -47,7 +47,7 @@ The first two are Carson-governed. The third is repository-governed. All three m
 
 ## Autonomous Governance Loop
 
-`carson govern` runs a continuous triage-dispatch-verify cycle across a portfolio of repositories. It classifies each open PR, dispatches coding agents to fix issues, and merges PRs that pass all gates.
+`carson govern` runs a triage-dispatch-verify cycle across a portfolio of repositories. It classifies each open PR, dispatches coding agents to fix issues, and merges PRs that pass all gates. With `--loop SECONDS`, Carson runs this cycle continuously — sleeping between cycles, isolating errors per cycle, and exiting cleanly on `Ctrl-C`.
 
 ```
                  ┌─────────────────────────────────────────┐

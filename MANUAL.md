@@ -124,6 +124,19 @@ carson review sweep    # update tracking issue for late review feedback
 carson prune           # remove stale local branches
 ```
 
+## Running Carson Govern Continuously
+
+Use `--loop SECONDS` to run `carson govern` as a persistent daemon that cycles on a schedule:
+
+```bash
+carson govern --loop 300              # cycle every 5 minutes
+carson govern --loop 300 --dry-run    # observe mode, no merges or dispatches
+```
+
+The loop is built-in and cross-platform — no cron, launchd, or Task Scheduler required. Run it in a terminal, tmux, screen, or as a system service.
+
+Each cycle runs independently: if one cycle fails (network error, GitHub API timeout), the error is logged and the next cycle proceeds normally. Press `Ctrl-C` to stop — Carson exits cleanly with a cycle count summary.
+
 ## Configuration
 
 Default global config path: `~/.carson/config.json`.

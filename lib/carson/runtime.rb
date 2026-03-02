@@ -59,8 +59,13 @@ module Carson
 		end
 
 		# Single output funnel to keep messaging style consistent.
+		# Prefixes non-empty lines with the Carson badge (⧓).
 		def puts_line( message )
-			out.puts message
+			if message.to_s.strip.empty?
+				out.puts ""
+			else
+				out.puts "#{BADGE} #{message}"
+			end
 		end
 
 		# Converts absolute paths into repo-relative output paths.
