@@ -139,21 +139,48 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 ## Merge Method and Linear History
 
-Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. The options are `merge`, `squash`, and `rebase` (default: `merge`). Set this in `~/.carson/config.json`:
+Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. The options are `squash`, `merge`, and `rebase` (default: `squash`). Set this in `~/.carson/config.json`:
 
 ```json
 {
   "govern": {
     "merge": {
-      "method": "rebase"
+      "method": "squash"
     }
   }
 }
 ```
 
-**Recommended practice:** enable "Require linear history" in your GitHub branch protection rules for `main`, and set Carson's merge method to `rebase`. This keeps the commit graph clean — every commit sits on a single line, is individually bisectable, and `git log --oneline` tells the full story without merge noise. With linear history enforced, GitHub rejects merge commits and squash merges automatically, so only rebase works.
+**Why squash is the default.** Squash-to-main keeps history linear: one PR = one commit on main. Every commit on main corresponds to a reviewed, CI-passing unit of work. The benefits:
 
-If your GitHub repo has linear history enabled and Carson's merge method is set to `merge` or `squash`, govern will fail when it tries to auto-merge a ready PR. Match the two settings.
+- `git log --oneline` on main tells the full story without merge noise or work-in-progress commits.
+- Every commit is individually revertable — `git revert <sha>` undoes exactly one PR.
+- `git bisect` operates on meaningful boundaries, not intermediate fixup commits.
+- Individual branch commits are still preserved in the PR on GitHub for full traceability.
+
+**When to use other methods:**
+
+- `rebase` — if you want to preserve individual commits from the branch on main. Requires "Require linear history" in GitHub branch protection. GitHub rejects merge commits and squash merges when this is enabled.
+- `merge` — if you want explicit merge commits. This creates a non-linear graph but preserves branch topology.
+
+**Important:** Carson's merge method must match your GitHub repository's allowed merge types. If your repo only allows squash merges and Carson is set to `merge`, govern will fail when it tries to auto-merge. Check your repository settings under Settings > General > Pull Requests.
+
+## Agent Discovery
+
+Carson writes managed files that help interactive agents (Claude Code, Codex, Copilot) discover the governance system when they work in a governed repository.
+
+**How it works:**
+
+- `.github/carson-instructions.md` — the single source of truth containing the full governance baseline. This file tells agents what Carson is, what commands to run, and what rules to follow.
+- `.github/CLAUDE.md` — read by Claude Code at session start. Points to `carson-instructions.md`.
+- `.github/AGENTS.md` — read by Codex at session start. Points to `carson-instructions.md`.
+- `.github/copilot-instructions.md` — read by GitHub Copilot. Points to `carson-instructions.md`.
+
+Each agent reads its own expected filename and follows the reference to the shared baseline. One file to maintain, zero drift across agents.
+
+All four files are managed templates — `carson template check` detects drift, `carson template apply` writes them, and `carson offboard` removes them.
+
+**Why this matters:** without discovery, agents working in governed repos hit Carson's hooks blindly and don't understand the governance contract. With discovery, agents know to run `carson audit` before committing, `carson review gate` before recommending a merge, and to respect protected refs.
 
 ## Configuration
 
