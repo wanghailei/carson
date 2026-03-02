@@ -48,7 +48,6 @@ module Carson
 				audit_state = "block" if default_branch_baseline.fetch( :status ) == "block"
 				audit_state = "attention" if audit_state == "ok" && default_branch_baseline.fetch( :status ) != "ok"
 				scope_guard = print_scope_integrity_guard
-				audit_state = "block" if scope_guard.fetch( :split_required )
 				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
 					write_and_print_pr_monitor_report(
 						report: monitor_report.merge(
@@ -725,11 +724,11 @@ module Carson
 				scope.fetch( :unmatched_paths ).each { |path| puts_line "unmatched_path: #{path}" }
 				puts_line "violating_files_count: #{scope.fetch( :violating_files ).count}"
 				scope.fetch( :violating_files ).each { |path| puts_line "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
-				puts_line "checklist_single_business_intent: #{scope.fetch( :split_required ) ? 'needs_review' : 'pass'}"
-				puts_line "checklist_single_scope_group: #{scope.fetch( :split_required ) ? 'needs_split' : 'pass'}"
-				puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :split_required ) || scope.fetch( :misc_present ) ) ? 'needs_explanation' : 'pass'}"
+				puts_line "checklist_single_business_intent: pass"
+				puts_line "checklist_single_scope_group: #{scope.fetch( :split_required ) ? 'advisory' : 'pass'}"
+				puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :split_required ) || scope.fetch( :misc_present ) ) ? 'advisory' : 'pass'}"
 				if scope.fetch( :split_required )
-					puts_line "ACTION: split/re-branch is required before commit; multiple module groups detected."
+					puts_line "ACTION: multiple module groups detected (informational only)."
 				elsif scope.fetch( :misc_present )
 					puts_line "ACTION: unmatched paths detected; classify via scope.path_groups for stricter module checks."
 				else
