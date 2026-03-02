@@ -31,6 +31,15 @@ carson <command> [subcommand] [arguments]
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
 
+### Govern commands
+
+| Command | Purpose |
+|---|---|
+| `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level PR triage: classify, merge, dispatch agents, escalate. |
+| `carson housekeep` | Sync main + prune stale branches (also runs automatically after govern merges). |
+
+`--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
+
 ### Review commands
 
 | Command | Purpose |

@@ -306,6 +306,48 @@ class RuntimeGovernTest < Minitest::Test
 		assert_equal true, parsed.fetch( :json )
 	end
 
+	def test_cli_parses_govern_loop_seconds
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "govern", "--loop", "300" ], out: out, err: err )
+		assert_equal "govern", parsed.fetch( :command )
+		assert_equal 300, parsed[ :loop_seconds ]
+		assert_equal false, parsed.fetch( :dry_run )
+	end
+
+	def test_cli_parses_govern_loop_zero_rejected
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "govern", "--loop", "0" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "positive integer"
+	end
+
+	def test_cli_parses_govern_loop_non_integer_rejected
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "govern", "--loop", "abc" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+	end
+
+	def test_cli_dispatches_govern_with_loop_seconds
+		runtime = Object.new
+		def runtime.govern!( dry_run:, json_output:, loop_seconds: )
+			@govern_args = { dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds }
+			Carson::Runtime::EXIT_OK
+		end
+		def runtime.govern_args
+			@govern_args
+		end
+		def runtime.puts_line( msg ); end
+		status = Carson::CLI.dispatch(
+			parsed: { command: "govern", dry_run: false, json: false, loop_seconds: 300 },
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal 300, runtime.govern_args[ :loop_seconds ]
+	end
+
 	def test_cli_parses_housekeep
 		out = StringIO.new
 		err = StringIO.new
@@ -315,8 +357,8 @@ class RuntimeGovernTest < Minitest::Test
 
 	def test_cli_dispatches_govern
 		runtime = Object.new
-		def runtime.govern!( dry_run:, json_output: )
-			@govern_args = { dry_run: dry_run, json_output: json_output }
+		def runtime.govern!( dry_run:, json_output:, loop_seconds: )
+			@govern_args = { dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds }
 			Carson::Runtime::EXIT_OK
 		end
 		def runtime.govern_args
@@ -324,11 +366,11 @@ class RuntimeGovernTest < Minitest::Test
 		end
 		def runtime.puts_line( msg ); end
 		status = Carson::CLI.dispatch(
-			parsed: { command: "govern", dry_run: true, json: false },
+			parsed: { command: "govern", dry_run: true, json: false, loop_seconds: nil },
 			runtime: runtime
 		)
 		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal( { dry_run: true, json_output: false }, runtime.govern_args )
+		assert_equal( { dry_run: true, json_output: false, loop_seconds: nil }, runtime.govern_args )
 	end
 
 	def test_cli_dispatches_housekeep

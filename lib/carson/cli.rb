@@ -8,24 +8,24 @@ module Carson
 			return Runtime::EXIT_OK if command == :help
 
 			if command == "version"
-				out.puts Carson::VERSION
+				out.puts "#{BADGE} #{Carson::VERSION}"
 				return Runtime::EXIT_OK
 			end
 
 			target_repo_root = parsed.fetch( :repo_root, nil )
 			target_repo_root = repo_root if target_repo_root.to_s.strip.empty?
 			unless Dir.exist?( target_repo_root )
-				err.puts "ERROR: repository path does not exist: #{target_repo_root}"
+				err.puts "#{BADGE} ERROR: repository path does not exist: #{target_repo_root}"
 				return Runtime::EXIT_ERROR
 			end
 
 			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, out: out, err: err )
 			dispatch( parsed: parsed, runtime: runtime )
 		rescue ConfigError => e
-			err.puts "CONFIG ERROR: #{e.message}"
+			err.puts "#{BADGE} CONFIG ERROR: #{e.message}"
 			Runtime::EXIT_ERROR
 		rescue StandardError => e
-			err.puts "ERROR: #{e.message}"
+			err.puts "#{BADGE} ERROR: #{e.message}"
 			Runtime::EXIT_ERROR
 		end
 
@@ -37,14 +37,14 @@ module Carson
 			command = argv.shift
 			parse_command( command: command, argv: argv, parser: parser, err: err )
 		rescue OptionParser::ParseError => e
-			err.puts e.message
+			err.puts "#{BADGE} #{e.message}"
 			err.puts parser
 			{ command: :invalid }
 		end
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json]|housekeep|version]"
+				opts.banner = "Usage: carson [audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
 			end
 		end
 
@@ -84,7 +84,7 @@ module Carson
 		def self.parse_repo_path_command( command:, argv:, parser:, err: )
 			parser.parse!( argv )
 			if argv.length > 1
-				err.puts "Too many arguments for #{command}. Use: carson #{command} [repo_path]"
+				err.puts "#{BADGE} Too many arguments for #{command}. Use: carson #{command} [repo_path]"
 				err.puts parser
 				return { command: :invalid }
 			end
@@ -100,7 +100,7 @@ module Carson
 			action = argv.shift
 			parser.parse!( argv )
 			if action.to_s.strip.empty?
-				err.puts "Missing subcommand for #{command}. Use: carson #{command} #{usage}"
+				err.puts "#{BADGE} Missing subcommand for #{command}. Use: carson #{command} #{usage}"
 				err.puts parser
 				return { command: :invalid }
 			end
@@ -110,7 +110,7 @@ module Carson
 		def self.parse_lint_subcommand( argv:, parser:, err: )
 			action = argv.shift
 			unless action == "setup"
-				err.puts "Missing or invalid subcommand for lint. Use: carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]"
+				err.puts "#{BADGE} Missing or invalid subcommand for lint. Use: carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]"
 				err.puts parser
 				return { command: :invalid }
 			end
@@ -128,12 +128,12 @@ module Carson
 			end
 			lint_parser.parse!( argv )
 			if options.fetch( :source ).to_s.empty?
-				err.puts "Missing required --source for lint setup."
+				err.puts "#{BADGE} Missing required --source for lint setup."
 				err.puts lint_parser
 				return { command: :invalid }
 			end
 			unless argv.empty?
-				err.puts "Unexpected arguments for lint setup: #{argv.join( ' ' )}"
+				err.puts "#{BADGE} Unexpected arguments for lint setup: #{argv.join( ' ' )}"
 				err.puts lint_parser
 				return { command: :invalid }
 			end
@@ -144,7 +144,7 @@ module Carson
 				force: options.fetch( :force )
 			}
 		rescue OptionParser::ParseError => e
-			err.puts e.message
+			err.puts "#{BADGE} #{e.message}"
 			err.puts lint_parser
 			{ command: :invalid }
 		end
@@ -152,26 +152,32 @@ module Carson
 		def self.parse_govern_subcommand( argv:, err: )
 			options = {
 				dry_run: false,
-				json: false
+				json: false,
+				loop_seconds: nil
 			}
 			govern_parser = OptionParser.new do |opts|
-				opts.banner = "Usage: carson govern [--dry-run] [--json]"
+				opts.banner = "Usage: carson govern [--dry-run] [--json] [--loop SECONDS]"
 				opts.on( "--dry-run", "Run all checks but do not merge or dispatch" ) { options[ :dry_run ] = true }
 				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles" ) do |s|
+					err.puts( "#{BADGE} Error: --loop must be a positive integer" ) || ( return { command: :invalid } ) if s < 1
+					options[ :loop_seconds ] = s
+				end
 			end
 			govern_parser.parse!( argv )
 			unless argv.empty?
-				err.puts "Unexpected arguments for govern: #{argv.join( ' ' )}"
+				err.puts "#{BADGE} Unexpected arguments for govern: #{argv.join( ' ' )}"
 				err.puts govern_parser
 				return { command: :invalid }
 			end
 			{
 				command: "govern",
 				dry_run: options.fetch( :dry_run ),
-				json: options.fetch( :json )
+				json: options.fetch( :json ),
+				loop_seconds: options[ :loop_seconds ]
 			}
 		rescue OptionParser::ParseError => e
-			err.puts e.message
+			err.puts "#{BADGE} #{e.message}"
 			err.puts govern_parser
 			{ command: :invalid }
 		end
@@ -214,7 +220,8 @@ module Carson
 			when "govern"
 				runtime.govern!(
 					dry_run: parsed.fetch( :dry_run, false ),
-					json_output: parsed.fetch( :json, false )
+					json_output: parsed.fetch( :json, false ),
+					loop_seconds: parsed.fetch( :loop_seconds, nil )
 				)
 			when "housekeep"
 				runtime.housekeep!

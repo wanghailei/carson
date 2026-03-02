@@ -5,6 +5,55 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.2.0 — Butler Command Renames, Workflow Style, Review Gate UX, Continuous Govern
+
+### What changed
+
+- Command renames: `init` → `onboard`, `check` → `inspect`, `hook` → `prepare`.
+- Configurable workflow style (`trunk` or `branch`) with hook enforcement.
+- Review gate UX improvements: bot-aware filtering, warmup wait, convergence polling.
+- `carson govern --loop SECONDS` — run the govern cycle continuously with built-in sleep loop. Per-cycle error isolation keeps the daemon alive through transient failures. `Ctrl-C` exits cleanly with a cycle count summary.
+
+### What users must do now
+
+1. Upgrade Carson to `2.2.0`.
+2. Run `carson refresh` in each governed repository to update hooks for the new command names.
+3. Optionally use `carson govern --loop 300` for unattended continuous governance.
+
+### Breaking or removed behaviour
+
+- Commands `init`, `check`, and `hook` have been renamed to `onboard`, `inspect`, and `prepare` respectively.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+carson refresh ~/Dev/your-project
+carson govern --dry-run
+```
+
+### Engineering Appendix
+
+#### Modified components
+
+- `lib/carson/cli.rb` — added `--loop SECONDS` to govern parser, banner, and dispatch.
+- `lib/carson/runtime/govern.rb` — extracted `govern_cycle!`, added `govern_loop!` with per-cycle error isolation and `Interrupt` handling.
+
+#### Public interface and config changes
+
+- Added CLI flag: `--loop SECONDS` for `carson govern`.
+- No new config keys. The loop interval is a runtime argument, not a persistent preference.
+- Exit status contract unchanged.
+
+#### Verification evidence
+
+- All govern unit tests pass including 4 new loop CLI tests.
+
+---
+
 ## 2.1.0 — Enriched Agent Work Orders
 
 ### What changed

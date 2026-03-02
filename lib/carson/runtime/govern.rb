@@ -17,7 +17,15 @@ module Carson
 
 			# Portfolio-level entry point. Scans configured repos (or current repo)
 			# and triages all open PRs. Returns EXIT_OK/EXIT_ERROR.
-			def govern!( dry_run: false, json_output: false )
+			def govern!( dry_run: false, json_output: false, loop_seconds: nil )
+				if loop_seconds
+					govern_loop!( dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds )
+				else
+					govern_cycle!( dry_run: dry_run, json_output: json_output )
+				end
+			end
+
+			def govern_cycle!( dry_run:, json_output: )
 				print_header "Carson Govern"
 				repos = governed_repo_paths
 				if repos.empty?
@@ -50,6 +58,27 @@ module Carson
 			rescue StandardError => e
 				puts_line "ERROR: govern failed — #{e.message}"
 				EXIT_ERROR
+			end
+
+			def govern_loop!( dry_run:, json_output:, loop_seconds: )
+				print_header "⧓ Carson Govern — loop mode (every #{loop_seconds}s)"
+				cycle_count = 0
+				loop do
+					cycle_count += 1
+					puts_line ""
+					puts_line "── cycle #{cycle_count} at #{Time.now.utc.strftime( "%Y-%m-%d %H:%M:%S UTC" )} ──"
+					begin
+						govern_cycle!( dry_run: dry_run, json_output: json_output )
+					rescue StandardError => e
+						puts_line "ERROR: cycle #{cycle_count} failed — #{e.message}"
+					end
+					puts_line "sleeping #{loop_seconds}s until next cycle…"
+					sleep loop_seconds
+				end
+			rescue Interrupt
+				puts_line ""
+				puts_line "⧓ govern loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}."
+				EXIT_OK
 			end
 
 			# Standalone housekeep: sync + prune.

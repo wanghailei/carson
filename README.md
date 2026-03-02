@@ -1,4 +1,4 @@
-# Carson
+# ⧓ Carson
 
 Named after the head of household in Downton Abbey, Carson is your repositories' autonomous governance runtime — you write the code, Carson manages everything else. From commit-time checks through PR triage, agent dispatch, merge, and cleanup, Carson runs the household with discipline and professional standards. Carson itself has no intelligence — it follows a deterministic decision tree. The intelligence comes from the coding agents it dispatches (Codex, Claude) to fix problems.
 
@@ -54,6 +54,7 @@ The data flow:
 |---|---|
 | `carson govern` | Triage all open PRs: merge ready ones, dispatch agents for failures, escalate the rest. |
 | `carson govern --dry-run` | Show what Carson would do without taking action. |
+| `carson govern --loop SECONDS` | Run the govern cycle continuously, sleeping SECONDS between cycles. |
 | `carson housekeep` | Sync main + prune stale branches (also runs automatically after govern merges). |
 
 **Setup** — run once per machine or per repository:
@@ -125,6 +126,7 @@ Commit the generated `.github/*` changes, and the repository is governed.
 ```bash
 carson govern --dry-run     # see what Carson would do across all repos
 carson govern               # triage PRs, merge ready ones, dispatch agents, housekeep
+carson govern --loop 300    # run continuously, cycling every 5 minutes
 ```
 
 Or the individual commands if you prefer manual control:

@@ -1,4 +1,9 @@
 require_relative "carson/version"
+
+module Carson
+	BADGE = "\u29D3".freeze # ⧓ BLACK BOWTIE (U+29D3)
+end
+
 require_relative "carson/config"
 require_relative "carson/adapters/git"
 require_relative "carson/adapters/github"
