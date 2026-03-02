@@ -19,7 +19,8 @@ module Carson
 				return Runtime::EXIT_ERROR
 			end
 
-			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, out: out, err: err )
+			verbose = parsed.fetch( :verbose, false )
+			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, out: out, err: err, verbose: verbose )
 			dispatch( parsed: parsed, runtime: runtime )
 		rescue ConfigError => e
 			err.puts "#{BADGE} CONFIG ERROR: #{e.message}"
@@ -30,12 +31,14 @@ module Carson
 		end
 
 		def self.parse_args( argv:, out:, err: )
+			verbose = argv.delete( "--verbose" ) ? true : false
 			parser = build_parser
 			preset = parse_preset_command( argv: argv, out: out, parser: parser )
-			return preset unless preset.nil?
+			return preset.merge( verbose: verbose ) unless preset.nil?
 
 			command = argv.shift
-			parse_command( command: command, argv: argv, parser: parser, err: err )
+			result = parse_command( command: command, argv: argv, parser: parser, err: err )
+			result.merge( verbose: verbose )
 		rescue OptionParser::ParseError => e
 			err.puts "#{BADGE} #{e.message}"
 			err.puts parser

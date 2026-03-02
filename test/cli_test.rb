@@ -174,4 +174,42 @@ class CLITest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_ERROR, status
 		assert_includes runtime.messages, "Unknown command: review:unknown"
 	end
+
+	def test_parse_args_verbose_flag_defaults_to_false
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "audit" ], out: out, err: err )
+		assert_equal false, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_verbose_flag_with_command
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "--verbose", "audit" ], out: out, err: err )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_verbose_flag_after_command
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "audit", "--verbose" ], out: out, err: err )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_verbose_flag_with_no_args_defaults_to_audit
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "--verbose" ], out: out, err: err )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_v_flag_remains_version
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "-v" ], out: out, err: err )
+		assert_equal "version", parsed.fetch( :command )
+	end
 end

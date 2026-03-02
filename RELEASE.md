@@ -5,6 +5,35 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.9.0 — Concise UX for All Commands
+
+### What changed
+
+- **Concise output by default.** Every Carson command now prints clean, minimal output — what happened, what needs attention, what to do next. Diagnostic key-value lines are suppressed unless `--verbose` is passed.
+- **`--verbose` flag.** Global flag available on all commands. Restores full diagnostic output (same as pre-2.9.0 behaviour). The pre-commit hook runs `carson audit` (no flags) so it automatically gets clean output.
+- **Audit concise output.** A healthy audit prints one line (`Audit: ok`). Problems print only actionable summaries (e.g. `Hooks: mismatch — run carson prepare.`).
+- **Refresh concise output.** Prints ~5 lines: hooks installed, templates in sync, audit result, done.
+- **All other commands.** `prepare`, `inspect`, `offboard`, `template check/apply`, `prune`, `review gate/sweep`, `govern`, `lint setup`, `setup`, and `housekeep` all follow the same concise/verbose pattern.
+
+### What users must do now
+
+1. Upgrade Carson to `2.9.0`.
+2. Use `--verbose` when you need full diagnostics (debugging, CI troubleshooting).
+
+### Breaking or removed behaviour
+
+- Default output is now concise. Scripts that parse Carson's key-value diagnostic lines must add `--verbose`.
+- Removed `@concise` internal flag (replaced by `--verbose` opt-in pattern).
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+```
+
 ## 2.8.1 — Onboard UX and Install Cleanup
 
 ### What changed
@@ -12,14 +41,16 @@ Release-note scope rule:
 - **Concise onboard output.** `carson onboard` now prints a clean 8-line summary instead of verbose internal state (hook paths, template statuses, config lines). Tells users what happened, what needs attention, and what to do next.
 - **Graceful handling of fresh repos.** Onboard no longer fails with a fatal error on repositories with no commits yet.
 - **Suppressed RubyGems PATH warning.** The misleading `WARNING: You don't have ... in your PATH, gem executables will not run` message from `gem install --user-install` is now suppressed during installation. Carson symlinks the executable to `~/.carson/bin`, making the gem bin directory irrelevant.
+- **Default workflow style changed from `trunk` to `branch`.** All governed repositories now enforce PR-only merges by default. Direct commits, merge commits, and pushes to protected branches (`main`/`master`) are blocked by hooks unless explicitly opted out.
 
 ### What users must do now
 
 1. Upgrade Carson to `2.8.1`.
+2. If you rely on direct commits to main, re-run `carson setup` and choose `trunk`, or set `CARSON_WORKFLOW_STYLE=trunk` in your environment.
 
 ### Breaking or removed behaviour
 
-- None.
+- Default `workflow.style` changed from `trunk` to `branch`. Repositories that previously relied on the implicit `trunk` default will now block direct commits to protected branches. Escape hatches: run `carson setup` to choose `trunk`, or set `CARSON_WORKFLOW_STYLE=trunk`.
 
 ### Upgrade steps
 

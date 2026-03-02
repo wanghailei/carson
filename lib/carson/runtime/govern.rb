@@ -83,7 +83,8 @@ module Carson
 
 			# Standalone housekeep: sync + prune.
 			def housekeep!
-				print_header "Housekeep"
+				puts_verbose ""
+				puts_verbose "[Housekeep]"
 				sync_status = sync!
 				if sync_status != EXIT_OK
 					puts_line "housekeep: sync returned #{sync_status}; skipping prune."
@@ -571,8 +572,8 @@ module Carson
 				md_path = File.join( report_dir, GOVERN_REPORT_MD )
 				File.write( json_path, JSON.pretty_generate( report ) )
 				File.write( md_path, render_govern_markdown( report: report ) )
-				puts_line "report_json: #{json_path}"
-				puts_line "report_markdown: #{md_path}"
+				puts_verbose "report_json: #{json_path}"
+				puts_verbose "report_markdown: #{md_path}"
 			end
 
 			def render_govern_markdown( report: )
@@ -632,7 +633,11 @@ module Carson
 				end
 
 				repos_count = Array( report[ :repos ] ).length
-				puts_line "govern_summary: repos=#{repos_count} prs=#{total_prs} ready=#{ready_count} blocked=#{blocked_count}"
+				if verbose?
+					puts_line "govern_summary: repos=#{repos_count} prs=#{total_prs} ready=#{ready_count} blocked=#{blocked_count}"
+				else
+					puts_line "Govern: #{repos_count} repo#{plural_suffix( count: repos_count )}, #{total_prs} PR#{plural_suffix( count: total_prs )} (#{ready_count} ready, #{blocked_count} blocked)"
+				end
 			end
 		end
 

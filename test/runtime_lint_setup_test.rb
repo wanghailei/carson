@@ -103,7 +103,8 @@ private
 				repo_root: @repo_root,
 				tool_root: File.expand_path( "..", __dir__ ),
 				out: StringIO.new,
-				err: StringIO.new
+				err: StringIO.new,
+				verbose: true
 			)
 		end
 	end

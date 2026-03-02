@@ -8,10 +8,10 @@ module Carson
 					return unless config.review_wait_seconds.positive?
 					quick = review_gate_snapshot( owner: owner, repo: repo, pr_number: pr_number )
 					if quick[ :unresolved_threads ].empty? && quick[ :unacknowledged_actionable ].empty?
-						puts_line "warmup_skip: all threads resolved"
+						puts_verbose "warmup_skip: all threads resolved"
 						return quick
 					end
-					puts_line "warmup_wait_seconds: #{config.review_wait_seconds}"
+					puts_verbose "warmup_wait_seconds: #{config.review_wait_seconds}"
 					sleep config.review_wait_seconds
 					nil
 				end
@@ -19,7 +19,7 @@ module Carson
 				# Poll delay between consecutive snapshot reads during convergence checks.
 				def wait_for_review_poll
 					return unless config.review_poll_seconds.positive?
-					puts_line "poll_wait_seconds: #{config.review_poll_seconds}"
+					puts_verbose "poll_wait_seconds: #{config.review_poll_seconds}"
 					sleep config.review_poll_seconds
 				end
 
@@ -173,10 +173,10 @@ module Carson
 						json_name: REVIEW_GATE_REPORT_JSON,
 						renderer: method( :render_review_gate_markdown )
 					)
-					puts_line "review_gate_report_markdown: #{markdown_path}"
-					puts_line "review_gate_report_json: #{json_path}"
+					puts_verbose "review_gate_report_markdown: #{markdown_path}"
+					puts_verbose "review_gate_report_json: #{json_path}"
 				rescue StandardError => e
-					puts_line "review_gate_report_write: SKIP (#{e.message})"
+					puts_verbose "review_gate_report_write: SKIP (#{e.message})"
 				end
 
 				# Human-readable review gate report for merge-readiness evidence.

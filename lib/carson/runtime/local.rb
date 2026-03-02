@@ -43,12 +43,19 @@ module Carson
 				return prune_no_stale_branches if stale_branches.empty?
 
 				counters = prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch )
-				puts_line "prune_summary: deleted=#{counters.fetch( :deleted )} skipped=#{counters.fetch( :skipped )}"
+				puts_verbose "prune_summary: deleted=#{counters.fetch( :deleted )} skipped=#{counters.fetch( :skipped )}"
+				unless verbose?
+					puts_line "Pruned #{counters.fetch( :deleted )} stale branch#{plural_suffix( count: counters.fetch( :deleted ) )}."
+				end
 				EXIT_OK
 			end
 
 			def prune_no_stale_branches
-				puts_line "OK: no stale local branches tracking deleted #{config.git_remote} branches."
+				if verbose?
+					puts_line "OK: no stale local branches tracking deleted #{config.git_remote} branches."
+				else
+					puts_line "No stale branches."
+				end
 				EXIT_OK
 			end
 
@@ -72,7 +79,7 @@ module Carson
 
 			def prune_skip_stale_branch( type:, branch:, upstream: )
 				status = type == :protected ? "skip_protected_branch" : "skip_current_branch"
-				puts_line "#{status}: #{branch} (upstream=#{upstream})"
+				puts_verbose "#{status}: #{branch} (upstream=#{upstream})"
 				:skipped
 			end
 
@@ -89,8 +96,8 @@ module Carson
 			end
 
 			def prune_safe_delete_success( branch:, upstream:, stdout_text: )
-				out.print stdout_text unless stdout_text.empty?
-				puts_line "deleted_local_branch: #{branch} (upstream=#{upstream})"
+				out.print stdout_text if verbose? && !stdout_text.empty?
+				puts_verbose "deleted_local_branch: #{branch} (upstream=#{upstream})"
 				:deleted
 			end
 
@@ -108,20 +115,20 @@ module Carson
 			end
 
 			def prune_force_delete_success( branch:, upstream:, merged_pr:, force_stdout: )
-				out.print force_stdout unless force_stdout.empty?
-				puts_line "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
+				out.print force_stdout if verbose? && !force_stdout.empty?
+				puts_verbose "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
 				:deleted
 			end
 
 			def prune_force_delete_failed( branch:, upstream:, force_stderr: )
 				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
-				puts_line "fail_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error_text}"
+				puts_verbose "fail_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error_text}"
 				:skipped
 			end
 
 			def prune_force_delete_skipped( branch:, upstream:, delete_error_text:, force_error: )
-				puts_line "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{delete_error_text}"
-				puts_line "skip_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error}" unless force_error.to_s.strip.empty?
+				puts_verbose "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{delete_error_text}"
+				puts_verbose "skip_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error}" unless force_error.to_s.strip.empty?
 				:skipped
 			end
 
@@ -153,12 +160,15 @@ module Carson
 					target_path = File.join( hooks_dir, hook_name )
 					FileUtils.cp( source_path, target_path )
 					FileUtils.chmod( 0o755, target_path )
-					puts_line "hook_written: #{relative_path( target_path )}" unless concise?
+					puts_verbose "hook_written: #{relative_path( target_path )}"
 				end
 				git_system!( "config", "core.hooksPath", hooks_dir )
 				File.write( File.join( hooks_dir, "workflow_style" ), config.workflow_style )
-				puts_line "configured_hooks_path: #{hooks_dir}" unless concise?
-				return EXIT_OK if concise?
+				puts_verbose "configured_hooks_path: #{hooks_dir}"
+				unless verbose?
+					puts_line "Hooks installed (#{config.required_hooks.count} hooks)."
+					return EXIT_OK
+				end
 
 				inspect!
 			end
@@ -188,8 +198,6 @@ module Carson
 				end
 
 				onboard_apply!
-			ensure
-				@concise = false
 			end
 
 			# Re-applies hooks, templates, and audit after upgrading Carson.
@@ -197,29 +205,52 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Refresh"
 				unless inside_git_work_tree?
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
-				hook_status = prepare!
-				return hook_status unless hook_status == EXIT_OK
 
-				template_status = template_apply!
+				if verbose?
+					puts_verbose ""
+					puts_verbose "[Refresh]"
+					hook_status = prepare!
+					return hook_status unless hook_status == EXIT_OK
+
+					template_status = template_apply!
+					return template_status unless template_status == EXIT_OK
+
+					audit_status = audit!
+					if audit_status == EXIT_OK
+						puts_line "OK: Carson refresh completed for #{repo_root}."
+					elsif audit_status == EXIT_BLOCK
+						puts_line "BLOCK: Carson refresh completed with policy blocks; resolve and rerun carson audit."
+					end
+					return audit_status
+				end
+
+				puts_line "Refresh"
+				hook_status = with_captured_output { prepare! }
+				return hook_status unless hook_status == EXIT_OK
+				puts_line "Hooks installed (#{config.required_hooks.count} hooks)."
+
+				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
+				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
+				if template_drift_count.positive?
+					puts_line "Templates applied (#{template_drift_count} updated)."
+				else
+					puts_line "Templates in sync."
+				end
 
 				audit_status = audit!
-				if audit_status == EXIT_OK
-					puts_line "OK: Carson refresh completed for #{repo_root}."
-				elsif audit_status == EXIT_BLOCK
-					puts_line "BLOCK: Carson refresh completed with policy blocks; resolve and rerun carson audit."
-				end
+				puts_line "Refresh complete."
 				audit_status
 			end
 
 			# Removes Carson-managed repository integration so a host repository can retire Carson cleanly.
 			def offboard!
-				print_header "Offboard"
+				puts_verbose ""
+				puts_verbose "[Offboard]"
 				unless inside_git_work_tree?
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
@@ -233,16 +264,20 @@ module Carson
 					absolute = resolve_repo_path!( relative_path: relative, label: "offboard target #{relative}" )
 					if File.exist?( absolute )
 						FileUtils.rm_rf( absolute )
-						puts_line "removed_path: #{relative}"
+						puts_verbose "removed_path: #{relative}"
 						removed_count += 1
 					else
-						puts_line "skip_missing_path: #{relative}"
+						puts_verbose "skip_missing_path: #{relative}"
 						missing_count += 1
 					end
 				end
 				remove_empty_offboard_directories!
-				puts_line "offboard_summary: removed=#{removed_count} missing=#{missing_count}"
-				puts_line "OK: Carson offboard completed for #{repo_root}."
+				puts_verbose "offboard_summary: removed=#{removed_count} missing=#{missing_count}"
+				if verbose?
+					puts_line "OK: Carson offboard completed for #{repo_root}."
+				else
+					puts_line "Removed #{removed_count} file#{plural_suffix( count: removed_count )}. Offboard complete."
+				end
 				EXIT_OK
 			end
 
@@ -251,9 +286,13 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Inspect"
+				puts_verbose ""
+				puts_verbose "[Inspect]"
 				ok = hooks_health_report( strict: true )
-				puts_line( ok ? "status: ok" : "status: block" )
+				puts_verbose( ok ? "status: ok" : "status: block" )
+				unless verbose?
+					puts_line( ok ? "Hooks: ok" : "Hooks: block" )
+				end
 				ok ? EXIT_OK : EXIT_BLOCK
 			end
 
@@ -262,14 +301,24 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Template Sync Check"
+				puts_verbose ""
+				puts_verbose "[Template Sync Check]"
 				results = template_results
 				drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
 				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
 				results.each do |entry|
-					puts_line "template_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
+					puts_verbose "template_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
 				end
-				puts_line "template_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
+				puts_verbose "template_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
+				unless verbose?
+					if drift_count.positive?
+						drift_files = results.select { |entry| entry.fetch( :status ) == "drift" }.map { |entry| entry.fetch( :file ) }
+						puts_line "Templates: #{drift_count} of #{results.count} drifted"
+						drift_files.each { |file| puts_line "  #{file}" }
+					else
+						puts_line "Templates: #{results.count} files in sync"
+					end
+				end
 				return EXIT_ERROR if error_count.positive?
 
 				drift_count.positive? ? EXIT_BLOCK : EXIT_OK
@@ -280,29 +329,37 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Template Sync Apply" unless concise?
+				puts_verbose ""
+				puts_verbose "[Template Sync Apply]"
 				results = template_results
 				applied = 0
 				results.each do |entry|
 					if entry.fetch( :status ) == "error"
-						puts_line "template_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}" unless concise?
+						puts_verbose "template_file: #{entry.fetch( :file )} status=error reason=#{entry.fetch( :reason )}"
 						next
 					end
 
 					file_path = File.join( repo_root, entry.fetch( :file ) )
 					if entry.fetch( :status ) == "ok"
-						puts_line "template_file: #{entry.fetch( :file )} status=ok reason=in_sync" unless concise?
+						puts_verbose "template_file: #{entry.fetch( :file )} status=ok reason=in_sync"
 						next
 					end
 
 					FileUtils.mkdir_p( File.dirname( file_path ) )
 					File.write( file_path, entry.fetch( :applied_content ) )
-					puts_line "template_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}" unless concise?
+					puts_verbose "template_file: #{entry.fetch( :file )} status=updated reason=#{entry.fetch( :reason )}"
 					applied += 1
 				end
 
 				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
-				puts_line "template_apply_summary: updated=#{applied} error=#{error_count}" unless concise?
+				puts_verbose "template_apply_summary: updated=#{applied} error=#{error_count}"
+				unless verbose?
+					if applied.positive?
+						puts_line "Templates applied (#{applied} updated)."
+					else
+						puts_line "Templates in sync."
+					end
+				end
 				error_count.positive? ? EXIT_ERROR : EXIT_OK
 			end
 
@@ -363,9 +420,9 @@ module Carson
 			def print_hooks_path_status( configured:, expected: )
 				configured_abs = configured.nil? ? nil : File.expand_path( configured )
 				hooks_path_ok = configured_abs == expected
-				puts_line "hooks_path: #{configured || '(unset)'}"
-				puts_line "hooks_path_expected: #{expected}"
-				puts_line( hooks_path_ok ? "hooks_path_status: ok" : "hooks_path_status: attention" )
+				puts_verbose "hooks_path: #{configured || '(unset)'}"
+				puts_verbose "hooks_path_expected: #{expected}"
+				puts_verbose( hooks_path_ok ? "hooks_path_status: ok" : "hooks_path_status: attention" )
 				hooks_path_ok
 			end
 
@@ -374,7 +431,7 @@ module Carson
 					exists = File.file?( path )
 					symlink = File.symlink?( path )
 					executable = exists && !symlink && File.executable?( path )
-					puts_line "hook_file: #{relative_path( path )} exists=#{exists} symlink=#{symlink} executable=#{executable}"
+					puts_verbose "hook_file: #{relative_path( path )} exists=#{exists} symlink=#{symlink} executable=#{executable}"
 				end
 			end
 
@@ -399,13 +456,13 @@ module Carson
 				if strict && !hooks_path_ok
 					configured_text = configured.to_s.strip
 					if configured_text.empty?
-						puts_line "ACTION: hooks path is unset (expected=#{expected})."
+						puts_verbose "ACTION: hooks path is unset (expected=#{expected})."
 					else
-						puts_line "ACTION: hooks path mismatch (configured=#{configured_text}, expected=#{expected})."
+						puts_verbose "ACTION: hooks path mismatch (configured=#{configured_text}, expected=#{expected})."
 					end
 				end
 				message = strict ? "ACTION: run carson prepare to align hooks with Carson #{Carson::VERSION}." : "ACTION: run carson prepare to enforce local main protections."
-				puts_line message
+				puts_verbose message
 			end
 
 			# Returns ahead/behind counts for local main versus configured remote main.
@@ -604,17 +661,17 @@ module Carson
 			def disable_carson_hooks_path!
 				configured = configured_hooks_path
 				if configured.nil?
-					puts_line "hooks_path: (unset)"
+					puts_verbose "hooks_path: (unset)"
 					return EXIT_OK
 				end
-				puts_line "hooks_path: #{configured}"
+				puts_verbose "hooks_path: #{configured}"
 				configured_abs = File.expand_path( configured, repo_root )
 				unless carson_managed_hooks_path?( configured_abs: configured_abs )
-					puts_line "hooks_path_kept: #{configured} (not Carson-managed)"
+					puts_verbose "hooks_path_kept: #{configured} (not Carson-managed)"
 					return EXIT_OK
 				end
 				git_system!( "config", "--unset", "core.hooksPath" )
-				puts_line "hooks_path_unset: core.hooksPath"
+				puts_verbose "hooks_path_unset: core.hooksPath"
 				EXIT_OK
 			rescue StandardError => e
 				puts_line "ERROR: unable to update core.hooksPath (#{e.message})"
@@ -660,14 +717,14 @@ module Carson
 					next unless Dir.empty?( absolute )
 
 					Dir.rmdir( absolute )
-					puts_line "removed_empty_dir: #{relative}"
+					puts_verbose "removed_empty_dir: #{relative}"
 				end
 			end
 
 			# Verifies configured remote exists and logs status without mutating remotes.
 			def report_detected_remote!
 				if git_remote_exists?( remote_name: config.git_remote )
-					puts_line "remote_ok: #{config.git_remote}"
+					puts_verbose "remote_ok: #{config.git_remote}"
 				else
 					puts_line "WARN: remote '#{config.git_remote}' not found; run carson setup to configure."
 				end
@@ -675,14 +732,12 @@ module Carson
 
 			# Concise onboard orchestration: hooks, templates, remote, audit, guidance.
 			def onboard_apply!
-				@concise = true
-
-				hook_status = prepare!
+				hook_status = with_captured_output { prepare! }
 				return hook_status unless hook_status == EXIT_OK
 				puts_line "Hooks installed (#{config.required_hooks.count} hooks)."
 
 				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
-				template_status = template_apply!
+				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
 				if template_drift_count.positive?
 					puts_line "Templates synced (#{template_drift_count} file#{plural_suffix( count: template_drift_count )} updated)."

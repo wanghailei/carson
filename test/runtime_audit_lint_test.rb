@@ -280,7 +280,8 @@ private
 				repo_root: @repo_root,
 				tool_root: File.expand_path( "..", __dir__ ),
 				out: out,
-				err: err
+				err: err,
+				verbose: true
 			)
 		end
 		runtime

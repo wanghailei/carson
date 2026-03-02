@@ -8,42 +8,62 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 				audit_state = "ok"
-				print_header "Repository"
-				puts_line "root: #{repo_root}"
-				puts_line "current_branch: #{current_branch}"
-				print_header "Working Tree"
-				puts_line git_capture!( "status", "--short", "--branch" ).strip
-				print_header "Hooks"
+				audit_concise_problems = []
+				puts_verbose ""
+				puts_verbose "[Repository]"
+				puts_verbose "root: #{repo_root}"
+				puts_verbose "current_branch: #{current_branch}"
+				puts_verbose ""
+				puts_verbose "[Working Tree]"
+				puts_verbose git_capture!( "status", "--short", "--branch" ).strip
+				puts_verbose ""
+				puts_verbose "[Hooks]"
 				hooks_ok = hooks_health_report
-				audit_state = "block" unless hooks_ok
-				print_header "Local Lint Quality"
+				unless hooks_ok
+					audit_state = "block"
+					audit_concise_problems << "Hooks: mismatch — run carson prepare."
+				end
+				puts_verbose ""
+				puts_verbose "[Local Lint Quality]"
 				local_lint_quality = local_lint_quality_report
-				audit_state = "block" if local_lint_quality.fetch( :status ) == "block"
-				print_header "Main Sync Status"
+				if local_lint_quality.fetch( :status ) == "block"
+					audit_state = "block"
+					blocking_langs = local_lint_quality.fetch( :languages ).select { |l| l.fetch( :status ) == "block" }
+					blocking_langs.each do |lang|
+						exit_code = lang.fetch( :exit_code, 1 )
+						audit_concise_problems << "Lint: #{lang.fetch( :language )} failed (exit #{exit_code})."
+					end
+				end
+				puts_verbose ""
+				puts_verbose "[Main Sync Status]"
 				ahead_count, behind_count, main_error = main_sync_counts
 				if main_error
-					puts_line "main_vs_remote_main: unknown"
-					puts_line "WARN: unable to calculate main sync status (#{main_error})."
+					puts_verbose "main_vs_remote_main: unknown"
+					puts_verbose "WARN: unable to calculate main sync status (#{main_error})."
 					audit_state = "attention" if audit_state == "ok"
 				elsif ahead_count.positive?
-					puts_line "main_vs_remote_main_ahead: #{ahead_count}"
-					puts_line "main_vs_remote_main_behind: #{behind_count}"
-					puts_line "ACTION: local #{config.main_branch} is ahead of #{config.git_remote}/#{config.main_branch} by #{ahead_count} commit#{plural_suffix( count: ahead_count )}; reset local drift before commit/push workflows."
+					puts_verbose "main_vs_remote_main_ahead: #{ahead_count}"
+					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
+					puts_verbose "ACTION: local #{config.main_branch} is ahead of #{config.git_remote}/#{config.main_branch} by #{ahead_count} commit#{plural_suffix( count: ahead_count )}; reset local drift before commit/push workflows."
 					audit_state = "block"
+					audit_concise_problems << "Main sync: ahead by #{ahead_count} — reset local drift."
 				elsif behind_count.positive?
-					puts_line "main_vs_remote_main_ahead: #{ahead_count}"
-					puts_line "main_vs_remote_main_behind: #{behind_count}"
-					puts_line "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run carson sync."
+					puts_verbose "main_vs_remote_main_ahead: #{ahead_count}"
+					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
+					puts_verbose "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run carson sync."
 					audit_state = "attention" if audit_state == "ok"
+					audit_concise_problems << "Main sync: behind by #{behind_count} — run carson sync."
 				else
-					puts_line "main_vs_remote_main_ahead: 0"
-					puts_line "main_vs_remote_main_behind: 0"
-					puts_line "ACTION: local #{config.main_branch} is in sync with #{config.git_remote}/#{config.main_branch}."
+					puts_verbose "main_vs_remote_main_ahead: 0"
+					puts_verbose "main_vs_remote_main_behind: 0"
+					puts_verbose "ACTION: local #{config.main_branch} is in sync with #{config.git_remote}/#{config.main_branch}."
 				end
-				print_header "PR and Required Checks (gh)"
+				puts_verbose ""
+				puts_verbose "[PR and Required Checks (gh)]"
 				monitor_report = pr_and_check_report
 				audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
-				print_header "Default Branch CI Baseline (gh)"
+				puts_verbose ""
+				puts_verbose "[Default Branch CI Baseline (gh)]"
 				default_branch_baseline = default_branch_ci_baseline_report
 				audit_state = "block" if default_branch_baseline.fetch( :status ) == "block"
 				audit_state = "attention" if audit_state == "ok" && default_branch_baseline.fetch( :status ) != "ok"
@@ -56,9 +76,14 @@ module Carson
 							audit_status: audit_state
 						)
 					)
-				print_header "Audit Result"
-				puts_line "status: #{audit_state}"
-				puts_line( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
+				puts_verbose ""
+				puts_verbose "[Audit Result]"
+				puts_verbose "status: #{audit_state}"
+				puts_verbose( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
+				unless verbose?
+					audit_concise_problems.each { |problem| puts_line problem }
+					puts_line "Audit: #{audit_state}"
+				end
 				audit_state == "block" ? EXIT_BLOCK : EXIT_OK
 			end
 
@@ -83,7 +108,7 @@ module Carson
 				unless gh_available?
 					report[ :status ] = "skipped"
 					report[ :skip_reason ] = "gh CLI not available in PATH"
-					puts_line "SKIP: #{report.fetch( :skip_reason )}"
+					puts_verbose "SKIP: #{report.fetch( :skip_reason )}"
 					return report
 				end
 				pr_stdout, pr_stderr, pr_success, = gh_run( "pr", "view", current_branch, "--json", "number,title,url,state,reviewDecision" )
@@ -91,7 +116,7 @@ module Carson
 					error_text = gh_error_text( stdout_text: pr_stdout, stderr_text: pr_stderr, fallback: "unable to read PR for branch #{current_branch}" )
 					report[ :status ] = "skipped"
 					report[ :skip_reason ] = error_text
-					puts_line "SKIP: #{error_text}"
+					puts_verbose "SKIP: #{error_text}"
 					return report
 				end
 				pr_data = JSON.parse( pr_stdout )
@@ -102,16 +127,16 @@ module Carson
 				state: pr_data[ "state" ].to_s,
 				review_decision: blank_to( value: pr_data[ "reviewDecision" ], default: "NONE" )
 				}
-				puts_line "pr: ##{report.dig( :pr, :number )} #{report.dig( :pr, :title )}"
-				puts_line "url: #{report.dig( :pr, :url )}"
-				puts_line "review_decision: #{report.dig( :pr, :review_decision )}"
+				puts_verbose "pr: ##{report.dig( :pr, :number )} #{report.dig( :pr, :title )}"
+				puts_verbose "url: #{report.dig( :pr, :url )}"
+				puts_verbose "review_decision: #{report.dig( :pr, :review_decision )}"
 				checks_stdout, checks_stderr, checks_success, checks_exit = gh_run( "pr", "checks", report.dig( :pr, :number ).to_s, "--required", "--json", "name,state,bucket,workflow,link" )
 				if checks_stdout.to_s.strip.empty?
 					error_text = gh_error_text( stdout_text: checks_stdout, stderr_text: checks_stderr, fallback: "required checks unavailable" )
 					report[ :checks ][ :status ] = "skipped"
 					report[ :checks ][ :skip_reason ] = error_text
 					report[ :status ] = "attention"
-					puts_line "checks: SKIP (#{error_text})"
+					puts_verbose "checks: SKIP (#{error_text})"
 					return report
 				end
 				checks_data = JSON.parse( checks_stdout )
@@ -123,17 +148,17 @@ module Carson
 				report[ :checks ][ :pending_count ] = pending.count
 				report[ :checks ][ :failing ] = normalise_check_entries( entries: failing )
 				report[ :checks ][ :pending ] = normalise_check_entries( entries: pending )
-				puts_line "required_checks_total: #{report.dig( :checks, :required_total )}"
-				puts_line "required_checks_failing: #{report.dig( :checks, :failing_count )}"
-				puts_line "required_checks_pending: #{report.dig( :checks, :pending_count )}"
-				report.dig( :checks, :failing ).each { |entry| puts_line "check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
-				report.dig( :checks, :pending ).each { |entry| puts_line "check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				puts_verbose "required_checks_total: #{report.dig( :checks, :required_total )}"
+				puts_verbose "required_checks_failing: #{report.dig( :checks, :failing_count )}"
+				puts_verbose "required_checks_pending: #{report.dig( :checks, :pending_count )}"
+				report.dig( :checks, :failing ).each { |entry| puts_verbose "check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				report.dig( :checks, :pending ).each { |entry| puts_verbose "check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
 				report[ :status ] = "attention" if report.dig( :checks, :failing_count ).positive? || report.dig( :checks, :pending_count ).positive?
 				report
 				rescue JSON::ParserError => e
 					report[ :status ] = "skipped"
 					report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
-					puts_line "SKIP: #{report.fetch( :skip_reason )}"
+					puts_verbose "SKIP: #{report.fetch( :skip_reason )}"
 					report
 				end
 
@@ -148,8 +173,8 @@ module Carson
 					blocking_languages: 0,
 					languages: []
 				}
-				puts_line "lint_target_source: #{target_source}"
-				puts_line "lint_target_files_total: #{target_files.count}"
+				puts_verbose "lint_target_source: #{target_source}"
+				puts_verbose "lint_target_files_total: #{target_files.count}"
 				config.lint_languages.each do |language, entry|
 					language_report = lint_language_report(
 						language: language,
@@ -162,7 +187,7 @@ module Carson
 					report[ :status ] = "block"
 					report[ :blocking_languages ] += 1
 				end
-				puts_line "lint_blocking_languages: #{report.fetch( :blocking_languages )}"
+				puts_verbose "lint_blocking_languages: #{report.fetch( :blocking_languages )}"
 				report
 			rescue StandardError => e
 				report ||= {
@@ -191,7 +216,7 @@ module Carson
 				if github_pull_request_event?
 					files = lint_target_files_for_pull_request
 					return [ files, "github_pull_request" ] unless files.nil?
-					puts_line "WARN: unable to resolve pull request changed files; falling back to full repository files."
+					puts_verbose "WARN: unable to resolve pull request changed files; falling back to full repository files."
 				end
 
 				if github_actions_environment?
@@ -265,16 +290,16 @@ module Carson
 					config_files: entry.fetch( :config_files ),
 					exit_code: 0
 				}
-				puts_line "lint_language: #{language} enabled=#{report.fetch( :enabled )} files=#{report.fetch( :file_count )}"
+				puts_verbose "lint_language: #{language} enabled=#{report.fetch( :enabled )} files=#{report.fetch( :file_count )}"
 				if language == "ruby" && outsider_mode?
 					local_rubocop_path = File.join( repo_root, ".rubocop.yml" )
 					if File.file?( local_rubocop_path )
 						report[ :status ] = "block"
 						report[ :reason ] = "repo-local RuboCop config is forbidden: #{relative_path( local_rubocop_path )}; remove it and use ~/.carson/lint/rubocop.yml."
 						report[ :exit_code ] = EXIT_BLOCK
-						puts_line "lint_#{language}_status: block"
-						puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
-						puts_line "ACTION: remove .rubocop.yml from this repository and run carson lint setup --source <path-or-git-url>."
+						puts_verbose "lint_#{language}_status: block"
+						puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
+						puts_verbose "ACTION: remove .rubocop.yml from this repository and run carson lint setup --source <path-or-git-url>."
 						return report
 					end
 				end
@@ -286,9 +311,9 @@ module Carson
 					report[ :status ] = "block"
 					report[ :reason ] = "missing config files: #{missing_config_files.join( ', ' )}"
 					report[ :exit_code ] = EXIT_BLOCK
-					puts_line "lint_#{language}_status: block"
-					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
-					puts_line "ACTION: run carson lint setup --source <path-or-git-url> to prepare ~/.carson/lint policy files."
+					puts_verbose "lint_#{language}_status: block"
+					puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
+					puts_verbose "ACTION: run carson lint setup --source <path-or-git-url> to prepare ~/.carson/lint policy files."
 					return report
 				end
 
@@ -298,16 +323,16 @@ module Carson
 					report[ :status ] = "block"
 					report[ :reason ] = "missing lint command"
 					report[ :exit_code ] = EXIT_BLOCK
-					puts_line "lint_#{language}_status: block"
-					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
+					puts_verbose "lint_#{language}_status: block"
+					puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
 					return report
 				end
 				unless command_available_for_lint?( command_name: command_name )
 					report[ :status ] = "block"
 					report[ :reason ] = "command not available: #{command_name}"
 					report[ :exit_code ] = EXIT_BLOCK
-					puts_line "lint_#{language}_status: block"
-					puts_line "lint_#{language}_reason: #{report.fetch( :reason )}"
+					puts_verbose "lint_#{language}_status: block"
+					puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
 					return report
 				end
 
@@ -322,9 +347,9 @@ module Carson
 						fallback: "lint command failed for #{language}"
 					)
 				end
-				puts_line "lint_#{language}_status: #{report.fetch( :status )}"
-				puts_line "lint_#{language}_exit: #{report.fetch( :exit_code )}"
-				puts_line "lint_#{language}_reason: #{report.fetch( :reason )}" unless report.fetch( :reason ).nil?
+				puts_verbose "lint_#{language}_status: #{report.fetch( :status )}"
+				puts_verbose "lint_#{language}_exit: #{report.fetch( :exit_code )}"
+				puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}" unless report.fetch( :reason ).nil?
 				report
 			end
 
@@ -405,7 +430,7 @@ module Carson
 				unless gh_available?
 					report[ :status ] = "skipped"
 					report[ :skip_reason ] = "gh CLI not available in PATH"
-					puts_line "baseline: SKIP (#{report.fetch( :skip_reason )})"
+					puts_verbose "baseline: SKIP (#{report.fetch( :skip_reason )})"
 					return report
 				end
 				owner, repo = repository_coordinates
@@ -455,32 +480,32 @@ module Carson
 				report[ :status ] = "block" if report.fetch( :pending_count ).positive?
 				report[ :status ] = "block" if report.fetch( :no_check_evidence )
 				report[ :status ] = "attention" if report.fetch( :status ) == "ok" && ( report.fetch( :advisory_failing_count ).positive? || report.fetch( :advisory_pending_count ).positive? )
-				puts_line "default_branch_repository: #{report.fetch( :repository )}"
-				puts_line "default_branch_name: #{report.fetch( :default_branch )}"
-				puts_line "default_branch_head_sha: #{report.fetch( :head_sha )}"
-				puts_line "default_branch_workflows_total: #{report.fetch( :workflows_total )}"
-				puts_line "default_branch_check_runs_total: #{report.fetch( :check_runs_total )}"
-				puts_line "default_branch_failing: #{report.fetch( :failing_count )}"
-				puts_line "default_branch_pending: #{report.fetch( :pending_count )}"
-				puts_line "default_branch_advisory_failing: #{report.fetch( :advisory_failing_count )}"
-				puts_line "default_branch_advisory_pending: #{report.fetch( :advisory_pending_count )}"
-				report.fetch( :failing ).each { |entry| puts_line "default_branch_check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
-				report.fetch( :pending ).each { |entry| puts_line "default_branch_check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
-				report.fetch( :advisory_failing ).each { |entry| puts_line "default_branch_check_advisory_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (advisory) #{entry.fetch( :link )}".strip }
-				report.fetch( :advisory_pending ).each { |entry| puts_line "default_branch_check_advisory_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (advisory) #{entry.fetch( :link )}".strip }
+				puts_verbose "default_branch_repository: #{report.fetch( :repository )}"
+				puts_verbose "default_branch_name: #{report.fetch( :default_branch )}"
+				puts_verbose "default_branch_head_sha: #{report.fetch( :head_sha )}"
+				puts_verbose "default_branch_workflows_total: #{report.fetch( :workflows_total )}"
+				puts_verbose "default_branch_check_runs_total: #{report.fetch( :check_runs_total )}"
+				puts_verbose "default_branch_failing: #{report.fetch( :failing_count )}"
+				puts_verbose "default_branch_pending: #{report.fetch( :pending_count )}"
+				puts_verbose "default_branch_advisory_failing: #{report.fetch( :advisory_failing_count )}"
+				puts_verbose "default_branch_advisory_pending: #{report.fetch( :advisory_pending_count )}"
+				report.fetch( :failing ).each { |entry| puts_verbose "default_branch_check_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				report.fetch( :pending ).each { |entry| puts_verbose "default_branch_check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
+				report.fetch( :advisory_failing ).each { |entry| puts_verbose "default_branch_check_advisory_fail: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (advisory) #{entry.fetch( :link )}".strip }
+				report.fetch( :advisory_pending ).each { |entry| puts_verbose "default_branch_check_advisory_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} (advisory) #{entry.fetch( :link )}".strip }
 				if report.fetch( :no_check_evidence )
-					puts_line "ACTION: default branch has workflow files but no check-runs; align workflow triggers and branch protection check names."
+					puts_verbose "ACTION: default branch has workflow files but no check-runs; align workflow triggers and branch protection check names."
 				end
 				report
 			rescue JSON::ParserError => e
 				report[ :status ] = "skipped"
 				report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
-				puts_line "baseline: SKIP (#{report.fetch( :skip_reason )})"
+				puts_verbose "baseline: SKIP (#{report.fetch( :skip_reason )})"
 				report
 			rescue StandardError => e
 				report[ :status ] = "skipped"
 				report[ :skip_reason ] = e.message
-				puts_line "baseline: SKIP (#{report.fetch( :skip_reason )})"
+				puts_verbose "baseline: SKIP (#{report.fetch( :skip_reason )})"
 				report
 			end
 
@@ -577,10 +602,10 @@ module Carson
 			# Writes monitor report artefacts and prints their locations.
 			def write_and_print_pr_monitor_report( report: )
 				markdown_path, json_path = write_pr_monitor_report( report: report )
-				puts_line "report_markdown: #{markdown_path}"
-				puts_line "report_json: #{json_path}"
+				puts_verbose "report_markdown: #{markdown_path}"
+				puts_verbose "report_json: #{json_path}"
 			rescue StandardError => e
-				puts_line "report_write: SKIP (#{e.message})"
+				puts_verbose "report_write: SKIP (#{e.message})"
 			end
 
 			# Persists report in both machine-readable JSON and human-readable Markdown.
@@ -703,28 +728,29 @@ module Carson
 				return { status: "ok", split_required: false } if files.empty?
 
 				scope = scope_integrity_status( files: files, branch: current_branch )
-				print_header "Scope Integrity Guard"
-				puts_line "scope_file_source: #{files_source}"
-				puts_line "scope_file_count: #{files.count}"
-				puts_line "branch: #{scope.fetch( :branch )}"
-				puts_line "scope_basis: changed_paths_only"
-				puts_line "detected_groups: #{scope.fetch( :detected_groups ).sort.join( ', ' )}"
-				puts_line "core_groups: #{scope.fetch( :core_groups ).empty? ? 'none' : scope.fetch( :core_groups ).sort.join( ', ' )}"
-				puts_line "non_doc_groups: #{scope.fetch( :non_doc_groups ).empty? ? 'none' : scope.fetch( :non_doc_groups ).sort.join( ', ' )}"
-				puts_line "docs_only_changes: #{scope.fetch( :docs_only )}"
-				puts_line "unmatched_paths_count: #{scope.fetch( :unmatched_paths ).count}"
-				scope.fetch( :unmatched_paths ).each { |path| puts_line "unmatched_path: #{path}" }
-				puts_line "violating_files_count: #{scope.fetch( :violating_files ).count}"
-				scope.fetch( :violating_files ).each { |path| puts_line "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
-				puts_line "checklist_single_business_intent: pass"
-				puts_line "checklist_single_scope_group: #{scope.fetch( :split_required ) ? 'advisory' : 'pass'}"
-				puts_line "checklist_cross_boundary_changes_justified: #{( scope.fetch( :split_required ) || scope.fetch( :misc_present ) ) ? 'advisory' : 'pass'}"
+				puts_verbose ""
+				puts_verbose "[Scope Integrity Guard]"
+				puts_verbose "scope_file_source: #{files_source}"
+				puts_verbose "scope_file_count: #{files.count}"
+				puts_verbose "branch: #{scope.fetch( :branch )}"
+				puts_verbose "scope_basis: changed_paths_only"
+				puts_verbose "detected_groups: #{scope.fetch( :detected_groups ).sort.join( ', ' )}"
+				puts_verbose "core_groups: #{scope.fetch( :core_groups ).empty? ? 'none' : scope.fetch( :core_groups ).sort.join( ', ' )}"
+				puts_verbose "non_doc_groups: #{scope.fetch( :non_doc_groups ).empty? ? 'none' : scope.fetch( :non_doc_groups ).sort.join( ', ' )}"
+				puts_verbose "docs_only_changes: #{scope.fetch( :docs_only )}"
+				puts_verbose "unmatched_paths_count: #{scope.fetch( :unmatched_paths ).count}"
+				scope.fetch( :unmatched_paths ).each { |path| puts_verbose "unmatched_path: #{path}" }
+				puts_verbose "violating_files_count: #{scope.fetch( :violating_files ).count}"
+				scope.fetch( :violating_files ).each { |path| puts_verbose "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
+				puts_verbose "checklist_single_business_intent: pass"
+				puts_verbose "checklist_single_scope_group: #{scope.fetch( :split_required ) ? 'advisory' : 'pass'}"
+				puts_verbose "checklist_cross_boundary_changes_justified: #{( scope.fetch( :split_required ) || scope.fetch( :misc_present ) ) ? 'advisory' : 'pass'}"
 				if scope.fetch( :split_required )
-					puts_line "ACTION: multiple module groups detected (informational only)."
+					puts_verbose "ACTION: multiple module groups detected (informational only)."
 				elsif scope.fetch( :misc_present )
-					puts_line "ACTION: unmatched paths detected; classify via scope.path_groups for stricter module checks."
+					puts_verbose "ACTION: unmatched paths detected; classify via scope.path_groups for stricter module checks."
 				else
-					puts_line "ACTION: scope integrity is within commit policy."
+					puts_verbose "ACTION: scope integrity is within commit policy."
 				end
 				{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ) }
 			end

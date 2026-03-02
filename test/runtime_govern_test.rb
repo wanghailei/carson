@@ -39,7 +39,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -87,7 +88,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -136,7 +138,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -185,7 +188,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -232,7 +236,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.govern!( dry_run: true, json_output: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -267,7 +272,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: work_repo,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.housekeep!
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -443,7 +449,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 
 				state = { "test#1" => { "objective" => "fix_ci", "status" => "running" } }
@@ -579,7 +586,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				result = rt.send( :truncate_log, text: "short" )
 				assert_equal "short", result
@@ -595,7 +603,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				long_text = "x" * 10_000 + "TAIL_MARKER"
 				result = rt.send( :truncate_log, text: long_text )
@@ -633,7 +642,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				pr = { "headRefName" => "fix/ci", "number" => 1 }
 				result = rt.send( :ci_evidence, pr: pr, repo_path: repo_root )
@@ -665,7 +675,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				pr = { "headRefName" => "fix/ci", "number" => 1 }
 				result = rt.send( :ci_evidence, pr: pr, repo_path: repo_root )
@@ -685,7 +696,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				state = { "repo#1" => { "status" => "failed", "summary" => "codex crashed", "dispatched_at" => "2025-01-01T00:00:00Z" } }
 				rt.send( :save_dispatch_state, state: state )
@@ -706,7 +718,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				state = { "repo#1" => { "status" => "done", "summary" => "fixed", "dispatched_at" => "2025-01-01T00:00:00Z" } }
 				rt.send( :save_dispatch_state, state: state )
@@ -761,7 +774,8 @@ class RuntimeGovernTest < Minitest::Test
 				out = StringIO.new
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: out, err: StringIO.new
+					out: out, err: StringIO.new,
+					verbose: true
 				)
 				status = rt.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -814,7 +828,8 @@ class RuntimeGovernTest < Minitest::Test
 				out = StringIO.new
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: out, err: StringIO.new
+					out: out, err: StringIO.new,
+					verbose: true
 				)
 				status = rt.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -869,7 +884,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				pr = { "title" => "Fix the thing", "headRefName" => "fix/thing", "number" => 42 }
 				ctx = rt.send( :evidence, pr: pr, repo_path: repo_root, objective: "fix_ci" )
@@ -899,7 +915,8 @@ class RuntimeGovernTest < Minitest::Test
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
 				rt = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new
+					out: StringIO.new, err: StringIO.new,
+					verbose: true
 				)
 				pr = { "title" => "My PR", "headRefName" => "fix/x", "number" => 1 }
 				ctx = rt.send( :evidence, pr: pr, repo_path: repo_root, objective: "fix_ci" )
@@ -978,7 +995,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				status = runtime.prepare!
 				assert_equal Carson::Runtime::EXIT_OK, status
@@ -1016,7 +1034,8 @@ class RuntimeGovernTest < Minitest::Test
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					out: out,
-					err: err
+					err: err,
+					verbose: true
 				)
 				runtime.onboard!
 				output = out.string
