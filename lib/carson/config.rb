@@ -69,7 +69,7 @@ module Carson
 				"govern" => {
 					"repos" => [],
 					"merge" => {
-						"authority" => false,
+						"authority" => true,
 						"method" => "merge"
 					},
 					"agent" => {
@@ -257,7 +257,7 @@ module Carson
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |p| safe_expand_path( p ) }
 			govern_merge_hash = fetch_hash( hash: govern_hash, key: "merge" )
-			@govern_merge_authority = fetch_optional_boolean( hash: govern_merge_hash, key: "authority", default: false, key_path: "govern.merge.authority" )
+			@govern_merge_authority = fetch_optional_boolean( hash: govern_merge_hash, key: "authority", default: true, key_path: "govern.merge.authority" )
 			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
