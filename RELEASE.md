@@ -5,6 +5,68 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.1.0 — Enriched Agent Work Orders
+
+### What changed
+
+- Agent work orders now include structured evidence instead of just the PR title. Before dispatching a coding agent, Carson gathers CI failure logs or review comment bodies and includes them in the work order so the agent can act on real context.
+- Configurable check wait (`govern.check_wait`, default 30 seconds). When PR checks are still pending and the PR was recently updated, Carson skips it instead of prematurely dispatching a fix — giving GitHub bots and CI time to post results.
+- Shared prompt module extracted from Codex/Claude adapters. Both adapters now use `Adapters::Prompt` with structured XML context tags.
+- Developer documentation updated with an ASCII flow diagram of the autonomous governance loop.
+
+### Evidence gathering detail
+
+- `fix_ci` objectives: Carson fetches the most recent failed CI run via `gh run list --status failure`, then retrieves failure logs via `gh run view --log-failed`. The tail of the log (up to 8,000 chars) is included in the work order.
+- `address_review` objectives: Carson fetches unresolved review threads and actionable top-level findings via GraphQL, and includes each finding's body text (up to 2,000 chars each).
+- Re-dispatch: if a prior dispatch for the same PR failed, the previous attempt summary is included so the agent can avoid repeating the same approach.
+- Graceful degradation: if evidence gathering fails, the agent receives the PR title and is told to investigate locally.
+
+### What users must do now
+
+1. Upgrade Carson to `2.1.0`.
+2. Optionally tune `govern.check_wait` in `~/.carson/config.json` or via `CARSON_GOVERN_CHECK_WAIT`.
+
+### Breaking or removed behaviour
+
+- None. The `context` field on `WorkOrder` is backward compatible — String values are still accepted.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+carson govern --dry-run
+```
+
+### Engineering Appendix
+
+#### New components
+
+- `lib/carson/adapters/prompt.rb` — shared prompt builder module with structured XML context tags.
+
+#### Modified components
+
+- `lib/carson/runtime/govern.rb` — evidence methods (`evidence`, `ci_evidence`, `review_evidence`, `prior_attempt`, `truncate_log`), check wait logic (`within_check_wait?`, `TRIAGE_PENDING`), `updatedAt` added to `gh pr list` fields.
+- `lib/carson/config.rb` — added `govern.check_wait` (integer, seconds, default 30).
+- `lib/carson/adapters/codex.rb`, `lib/carson/adapters/claude.rb` — now include `Prompt` module, removed duplicate `build_prompt`/`sanitize`.
+- `lib/carson/adapters/agent.rb` — updated `context` field documentation for Hash shapes.
+- `docs/develop.md` — added autonomous governance loop section with ASCII diagram.
+
+#### Public interface and config changes
+
+- Added config key: `govern.check_wait` (integer, seconds, default 30).
+- Added env override: `CARSON_GOVERN_CHECK_WAIT`.
+- Exit status contract unchanged.
+
+#### Verification evidence
+
+- 37 govern unit tests pass (18 new, 0 regressions).
+- CI smoke tests pass.
+
+---
+
 ## 2.0.0 — Autonomous Governance
 
 ### Architectural shift

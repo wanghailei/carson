@@ -13,7 +13,8 @@ module Carson
 			:review_tracking_issue_title, :review_tracking_issue_label, :ruby_indentation,
 			:audit_advisory_check_names,
 			:govern_repos, :govern_merge_authority, :govern_merge_method,
-			:govern_agent_provider, :govern_dispatch_state_path
+			:govern_agent_provider, :govern_dispatch_state_path,
+			:govern_check_wait
 
 		def self.load( repo_root: )
 			base_data = default_data
@@ -77,7 +78,8 @@ module Carson
 						"codex" => {},
 						"claude" => {}
 					},
-					"dispatch_state_path" => "~/.carson/govern/dispatch_state.json"
+					"dispatch_state_path" => "~/.carson/govern/dispatch_state.json",
+					"check_wait" => 30
 				},
 				"style" => {
 					"ruby_indentation" => "tabs"
@@ -200,6 +202,7 @@ module Carson
 			agent = fetch_hash_section( data: govern, key: "agent" )
 			govern_provider = ENV.fetch( "CARSON_GOVERN_AGENT_PROVIDER", "" ).to_s.strip
 			agent[ "provider" ] = govern_provider unless govern_provider.empty?
+			govern[ "check_wait" ] = env_integer( key: "CARSON_GOVERN_CHECK_WAIT", fallback: govern.fetch( "check_wait" ) )
 			copy
 		end
 
@@ -263,6 +266,7 @@ module Carson
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
 			dispatch_path = govern_hash.fetch( "dispatch_state_path" ).to_s
 			@govern_dispatch_state_path = safe_expand_path( dispatch_path )
+			@govern_check_wait = fetch_non_negative_integer( hash: govern_hash, key: "check_wait" )
 
 			validate!
 		end
