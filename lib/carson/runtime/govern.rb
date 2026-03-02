@@ -118,7 +118,7 @@ module Carson
 			def list_open_prs( repo_path: )
 				stdout_text, stderr_text, status = Open3.capture3(
 					"gh", "pr", "list", "--state", "open",
-					"--json", "number,title,headRefName,statusCheckRollup,reviewDecision,url",
+					"--json", "number,title,headRefName,statusCheckRollup,reviewDecision,url,updatedAt",
 					chdir: repo_path
 				)
 				unless status.success?
@@ -164,9 +164,14 @@ module Carson
 				pr_report
 			end
 
+			TRIAGE_PENDING = "pending".freeze
+
 			# Classifies PR state by checking CI, review status, and audit readiness.
 			def classify_pr( pr:, repo_path: )
 				ci_status = check_ci_status( pr: pr )
+				if ci_status == :pending && within_check_wait?( pr: pr )
+					return [ TRIAGE_PENDING, "checks still settling (within check_wait window)" ]
+				end
 				return [ TRIAGE_CI_FAILING, "CI checks failing or pending" ] unless ci_status == :green
 
 				review_decision = pr[ "reviewDecision" ].to_s.upcase
@@ -248,6 +253,8 @@ module Carson
 					dry_run ? "would_dispatch_ci_fix" : "dispatch_ci_fix"
 				when TRIAGE_REVIEW_BLOCKED
 					dry_run ? "would_dispatch_review_fix" : "dispatch_review_fix"
+				when TRIAGE_PENDING
+					"skip"
 				when TRIAGE_NEEDS_ATTENTION
 					"escalate"
 				else
@@ -310,12 +317,13 @@ module Carson
 					return
 				end
 
+				context = evidence( pr: pr, repo_path: repo_path, objective: objective )
 				work_order = Adapters::Agent::WorkOrder.new(
 					repo: repo_path,
 					branch: pr[ "headRefName" ].to_s,
 					pr_number: pr[ "number" ],
 					objective: objective,
-					context: pr.fetch( "title", "" ),
+					context: context,
 					acceptance_checks: nil
 				)
 
@@ -397,6 +405,133 @@ module Carson
 			def dispatch_state_key( pr:, repo_path: )
 				dir_name = File.basename( repo_path )
 				"#{dir_name}##{pr[ 'number' ]}"
+			end
+
+			# Evidence gathering — builds structured context Hash for agent work orders.
+			def evidence( pr:, repo_path:, objective: )
+				ctx = { title: pr.fetch( "title", "" ) }
+				case objective
+				when "fix_ci"
+					ctx.merge!( ci_evidence( pr: pr, repo_path: repo_path ) )
+				when "address_review"
+					ctx.merge!( review_evidence( pr: pr, repo_path: repo_path ) )
+				end
+				prior = prior_attempt( pr: pr, repo_path: repo_path )
+				ctx[ :prior_attempt ] = prior if prior
+				ctx
+			rescue StandardError => e
+				puts_line "    evidence gathering failed: #{e.message}"
+				{ title: pr.fetch( "title", "" ) }
+			end
+
+			CI_LOG_LIMIT = 8_000
+
+			def ci_evidence( pr:, repo_path: )
+				branch = pr[ "headRefName" ].to_s
+				stdout_text, _, status = Open3.capture3(
+					"gh", "run", "list",
+					"--branch", branch,
+					"--status", "failure",
+					"--limit", "1",
+					"--json", "databaseId,url",
+					chdir: repo_path
+				)
+				return {} unless status.success?
+
+				runs = JSON.parse( stdout_text )
+				return {} if runs.empty?
+
+				run_id = runs.first[ "databaseId" ].to_s
+				run_url = runs.first[ "url" ].to_s
+
+				log_stdout, _, log_status = Open3.capture3(
+					"gh", "run", "view", run_id, "--log-failed",
+					chdir: repo_path
+				)
+				return { ci_run_url: run_url } unless log_status.success?
+
+				{ ci_logs: truncate_log( text: log_stdout ), ci_run_url: run_url }
+			rescue StandardError => e
+				puts_line "    ci_evidence failed: #{e.message}"
+				{}
+			end
+
+			def truncate_log( text:, limit: CI_LOG_LIMIT )
+				text = text.to_s
+				return text if text.length <= limit
+				text[ -limit.. ]
+			end
+
+			def review_evidence( pr:, repo_path: )
+				rt = scoped_runtime( repo_path: repo_path )
+				owner, repo = rt.send( :repository_coordinates )
+				pr_number = pr[ "number" ]
+				details = rt.send( :pull_request_details, owner: owner, repo: repo, pr_number: pr_number )
+				pr_author = details.dig( :author, :login ).to_s
+				threads = rt.send( :unresolved_thread_entries, details: details )
+				top_level = rt.send( :actionable_top_level_items, details: details, pr_author: pr_author )
+
+				findings = []
+				threads.each do |entry|
+					body = thread_body( details: details, url: entry[ :url ] )
+					findings << { kind: "unresolved_thread", url: entry[ :url ], body: body }
+				end
+				top_level.each do |entry|
+					body = comment_body( details: details, url: entry[ :url ] )
+					findings << { kind: entry[ :kind ], url: entry[ :url ], body: body }
+				end
+
+				{ review_findings: findings }
+			rescue StandardError => e
+				puts_line "    review_evidence failed: #{e.message}"
+				{}
+			end
+
+			def scoped_runtime( repo_path: )
+				return self if repo_path == self.repo_root
+				Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
+			end
+
+			def prior_attempt( pr:, repo_path: )
+				state = load_dispatch_state
+				key = dispatch_state_key( pr: pr, repo_path: repo_path )
+				existing = state[ key ]
+				return nil unless existing
+				return nil unless existing[ "status" ] == "failed"
+				{ summary: existing[ "summary" ].to_s, dispatched_at: existing[ "dispatched_at" ].to_s }
+			end
+
+			def thread_body( details:, url: )
+				Array( details[ :review_threads ] ).each do |thread|
+					thread[ :comments ].each do |comment|
+						return comment[ :body ].to_s if comment[ :url ] == url
+					end
+				end
+				""
+			end
+
+			def comment_body( details:, url: )
+				Array( details[ :comments ] ).each do |comment|
+					return comment[ :body ].to_s if comment[ :url ] == url
+				end
+				Array( details[ :reviews ] ).each do |review|
+					return review[ :body ].to_s if review[ :url ] == url
+				end
+				""
+			end
+
+			# Check wait: returns true if the PR was updated within the configured wait window.
+			def within_check_wait?( pr: )
+				wait = config.govern_check_wait
+				return false if wait <= 0
+
+				updated_at_text = pr[ "updatedAt" ].to_s.strip
+				return false if updated_at_text.empty?
+
+				updated_at = Time.parse( updated_at_text )
+				( Time.now.utc - updated_at.utc ) < wait
+			rescue ArgumentError
+				false
 			end
 
 			# Report writing.
