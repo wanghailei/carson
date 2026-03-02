@@ -26,7 +26,7 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag exists
-        id: check
+        id: tag_check
         run: |
           if git ls-remote --tags origin "refs/tags/${{ steps.version.outputs.tag }}" | grep -q .; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -35,12 +35,9 @@ jobs:
           fi
 
       - name: Extract release notes
-        if: steps.check.outputs.exists == 'false'
-        id: notes
+        if: steps.tag_check.outputs.exists == 'false'
         run: |
           version="${{ steps.version.outputs.version }}"
-          # Extract the section for this version from RELEASE.md
-          # Matches from "## <version>" until the next "## " or "---" separator
           awk -v ver="$version" '
             BEGIN { found=0; printing=0 }
             /^## / {
@@ -50,13 +47,12 @@ jobs:
             /^---$/ { if (printing) exit }
             printing { print }
           ' RELEASE.md > /tmp/release_notes.md
-          # Fallback if extraction is empty
           if [ ! -s /tmp/release_notes.md ]; then
             echo "Release $version" > /tmp/release_notes.md
           fi
 
-      - name: Create GitHub release
-        if: steps.check.outputs.exists == 'false'
+      - name: Create tag and GitHub release
+        if: steps.tag_check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -65,15 +61,23 @@ jobs:
             --notes-file /tmp/release_notes.md
 
       - name: Setup Ruby
-        if: steps.check.outputs.exists == 'false'
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
 
+      - name: Check if gem version exists on RubyGems
+        id: gem_check
+        run: |
+          if gem info carson --remote --exact --all 2>/dev/null | grep -q "${{ steps.version.outputs.version }}"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build gem
-        if: steps.check.outputs.exists == 'false'
+        if: steps.gem_check.outputs.exists == 'false'
         run: gem build carson.gemspec
 
       - name: Publish gem to RubyGems
-        if: steps.check.outputs.exists == 'false'
+        if: steps.gem_check.outputs.exists == 'false'
         uses: rubygems/release-gem@v1
