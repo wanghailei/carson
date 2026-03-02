@@ -180,8 +180,8 @@ class RuntimeAuditLintTest < Minitest::Test
 		remote_dir = File.join( @tmp_dir, "remote.git" )
 		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "branch", "-M", "main", out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_root, "remote", "add", "github", remote_dir, out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_root, "push", "-u", "github", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "switch", "-c", "feature/lint-target", out: File::NULL, err: File::NULL )
 
 		FileUtils.mkdir_p( File.join( @repo_root, "lib" ) )

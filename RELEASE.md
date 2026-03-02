@@ -5,6 +5,67 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.8.0 — Interactive Setup and Remote Detection
+
+### What changed
+
+- **`carson setup` command.** An interactive quiz that detects git remotes, main branch, workflow style, and merge method. Writes answers to `~/.carson/config.json`. In non-TTY environments, Carson auto-detects settings silently.
+- **Auto-triggered on first onboard.** `carson onboard` now launches the setup quiz when no `~/.carson/config.json` exists. Existing users are not affected.
+- **Remote renaming removed.** Carson no longer renames `origin` to `github` during onboard. Instead, it detects the existing remote and adapts. This respects the user's repository layout.
+- **Default remote changed from `github` to `origin`.** The built-in default `git.remote` is now `origin`, matching the convention of most git hosting providers. Users who previously relied on the `github` default should run `carson setup` or set `git.remote` in config.
+- **Post-install message.** `gem install carson` now displays a getting-started guide pointing to `carson onboard`.
+- **CI lint fallback simplified.** `lint_target_files_for_pull_request` uses `config.git_remote` directly with a minimal fallback to `origin`.
+
+### What users must do now
+
+1. Upgrade Carson to `2.8.0`.
+2. If you relied on the `github` remote default, either rename your remote to `origin` or run `carson setup` to configure `git.remote`.
+
+### Breaking or removed behaviour
+
+- `git.remote` default changed from `github` to `origin`.
+- `carson onboard` no longer renames `origin` to `github`.
+- The `align_remote_name_for_carson!` method has been removed.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+carson setup
+```
+
+### Engineering Appendix
+
+#### New files
+
+- `lib/carson/runtime/setup.rb` — interactive quiz, remote/branch detection, config persistence.
+- `test/runtime_setup_test.rb` — quiz, detection, and config merge tests.
+
+#### Modified components
+
+- `lib/carson/config.rb` — default `git.remote` changed from `"github"` to `"origin"`, added `attr_accessor :git_remote`.
+- `lib/carson/runtime.rb` — added `in_stream:` parameter and `@in` attribute.
+- `lib/carson/cli.rb` — added `"setup"` command dispatch, updated banner.
+- `lib/carson/runtime/local.rb` — replaced `align_remote_name_for_carson!` with `report_detected_remote!`, updated `onboard!` to auto-trigger setup, updated `print_onboarding_guidance`.
+- `lib/carson/runtime/audit.rb` — simplified `lint_target_files_for_pull_request` CI fallback.
+- `test/runtime_govern_test.rb` — removed `origin` → `github` rename.
+- `test/runtime_audit_lint_test.rb` — updated remote name from `github` to `origin`.
+- `carson.gemspec` — added `spec.post_install_message`.
+- `MANUAL.md` — documented `carson setup`, updated remote default.
+- `API.md` — added `setup` command entry.
+
+#### Public interface and config changes
+
+- Added CLI command: `carson setup`.
+- Default `git.remote` changed from `"github"` to `"origin"`.
+- Runtime constructor accepts `in_stream:` keyword argument.
+- Exit status contract unchanged.
+
+---
+
 ## 2.7.0 — Documentation and Test Fixes
 
 ### What changed

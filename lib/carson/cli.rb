@@ -44,7 +44,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
+				opts.banner = "Usage: carson [setup|audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
 			end
 		end
 
@@ -187,6 +187,8 @@ module Carson
 			return Runtime::EXIT_ERROR if command == :invalid
 
 			case command
+			when "setup"
+				runtime.setup!
 			when "audit"
 				runtime.audit!
 			when "sync"

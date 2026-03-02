@@ -15,8 +15,9 @@ carson <command> [subcommand] [arguments]
 
 | Command | Purpose |
 |---|---|
+| `carson setup` | Interactive quiz to configure remote, main branch, workflow, and merge method. Writes `~/.carson/config.json`. |
 | `carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]` | Seed or refresh `~/.carson/lint` policy files from an explicit source. |
-| `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. |
+| `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. |
 | `carson prepare` | Install or refresh Carson-managed global hooks. |
 | `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts and detach Carson hooks path where applicable. |

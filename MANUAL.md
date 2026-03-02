@@ -50,13 +50,24 @@ Policy layout: language config files sit directly under `CODING/` (flat layout, 
 carson onboard /path/to/your-repo
 ```
 
+On first run (no `~/.carson/config.json` exists), `onboard` launches `carson setup` — an interactive quiz that detects your remotes, main branch, and preferred workflow. In non-interactive environments (CI, pipes), Carson auto-detects settings silently.
+
 `onboard` performs:
-- Remote alignment using configured `git.remote` (default `github`).
+- Interactive setup quiz (first run only).
+- Remote detection and verification using configured `git.remote` (default `origin`).
 - Hook installation under `~/.carson/hooks/<version>/`.
 - Repository `core.hooksPath` alignment to Carson global hooks.
 - Commit-time governance gate via managed `pre-commit` hook.
 - Managed `.github/*` template synchronisation.
 - Initial governance audit.
+
+### Reconfigure later
+
+```bash
+carson setup
+```
+
+Re-run the interactive setup quiz to change your remote, main branch, workflow style, or merge method. Choices are saved to `~/.carson/config.json`.
 
 ### Step 3: Commit generated files
 

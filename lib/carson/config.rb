@@ -6,7 +6,8 @@ module Carson
 
 	# Config is built-in only for outsider mode; host repositories do not carry Carson config files.
 	class Config
-		attr_reader :git_remote, :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
+		attr_accessor :git_remote
+		attr_reader :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
 			:path_groups, :template_managed_files, :lint_languages,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
@@ -28,7 +29,7 @@ module Carson
 		def self.default_data
 			{
 				"git" => {
-					"remote" => "github",
+					"remote" => "origin",
 					"main_branch" => "main",
 					"protected_branches" => [ "main", "master" ]
 				},
