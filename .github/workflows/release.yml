@@ -74,10 +74,12 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build gem
+      - name: Configure RubyGems credentials
         if: steps.gem_check.outputs.exists == 'false'
-        run: gem build carson.gemspec
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
 
-      - name: Publish gem to RubyGems
+      - name: Build and publish gem to RubyGems
         if: steps.gem_check.outputs.exists == 'false'
-        uses: rubygems/release-gem@v1
+        run: |
+          gem build carson.gemspec
+          gem push carson-${{ steps.version.outputs.version }}.gem
