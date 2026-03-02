@@ -928,17 +928,17 @@ class RuntimeGovernTest < Minitest::Test
 
 	# --- Workflow style config tests ---
 
-	def test_config_workflow_style_default_is_branch
+	def test_config_workflow_style_default_is_trunk
 		with_env( "CARSON_CONFIG_FILE" => "" ) do
 			c = Carson::Config.load( repo_root: "." )
-			assert_equal "branch", c.workflow_style
+			assert_equal "trunk", c.workflow_style
 		end
 	end
 
-	def test_config_workflow_style_env_override_to_trunk
-		with_env( "CARSON_CONFIG_FILE" => "", "CARSON_WORKFLOW_STYLE" => "trunk" ) do
+	def test_config_workflow_style_env_override_to_branch
+		with_env( "CARSON_CONFIG_FILE" => "", "CARSON_WORKFLOW_STYLE" => "branch" ) do
 			c = Carson::Config.load( repo_root: "." )
-			assert_equal "trunk", c.workflow_style
+			assert_equal "branch", c.workflow_style
 		end
 	end
 
@@ -1003,7 +1003,7 @@ class RuntimeGovernTest < Minitest::Test
 				hooks_dir = runtime.send( :hooks_dir )
 				flag_path = File.join( hooks_dir, "workflow_style" )
 				assert File.file?( flag_path ), "workflow_style flag file should exist"
-				assert_equal "branch", File.read( flag_path )
+				assert_equal "trunk", File.read( flag_path )
 			end
 		end
 	end
@@ -1039,7 +1039,7 @@ class RuntimeGovernTest < Minitest::Test
 				)
 				runtime.onboard!
 				output = out.string
-				assert_includes output, "Carson is ready. Workflow: branch"
+				assert_includes output, "Carson is ready. Workflow: trunk"
 				assert_includes output, "Reconfigure anytime: carson setup"
 			end
 		end
