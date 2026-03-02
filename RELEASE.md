@@ -5,6 +5,34 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.7.0 — Documentation and Test Fixes
+
+### What changed
+
+- **Stale command reference fixed.** README.md referenced the pre-2.3.0 command name `carson init` instead of `carson onboard`.
+- **Linear history guidance corrected.** API.md and MANUAL.md incorrectly stated that GitHub's "Require linear history" only accepts rebase merges. Both squash and rebase are accepted — only merge commits are rejected.
+- **Release notes separated.** The combined 2.6.0 entry has been split into distinct 2.5.0 (agent discovery) and 2.6.0 (squash default) entries.
+- **Config default test made hermetic.** `test_config_govern_defaults` now isolates HOME to a temp directory, preventing the developer's local `~/.carson/config.json` from affecting test results.
+
+### What users must do now
+
+1. Upgrade Carson to `2.7.0`.
+
+### Breaking or removed behaviour
+
+- None.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+```
+
+---
+
 ## 2.6.0 — Default Squash Merge
 
 ### What changed
