@@ -384,12 +384,14 @@ class RuntimeGovernTest < Minitest::Test
 	end
 
 	def test_config_govern_defaults
-		with_env( "CARSON_CONFIG_FILE" => "" ) do
-			c = Carson::Config.load( repo_root: "." )
-			assert_equal [], c.govern_repos
-			assert_equal true, c.govern_merge_authority
-			assert_equal "squash", c.govern_merge_method
-			assert_equal "auto", c.govern_agent_provider
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |tmp_dir|
+			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+				c = Carson::Config.load( repo_root: "." )
+				assert_equal [], c.govern_repos
+				assert_equal true, c.govern_merge_authority
+				assert_equal "squash", c.govern_merge_method
+				assert_equal "auto", c.govern_agent_provider
+			end
 		end
 	end
 

@@ -5,25 +5,59 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 2.6.0 — Default Squash Merge + Agent Discovery Templates
+## 2.6.0 — Default Squash Merge
 
 ### What changed
 
 - **Default merge method changed from `merge` to `squash`.** Squash-to-main keeps history linear: one PR = one commit on main. Every commit on main corresponds to a reviewed, CI-passing unit of work and is individually revertable. This aligns Carson's built-in default with how most teams should run.
+
+### What users must do now
+
+1. Upgrade Carson to `2.6.0`.
+2. If you previously set `govern.merge.method` to `"merge"` explicitly in `~/.carson/config.json`, review whether `"squash"` (now the default) is the right choice.
+
+### Breaking or removed behaviour
+
+- `govern.merge.method` default changed from `merge` to `squash`. If your GitHub repository only allows merge commits, set `"govern": { "merge": { "method": "merge" } }` in `~/.carson/config.json`.
+
+### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+```
+
+### Engineering Appendix
+
+#### Modified components
+
+- `lib/carson/config.rb` — `govern.merge.method` default changed from `"merge"` to `"squash"`.
+- `test/runtime_govern_test.rb` — unit test updated for squash default.
+
+#### Verification evidence
+
+- CI passes on PR #78.
+
+---
+
+## 2.5.0 — Agent Discovery Templates
+
+### What changed
+
 - **Agent discovery via managed templates.** Interactive agents (Claude Code, Codex, Copilot) working in Carson-governed repos now discover Carson automatically. A new source-of-truth file `.github/carson-instructions.md` contains the full governance baseline. Agent-specific files (`.github/CLAUDE.md`, `.github/AGENTS.md`, `.github/copilot-instructions.md`) are one-line pointers to it. Zero drift risk — one file to maintain, all agents follow the same reference.
 - **Managed template set expanded.** `carson template apply` now writes five files: `carson-instructions.md`, `copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`, and `pull_request_template.md`.
 
 ### What users must do now
 
-1. Upgrade Carson to `2.6.0`.
+1. Upgrade Carson to `2.5.0`.
 2. Run `carson prepare` in each governed repository.
 3. Run `carson template apply` to write the new managed files.
 4. Commit the new `.github/*` files.
-5. If you previously set `govern.merge.method` to `"merge"` explicitly in `~/.carson/config.json`, review whether `"squash"` (now the default) is the right choice.
 
 ### Breaking or removed behaviour
 
-- `govern.merge.method` default changed from `merge` to `squash`. If your GitHub repository only allows merge commits, set `"govern": { "merge": { "method": "merge" } }` in `~/.carson/config.json`.
 - `.github/copilot-instructions.md` content replaced with a one-line reference. The governance baseline now lives in `.github/carson-instructions.md`.
 
 ### Upgrade steps
@@ -39,12 +73,6 @@ carson template apply
 
 ### Engineering Appendix
 
-#### Modified components
-
-- `lib/carson/config.rb` — `govern.merge.method` default changed from `"merge"` to `"squash"`; `template.managed_files` expanded to include `carson-instructions.md`, `CLAUDE.md`, and `AGENTS.md`.
-- `script/ci_smoke.sh` — offboard removal check updated for new managed files.
-- `test/runtime_govern_test.rb` — unit test updated for squash default.
-
 #### New files
 
 - `templates/.github/carson-instructions.md` — governance baseline source of truth.
@@ -55,15 +83,19 @@ carson template apply
 
 - `templates/.github/copilot-instructions.md` — replaced full content with one-line reference.
 
+#### Modified components
+
+- `lib/carson/config.rb` — `template.managed_files` expanded to include `carson-instructions.md`, `CLAUDE.md`, and `AGENTS.md`.
+- `script/ci_smoke.sh` — offboard removal check updated for new managed files.
+
 #### Public interface and config changes
 
-- `govern.merge.method` default: `"merge"` → `"squash"`.
 - `template.managed_files` default expanded from 2 to 5 files.
 - Exit status contract unchanged.
 
 #### Verification evidence
 
-- CI passes on PRs #77 and #78.
+- CI passes on PR #77.
 
 ---
 
