@@ -359,7 +359,7 @@ carson version
 #### What users must do now
 
 1. Upgrade to `0.6.1` where Carson is pinned.
-2. Re-run `carson hook` in governed repositories after upgrade.
+2. Re-run `carson prepare` in governed repositories after upgrade.
 3. Update CI `carson_version` pins to `0.6.1`.
 
 #### Breaking or removed behaviour
@@ -559,7 +559,7 @@ carson version
 #### What users must do now
 
 1. Use `carson offboard /local/path/of/repo` when removing Carson from a repository.
-2. Re-run `carson init /local/path/of/repo` when re-onboarding later.
+2. Re-run `carson onboard /local/path/of/repo` when re-onboarding later.
 
 #### Breaking or removed behaviour
 
@@ -658,7 +658,7 @@ carson version
 
 #### What changed
 
-- Added one-command initialisation: `carson init [repo_path]` (`hook` + `template apply` + `audit`).
+- Added one-command initialisation: `carson onboard [repo_path]` (`hook` + `template apply` + `audit`).
 - Default report output moved to `~/.cache/carson`.
 - Outsider boundary now hard-blocks Carson-owned host artefacts (`.carson.yml`, `bin/carson`, `.tools/carson/*`).
 - Installation/setup guidance now targets standard-user package-consumer flow.
@@ -672,7 +672,7 @@ carson version
 #### What users must do now
 
 1. Install Carson as a normal user executable (`carson` in `PATH`).
-2. Initialise each repository with `carson init /local/path/of/repo`.
+2. Initialise each repository with `carson onboard /local/path/of/repo`.
 3. Remove forbidden Carson-owned artefacts from host repositories if reported.
 4. Read reports from `~/.cache/carson`.
 
@@ -691,7 +691,7 @@ mkdir -p ~/.local/bin
 ln -sf "$(ruby -e 'print Gem.user_dir')/bin/carson" ~/.local/bin/carson
 carson version
 
-carson init /local/path/of/repo
+carson onboard /local/path/of/repo
 carson audit
 ```
 
@@ -713,7 +713,7 @@ carson audit
 
 #### Public interface and config changes
 
-- Command surface is `audit`, `sync`, `prune`, `hook`, `check`, `init`, `template`, `review`, `version`.
+- Command surface is `audit`, `sync`, `prune`, `prepare`, `inspect`, `onboard`, `template`, `review`, `version`.
 - Initialisation command: `init [repo_path]` (no `run` alias).
 - Default report output: `~/.cache/carson`.
 - Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy block.

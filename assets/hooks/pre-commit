@@ -7,7 +7,7 @@ elif command -v carson >/dev/null 2>&1; then
 	carson_command=( "carson" )
 else
 	echo "Carson policy: 'carson' command is required for pre-commit governance checks." >&2
-	echo "Install Carson and rerun 'carson hook'." >&2
+	echo "Install Carson and rerun 'carson prepare'." >&2
 	exit 1
 fi
 

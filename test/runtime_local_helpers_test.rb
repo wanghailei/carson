@@ -3,7 +3,7 @@ require_relative "test_helper"
 class RuntimeLocalHelpersTest < Minitest::Test
 	include CarsonTestSupport
 
-	def test_check_reports_hooks_path_mismatch_with_upgrade_action
+	def test_inspect_reports_hooks_path_mismatch_with_upgrade_action
 		Dir.mktmpdir( "carson-hooks-upgrade-test", carson_tmp_root ) do |tmp_dir|
 			repo_root = File.join( tmp_dir, "repo" )
 			FileUtils.mkdir_p( repo_root )
@@ -34,12 +34,12 @@ class RuntimeLocalHelpersTest < Minitest::Test
 				end
 				system( "git", "-C", repo_root, "config", "core.hooksPath", previous_hooks_path, out: File::NULL, err: File::NULL )
 
-				status = runtime.check!
+				status = runtime.inspect!
 				output = out.string
 				assert_equal Carson::Runtime::EXIT_BLOCK, status
 				assert_includes output, "hooks_path_status: attention"
 				assert_includes output, "ACTION: hooks path mismatch (configured=#{previous_hooks_path}, expected=#{expected_hooks_path})."
-				assert_includes output, "ACTION: run carson hook to align hooks with Carson #{Carson::VERSION}."
+				assert_includes output, "ACTION: run carson prepare to align hooks with Carson #{Carson::VERSION}."
 			end
 		end
 	end

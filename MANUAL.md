@@ -47,10 +47,10 @@ Policy layout: language config files sit directly under `CODING/` (flat layout, 
 ### Step 2: Onboard a repository
 
 ```bash
-carson init /path/to/your-repo
+carson onboard /path/to/your-repo
 ```
 
-`init` performs:
+`onboard` performs:
 - Remote alignment using configured `git.remote` (default `github`).
 - Hook installation under `~/.carson/hooks/<version>/`.
 - Repository `core.hooksPath` alignment to Carson global hooks.
@@ -60,7 +60,7 @@ carson init /path/to/your-repo
 
 ### Step 3: Commit generated files
 
-After `init`, commit the generated `.github/*` changes in your repository. From this point the repository is governed.
+After `onboard`, commit the generated `.github/*` changes in your repository. From this point the repository is governed.
 
 ## CI Setup
 

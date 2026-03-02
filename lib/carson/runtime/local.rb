@@ -131,7 +131,7 @@ module Carson
 			end
 
 			# Installs required hook files and enforces repository hook path.
-			def hook!
+			def prepare!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
@@ -156,23 +156,24 @@ module Carson
 					puts_line "hook_written: #{relative_path( target_path )}"
 				end
 				git_system!( "config", "core.hooksPath", hooks_dir )
+				File.write( File.join( hooks_dir, "workflow_style" ), config.workflow_style )
 				puts_line "configured_hooks_path: #{hooks_dir}"
-				check!
+				inspect!
 			end
 
-			# One-command initialisation for new repositories: align remote naming, install hooks,
+			# One-command onboarding for new repositories: align remote naming, install hooks,
 			# apply templates, and produce a first audit report.
-			def init!
+			def onboard!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Init"
+				print_header "Onboard"
 				unless inside_git_work_tree?
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
 				align_remote_name_for_carson!
-				hook_status = hook!
+				hook_status = prepare!
 				return hook_status unless hook_status == EXIT_OK
 
 				template_status = template_apply!
@@ -180,10 +181,11 @@ module Carson
 
 				audit_status = audit!
 				if audit_status == EXIT_OK
-					puts_line "OK: Carson initialisation completed for #{repo_root}."
+					puts_line "OK: Carson onboard completed for #{repo_root}."
 				elsif audit_status == EXIT_BLOCK
-					puts_line "BLOCK: Carson initialisation completed with policy blocks; resolve and rerun carson audit."
+					puts_line "BLOCK: Carson onboard completed with policy blocks; resolve and rerun carson audit."
 				end
+				print_onboarding_guidance
 				audit_status
 			end
 
@@ -197,7 +199,7 @@ module Carson
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
-				hook_status = hook!
+				hook_status = prepare!
 				return hook_status unless hook_status == EXIT_OK
 
 				template_status = template_apply!
@@ -242,11 +244,11 @@ module Carson
 			end
 
 			# Strict hook health check used by humans, hooks, and CI paths.
-			def check!
+			def inspect!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
-				print_header "Hooks Check"
+				print_header "Inspect"
 				ok = hooks_health_report( strict: true )
 				puts_line( ok ? "status: ok" : "status: block" )
 				ok ? EXIT_OK : EXIT_BLOCK
@@ -399,7 +401,7 @@ module Carson
 						puts_line "ACTION: hooks path mismatch (configured=#{configured_text}, expected=#{expected})."
 					end
 				end
-				message = strict ? "ACTION: run carson hook to align hooks with Carson #{Carson::VERSION}." : "ACTION: run carson hook to enforce local main protections."
+				message = strict ? "ACTION: run carson prepare to align hooks with Carson #{Carson::VERSION}." : "ACTION: run carson prepare to enforce local main protections."
 				puts_line message
 			end
 
@@ -672,6 +674,18 @@ module Carson
 					return
 				end
 				puts_line "WARN: no #{config.git_remote} or origin remote configured; continue with local baseline only."
+			end
+
+
+			def print_onboarding_guidance
+				puts_line ""
+				puts_line "Carson is ready. Current workflow: #{config.workflow_style}"
+				puts_line ""
+				puts_line "Customise in ~/.carson/config.json:"
+				puts_line "  { \"workflow\": { \"style\": \"branch\" } }  — enforce PR-only merges"
+				puts_line "  { \"workflow\": { \"style\": \"trunk\" } }   — allow direct main commits (default)"
+				puts_line ""
+				puts_line "Run carson refresh after changing config."
 			end
 
 			# Uses `git remote get-url` as existence check to avoid parsing remote lists.

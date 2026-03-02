@@ -865,4 +865,166 @@ class RuntimeGovernTest < Minitest::Test
 			end
 		end
 	end
+
+	# --- Workflow style config tests ---
+
+	def test_config_workflow_style_default_is_trunk
+		with_env( "CARSON_CONFIG_FILE" => "" ) do
+			c = Carson::Config.load( repo_root: "." )
+			assert_equal "trunk", c.workflow_style
+		end
+	end
+
+	def test_config_workflow_style_env_override_to_branch
+		with_env( "CARSON_CONFIG_FILE" => "", "CARSON_WORKFLOW_STYLE" => "branch" ) do
+			c = Carson::Config.load( repo_root: "." )
+			assert_equal "branch", c.workflow_style
+		end
+	end
+
+	def test_config_workflow_style_invalid_value_raises
+		with_env( "CARSON_CONFIG_FILE" => "", "CARSON_WORKFLOW_STYLE" => "invalid" ) do
+			assert_raises Carson::ConfigError do
+				Carson::Config.load( repo_root: "." )
+			end
+		end
+	end
+
+	# --- Review bot_usernames config tests ---
+
+	def test_config_review_bot_usernames_default_empty
+		with_env( "CARSON_CONFIG_FILE" => "" ) do
+			c = Carson::Config.load( repo_root: "." )
+			assert_equal [], c.review_bot_usernames
+		end
+	end
+
+	def test_config_review_bot_usernames_env_override
+		with_env( "CARSON_CONFIG_FILE" => "", "CARSON_REVIEW_BOT_USERNAMES" => "gemini-bot,copilot-bot" ) do
+			c = Carson::Config.load( repo_root: "." )
+			assert_equal [ "gemini-bot", "copilot-bot" ], c.review_bot_usernames
+		end
+	end
+
+	# --- Review warmup default tests ---
+
+	def test_config_review_wait_seconds_default_is_10
+		with_env( "CARSON_CONFIG_FILE" => "" ) do
+			c = Carson::Config.load( repo_root: "." )
+			assert_equal 10, c.review_wait_seconds
+		end
+	end
+
+	# --- Workflow style flag file test ---
+
+	def test_prepare_writes_workflow_style_flag_file
+		Dir.mktmpdir( "carson-prepare-test", carson_tmp_root ) do |tmp_dir|
+			repo_root = File.join( tmp_dir, "repo" )
+			FileUtils.mkdir_p( repo_root )
+			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
+			hooks_base = File.join( tmp_dir, "hooks" )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => "",
+				"CARSON_HOOKS_BASE_PATH" => hooks_base
+			) do
+				out = StringIO.new
+				err = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					out: out,
+					err: err
+				)
+				status = runtime.prepare!
+				assert_equal Carson::Runtime::EXIT_OK, status
+				hooks_dir = runtime.send( :hooks_dir )
+				flag_path = File.join( hooks_dir, "workflow_style" )
+				assert File.file?( flag_path ), "workflow_style flag file should exist"
+				assert_equal "trunk", File.read( flag_path )
+			end
+		end
+	end
+
+	# --- Onboarding guidance test ---
+
+	def test_onboard_prints_guidance
+		Dir.mktmpdir( "carson-onboard-test", carson_tmp_root ) do |tmp_dir|
+			repo_root = File.join( tmp_dir, "repo" )
+			FileUtils.mkdir_p( repo_root )
+			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "switch", "-c", "main", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "test\n" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			hooks_base = File.join( tmp_dir, "hooks" )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => "",
+				"CARSON_HOOKS_BASE_PATH" => hooks_base
+			) do
+				out = StringIO.new
+				err = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					out: out,
+					err: err
+				)
+				runtime.onboard!
+				output = out.string
+				assert_includes output, "Carson is ready. Current workflow: trunk"
+				assert_includes output, "Run carson refresh after changing config."
+			end
+		end
+	end
+
+	# --- CLI dispatch tests for renamed commands ---
+
+	def test_cli_dispatches_onboard
+		runtime = Object.new
+		def runtime.onboard!
+			@onboard_called = true
+			Carson::Runtime::EXIT_OK
+		end
+		def runtime.onboard_called?
+			@onboard_called
+		end
+		def runtime.puts_line( msg ); end
+		status = Carson::CLI.dispatch(
+			parsed: { command: "onboard" },
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, status
+	end
+
+	def test_cli_dispatches_inspect
+		runtime = Object.new
+		def runtime.inspect!
+			Carson::Runtime::EXIT_OK
+		end
+		def runtime.puts_line( msg ); end
+		status = Carson::CLI.dispatch(
+			parsed: { command: "inspect" },
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, status
+	end
+
+	def test_cli_dispatches_prepare
+		runtime = Object.new
+		def runtime.prepare!
+			Carson::Runtime::EXIT_OK
+		end
+		def runtime.puts_line( msg ); end
+		status = Carson::CLI.dispatch(
+			parsed: { command: "prepare" },
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, status
+	end
 end
