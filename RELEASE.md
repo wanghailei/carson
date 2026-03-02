@@ -5,6 +5,62 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 1.2.0
+
+### User Overview
+
+#### What changed
+
+- Added `carson govern [--dry-run] [--json]` — portfolio-level PR triage that scans repos, classifies each open PR by CI/review/audit status, and takes appropriate action (merge, dispatch agent, or escalate).
+- Added `carson housekeep` — standalone sync + prune for post-merge cleanup.
+- Added agent dispatch adapters for Codex and Claude CLIs, with work-order/result contracts and dispatch state tracking.
+- Added `govern` configuration section: repo list, merge authority/method, agent provider selection.
+
+#### Why users should care
+
+- One command (`carson govern --dry-run`) shows merge-readiness across all your projects.
+- `carson housekeep` replaces manual `carson sync` + `carson prune` sequences.
+- When merge authority is enabled, Carson autonomously merges ready PRs and cleans up.
+- Agent dispatch lets Carson fix CI failures and review blocks without human intervention.
+
+#### What users must do now
+
+1. Upgrade Carson to `1.2.0`.
+2. Run `carson refresh` in each governed repository to update hooks.
+3. Optionally configure `govern.repos` in `~/.carson/config.json` to enable multi-repo portfolio mode.
+4. Start with `carson govern --dry-run` to verify triage before enabling merge authority.
+
+#### Breaking or removed behaviour
+
+- None. All existing commands and configuration are unchanged.
+
+#### Upgrade steps
+
+```bash
+cd ~/Dev/carson
+git pull
+bash install.sh
+carson version
+carson refresh ~/Dev/your-project
+carson govern --dry-run
+```
+
+### Engineering Appendix
+
+#### Public interface and config changes
+
+- Added CLI commands: `govern [--dry-run] [--json]`, `housekeep`.
+- Added config section: `govern.repos`, `govern.merge.authority`, `govern.merge.method`, `govern.agent.provider`, `govern.dispatch_state_path`.
+- Added env overrides: `CARSON_GOVERN_REPOS`, `CARSON_GOVERN_MERGE_AUTHORITY`, `CARSON_GOVERN_MERGE_METHOD`, `CARSON_GOVERN_AGENT_PROVIDER`.
+- Exit status contract unchanged: `0` OK, `1` runtime/configuration error, `2` policy blocked.
+
+#### Verification evidence
+
+- 87 unit tests pass (19 new govern tests, 0 regressions).
+- 60 smoke tests pass (6 new govern/housekeep tests).
+
+---
+
 ## 1.1.0
 
 ### User Overview
