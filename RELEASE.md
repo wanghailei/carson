@@ -5,11 +5,11 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 1.2.0 — Autonomous Governance
+## 2.0.0 — Autonomous Governance
 
 ### Architectural shift
 
-Carson 1.2.0 is an architectural change. Prior versions were a passive governance tool: Carson checked, reported, and blocked — but you still had to triage PRs, dispatch fixes, click merge, and clean up. Across a portfolio of repositories with coding agents producing many PRs, you were the bottleneck.
+Carson 2.0.0 is an architectural change. Prior versions were a passive governance tool: Carson checked, reported, and blocked — but you still had to triage PRs, dispatch fixes, click merge, and clean up. Across a portfolio of repositories with coding agents producing many PRs, you were the bottleneck.
 
 Carson is now an autonomous governance runtime. `carson govern` is a portfolio-level triage loop that scans every governed repository, classifies each open PR by CI/review/audit status, and acts: merge what's ready, dispatch a coding agent (Codex or Claude) to fix what's failing, and escalate what needs human judgement. After merging, it housekeeps — syncing main and pruning stale branches.
 
@@ -26,7 +26,7 @@ The per-commit governance (audit, lint, review gate, scope integrity) is unchang
 
 ### What users must do now
 
-1. Upgrade Carson to `1.2.0`.
+1. Upgrade Carson to `2.0.0`.
 2. Run `carson refresh` in each governed repository to update hooks.
 3. Optionally configure `govern.repos` in `~/.carson/config.json` to enable multi-repo portfolio mode.
 4. Run `carson govern --dry-run` to see what Carson would do across your portfolio.
