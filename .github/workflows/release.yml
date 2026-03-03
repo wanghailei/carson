@@ -48,7 +48,8 @@ jobs:
             printing { print }
           ' RELEASE.md > /tmp/release_notes.md
           if [ ! -s /tmp/release_notes.md ]; then
-            echo "Release $version" > /tmp/release_notes.md
+            echo "::error::RELEASE.md is missing an entry for version ${version}. Add a '## ${version}' section before bumping VERSION."
+            exit 1
           fi
 
       - name: Create tag and GitHub release
