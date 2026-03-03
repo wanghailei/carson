@@ -16,7 +16,7 @@ Carson is an autonomous governance runtime that lives on your workstation and in
 
 **Per-commit governance** — Carson gates merges on unresolved review comments, synchronises templates, and keeps your local branches clean. Every commit triggers `carson audit` through managed hooks; the same checks run in GitHub Actions. Lint execution is handled entirely by MegaLinter in CI and by the developer's own local tooling — Carson distributes the shared lint configuration but does not run linters itself.
 
-**Portfolio-level autonomy** — `carson govern` is a scheduled triage loop that scans all your repositories, classifies every open PR, and acts: merge what's ready, dispatch coding agents (Codex or Claude) to fix what's failing, and escalate what needs human judgement. One command, all your projects, unmanned.
+**Portfolio-level autonomy** — `carson govern` is a triage loop that scans your registered repositories, classifies every open PR, and acts: merge what's ready, dispatch coding agents (Codex or Claude) to fix what's failing, and escalate what needs human judgement. One command, all your projects, unmanned.
 
 ```
 ┌──────────────────────────────────────────────┐
