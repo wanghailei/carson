@@ -12,12 +12,12 @@ If you govern more than a handful of repositories, you know the pattern: lint co
 
 Carson is an autonomous governance runtime that lives on your workstation and in CI, never inside the repositories it governs. It operates at two levels:
 
-**Per-commit governance** — Carson enforces lint policy, gates merges on unresolved review comments, synchronises templates, and keeps your local branches clean. Every commit triggers `carson audit` through managed hooks; the same checks run in GitHub Actions.
+**Per-commit governance** — Carson gates merges on unresolved review comments, synchronises templates, and keeps your local branches clean. Every commit triggers `carson audit` through managed hooks; the same checks run in GitHub Actions. Lint execution is handled entirely by MegaLinter in CI and by the developer's own local tooling — Carson distributes the shared lint configuration but does not run linters itself.
 
 **Portfolio-level autonomy** — `carson govern` is a scheduled triage loop that scans all your repositories, classifies every open PR, and acts: merge what's ready, dispatch coding agents (Codex or Claude) to fix what's failing, and escalate what needs human judgement. One command, all your projects, unmanned.
 
 ```
-┌──────────────────────────────────────────────�┐
+┌──────────────────────────────────────────────┐
 │  Your workstation                             │
 │                                               │
 │  ~/.carson/            Carson config          │
@@ -39,12 +39,22 @@ Carson is an autonomous governance runtime that lives on your workstation and in
 
 This separation is Carson's defining trait — the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a governed repository.
 
+### The Governance Loop
+
+Carson orchestrates a closed governance loop across three layers:
+
+1. **Policy distribution** — `carson lint policy` distributes shared lint configs from a central source into each repo's `.github/linters/`. This is the single source of truth for lint rules across all governed repositories.
+2. **CI enforcement** — MegaLinter runs in GitHub Actions (via the managed `carson-lint.yml` workflow) and auto-discovers configs from `.github/linters/`. Carson does not run linters — MegaLinter does. Carson's `audit` gates on CI check status reported by GitHub.
+3. **Autonomous triage** — `carson govern` reads CI status (including MegaLinter results), review disposition, and audit health for every open PR. Ready PRs are merged. Failing PRs get a coding agent (Codex or Claude) dispatched to fix them. Stuck PRs are escalated.
+
+Carson's role is governance orchestration — distributing policy, gating on results, and dispatching action. The actual lint execution, CI runs, and code fixes are delegated to specialised tools: MegaLinter for linting, GitHub Actions for CI, and coding agents for remediation.
+
 ## Opinions
 
 Carson is opinionated about governance. These are non-negotiable principles, not configurable defaults:
 
 - **Outsider boundary** — Carson lives outside your repo, never inside. No Carson-owned artefacts in your repository. Offboarding leaves no trace.
-- **Centralised lint** — lint policy distributed from a central source into each repo's `.github/linters/`. One source of truth, zero drift.
+- **Centralised lint** — lint policy distributed from a central source into each repo's `.github/linters/`. One source of truth, zero drift. MegaLinter enforces it in CI.
 - **Active review** — undisposed reviewer findings block merge. Feedback must be acknowledged, not buried.
 - **Self-diagnosing output** — every message names the cause and the fix. If you need to debug Carson's output, the output failed.
 - **Transparent governance** — Carson prepares everything for merge but never oversteps. It does not make decisions for you without telling you.

@@ -24,7 +24,8 @@ class RuntimeRefreshAllTest < Minitest::Test
 				)
 				status = runtime.refresh_all!
 				assert_equal Carson::Runtime::EXIT_ERROR, status
-				assert_includes out.string, "no governed repositories configured"
+				assert_includes out.string, "No governed repositories configured"
+				assert_includes out.string, "carson onboard"
 			end
 		end
 	end

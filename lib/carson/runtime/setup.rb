@@ -39,11 +39,6 @@ module Carson
 				merge_choice = prompt_merge_method
 				choices[ "govern.merge.method" ] = merge_choice unless merge_choice.nil?
 
-				lint_command_choice = prompt_lint_command
-				choices[ "lint.command" ] = lint_command_choice unless lint_command_choice.nil?
-
-				lint_enforcement_choice = prompt_lint_enforcement
-				choices[ "lint.enforcement" ] = lint_enforcement_choice unless lint_enforcement_choice.nil?
 
 				write_setup_config( choices: choices )
 			end
@@ -144,34 +139,6 @@ module Carson
 					{ label: "squash — one commit per PR (recommended)", value: "squash" },
 					{ label: "rebase — linear history, individual commits", value: "rebase" },
 					{ label: "merge — merge commits", value: "merge" }
-				]
-				prompt_choice( options: options, default: 0 )
-			end
-
-			def prompt_lint_command
-				puts_line ""
-				puts_line "Lint command"
-				options = [
-					{ label: "make lint", value: "make lint" },
-					{ label: "trunk check (Recommended)", value: "trunk check" },
-					{ label: "Other (enter command)", value: :other },
-					{ label: "Skip (no local lint)", value: nil }
-				]
-				choice = prompt_choice( options: options, default: 1 )
-
-				if choice == :other
-					prompt_custom_value( label: "Lint command" )
-				else
-					choice
-				end
-			end
-
-			def prompt_lint_enforcement
-				puts_line ""
-				puts_line "Lint enforcement"
-				options = [
-					{ label: "strict — block on lint failure (default)", value: "strict" },
-					{ label: "advisory — warn but don't block", value: "advisory" }
 				]
 				prompt_choice( options: options, default: 0 )
 			end
@@ -373,6 +340,56 @@ module Carson
 			def global_config_exists?
 				path = Config.global_config_path( repo_root: repo_root )
 				!path.empty? && File.file?( path )
+			end
+
+			# After onboard succeeds, offer to register the repo for portfolio governance.
+			def prompt_govern_registration!
+				expanded = File.expand_path( repo_root )
+				if config.govern_repos.include?( expanded )
+					puts_verbose "govern_registration: already registered #{expanded}"
+					return
+				end
+
+				puts_line ""
+				puts_line "Portfolio governance"
+				puts_line "  Register this repo so carson refresh --all and carson govern include it?"
+				accepted = prompt_yes_no( default: true )
+				if accepted
+					append_govern_repo!( repo_path: expanded )
+					puts_line "Registered."
+				else
+					puts_line "Skipped. Re-run carson onboard to register later."
+				end
+			end
+
+			# Reusable Y/n prompt following existing prompt_choice conventions.
+			def prompt_yes_no( default: true )
+				hint = default ? "Y/n" : "y/N"
+				out.print "#{BADGE} [#{hint}]: "
+				out.flush
+				raw = self.in.gets
+				return default if raw.nil?
+
+				input = raw.to_s.strip.downcase
+				return default if input.empty?
+
+				input.start_with?( "y" )
+			end
+
+			# Appends a repo path to govern.repos without replacing the array via deep_merge.
+			def append_govern_repo!( repo_path: )
+				config_path = Config.global_config_path( repo_root: repo_root )
+				return if config_path.empty?
+
+				existing_data = load_existing_config( path: config_path )
+				existing_data[ "govern" ] ||= {}
+				repos = Array( existing_data[ "govern" ][ "repos" ] )
+				repos << repo_path
+				existing_data[ "govern" ][ "repos" ] = repos.uniq
+
+				FileUtils.mkdir_p( File.dirname( config_path ) )
+				File.write( config_path, JSON.pretty_generate( existing_data ) )
+				reload_config_after_setup!
 			end
 		end
 

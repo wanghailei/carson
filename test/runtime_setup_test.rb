@@ -99,8 +99,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 6 prompts: remote, branch, workflow, merge, lint command, lint enforcement
-		tty_input = build_tty_input( "\n\n\n\n\n\n" )
+		# 4 prompts: remote, branch, workflow, merge
+		tty_input = build_tty_input( "\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -110,8 +110,6 @@ class RuntimeSetupTest < Minitest::Test
 			assert_equal Carson::Runtime::EXIT_OK, status
 			output = out.string
 			assert_match( /Config saved/, output )
-			assert_match( /Lint command/, output )
-			assert_match( /Lint enforcement/, output )
 		end
 	end
 
@@ -122,7 +120,7 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "upstream", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		tty_input = build_tty_input( "2\n\n\n\n\n\n" )
+		tty_input = build_tty_input( "2\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			runtime = build_setup_runtime( input: tty_input )
@@ -215,6 +213,128 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	# --- Governance registration tests ---
+
+	def test_onboard_interactive_registers_repo_on_yes
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# 4 setup prompts (enter defaults) + "y" for governance registration
+		tty_input = build_tty_input( "\n\n\n\ny\n" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			status = runtime.onboard!
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" ) || []
+			assert_includes repos, File.expand_path( @repo_root )
+			assert_includes out.string, "Registered."
+		end
+	end
+
+	def test_onboard_interactive_skips_registration_on_no
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# 4 setup prompts (enter defaults) + "n" for governance registration
+		tty_input = build_tty_input( "\n\n\n\nn\n" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			status = runtime.onboard!
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" ) || []
+			assert_empty repos
+			assert_includes out.string, "Skipped"
+		end
+	end
+
+	def test_onboard_skips_prompt_when_already_registered
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Pre-populate config with the repo already registered
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ File.expand_path( @repo_root ) ] } } ) )
+
+		# No setup prompts needed (config exists), no governance prompt expected
+		tty_input = build_tty_input( "" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			runtime.onboard!
+
+			refute_includes out.string, "Portfolio governance"
+		end
+	end
+
+	def test_onboard_non_interactive_skips_govern_prompt
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+
+		# Non-TTY input — should not prompt for governance
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_onboard_runtime( input: StringIO.new, out_stream: out )
+			runtime.onboard!
+
+			refute_includes out.string, "Portfolio governance"
+		end
+	end
+
+	def test_append_govern_repo_deduplicates
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( {} ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			runtime.send( :append_govern_repo!, repo_path: "/tmp/test-repo" )
+			runtime.send( :append_govern_repo!, repo_path: "/tmp/test-repo" )
+
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" )
+			assert_equal 1, repos.length
+			assert_equal "/tmp/test-repo", repos.first
+		end
+	end
+
+	def test_append_govern_repo_preserves_existing_config
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "workflow" => { "style" => "trunk" }, "git" => { "remote" => "github" } } ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			runtime.send( :append_govern_repo!, repo_path: "/tmp/my-repo" )
+
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "trunk", saved.dig( "workflow", "style" ), "existing workflow.style should be preserved"
+			assert_equal "github", saved.dig( "git", "remote" ), "existing git.remote should be preserved"
+			assert_includes saved.dig( "govern", "repos" ), "/tmp/my-repo"
+		end
+	end
+
 private
 
 	def build_setup_runtime( input:, out_stream: nil )
@@ -235,5 +355,18 @@ private
 		io = StringIO.new( text )
 		io.define_singleton_method( :tty? ) { true }
 		io
+	end
+
+	def build_onboard_runtime( input:, out_stream: nil )
+		out = out_stream || StringIO.new
+		err = StringIO.new
+		Carson::Runtime.new(
+			repo_root: @repo_root,
+			tool_root: File.expand_path( "..", __dir__ ),
+			out: out,
+			err: err,
+			in_stream: input,
+			verbose: false
+		)
 	end
 end

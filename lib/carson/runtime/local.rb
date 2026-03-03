@@ -251,7 +251,8 @@ module Carson
 			def refresh_all!
 				repos = config.govern_repos
 				if repos.empty?
-					puts_line "ERROR: no governed repositories configured. Add repos via carson setup or govern.repos in ~/.carson/config.json."
+					puts_line "No governed repositories configured."
+					puts_line "  Run carson onboard in each repo to register."
 					return EXIT_ERROR
 				end
 
@@ -813,6 +814,9 @@ module Carson
 				puts_line ""
 				puts_line "Carson is ready. Workflow: #{config.workflow_style}"
 				puts_line "Reconfigure anytime: carson setup"
+
+				prompt_govern_registration! if self.in.respond_to?( :tty? ) && self.in.tty?
+
 				audit_status
 			end
 
