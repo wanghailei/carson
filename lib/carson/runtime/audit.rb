@@ -6,6 +6,10 @@ module Carson
 			def audit!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
+				unless head_exists?
+					puts_line "No commits yet — audit skipped for initial commit."
+					return EXIT_OK
+				end
 				audit_state = "ok"
 				audit_concise_problems = []
 				puts_verbose ""
@@ -77,6 +81,10 @@ module Carson
 			# Thin focused command: show required-check status for the current branch's open PR.
 			# Always exits 0 for pending or passing so callers never see a false "Error: Exit code 8".
 			def check!
+				unless head_exists?
+					puts_line "Checks: no commits yet."
+					return EXIT_OK
+				end
 				unless gh_available?
 					puts_line "Checks: gh CLI not available."
 					return EXIT_ERROR

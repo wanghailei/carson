@@ -53,4 +53,36 @@ class RuntimeAuditCheckTest < Minitest::Test
 			assert rt.send( :check_entry_failing?, entry: { "bucket" => "" } )
 		end
 	end
+
+	# Builds a runtime inside a real git repo with no commits (HEAD does not exist).
+	def build_no_head_runtime
+		Dir.mktmpdir( "carson-audit-no-head-test", carson_tmp_root ) do |tmp_dir|
+			system( "git", "init", tmp_dir, out: File::NULL, err: File::NULL )
+			out = StringIO.new
+			err = StringIO.new
+			runtime = Carson::Runtime.new(
+				repo_root: tmp_dir,
+				tool_root: tmp_dir,
+				out: out,
+				err: err
+			)
+			yield runtime, out
+		end
+	end
+
+	def test_audit_returns_ok_when_head_does_not_exist
+		build_no_head_runtime do |rt, out|
+			status = rt.audit!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert_match( /No commits yet/, out.string )
+		end
+	end
+
+	def test_check_returns_ok_when_head_does_not_exist
+		build_no_head_runtime do |rt, out|
+			status = rt.check!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert_match( /no commits yet/, out.string )
+		end
+	end
 end

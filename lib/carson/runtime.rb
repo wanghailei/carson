@@ -60,6 +60,12 @@ module Carson
 			@out, @err = saved_out, saved_err
 		end
 
+		# Returns true when the repository has at least one commit (HEAD exists).
+		def head_exists?
+			_, _, success, = git_run( "rev-parse", "--verify", "HEAD" )
+			success
+		end
+
 		# Current local branch name.
 		def current_branch
 			git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
