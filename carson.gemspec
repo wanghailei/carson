@@ -5,7 +5,7 @@ require_relative "lib/carson/version"
 Gem::Specification.new do |spec|
 	spec.name = "carson"
 	spec.version = Carson::VERSION
-	spec.authors = [ "Hailei Wang" ]
+	spec.authors = [ "Hailei Wang", "Codex", "Claude Code" ]
 	spec.email = [ "wanghailei@users.noreply.github.com" ]
 	spec.summary = "Autonomous repository governance — you write the code, Carson manages everything else."
 	spec.description = "Carson is a governance runtime that lives outside the repositories it governs — no Carson-owned artefacts in your repo. On every commit, managed hooks enforce centralised lint policy and review gates. At portfolio level, carson govern triages every open PR across your registered repositories: merge what's ready, dispatch coding agents to fix what's failing, escalate what needs human judgement. One command, all your projects, unmanned."

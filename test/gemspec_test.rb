@@ -12,6 +12,7 @@ class GemspecTest < Minitest::Test
 	end
 
 	def test_gemspec_contact_metadata_is_release_ready
+		assert_equal [ "Hailei Wang", "Codex", "Claude Code" ], @spec.authors
 		assert_equal [ "wanghailei@users.noreply.github.com" ], @spec.email
 		assert_equal "https://github.com/wanghailei/carson/issues", @spec.metadata.fetch( "bug_tracker_uri" )
 		assert_equal "https://github.com/wanghailei/carson/blob/main/MANUAL.md", @spec.metadata.fetch( "documentation_uri" )
