@@ -367,7 +367,7 @@ module Carson
 
 			# Applies managed template files as full-file writes from Carson sources.
 			# Also removes superseded files that are no longer part of the managed set.
-			def template_apply!
+			def template_apply!( push_prep: false )
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
@@ -414,7 +414,10 @@ module Carson
 						puts_line "Templates in sync."
 					end
 				end
-				error_count.positive? ? EXIT_ERROR : EXIT_OK
+				return EXIT_ERROR if error_count.positive?
+
+				push_prep_commit! if push_prep
+				EXIT_OK
 			end
 
 		private
@@ -740,6 +743,27 @@ module Carson
 
 			def working_tree_clean?
 				git_capture!( "status", "--porcelain" ).strip.empty?
+			end
+
+			def push_prep_commit!
+				dirty = managed_dirty_paths
+				return if dirty.empty?
+
+				git_system!( "add", *dirty )
+				git_system!( "commit", "-m", "chore: sync Carson managed files" )
+				puts_line "Carson committed managed file updates."
+			end
+
+			def managed_dirty_paths
+				template_paths = config.template_managed_files + config.template_superseded_files
+				linters_glob   = Dir.glob( File.join( repo_root, ".github/linters/**/*" ) )
+				                    .select { |p| File.file?( p ) }
+				                    .map { |p| p.delete_prefix( "#{repo_root}/" ) }
+				candidates = ( template_paths + linters_glob ).uniq
+				return [] if candidates.empty?
+
+				stdout_text, = git_capture_soft( "status", "--porcelain", "--", *candidates )
+				stdout_text.to_s.lines.map { |l| l[ 3.. ].strip }.reject( &:empty? )
 			end
 
 			def inside_git_work_tree?

@@ -30,7 +30,7 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def template_apply!
+		def template_apply!( push_prep: false )
 			@calls << :template_apply
 			Carson::Runtime::EXIT_OK
 		end

@@ -15,3 +15,5 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 			;;
 	esac
 done
+
+carson template apply --push-prep || exit 1

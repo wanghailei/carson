@@ -79,7 +79,7 @@ module Carson
 			when "refresh"
 				parse_refresh_command( argv: argv, parser: parser, err: err )
 			when "template"
-				parse_named_subcommand( command: command, usage: "check|apply", argv: argv, parser: parser, err: err )
+				parse_template_subcommand( argv: argv, parser: parser, err: err )
 			when "lint"
 				parse_lint_subcommand( argv: argv, parser: parser, err: err )
 			when "review"
@@ -141,6 +141,35 @@ module Carson
 				return { command: :invalid }
 			end
 			{ command: "#{command}:#{action}" }
+		end
+
+		def self.parse_template_subcommand( argv:, parser:, err: )
+			action = argv.shift
+			if action.to_s.strip.empty?
+				err.puts "#{BADGE} Missing subcommand for template. Use: carson template check|apply"
+				err.puts parser
+				return { command: :invalid }
+			end
+
+			return { command: "template:#{action}" } unless action == "apply"
+
+			options = { push_prep: false }
+			apply_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson template apply [--push-prep]"
+				opts.on( "--push-prep", "Apply templates and auto-commit any managed file changes (used by pre-push hook)" ) do
+					options[ :push_prep ] = true
+				end
+			end
+			apply_parser.parse!( argv )
+			unless argv.empty?
+				err.puts "#{BADGE} Unexpected arguments for template apply: #{argv.join( ' ' )}"
+				err.puts apply_parser
+				return { command: :invalid }
+			end
+			{ command: "template:apply", push_prep: options.fetch( :push_prep ) }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
 		def self.parse_lint_subcommand( argv:, parser:, err: )
@@ -246,7 +275,7 @@ module Carson
 			when "template:check"
 				runtime.template_check!
 			when "template:apply"
-				runtime.template_apply!
+				runtime.template_apply!( push_prep: parsed.fetch( :push_prep, false ) )
 			when "lint:setup"
 				runtime.lint_setup!(
 					source: parsed.fetch( :source ),
