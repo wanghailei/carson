@@ -43,7 +43,7 @@ No configuration or workflow changes needed.
 
 ### No migration required
 
-Run `bash install.sh` to pick up the updated pre-push hook in all governed repos.
+Run `carson prepare` in each governed repo to pick up the updated pre-push hook.
 
 ## 2.14.2 — Docs Enrichment
 
