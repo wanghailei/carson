@@ -5,6 +5,30 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.15.0 — JIT Auto-Commit on Pre-Push + `carson check`
+
+### What changed
+
+- Pre-push hook now calls `carson template apply --push-prep` automatically. Any uncommitted changes to Carson-managed template files or `.github/linters/` are committed before the push reaches GitHub — no manual `git add` / `git commit` needed after a gem upgrade or `lint policy` run.
+- `--push-prep` flag scopes the behaviour to pre-push only; interactive `carson template apply` is unchanged.
+- `carson check` command added: wraps `gh pr checks --required`, exits 0 for pending or passing and 2 for failing. Useful for callers that need a clean CI status signal without `gh`'s confusing "Error: Exit code 8" for pending runs.
+- CI smoke tests guarded against live audit exit codes with `|| true` so a pending or failing CI run on the default branch does not cause false test failures.
+
+### No migration required
+
+Run `bash install.sh` to pick up the updated pre-push hook in all governed repos.
+
+## 2.14.2 — Docs Enrichment
+
+### What changed
+
+- `docs/design.md` enriched with signal system, output design, prompt principles, and vocabulary guide.
+- `docs/develop.md` enriched with architecture rationale, new-command walkthrough, and testing approach.
+
+### No migration required
+
+Documentation only. No behavioural changes.
+
 ## 2.14.1 — Auto-Refresh on Install
 
 ### What changed
