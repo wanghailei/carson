@@ -5,11 +5,27 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 2.13.0 — Refresh All Governed Repositories
+## 2.13.1 — Guided Governance Registration
+
+### What changed
+
+- After `carson onboard`, Carson now prompts to register the repo for portfolio governance (`govern.repos`). Accept to include it in `carson refresh --all` and `carson govern`; decline to skip.
+- Improved `refresh --all` guidance when no repos are configured — now directs users to `carson onboard`.
+
+## 2.13.0 — Refresh All + Strip Local Lint Execution
 
 ### What changed
 
 - **`carson refresh --all`** refreshes every governed repository in a single command. Iterates `govern.repos`, runs hooks + templates + audit on each, prints a per-repo summary line, and returns non-zero if any repo fails. Verbose mode streams full diagnostics per repo.
+- **Removed `lint.command` and `lint.enforcement` config keys.** Local lint execution during `carson audit` has been removed. MegaLinter runs in CI and `carson govern` gates on CI check status — local lint execution was redundant. Carson now focuses on what makes it unique: **policy distribution** via `carson lint policy`. The `lint.policy_source` config key and `carson lint policy --source` command are unchanged.
+- **Removed `CARSON_LINT_COMMAND` and `CARSON_LINT_ENFORCEMENT` environment overrides.**
+- **Removed lint command and enforcement prompts from `carson setup`.**
+
+### Migration
+
+1. Remove `lint.command` and `lint.enforcement` from `~/.carson/config.json` if present — they are now ignored.
+2. Remove `CARSON_LINT_COMMAND` and `CARSON_LINT_ENFORCEMENT` from any CI or shell configuration.
+3. If you relied on local lint during audit, run your lint tool directly (e.g. `make lint`, `trunk check`) or let MegaLinter handle it in CI.
 
 ## 2.12.0 — Language-Agnostic Lint Policy Distribution + MegaLinter
 

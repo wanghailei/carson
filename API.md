@@ -98,8 +98,6 @@ Environment overrides:
 - `CARSON_REVIEW_SWEEP_STATES`
 - `CARSON_WORKFLOW_STYLE`
 - `CARSON_RUBY_INDENTATION`
-- `CARSON_LINT_COMMAND`
-- `CARSON_LINT_ENFORCEMENT`
 - `CARSON_LINT_POLICY_SOURCE`
 
 `lint` schema:
@@ -107,28 +105,16 @@ Environment overrides:
 ```json
 {
   "lint": {
-    "command": "make lint",
-    "enforcement": "strict",
     "policy_source": "wanghailei/lint.git"
   }
 }
 ```
 
 `lint` semantics:
-- `command`: string or array — local lint command executed during `carson audit`. If `null` (default), local lint is skipped.
-- `enforcement`: `"strict"` (default) blocks on lint failure; `"advisory"` warns but does not block.
 - `policy_source`: default source for `carson lint policy` when `--source` is not specified.
 
 Environment overrides:
-- `CARSON_LINT_COMMAND` — overrides `lint.command`.
-- `CARSON_LINT_ENFORCEMENT` — overrides `lint.enforcement`.
 - `CARSON_LINT_POLICY_SOURCE` — overrides `lint.policy_source`.
-
-Lint target file source precedence in `carson audit`:
-- staged files for local commit-time execution.
-- PR changed files in GitHub `pull_request` events.
-- full repository tracked files in GitHub non-PR events.
-- local working-tree changes as fallback.
 
 Private-source clone token for `carson lint policy`:
 - `CARSON_READ_TOKEN` (used when `--source` points to a private GitHub repository).

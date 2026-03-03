@@ -76,12 +76,7 @@ export CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks"
 export CARSON_BIN="$carson_bin"
 smoke_config_path="$tmp_root/carson-config.json"
 cat > "$smoke_config_path" <<EOF
-{
-  "lint": {
-    "command": "true",
-    "enforcement": "strict"
-  }
-}
+{}
 EOF
 export CARSON_CONFIG_FILE="$smoke_config_path"
 cleanup() {
@@ -345,16 +340,7 @@ cat > "$setup_source/.rubocop.yml" <<'EOF'
 AllCops:
   DisabledByDefault: true
 EOF
-setup_config_path="$tmp_root/lint-setup-config.json"
-cat > "$setup_config_path" <<EOF
-{
-  "lint": {
-    "command": "true",
-    "enforcement": "strict"
-  }
-}
-EOF
-expect_exit 0 "lint policy copies configs from local source" run_carson_with_config "$setup_config_path" lint policy --source "$setup_source"
+expect_exit 0 "lint policy copies configs from local source" run_carson lint policy --source "$setup_source"
 if [[ ! -f ".github/linters/.rubocop.yml" ]]; then
 	echo "FAIL: lint policy did not create .github/linters/.rubocop.yml" >&2
 	exit 1
@@ -369,36 +355,8 @@ git -C "$setup_git_source" config user.email "carson-ci@example.com"
 git -C "$setup_git_source" add .
 git -C "$setup_git_source" commit -m "seed lint policy" >/dev/null
 git -C "$setup_git_source" branch -M main
-expect_exit 0 "lint policy clones configs from git URL" run_carson_with_config "$setup_config_path" lint policy --source "file://$setup_git_source" --ref main --force
+expect_exit 0 "lint policy clones configs from git URL" run_carson lint policy --source "file://$setup_git_source" --ref main --force
 
-git switch -c feature/lint-command-block >/dev/null
-mkdir -p lib
-printf "lint command block\n" > lib/lint_command_block.rb
-git add lib/lint_command_block.rb
-fail_config_path="$tmp_root/lint-fail-config.json"
-cat > "$fail_config_path" <<EOF
-{
-  "lint": {
-    "command": "false",
-    "enforcement": "strict"
-  }
-}
-EOF
-expect_exit 2 "audit blocks when lint command fails in strict mode" run_carson_with_config "$fail_config_path" audit
-missing_command_path="$tmp_root/lint-missing-command.json"
-cat > "$missing_command_path" <<EOF
-{
-  "lint": {
-    "command": "nonexistent-carson-lint-tool",
-    "enforcement": "strict"
-  }
-}
-EOF
-expect_exit 2 "audit blocks when lint command is unavailable" run_carson_with_config "$missing_command_path" audit
-expect_exit 0 "audit passes lint gate with available command and config" run_carson audit
-git reset --hard HEAD >/dev/null
-git switch main >/dev/null
-git branch -D feature/lint-command-block >/dev/null
 
 # Validate report directory fallback precedence for invalid HOME.
 tmpdir_report_root="$tmp_root/custom-tmpdir"

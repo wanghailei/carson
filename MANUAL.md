@@ -27,13 +27,15 @@ carson version
 
 ### Step 1: Prepare your lint policy
 
-Carson distributes lint configuration files from a central policy source — a directory or git repository you control — into each governed repo's `.github/linters/` directory, where MegaLinter auto-discovers them.
+Carson distributes lint configuration files from a central policy source — a directory or git repository you control — into each governed repo's `.github/linters/` directory, where MegaLinter auto-discovers them in CI.
 
 ```bash
 carson lint policy --source /path/to/your-policy-repo
 ```
 
 After this command, `.github/linters/` contains your lint configs (`.rubocop.yml`, `biome.json`, `ruff.toml`, etc.). MegaLinter uses these in CI. Every governed repository gets the same rules — this is how Carson keeps lint consistent across languages.
+
+Carson distributes policy; MegaLinter enforces it. Carson does not run linters itself — that responsibility belongs to MegaLinter in CI and to the developer's own local tooling.
 
 Options:
 - `--source <path-or-git-url>` — where to read policy files from (required).
@@ -97,6 +99,17 @@ Notes:
 - `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint policy`.
 - The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
 
+### MegaLinter in CI
+
+Carson manages a MegaLinter workflow template (`carson-lint.yml`) that is applied to governed repositories via `carson template apply`. MegaLinter auto-discovers lint configs from `.github/linters/` — the same directory populated by `carson lint policy`. This means:
+
+- **Policy source** (your central lint repo) defines the rules.
+- **`carson lint policy`** distributes the rules into each repo.
+- **MegaLinter** (in GitHub Actions) enforces the rules.
+- **`carson govern`** reads CI check status (including MegaLinter results) and acts on it.
+
+Carson's `audit` gates on CI check status reported by GitHub — it does not duplicate MegaLinter's work locally. If MegaLinter fails in CI, `carson govern` classifies the PR accordingly and can dispatch a coding agent to fix the issues.
+
 ## Daily Operations
 
 **Start of work:**
@@ -146,6 +159,12 @@ The loop is built-in and cross-platform — no cron, launchd, or Task Scheduler 
 
 Each cycle runs independently: if one cycle fails (network error, GitHub API timeout), the error is logged and the next cycle proceeds normally. Press `Ctrl-C` to stop — Carson exits cleanly with a cycle count summary.
 
+### Govern and Coding Agents
+
+`carson govern` dispatches coding agents (Codex or Claude) when a PR has failing CI checks. The agent receives the failure context and attempts to fix the issues in a follow-up commit. If the agent succeeds, the PR re-enters the governance pipeline. If it fails or times out, the PR is escalated for human attention.
+
+The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
+
 ## Merge Method and Linear History
 
 Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. The options are `squash`, `merge`, and `rebase` (default: `squash`). Set this in `~/.carson/config.json`:
@@ -181,7 +200,7 @@ Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. Th
 These define what Carson *is*. They are not configurable.
 
 - **Outsider boundary** — Carson never places its own artefacts inside a governed repository.
-- **Centralised lint** — one policy source distributed into each repo's `.github/linters/`, zero per-repo drift.
+- **Centralised lint** — one policy source distributed into each repo's `.github/linters/`, zero per-repo drift. MegaLinter enforces it in CI.
 - **Active review** — undisposed reviewer findings block merge; feedback must be acknowledged.
 - **Self-diagnosing output** — every message names the cause and the fix.
 - **Transparent governance** — Carson prepares everything for merge but never makes decisions without telling you.
@@ -331,9 +350,6 @@ For the full configuration schema, see `API.md`.
 carson template apply
 carson template check
 ```
-
-**Audit blocks on lint failure**
-- If `lint.command` is configured and fails, audit blocks (in `strict` mode) or warns (in `advisory` mode). Fix the lint issues and re-run `carson audit`.
 
 **Hook version mismatch after upgrade**
 - Run `carson refresh` to re-apply hooks and templates for the new Carson version.

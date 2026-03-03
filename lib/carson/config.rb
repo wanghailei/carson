@@ -9,7 +9,7 @@ module Carson
 		attr_accessor :git_remote
 		attr_reader :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
 			:path_groups, :template_managed_files,
-			:lint_command, :lint_enforcement, :lint_policy_source,
+			:lint_policy_source,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
@@ -51,8 +51,6 @@ module Carson
 					"managed_files" => [ ".github/carson-instructions.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md", ".github/workflows/carson-lint.yml" ]
 				},
 				"lint" => {
-					"command" => nil,
-					"enforcement" => "strict",
 					"policy_source" => "wanghailei/lint.git"
 				},
 				"workflow" => {
@@ -168,10 +166,6 @@ module Carson
 			advisory_names = env_string_array( key: "CARSON_AUDIT_ADVISORY_CHECK_NAMES" )
 			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
 			lint = fetch_hash_section( data: copy, key: "lint" )
-			lint_command_env = ENV.fetch( "CARSON_LINT_COMMAND", "" ).to_s.strip
-			lint[ "command" ] = lint_command_env unless lint_command_env.empty?
-			lint_enforcement_env = ENV.fetch( "CARSON_LINT_ENFORCEMENT", "" ).to_s.strip
-			lint[ "enforcement" ] = lint_enforcement_env unless lint_enforcement_env.empty?
 			lint_policy_source_env = ENV.fetch( "CARSON_LINT_POLICY_SOURCE", "" ).to_s.strip
 			lint[ "policy_source" ] = lint_policy_source_env unless lint_policy_source_env.empty?
 			style = fetch_hash_section( data: copy, key: "style" )
@@ -223,8 +217,6 @@ module Carson
 
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
 			lint_hash = fetch_hash( hash: data, key: "lint" )
-			@lint_command = normalize_lint_command_setting( value: lint_hash[ "command" ] )
-			@lint_enforcement = normalize_lint_enforcement( value: lint_hash.fetch( "enforcement", "strict" ) )
 			@lint_policy_source = lint_hash.fetch( "policy_source", "" ).to_s.strip
 
 			workflow_hash = fetch_hash( hash: data, key: "workflow" )
@@ -336,23 +328,6 @@ module Carson
 				patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
 				raise ConfigError, "scope.path_groups entries must contain at least one glob" if patterns.empty?
 				patterns
-			end
-
-			def normalize_lint_command_setting( value: )
-				return nil if value.nil?
-				return value.to_s.strip if value.is_a?( String )
-				if value.is_a?( Array )
-					parts = value.map { |entry| entry.to_s.strip }.reject( &:empty? )
-					raise ConfigError, "lint.command array must contain at least one argument" if parts.empty?
-					return parts
-				end
-				raise ConfigError, "lint.command must be a string, array, or null"
-			end
-
-			def normalize_lint_enforcement( value: )
-				text = value.to_s.strip.downcase
-				raise ConfigError, "lint.enforcement must be one of strict, advisory" unless [ "strict", "advisory" ].include?( text )
-				text
 			end
 
 			def fetch_optional_boolean( hash:, key:, default:, key_path: nil )
