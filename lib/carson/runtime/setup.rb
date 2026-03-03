@@ -356,9 +356,9 @@ module Carson
 				accepted = prompt_yes_no( default: true )
 				if accepted
 					append_govern_repo!( repo_path: expanded )
-					puts_line "Registered."
+					puts_line "Registered. Run carson refresh --all to keep all repos in sync."
 				else
-					puts_line "Skipped. Re-run carson onboard to register later."
+					puts_line "Skipped. Run carson onboard here again to register later."
 				end
 			end
 

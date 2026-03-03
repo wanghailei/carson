@@ -234,7 +234,7 @@ class RuntimeSetupTest < Minitest::Test
 			saved = JSON.parse( File.read( config_path ) )
 			repos = saved.dig( "govern", "repos" ) || []
 			assert_includes repos, File.expand_path( @repo_root )
-			assert_includes out.string, "Registered."
+			assert_includes out.string, "Registered. Run carson refresh --all"
 		end
 	end
 
