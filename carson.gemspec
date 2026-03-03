@@ -7,8 +7,8 @@ Gem::Specification.new do |spec|
 	spec.version = Carson::VERSION
 	spec.authors = [ "Hailei Wang" ]
 	spec.email = [ "wanghailei@users.noreply.github.com" ]
-	spec.summary = "Outsider governance runtime for repository hygiene and merge readiness."
-	spec.description = "Carson runs outside host repositories and applies governance checks, review gates, and managed GitHub-native files."
+	spec.summary = "You write the code, Carson manages everything from commit to merge."
+	spec.description = "Carson is an autonomous governance runtime that lives outside your repositories. It enforces lint policy on every commit, gates merges on unresolved reviewer feedback, triages open PRs across your entire portfolio, dispatches coding agents to fix failures, merges what's ready, and cleans up after itself. One gem, all your projects, unmanned."
 	spec.homepage = "https://github.com/wanghailei/carson"
 	spec.license = "MIT"
 	spec.required_ruby_version = ">= 3.4"

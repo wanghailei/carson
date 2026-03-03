@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.11.2 — Improve RubyGems Summary and Description
+
+### What changed
+
+- **Gemspec** — rewrote `summary` and `description` to explain what Carson actually does instead of abstract jargon. Summary: "You write the code, Carson manages everything from commit to merge." Description covers the full loop: lint, review gates, PR triage, agent dispatch, merge, cleanup.
+
+### What users must do now
+
+Nothing. Metadata only.
+
 ## 2.11.1 — Document Philosophy, Opinions, and Configurable Defaults
 
 ### What changed
