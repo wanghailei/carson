@@ -188,7 +188,7 @@ module Carson
 				puts_line ""
 				puts_line "Onboarding #{repo_name}..."
 
-				unless global_config_exists?
+				if !global_config_exists? || !git_remote_exists?( remote_name: config.git_remote )
 					if self.in.respond_to?( :tty? ) && self.in.tty?
 						setup_status = setup!
 						return setup_status unless setup_status == EXIT_OK
