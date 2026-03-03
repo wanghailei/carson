@@ -5,7 +5,7 @@ For the mental model and command overview, see `README.md`. For formal interface
 
 ## Install Carson
 
-Prerequisites: Ruby `>= 4.0`, `gem` and `git` in `PATH`. `gh` (GitHub CLI) recommended for full review governance.
+Prerequisites: Ruby `>= 3.4`, `gem` and `git` in `PATH`. `gh` (GitHub CLI) recommended for full review governance.
 
 ```bash
 gem install --user-install carson
@@ -175,6 +175,105 @@ Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. Th
 - `merge` — if you want explicit merge commits. This creates a non-linear graph but preserves branch topology.
 
 **Important:** Carson's merge method must match your GitHub repository's allowed merge types. If your repo only allows squash merges and Carson is set to `merge`, govern will fail when it tries to auto-merge. Check your repository settings under Settings > General > Pull Requests.
+
+## Defaults and Why
+
+### Principles (iron rules)
+
+These define what Carson *is*. They are not configurable.
+
+- **Outsider boundary** — Carson never places its own artefacts inside a governed repository.
+- **Centralised lint** — one policy source at `~/.carson/lint/`, shared across all repos, zero per-repo drift.
+- **Active review** — undisposed reviewer findings block merge; feedback must be acknowledged.
+- **Self-diagnosing output** — every message names the cause and the fix.
+- **Transparent governance** — Carson prepares everything for merge but never makes decisions without telling you.
+
+### Configurable defaults
+
+These are starting points chosen during `carson setup`. Every default has a reason, but all can be changed.
+
+#### Workflow style
+
+How code reaches main.
+
+- **`branch`** (default) — every change goes through a PR. Hooks block direct commits and pushes to main/master. PRs enforce review, scope integrity, and CI gates before code reaches main.
+- **`trunk`** — commit directly to main. Hooks allow all commits. Suits solo projects or flat teams that don't need PR-based review.
+
+Change: `carson setup` or `CARSON_WORKFLOW_STYLE`.
+
+#### Merge method
+
+How `carson govern` merges ready PRs.
+
+- **`squash`** (default) — one PR = one commit on main. Linear, bisectable history. Every commit is individually revertable. Branch commits are preserved in the PR on GitHub.
+- **`rebase`** — preserves individual branch commits on main. Linear history. Use when commit-level attribution matters.
+- **`merge`** — creates merge commits. Non-linear graph but preserves branch topology. Use when branch structure is meaningful.
+
+Must match your GitHub repo's allowed merge types. Change: `carson setup` or `govern.merge.method` in config.
+
+#### Git remote
+
+Which remote Carson checks for main sync and PR operations.
+
+- Default: **`origin`**. Setup detects your actual remotes and presents them — pick the one that points to GitHub.
+- If multiple remotes share the same URL, setup warns about the duplicate.
+
+Change: `carson setup` or `git.remote` in config.
+
+#### Main branch
+
+Which branch Carson treats as the canonical baseline.
+
+- Default: **`main`**. Setup detects whether `main` or `master` exists and offers both.
+
+Change: `carson setup` or `git.main_branch` in config.
+
+#### Hooks location
+
+Where Carson installs git hooks.
+
+- Default: **`~/.carson/hooks/<version>/`**. Outsider principle: hooks live outside your repo, versioned per Carson release, never committed to your repository.
+
+Change: `CARSON_HOOKS_BASE_PATH`.
+
+#### Lint policy source
+
+Where lint configuration files live.
+
+- Default: **`~/.carson/lint/`**. Centralised: one policy source governs all repos consistently. Repo-local `.rubocop.yml` is forbidden in outsider mode to prevent per-repo drift.
+
+Change the source: `carson lint setup --source <path-or-git-url>`.
+
+#### Scope integrity
+
+Whether cross-module changes are flagged.
+
+- Default: **advisory** (attention, not block). Carson informs you when staged files span multiple module groups (e.g. both `domain` and `ui`), but doesn't prevent the commit. Useful for awareness; not a hard gate.
+
+Customise groups: `scope.path_groups` in config.
+
+#### Review disposition
+
+Whether reviewer findings require acknowledgement.
+
+- Default: **required**. Comments containing risk keywords (`bug`, `security`, `regression`, etc.) must have a `Disposition:` response from the PR author before merge. Prevents feedback from being buried.
+
+Change prefix: `CARSON_REVIEW_DISPOSITION_PREFIX`.
+
+#### Merge authority
+
+Whether `carson govern` can merge PRs autonomously.
+
+- Default: **enabled**. Carson merges PRs that pass all gates (CI green, review clean, audit clean). PRs that need human judgement are escalated, never silently merged.
+
+Disable: `govern.merge_authority: false` in config.
+
+#### Output verbosity
+
+How much Carson prints.
+
+- Default: **concise**. A healthy audit prints one line. Problems print actionable summaries with cause and fix.
+- `--verbose` restores full diagnostic key-value output for debugging.
 
 ## Agent Discovery
 

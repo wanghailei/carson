@@ -40,6 +40,18 @@ Carson is an autonomous governance runtime that lives on your workstation and in
 
 This separation is Carson's defining trait — the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a governed repository.
 
+## Opinions
+
+Carson is opinionated about governance. These are non-negotiable principles, not configurable defaults:
+
+- **Outsider boundary** — Carson lives outside your repo, never inside. No Carson-owned artefacts in your repository. Offboarding leaves no trace.
+- **Centralised lint** — lint policy at `~/.carson/lint/`, shared across all repos. Repo-local config files are forbidden — one source of truth, zero drift.
+- **Active review** — undisposed reviewer findings block merge. Feedback must be acknowledged, not buried.
+- **Self-diagnosing output** — every message names the cause and the fix. If you need to debug Carson's output, the output failed.
+- **Transparent governance** — Carson prepares everything for merge but never oversteps. It does not make decisions for you without telling you.
+
+Everything else — workflow style, merge method, remote name, main branch — is a configurable default chosen during `carson setup`. See `MANUAL.md` for the full list of defaults and why each was chosen.
+
 The data flow:
 
 1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/.carson/lint/` via `carson lint setup`.
@@ -95,7 +107,7 @@ The data flow:
 
 ## Quickstart
 
-Prerequisites: Ruby `>= 4.0`, `git`, and `gem` in your PATH.
+Prerequisites: Ruby `>= 3.4`, `git`, and `gem` in your PATH.
 `gh` (GitHub CLI) is recommended for full review governance features.
 
 ```bash
