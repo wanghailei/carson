@@ -331,6 +331,12 @@ git branch -D feature/staged-scope-only >/dev/null
 expect_exit 2 "template check reports drift when managed github files are missing" run_carson template check
 expect_exit 0 "template apply writes managed github files" run_carson template apply
 expect_exit 0 "template check passes after apply" run_carson template check
+# Commit managed files so subsequent tests see a clean working tree.
+# Without this, push_prep_commit! picks up the untracked managed files,
+# adds an extra commit to test branches, and makes them impossible to
+# safe-delete (git branch -d requires the tip to be reachable from HEAD).
+git add .github >/dev/null
+git -c core.hooksPath=.git/hooks commit -m "chore: commit managed files for smoke-test baseline" >/dev/null
 expect_exit 1 "unknown command returns runtime/configuration error" run_carson template lint
 expect_exit 1 "lint policy requires explicit source argument" run_carson lint policy
 
