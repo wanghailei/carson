@@ -27,22 +27,20 @@ carson version
 
 ### Step 1: Prepare your lint policy
 
-Carson enforces lint rules from a central policy source — a directory or git repository you control that contains a `CODING/` folder. For Ruby governance, the required file is `CODING/rubocop.yml`.
-
-Run `lint setup` to copy policy files into `~/.carson/lint/`:
+Carson distributes lint configuration files from a central policy source — a directory or git repository you control — into each governed repo's `.github/linters/` directory, where MegaLinter auto-discovers them.
 
 ```bash
-carson lint setup --source /path/to/your-policy-repo
+carson lint policy --source /path/to/your-policy-repo
 ```
 
-After this command, `~/.carson/lint/rubocop.yml` exists and is ready for Carson to use. Every governed repository will reference these same policy files — this is how Carson keeps lint consistent.
+After this command, `.github/linters/` contains your lint configs (`.rubocop.yml`, `biome.json`, `ruff.toml`, etc.). MegaLinter uses these in CI. Every governed repository gets the same rules — this is how Carson keeps lint consistent across languages.
 
 Options:
 - `--source <path-or-git-url>` — where to read policy files from (required).
 - `--ref <git-ref>` — branch or tag when `--source` is a git URL.
-- `--force` — overwrite existing `~/.carson/lint` files.
+- `--force` — overwrite existing `.github/linters/` files.
 
-Policy layout: language config files sit directly under `CODING/` (flat layout, no language subfolders). Non-Ruby entries are present but disabled by default.
+Policy layout: lint config files sit at the root of the source repo (flat layout, no subdirectories required).
 
 ### Step 2: Onboard a repository
 
@@ -105,7 +103,7 @@ Notes:
 
 ```bash
 carson sync                                          # fast-forward local main
-carson lint setup --source /path/to/your-policy-repo # refresh policy if needed
+carson lint policy --source /path/to/your-policy-repo # refresh policy if needed
 carson audit                                         # full governance check
 ```
 
@@ -183,7 +181,7 @@ Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. Th
 These define what Carson *is*. They are not configurable.
 
 - **Outsider boundary** — Carson never places its own artefacts inside a governed repository.
-- **Centralised lint** — one policy source at `~/.carson/lint/`, shared across all repos, zero per-repo drift.
+- **Centralised lint** — one policy source distributed into each repo's `.github/linters/`, zero per-repo drift.
 - **Active review** — undisposed reviewer findings block merge; feedback must be acknowledged.
 - **Self-diagnosing output** — every message names the cause and the fix.
 - **Transparent governance** — Carson prepares everything for merge but never makes decisions without telling you.
@@ -238,11 +236,12 @@ Change: `CARSON_HOOKS_BASE_PATH`.
 
 #### Lint policy source
 
-Where lint configuration files live.
+Where lint configuration files come from and where they land.
 
-- Default: **`~/.carson/lint/`**. Centralised: one policy source governs all repos consistently. Repo-local `.rubocop.yml` is forbidden in outsider mode to prevent per-repo drift.
+- Default source: **`wanghailei/lint.git`**. A central repository containing lint configs for all languages.
+- Target: **`<repo>/.github/linters/`**. MegaLinter auto-discovers configs here in CI.
 
-Change the source: `carson lint setup --source <path-or-git-url>`.
+Change: `carson lint policy --source <path-or-git-url>` or `lint.policy_source` in config.
 
 #### Scope integrity
 
@@ -314,7 +313,7 @@ Common environment overrides:
 | `CARSON_WORKFLOW_STYLE` | Workflow style override (`branch` or `trunk`). |
 | `CARSON_RUBY_INDENTATION` | Ruby indentation policy (`tabs`, `spaces`, or `either`). |
 
-For the full configuration schema and `lint.languages` definition, see `API.md`.
+For the full configuration schema, see `API.md`.
 
 ## Troubleshooting
 
@@ -333,8 +332,8 @@ carson template apply
 carson template check
 ```
 
-**Audit blocks on repo-local `.rubocop.yml`**
-- Carson hard-blocks governed repositories that contain their own `.rubocop.yml`. Remove the repo-local file and rely on the central policy in `~/.carson/lint/rubocop.yml`.
+**Audit blocks on lint failure**
+- If `lint.command` is configured and fails, audit blocks (in `strict` mode) or warns (in `advisory` mode). Fix the lint issues and re-run `carson audit`.
 
 **Hook version mismatch after upgrade**
 - Run `carson refresh` to re-apply hooks and templates for the new Carson version.

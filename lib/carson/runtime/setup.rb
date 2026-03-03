@@ -155,7 +155,7 @@ module Carson
 					{ label: "make lint", value: "make lint" },
 					{ label: "trunk check (Recommended)", value: "trunk check" },
 					{ label: "Other (enter command)", value: :other },
-					{ label: "Skip (use per-language lint.languages)", value: nil }
+					{ label: "Skip (no local lint)", value: nil }
 				]
 				choice = prompt_choice( options: options, default: 1 )
 
