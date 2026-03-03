@@ -5,6 +5,22 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.15.1 — Codex Review Fixes
+
+### What changed
+
+- `carson check` now correctly exits 2 for cancelled, errored, or timed-out CI checks. Previously, only `fail`-bucketed checks were treated as failing — all other non-passing states (cancelled, error) fell through to "all passing".
+- Pre-push auto-commit now aborts the in-flight push and prints "Push again to include them." Previously the commit was created locally but not included in the push that triggered it.
+- `--push-prep` now stages and commits untracked managed files. Previously, new managed files introduced by a gem upgrade were silently omitted.
+- `API.md`: `merge.authority` default corrected from `false` to `true` to match the implementation.
+- `API.md`: `carson check` added to the Info commands table.
+- `docs/develop.md`: Architecture rationale updated — `govern.rb` acknowledged as a known exception to the adapter shell-out rule.
+- Test coverage added for `check` bucket classification, `managed_dirty_paths` untracked handling, and CLI dispatch.
+
+### No migration required
+
+No configuration or workflow changes needed.
+
 ## 2.15.0 — JIT Auto-Commit on Pre-Push + `carson check`
 
 ### What changed
