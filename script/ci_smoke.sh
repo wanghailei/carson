@@ -367,7 +367,9 @@ expect_exit 0 "lint policy clones configs from git URL" run_carson lint policy -
 # Validate report directory fallback precedence for invalid HOME.
 tmpdir_report_root="$tmp_root/custom-tmpdir"
 mkdir -p "$tmpdir_report_root"
-tmpdir_report_output="$(run_carson_with_report_env "relative-home" "$tmpdir_report_root" audit --verbose)"
+# || true: these tests only verify the report path in verbose output; the audit
+# exit code reflects live GitHub CI state which may be pending during CI runs.
+tmpdir_report_output="$(run_carson_with_report_env "relative-home" "$tmpdir_report_root" audit --verbose)" || true
 expected_tmpdir_report_path="$tmpdir_report_root/carson/pr_report_latest.md"
 if [[ "$tmpdir_report_output" != *"report_markdown: $expected_tmpdir_report_path"* ]]; then
 	echo "FAIL: audit did not use TMPDIR fallback when HOME is invalid" >&2
@@ -377,7 +379,7 @@ if [[ "$tmpdir_report_output" != *"report_markdown: $expected_tmpdir_report_path
 fi
 echo "PASS: report path falls back to TMPDIR/carson when HOME is invalid"
 
-tmp_fallback_output="$(run_carson_with_report_env "relative-home" "relative-tmpdir" audit --verbose)"
+tmp_fallback_output="$(run_carson_with_report_env "relative-home" "relative-tmpdir" audit --verbose)" || true
 if [[ "$tmp_fallback_output" != *"report_markdown: /tmp/carson/pr_report_latest.md"* ]]; then
 	echo "FAIL: audit did not use /tmp fallback when HOME and TMPDIR are invalid" >&2
 	echo "expected output to include: report_markdown: /tmp/carson/pr_report_latest.md" >&2
