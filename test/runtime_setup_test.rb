@@ -300,6 +300,32 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	def test_onboard_reruns_setup_when_configured_remote_missing
+		# Config exists with remote "upstream", but repo only has "origin"
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "git" => { "remote" => "upstream" } } ) )
+
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Setup will prompt (4 prompts: remote, branch, workflow, merge) + governance registration
+		tty_input = build_tty_input( "\n\n\n\nn\n" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			status = runtime.onboard!
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "origin", saved.dig( "git", "remote" ), "setup should fix the remote to one that exists"
+		end
+	end
+
 	def test_append_govern_repo_deduplicates
 		config_dir = File.join( @tmp_dir, ".carson" )
 		FileUtils.mkdir_p( config_dir )
