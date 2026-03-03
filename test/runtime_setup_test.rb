@@ -169,6 +169,49 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	def test_normalise_remote_url_treats_ssh_and_https_as_equal
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+
+			ssh_url = "git@github.com:user/repo.git"
+			https_url = "https://github.com/user/repo"
+			https_with_git = "https://github.com/user/repo.git"
+
+			normalised_ssh = runtime.send( :normalise_remote_url, url: ssh_url )
+			normalised_https = runtime.send( :normalise_remote_url, url: https_url )
+			normalised_https_git = runtime.send( :normalise_remote_url, url: https_with_git )
+
+			assert_equal normalised_ssh, normalised_https, "SSH and HTTPS URLs should normalise to the same value"
+			assert_equal normalised_ssh, normalised_https_git, "SSH and HTTPS+.git URLs should normalise to the same value"
+
+			# Trailing slash stripped
+			assert_equal(
+				runtime.send( :normalise_remote_url, url: "https://github.com/user/repo/" ),
+				normalised_https
+			)
+
+			# Empty and blank
+			assert_equal "", runtime.send( :normalise_remote_url, url: "" )
+			assert_equal "", runtime.send( :normalise_remote_url, url: "  " )
+		end
+	end
+
+	def test_setup_warns_about_duplicate_remote_urls
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "github", remote_dir, out: File::NULL, err: File::NULL )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			runtime.setup!
+
+			output = out.string
+			assert_match( /duplicate_remotes:.*share the same URL/, output )
+		end
+	end
+
 private
 
 	def build_setup_runtime( input:, out_stream: nil )

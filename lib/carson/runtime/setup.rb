@@ -1,3 +1,6 @@
+require "set"
+require "uri"
+
 module Carson
 	class Runtime
 		module Setup
@@ -51,6 +54,15 @@ module Carson
 					puts_verbose "detected_remote: none"
 				end
 
+				remotes = list_git_remotes
+				duplicates = duplicate_remote_groups( remotes: remotes )
+				unless duplicates.empty?
+					duplicates.each_value do |group|
+						names = group.map { it.fetch( :name ) }.join( " and " )
+						puts_verbose "duplicate_remotes: #{names} share the same URL"
+					end
+				end
+
 				branch = detect_main_branch
 				if branch && branch != config.main_branch
 					choices[ "git.main_branch" ] = branch
@@ -69,9 +81,18 @@ module Carson
 					return nil
 				end
 
+				duplicates = duplicate_remote_groups( remotes: remotes )
+				duplicate_names = duplicates.values.flatten.map { it.fetch( :name ) }.to_set
+				unless duplicates.empty?
+					duplicates.each_value do |group|
+						names = group.map { it.fetch( :name ) }.join( " and " )
+						puts_line "Remotes #{names} share the same URL. Consider removing the duplicate."
+					end
+				end
+
 				puts_line ""
 				puts_line "Git remote"
-				options = build_remote_options( remotes: remotes )
+				options = build_remote_options( remotes: remotes, duplicate_names: duplicate_names )
 				options << { label: "Other (enter name)", value: :other }
 
 				default_index = 0
@@ -151,12 +172,13 @@ module Carson
 				value.empty? ? nil : value
 			end
 
-			def build_remote_options( remotes: )
+			def build_remote_options( remotes:, duplicate_names: Set.new )
 				sorted = sort_remotes( remotes: remotes )
 				sorted.map do |entry|
 					name = entry.fetch( :name )
 					url = entry.fetch( :url )
-					{ label: "#{name} (#{url})", value: name }
+					tag = duplicate_names.include?( name ) ? " [duplicate]" : ""
+					{ label: "#{name} (#{url})#{tag}", value: name }
 				end
 			end
 
@@ -171,6 +193,35 @@ module Carson
 					end
 				end
 				well_known.sort_by { |e| WELL_KNOWN_REMOTES.index( e.fetch( :name ) ) || 999 } + others.sort_by { |e| e.fetch( :name ) }
+			end
+
+			# Normalises a remote URL so SSH and HTTPS variants of the same host/path compare equal.
+			# Strips trailing .git, lowercases, converts git@host:path to https://host/path.
+			def normalise_remote_url( url: )
+				text = url.to_s.strip
+				return "" if text.empty?
+
+				# Convert SSH shorthand (git@host:owner/repo) to HTTPS form.
+				if text.match?( /\A[\w.-]+@[\w.-]+:/ )
+					text = text.sub( /\A[\w.-]+@([\w.-]+):/, 'https://\1/' )
+				end
+
+				text = text.delete_suffix( ".git" )
+				text = text.chomp( "/" )
+				text.downcase
+			end
+
+			# Groups remotes that share the same normalised URL. Returns a hash of
+			# normalised_url => [remote entries] for groups with more than one member.
+			def duplicate_remote_groups( remotes: )
+				by_url = {}
+				remotes.each do |entry|
+					key = normalise_remote_url( url: entry.fetch( :url ) )
+					next if key.empty?
+
+					( by_url[ key ] ||= [] ) << entry
+				end
+				by_url.select { |_url, entries| entries.length > 1 }
 			end
 
 			def build_main_branch_options

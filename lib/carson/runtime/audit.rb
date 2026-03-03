@@ -46,13 +46,13 @@ module Carson
 					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
 					puts_verbose "ACTION: local #{config.main_branch} is ahead of #{config.git_remote}/#{config.main_branch} by #{ahead_count} commit#{plural_suffix( count: ahead_count )}; reset local drift before commit/push workflows."
 					audit_state = "block"
-					audit_concise_problems << "Main sync: ahead by #{ahead_count} — reset local drift."
+					audit_concise_problems << "Main sync (#{config.git_remote}): ahead by #{ahead_count} — git fetch #{config.git_remote}, or carson setup to switch remote."
 				elsif behind_count.positive?
 					puts_verbose "main_vs_remote_main_ahead: #{ahead_count}"
 					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
 					puts_verbose "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run carson sync."
 					audit_state = "attention" if audit_state == "ok"
-					audit_concise_problems << "Main sync: behind by #{behind_count} — run carson sync."
+					audit_concise_problems << "Main sync (#{config.git_remote}): behind by #{behind_count} — run carson sync."
 				else
 					puts_verbose "main_vs_remote_main_ahead: 0"
 					puts_verbose "main_vs_remote_main_behind: 0"
