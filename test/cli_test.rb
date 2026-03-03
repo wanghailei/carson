@@ -51,6 +51,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def check!
+			@calls << :check
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -248,5 +253,19 @@ class CLITest < Minitest::Test
 		status = Carson::CLI.dispatch( parsed: { command: "refresh:all" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, status
 		assert_equal [ :refresh_all ], runtime.calls
+	end
+
+	def test_parse_args_check_command
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "check" ], out: out, err: err )
+		assert_equal "check", parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_check_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "check" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ :check ], runtime.calls
 	end
 end

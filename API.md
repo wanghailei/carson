@@ -56,6 +56,7 @@ carson <command> [subcommand] [arguments]
 |---|---|
 | `carson version` | Print installed Carson version. |
 | `carson inspect` | Verify Carson-managed hook installation and repository setup. |
+| `carson check` | Report required CI check status for the current branch's open PR. Exits 0 for passing or pending; exits 2 for failing. Never exits 8. |
 
 ## Exit status contract
 
@@ -118,7 +119,7 @@ Environment overrides:
     },
     "check_wait": 30,
     "merge": {
-      "authority": false,
+      "authority": true,
       "method": "squash"
     }
   }
@@ -130,7 +131,7 @@ Environment overrides:
 - `agent.provider`: `"auto"`, `"codex"`, or `"claude"`.
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
-- `merge.authority`: `false` (default) — Carson does not merge until explicitly enabled.
+- `merge.authority`: `true` (default) — Carson may merge autonomously. Set to `false` to require explicit enablement.
 - `merge.method`: `"squash"` (default), `"merge"`, or `"rebase"`.
 
 `lint` schema:

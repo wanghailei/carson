@@ -104,8 +104,8 @@ module Carson
 				end
 
 				checks_data = JSON.parse( checks_stdout )
-				failing = checks_data.select { |e| e[ "bucket" ].to_s == "fail" || e[ "state" ].to_s.upcase == "FAILURE" }
 				pending = checks_data.select { |e| e[ "bucket" ].to_s == "pending" }
+				failing = checks_data.select { |e| check_entry_failing?( entry: e ) }
 				total = checks_data.count
 				# gh exits 8 when required checks are still pending (not a failure).
 				is_pending = !checks_success && checks_exit == 8
@@ -181,8 +181,8 @@ module Carson
 					return report
 				end
 				checks_data = JSON.parse( checks_stdout )
-				failing = checks_data.select { |entry| entry[ "bucket" ].to_s == "fail" || entry[ "state" ].to_s.upcase == "FAILURE" }
 				pending = checks_data.select { |entry| entry[ "bucket" ].to_s == "pending" }
+				failing = checks_data.select { |entry| check_entry_failing?( entry: entry ) }
 				report[ :checks ][ :status ] = checks_success ? "ok" : ( checks_exit == 8 ? "pending" : "attention" )
 				report[ :checks ][ :required_total ] = checks_data.count
 				report[ :checks ][ :failing_count ] = failing.count
@@ -359,6 +359,12 @@ module Carson
 					advisory_names.include?( entry[ "name" ].to_s.strip )
 				end
 				[ critical, advisory ]
+			end
+
+			# Returns true when a required-check entry is in a non-passing, non-pending state.
+			# Cancelled, errored, timed-out, and any unknown bucket all count as failing.
+			def check_entry_failing?( entry: )
+				!%w[pass pending].include?( entry[ "bucket" ].to_s )
 			end
 
 			# Failing means completed with a non-successful conclusion.

@@ -416,7 +416,7 @@ module Carson
 				end
 				return EXIT_ERROR if error_count.positive?
 
-				push_prep_commit! if push_prep
+				return EXIT_BLOCK if push_prep && push_prep_commit!
 				EXIT_OK
 			end
 
@@ -754,7 +754,8 @@ module Carson
 
 				git_system!( "add", *dirty )
 				git_system!( "commit", "-m", "chore: sync Carson managed files" )
-				puts_line "Carson committed managed file updates."
+				puts_line "Carson committed managed file updates. Push again to include them."
+				true
 			end
 
 			def managed_dirty_paths
@@ -767,7 +768,6 @@ module Carson
 
 				stdout_text, = git_capture_soft( "status", "--porcelain", "--", *candidates )
 				stdout_text.to_s.lines
-					.reject { |l| l.start_with?( "??" ) }
 					.map { |l| l[ 3.. ].strip }
 					.reject( &:empty? )
 			end

@@ -27,7 +27,7 @@ The layering is a direct consequence of the outsider boundary rule. Carson must 
 
 **Runtime is wired once per invocation.** `Runtime` is constructed with `repo_root`, `tool_root`, output streams, and adapters at startup. Everything downstream receives the wired instance. There is no global state. This means tests can construct isolated runtimes pointing at `tmpdir` paths without any coordination between tests.
 
-**Adapters absorb process calls.** `git.rb` and `github.rb` wrap every `git` and `gh` shell invocation. Nothing else in the codebase shells out directly. This makes the boundary between pure Ruby logic and external process calls explicit and auditable — and keeps tests clean because adapter calls are the only things that touch real system state.
+**Adapters absorb process calls.** `git.rb` and `github.rb` wrap every `git` and `gh` shell invocation in the core command layer. The boundary between pure Ruby logic and external process calls is explicit and auditable. `govern.rb` is a known exception: it predates strict adapter discipline and calls `Open3.capture3` directly in six places. New commands should use the adapter layer; govern's direct calls are tolerated but not encouraged.
 
 **`govern.rb` is deliberately isolated.** Govern runs a long, stateful loop that reads from GitHub and potentially mutates PRs. Isolating it prevents its complexity from contaminating the synchronous local commands. Local commands (`audit`, `review gate`, `sync`) are fast, deterministic, and offline-capable. Govern is explicitly asynchronous, network-dependent, and advisory.
 
