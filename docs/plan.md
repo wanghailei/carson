@@ -90,14 +90,16 @@ For each open PR in each governed repo:
 ## CLI
 
 ```
-carson govern [--dry-run] [--json]
+carson govern [--dry-run] [--json] [--loop SECONDS]
 carson housekeep
 ```
 
 - `govern` defaults to one cycle (not continuous).
 - `--dry-run`: run all checks, report what WOULD happen, don't merge or dispatch.
 - `--json`: machine-readable output.
+- `--loop SECONDS`: run continuously, sleeping SECONDS between cycles. Errors are isolated per cycle. `Ctrl-C` exits cleanly with a cycle count summary.
 - `housekeep`: standalone sync + prune.
+- `refresh --all`: refreshes hooks, templates, and audit across all `govern.repos`.
 
 ### Exit contract
 
@@ -112,7 +114,9 @@ lib/carson/runtime/govern.rb       # Portfolio triage loop + merge + housekeep
 lib/carson/adapters/agent.rb       # WorkOrder / Result data contracts
 lib/carson/adapters/codex.rb       # Codex CLI adapter via Open3
 lib/carson/adapters/claude.rb      # Claude CLI adapter via Open3
-test/runtime_govern_test.rb        # Unit tests (19 tests)
+lib/carson/adapters/prompt.rb      # Interactive prompt adapter
+test/runtime_govern_test.rb        # Unit tests (52 tests)
+test/runtime_refresh_all_test.rb   # Refresh --all tests
 ```
 
 Modified: `lib/carson.rb`, `lib/carson/cli.rb`, `lib/carson/config.rb`, `lib/carson/runtime.rb`, `script/ci_smoke.sh`.
@@ -187,14 +191,14 @@ Environment overrides: `CARSON_GOVERN_REPOS`, `CARSON_GOVERN_MERGE_AUTHORITY`, `
 | 2 | Merge authority with config guard | Done |
 | 3 | Multi-repo portfolio scan | Done |
 | 4 | Agent dispatch (codex/claude) + state tracking | Done |
-| 5 | Scheduled execution (launchd / GitHub Actions) | Deferred — config only |
+| 5 | Scheduled execution (launchd / GitHub Actions) | `--loop` implemented; launchd/Actions deferred |
 
 ## Verification
 
-- 19 unit tests in `test/runtime_govern_test.rb`.
-- 6 smoke tests in `script/ci_smoke.sh`.
-- All 87 unit tests pass (0 regressions).
-- All 60 smoke tests pass.
+- 52 unit tests in `test/runtime_govern_test.rb`.
+- 4 govern smoke tests in `script/ci_smoke.sh`.
+- All 137 unit tests pass (0 regressions).
+- All 57 smoke tests pass.
 
 ## Decisions Made (vs. original Codex plan)
 
