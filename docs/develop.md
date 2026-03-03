@@ -19,6 +19,79 @@ Primary runtime structure:
 - `lib/carson/adapters/agent.rb`, `lib/carson/adapters/prompt.rb`: agent work order definitions and shared prompt builder.
 - `lib/carson/adapters/codex.rb`, `lib/carson/adapters/claude.rb`: coding agent dispatch adapters.
 
+## Architecture rationale
+
+The layering is a direct consequence of the outsider boundary rule. Carson must never accumulate repository-specific state — it must be safe to invoke against any repository without side effects from a previous invocation. This constraint shapes every layer boundary.
+
+**CLI is stateless.** `cli.rb` only parses arguments and dispatches. It holds no repository state between calls. This makes it trivially testable with a `FakeRuntime` double — the CLI layer can be tested without any filesystem, git, or network interaction.
+
+**Runtime is wired once per invocation.** `Runtime` is constructed with `repo_root`, `tool_root`, output streams, and adapters at startup. Everything downstream receives the wired instance. There is no global state. This means tests can construct isolated runtimes pointing at `tmpdir` paths without any coordination between tests.
+
+**Adapters absorb process calls.** `git.rb` and `github.rb` wrap every `git` and `gh` shell invocation. Nothing else in the codebase shells out directly. This makes the boundary between pure Ruby logic and external process calls explicit and auditable — and keeps tests clean because adapter calls are the only things that touch real system state.
+
+**`govern.rb` is deliberately isolated.** Govern runs a long, stateful loop that reads from GitHub and potentially mutates PRs. Isolating it prevents its complexity from contaminating the synchronous local commands. Local commands (`audit`, `review gate`, `sync`) are fast, deterministic, and offline-capable. Govern is explicitly asynchronous, network-dependent, and advisory.
+
+## Adding a new command
+
+Each command follows the same four-step pattern. Using a hypothetical `carson status` command as an example:
+
+**Step 1 — Parse the argument in `cli.rb`.**
+
+Add a `when` branch in `parse_command` to recognise the token:
+
+```ruby
+when "status"
+  { command: "status" }
+```
+
+Add a dispatch case in `dispatch`:
+
+```ruby
+when "status"
+  runtime.status!
+```
+
+**Step 2 — Add the method to `FakeRuntime` in `cli_test.rb`.**
+
+```ruby
+def status!
+  @calls << :status
+  Carson::Runtime::EXIT_OK
+end
+```
+
+**Step 3 — Write the CLI dispatch test.**
+
+```ruby
+def test_status_dispatches
+  fake = FakeRuntime.new
+  out = StringIO.new
+  result = Carson::CLI.dispatch( parsed: { command: "status" }, runtime: fake )
+  assert_includes fake.calls, :status
+  assert_equal Carson::Runtime::EXIT_OK, result
+end
+```
+
+**Step 4 — Implement `status!` in the appropriate runtime file.**
+
+Choose the file by behaviour ownership: local governance → `local.rb`, audit-related → `audit.rb`, review-related → `review.rb`. If the command is genuinely new domain, create a new `runtime/<name>.rb` and include it in `runtime.rb`.
+
+The method must:
+- Write all output to `@out` or `@err` (never `$stdout`).
+- Return `EXIT_OK`, `EXIT_ERROR`, or `EXIT_BLOCK` — nothing else.
+- Prefix all output lines with `BADGE`.
+
+**Step 5 — Write the runtime test.**
+
+Use `build_runtime` from `test_helper.rb` to get an isolated tmpdir-backed runtime:
+
+```ruby
+runtime, repo_root = build_runtime
+result = runtime.status!
+assert_equal Carson::Runtime::EXIT_OK, result
+destroy_runtime_repo( repo_root: repo_root )
+```
+
 ## Runtime Contracts
 
 Exit status contract:
@@ -194,6 +267,37 @@ When checks are pending and the PR was recently updated (within `govern.check_wa
 5. `review gate` enforces actionable-review discipline.
 6. `review sweep` updates rolling tracking for late actionable review activity.
 7. `offboard` removes Carson-managed host artefacts and Carson hook linkage.
+
+## Testing approach
+
+Carson's test suite uses Minitest with no external test framework dependencies. Tests are fast, isolated, and filesystem-safe by convention.
+
+**Three test categories:**
+
+1. **CLI dispatch tests** (`cli_test.rb`) — verify that argument strings reach the correct runtime method with the correct parameters. Use `FakeRuntime` exclusively. No filesystem, no network.
+
+2. **Runtime unit tests** (`runtime_*_test.rb`) — verify runtime method behaviour against a real `Runtime` instance backed by a `tmpdir`. Each test constructs its own directory via `build_runtime` and tears it down after. Tests are independent and safe to run in any order.
+
+3. **Smoke tests** (`script/ci_smoke.sh`, `script/review_smoke.sh`) — end-to-end invocations of the `carson` binary against real filesystem structures. These run in CI and are the last gate before release.
+
+**Test isolation conventions:**
+
+- Never use `$stdout` or `$stderr` directly. Always capture via `StringIO` (`out`, `err` from `build_runtime`).
+- Never write to the real `~/.carson/config.json` in tests. `test_helper.rb` sets `CARSON_CONFIG_FILE` to a nonexistent tmpdir path at load time, making all tests use a blank config.
+- Use `with_env` from `CarsonTestSupport` to temporarily set environment variables. It restores the previous state after the block even if the test raises.
+- Scope assertions to the command under test. Do not assert on incidental output from unrelated methods.
+
+**Running a single test file:**
+
+```bash
+ruby -Itest test/runtime_audit_baseline_test.rb
+```
+
+**Running the full suite:**
+
+```bash
+ruby -Itest -e 'Dir.glob("test/**/*_test.rb").sort.each { |path| require File.expand_path(path) }'
+```
 
 ## Development Workflow
 
