@@ -4,9 +4,11 @@
 
 Named after the head of household in Downton Abbey, Carson is your repositories' autonomous governance runtime — you write the code, Carson manages everything else. From commit-time checks through PR triage, agent dispatch, merge, and cleanup, Carson runs the household with discipline and professional standards. Carson itself has no intelligence — it follows a deterministic decision tree. The intelligence comes from the coding agents it dispatches (Codex, Claude) to fix problems.
 
-## The Problem
+## The Problem to Solve
 
-If you govern more than a handful of repositories, you know the pattern: lint configs drift between repos, PR templates go stale, reviewer feedback gets quietly ignored, and what passes on a developer's laptop fails in CI. Across a portfolio of projects with coding agents producing many PRs, you become the bottleneck — manually checking results, dispatching fixes, clicking merge, and cleaning up.
+Managing a growing portfolio of repositories is rewarding work — but the operational overhead scales faster than the code itself. Lint configs drift between repos, PR templates go stale, reviewer feedback gets quietly buried, and what passes on a developer's laptop fails in CI. When coding agents start producing PRs across multiple projects, the coordination load multiplies: checking results, dispatching fixes, clicking merge, cleaning up branches.
+
+Carson exists so you can focus on what matters — building — while governance runs itself.
 
 ## How Carson Works
 
@@ -61,67 +63,12 @@ Carson is opinionated about governance. These are non-negotiable principles, not
 
 Everything else — workflow style, merge method, remote name, main branch — is a configurable default chosen during `carson setup`. See `MANUAL.md` for the full list of defaults and why each was chosen.
 
-The data flow:
-
-1. You maintain a **policy source** — a directory or git repository containing your lint config files (e.g. `.rubocop.yml`, `biome.json`, `ruff.toml`). `carson lint policy --source <repo>` copies these into each governed repo's `.github/linters/`, where MegaLinter auto-discovers them.
-2. `carson onboard` installs git hooks, synchronises `.github/*` templates (including a MegaLinter CI workflow), and runs a first governance audit on a host repository.
-3. From that point, every commit triggers `carson audit` through the managed `pre-commit` hook. The same `carson audit` runs in GitHub Actions. If it passes locally, it passes in CI.
-4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment has been formally acknowledged by the PR author through a **disposition comment**.
-5. `carson govern` triages all open PRs across your portfolio. Ready PRs are merged and housekept. Failing PRs get a coding agent dispatched to fix them. Stuck PRs are escalated for your attention.
-
-## Commands at a Glance
-
-**Govern** — autonomous portfolio management:
-
-| Command | What it does |
-|---|---|
-| `carson govern` | Triage all open PRs: merge ready ones, dispatch agents for failures, escalate the rest. |
-| `carson govern --dry-run` | Show what Carson would do without taking action. |
-| `carson govern --loop SECONDS` | Run the govern cycle continuously, sleeping SECONDS between cycles. |
-| `carson housekeep` | Sync main + prune stale branches (also runs automatically after govern merges). |
-
-**Setup** — run once per machine or per repository:
-
-| Command | What it does |
-|---|---|
-| `carson lint policy --source <repo>` | Distribute lint configs from policy source into `.github/linters/`. |
-| `carson onboard` | One-command baseline: hooks + templates + first audit. |
-| `carson prepare` | Install or refresh Carson-managed global hooks. |
-| `carson refresh` | Re-apply hooks, templates, and audit after upgrading Carson. |
-| `carson refresh --all` | Refresh all governed repositories at once. |
-| `carson offboard` | Remove Carson from a repository. |
-
-**Daily** — regular development workflow:
-
-| Command | What it does |
-|---|---|
-| `carson audit` | Full governance check (also runs automatically on every commit). |
-| `carson sync` | Fast-forward local `main` from remote. |
-| `carson prune` | Remove stale local branches whose upstream is gone. |
-| `carson template check` | Detect drift between managed and host `.github/*` files. |
-| `carson template apply` | Repair drifted `.github/*` files. |
-
-**Review** — PR merge readiness:
-
-| Command | What it does |
-|---|---|
-| `carson review gate` | Block or approve merge based on unresolved review comments. |
-| `carson review sweep` | Scan recent PRs and update a tracking issue for late feedback. |
-
-**Info**:
-
-| Command | What it does |
-|---|---|
-| `carson version` | Print installed version. |
-| `carson inspect` | Verify Carson-managed hook installation and repository setup. |
-
 ## Quickstart
 
 Prerequisites: Ruby `>= 3.4`, `git`, and `gem` in your PATH.
 `gh` (GitHub CLI) is recommended for full review governance features.
 
 ```bash
-# Install
 gem install --user-install carson
 carson version
 ```
@@ -145,7 +92,7 @@ After `carson onboard`, your repository has:
 
 Commit the generated `.github/*` changes, and the repository is governed.
 
-**Daily workflow:**
+**Run governance across your portfolio:**
 
 ```bash
 carson govern --dry-run     # see what Carson would do across all repos
@@ -153,18 +100,9 @@ carson govern               # triage PRs, merge ready ones, dispatch agents, hou
 carson govern --loop 300    # run continuously, cycling every 5 minutes
 ```
 
-Or the individual commands if you prefer manual control:
-
-```bash
-carson audit                # full governance check
-carson review gate          # block or approve merge based on review status
-carson sync                 # fast-forward local main
-carson prune                # clean up stale local branches
-```
-
 ## Where to Read Next
 
-- **MANUAL.md** — installation, first-time setup, CI configuration, daily operations, troubleshooting.
+- **MANUAL.md** — installation, first-time setup, CI configuration, daily operations, full command reference, troubleshooting.
 - **API.md** — formal interface contract: commands, exit codes, configuration schema.
 - **RELEASE.md** — version history and upgrade actions.
 - **docs/define.md** — product definition and scope.
