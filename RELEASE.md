@@ -5,6 +5,13 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.14.1 — Auto-Refresh on Install
+
+### What changed
+
+- `install.sh` now runs `carson refresh --all` automatically after linking the executable. Template changes (including superseded-file removal) are propagated to all governed repos the moment Carson is upgraded — no manual intervention required.
+- If any repo reports issues, a warning is printed; the install itself does not fail.
+
 ## 2.14.0 — Superseded File Cleanup on Template Apply
 
 ### What changed
