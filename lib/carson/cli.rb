@@ -12,6 +12,12 @@ module Carson
 				return Runtime::EXIT_OK
 			end
 
+			if command == "refresh:all"
+				verbose = parsed.fetch( :verbose, false )
+				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, out: out, err: err, verbose: verbose )
+				return dispatch( parsed: parsed, runtime: runtime )
+			end
+
 			target_repo_root = parsed.fetch( :repo_root, nil )
 			target_repo_root = repo_root if target_repo_root.to_s.strip.empty?
 			unless Dir.exist?( target_repo_root )
@@ -47,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [setup|audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint policy --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
+				opts.banner = "Usage: carson [setup|audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|lint policy --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
 			end
 		end
 
@@ -68,8 +74,10 @@ module Carson
 			when "version"
 				parser.parse!( argv )
 				{ command: "version" }
-			when "onboard", "refresh", "offboard"
+			when "onboard", "offboard"
 				parse_repo_path_command( command: command, argv: argv, parser: parser, err: err )
+			when "refresh"
+				parse_refresh_command( argv: argv, parser: parser, err: err )
 			when "template"
 				parse_named_subcommand( command: command, usage: "check|apply", argv: argv, parser: parser, err: err )
 			when "lint"
@@ -95,6 +103,31 @@ module Carson
 			repo_path = argv.first
 			{
 				command: command,
+				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+			}
+		end
+
+		def self.parse_refresh_command( argv:, parser:, err: )
+			all_flag = argv.delete( "--all" ) ? true : false
+			parser.parse!( argv )
+
+			if all_flag && !argv.empty?
+				err.puts "#{BADGE} --all and repo_path are mutually exclusive. Use: carson refresh --all OR carson refresh [repo_path]"
+				err.puts parser
+				return { command: :invalid }
+			end
+
+			return { command: "refresh:all" } if all_flag
+
+			if argv.length > 1
+				err.puts "#{BADGE} Too many arguments for refresh. Use: carson refresh [repo_path]"
+				err.puts parser
+				return { command: :invalid }
+			end
+
+			repo_path = argv.first
+			{
+				command: "refresh",
 				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
 			}
 		end
@@ -206,6 +239,8 @@ module Carson
 				runtime.onboard!
 			when "refresh"
 				runtime.refresh!
+			when "refresh:all"
+				runtime.refresh_all!
 			when "offboard"
 				runtime.offboard!
 			when "template:check"

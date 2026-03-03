@@ -78,6 +78,7 @@ The data flow:
 | `carson onboard` | One-command baseline: hooks + templates + first audit. |
 | `carson prepare` | Install or refresh Carson-managed global hooks. |
 | `carson refresh` | Re-apply hooks, templates, and audit after upgrading Carson. |
+| `carson refresh --all` | Refresh all governed repositories at once. |
 | `carson offboard` | Remove Carson from a repository. |
 
 **Daily** — regular development workflow:

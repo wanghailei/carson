@@ -20,6 +20,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def refresh_all!
+			@calls << :refresh_all
+			Carson::Runtime::EXIT_OK
+		end
+
 		def template_check!
 			@calls << :template_check
 			Carson::Runtime::EXIT_OK
@@ -211,5 +216,37 @@ class CLITest < Minitest::Test
 		err = StringIO.new
 		parsed = Carson::CLI.parse_args( argv: [ "-v" ], out: out, err: err )
 		assert_equal "version", parsed.fetch( :command )
+	end
+
+	# --- refresh --all tests ---
+
+	def test_parse_args_refresh_all_parses_to_refresh_all_command
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "refresh", "--all" ], out: out, err: err )
+		assert_equal "refresh:all", parsed.fetch( :command )
+	end
+
+	def test_parse_args_refresh_all_with_path_is_invalid
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "refresh", "--all", "/some/path" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "mutually exclusive"
+	end
+
+	def test_parse_args_refresh_all_with_verbose_preserves_both_flags
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "--verbose", "refresh", "--all" ], out: out, err: err )
+		assert_equal "refresh:all", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	def test_dispatch_routes_refresh_all_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "refresh:all" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ :refresh_all ], runtime.calls
 	end
 end
