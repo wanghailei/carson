@@ -5,13 +5,14 @@ require "tmpdir"
 module Carson
 	class Runtime
 		module Lint
-			# Prepares canonical lint policy files under ~/.carson/lint from an explicit source.
-			def lint_setup!( source:, ref: "main", force: false )
+			# Distributes lint policy files from a central source into the governed repository.
+			# Target: <repo>/.github/linters/ (MegaLinter auto-discovers here).
+			def lint_setup!( source:, ref: "main", force: false, **_ )
 				puts_verbose ""
-				puts_verbose "[Lint Setup]"
+				puts_verbose "[Lint Policy]"
 				source_text = source.to_s.strip
 				if source_text.empty?
-					puts_line "ERROR: lint setup requires --source <path-or-git-url>."
+					puts_line "ERROR: lint policy requires --source <path-or-git-url>."
 					return EXIT_ERROR
 				end
 
@@ -19,40 +20,26 @@ module Carson
 				ref_text = "main" if ref_text.empty?
 				source_dir, cleanup = lint_setup_source_directory( source: source_text, ref: ref_text )
 				begin
-					source_coding_dir = File.join( source_dir, "CODING" )
-					unless Dir.exist?( source_coding_dir )
-						puts_line "ERROR: source CODING directory not found at #{source_coding_dir}."
-						return EXIT_ERROR
-					end
-					target_coding_dir = ai_coding_dir
-					copy_result = copy_lint_coding_tree(
-						source_coding_dir: source_coding_dir,
-						target_coding_dir: target_coding_dir,
+					target_dir = repo_linters_dir
+					copy_result = copy_lint_policy_files(
+						source_dir: source_dir,
+						target_dir: target_dir,
 						force: force
 					)
-					puts_verbose "lint_setup_source: #{source_text}"
-					puts_verbose "lint_setup_ref: #{ref_text}" if lint_source_git_url?( source: source_text )
-					puts_verbose "lint_setup_target: #{target_coding_dir}"
-					puts_verbose "lint_setup_created: #{copy_result.fetch( :created )}"
-					puts_verbose "lint_setup_updated: #{copy_result.fetch( :updated )}"
-					puts_verbose "lint_setup_skipped: #{copy_result.fetch( :skipped )}"
+					puts_verbose "lint_policy_source: #{source_text}"
+					puts_verbose "lint_policy_ref: #{ref_text}" if lint_source_git_url?( source: source_text )
+					puts_verbose "lint_policy_target: #{target_dir}"
+					puts_verbose "lint_policy_created: #{copy_result.fetch( :created )}"
+					puts_verbose "lint_policy_updated: #{copy_result.fetch( :updated )}"
+					puts_verbose "lint_policy_skipped: #{copy_result.fetch( :skipped )}"
 
-					missing_policy = missing_lint_policy_files
-					if missing_policy.empty?
-						puts_line "OK: lint policy setup is complete."
-						return EXIT_OK
-					end
-
-					missing_policy.each do |entry|
-						puts_verbose "missing_lint_policy_file: language=#{entry.fetch( :language )} path=#{entry.fetch( :path )}"
-					end
-					puts_line "ACTION: update source CODING policy files, rerun carson lint setup, then rerun carson audit."
-					EXIT_ERROR
+					puts_line "OK: lint policy synced to .github/linters/ (#{copy_result.fetch( :created )} created, #{copy_result.fetch( :updated )} updated)."
+					EXIT_OK
 				ensure
 					cleanup&.call
 				end
 			rescue StandardError => e
-				puts_line "ERROR: lint setup failed (#{e.message})"
+				puts_line "ERROR: lint policy failed (#{e.message})"
 				EXIT_ERROR
 			end
 
@@ -119,22 +106,21 @@ module Carson
 				"/tmp/carson"
 			end
 
-			def ai_coding_dir
-				home = ENV.fetch( "HOME", "" ).to_s.strip
-				raise "HOME must be an absolute path for lint setup" unless home.start_with?( "/" )
-
-				File.join( home, ".carson", "lint" )
+			# Lint configs live inside the governed repository for MegaLinter.
+			def repo_linters_dir
+				File.join( repo_root, ".github", "linters" )
 			end
 
-			def copy_lint_coding_tree( source_coding_dir:, target_coding_dir:, force: )
-				FileUtils.mkdir_p( target_coding_dir )
+			def copy_lint_policy_files( source_dir:, target_dir:, force: )
+				FileUtils.mkdir_p( target_dir )
 				created = 0
 				updated = 0
 				skipped = 0
-				Dir.glob( "**/*", File::FNM_DOTMATCH, base: source_coding_dir ).sort.each do |relative|
+				Dir.glob( "**/*", File::FNM_DOTMATCH, base: source_dir ).sort.each do |relative|
 					next if [ ".", ".." ].include?( relative )
-					source_path = File.join( source_coding_dir, relative )
-					target_path = File.join( target_coding_dir, relative )
+					next if relative.start_with?( ".git/" ) || relative == ".git"
+					source_path = File.join( source_dir, relative )
+					target_path = File.join( target_dir, relative )
 					if File.directory?( source_path )
 						FileUtils.mkdir_p( target_path )
 						next
@@ -160,16 +146,6 @@ module Carson
 					updated: updated,
 					skipped: skipped
 				}
-			end
-
-			def missing_lint_policy_files
-				config.lint_languages.each_with_object( [] ) do |( language, entry ), missing|
-					next unless entry.fetch( :enabled )
-
-					entry.fetch( :config_files ).each do |path|
-						missing << { language: language, path: path } unless File.file?( path )
-					end
-				end
 			end
 		end
 

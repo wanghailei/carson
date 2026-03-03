@@ -84,19 +84,19 @@ class CLITest < Minitest::Test
 		assert_equal "review:gate", review.fetch( :command )
 	end
 
-	def test_parse_args_lint_setup_requires_source
+	def test_parse_args_lint_policy_requires_source
 		out = StringIO.new
 		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "lint", "setup" ], out: out, err: err )
+		parsed = Carson::CLI.parse_args( argv: [ "lint", "policy" ], out: out, err: err )
 		assert_equal :invalid, parsed.fetch( :command )
 		assert_includes err.string, "Missing required --source"
 	end
 
-	def test_parse_args_lint_setup_with_options
+	def test_parse_args_lint_policy_with_options
 		out = StringIO.new
 		err = StringIO.new
 		parsed = Carson::CLI.parse_args(
-			argv: [ "lint", "setup", "--source", "https://example.com/repo.git", "--ref", "stable", "--force" ],
+			argv: [ "lint", "policy", "--source", "https://example.com/repo.git", "--ref", "stable", "--force" ],
 			out: out,
 			err: err
 		)

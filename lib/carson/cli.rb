@@ -47,7 +47,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [setup|audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint setup --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
+				opts.banner = "Usage: carson [setup|audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [repo_path]|offboard [repo_path]|template check|template apply|lint policy --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
 			end
 		end
 
@@ -112,8 +112,8 @@ module Carson
 
 		def self.parse_lint_subcommand( argv:, parser:, err: )
 			action = argv.shift
-			unless action == "setup"
-				err.puts "#{BADGE} Missing or invalid subcommand for lint. Use: carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]"
+			unless action == "policy"
+				err.puts "#{BADGE} Missing or invalid subcommand for lint. Use: carson lint policy --source <path-or-git-url> [--ref <git-ref>] [--force]"
 				err.puts parser
 				return { command: :invalid }
 			end
@@ -124,19 +124,19 @@ module Carson
 				force: false
 			}
 			lint_parser = OptionParser.new do |opts|
-				opts.banner = "Usage: carson lint setup --source <path-or-git-url> [--ref <git-ref>] [--force]"
+				opts.banner = "Usage: carson lint policy --source <path-or-git-url> [--ref <git-ref>] [--force]"
 				opts.on( "--source SOURCE", "Source repository path or git URL that contains CODING/" ) { |value| options[ :source ] = value.to_s.strip }
 				opts.on( "--ref REF", "Git ref used when --source is a git URL (default: main)" ) { |value| options[ :ref ] = value.to_s.strip }
-				opts.on( "--force", "Overwrite existing files in ~/.carson/lint" ) { options[ :force ] = true }
+				opts.on( "--force", "Overwrite existing files" ) { options[ :force ] = true }
 			end
 			lint_parser.parse!( argv )
 			if options.fetch( :source ).to_s.empty?
-				err.puts "#{BADGE} Missing required --source for lint setup."
+				err.puts "#{BADGE} Missing required --source for lint policy."
 				err.puts lint_parser
 				return { command: :invalid }
 			end
 			unless argv.empty?
-				err.puts "#{BADGE} Unexpected arguments for lint setup: #{argv.join( ' ' )}"
+				err.puts "#{BADGE} Unexpected arguments for lint policy: #{argv.join( ' ' )}"
 				err.puts lint_parser
 				return { command: :invalid }
 			end

@@ -14,90 +14,59 @@ class RuntimeLintSetupTest < Minitest::Test
 		FileUtils.remove_entry( @tmp_dir ) if @tmp_dir && File.directory?( @tmp_dir )
 	end
 
-	def test_lint_setup_copies_coding_files_from_local_source
-		source_root = build_source_tree( include_javascript: false )
-		runtime = build_runtime_for_setup( include_javascript: false )
+	def test_lint_policy_copies_coding_files_to_github_linters
+		source_root = build_source_tree( files: { "rubocop.yml" => "AllCops:\n  DisabledByDefault: true\n" } )
+		runtime = build_runtime_for_setup
 
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: source_root, ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert File.file?( File.join( @tmp_dir, ".carson", "lint", "rubocop.yml" ) )
+			assert File.file?( File.join( @repo_root, ".github", "linters", "rubocop.yml" ) )
 		end
 	end
 
-	def test_lint_setup_clones_git_source_url
-		source_repo = build_git_source_repository
-		runtime = build_runtime_for_setup( include_javascript: false )
+	def test_lint_policy_copies_multiple_config_files
+		source_root = build_source_tree( files: {
+			"rubocop.yml" => "AllCops:\n  DisabledByDefault: true\n",
+			"ruff.toml" => "[lint]\nselect = [\"E\", \"F\"]\n",
+			"biome.json" => "{}\n"
+		} )
+		runtime = build_runtime_for_setup
 
 		with_env( "HOME" => @tmp_dir ) do
-			status = runtime.lint_setup!( source: "file://#{source_repo}", ref: "main", force: false )
+			status = runtime.lint_setup!( source: source_root, ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert File.file?( File.join( @tmp_dir, ".carson", "lint", "rubocop.yml" ) )
+			linters_dir = File.join( @repo_root, ".github", "linters" )
+			assert File.file?( File.join( linters_dir, "rubocop.yml" ) )
+			assert File.file?( File.join( linters_dir, "ruff.toml" ) )
+			assert File.file?( File.join( linters_dir, "biome.json" ) )
 		end
 	end
 
-	def test_lint_setup_returns_runtime_error_when_source_is_missing
-		runtime = build_runtime_for_setup( include_javascript: false )
+	def test_lint_policy_clones_git_source_url
+		source_root = build_git_source_repository
+		runtime = build_runtime_for_setup
+
+		with_env( "HOME" => @tmp_dir ) do
+			status = runtime.lint_setup!( source: "file://#{source_root}", ref: "main", force: false )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert File.file?( File.join( @repo_root, ".github", "linters", "rubocop.yml" ) )
+		end
+	end
+
+	def test_lint_policy_returns_runtime_error_when_source_is_missing
+		runtime = build_runtime_for_setup
 		with_env( "HOME" => @tmp_dir ) do
 			status = runtime.lint_setup!( source: File.join( @tmp_dir, "missing-source" ), ref: "main", force: false )
 			assert_equal Carson::Runtime::EXIT_ERROR, status
 		end
 	end
 
-	def test_lint_setup_returns_runtime_error_when_required_ruby_policy_file_is_missing
-		source_root = build_source_tree( include_javascript: false, include_ruby: false )
-		runtime = build_runtime_for_setup( include_javascript: false )
-		with_env( "HOME" => @tmp_dir ) do
-			status = runtime.lint_setup!( source: source_root, ref: "main", force: false )
-			assert_equal Carson::Runtime::EXIT_ERROR, status
-		end
-	end
-
 private
 
-	def build_runtime_for_setup( include_javascript: )
+	def build_runtime_for_setup
 		config_path = File.join( @tmp_dir, "config.json" )
-		languages = {
-			"ruby" => {
-				"enabled" => true,
-				"globs" => [ "**/*.rb" ],
-				"command" => [ "ruby", "/tmp/carson-ruby-lint.rb", "{files}" ],
-				"config_files" => [ "~/.carson/lint/rubocop.yml" ]
-			},
-			"javascript" => {
-				"enabled" => false,
-				"globs" => [ "**/*.js" ],
-				"command" => [ "node", "/tmp/unused.js", "{files}" ],
-				"config_files" => [ "/tmp/unused.js" ]
-			},
-			"css" => {
-				"enabled" => false,
-				"globs" => [ "**/*.css" ],
-				"command" => [ "node", "/tmp/unused.js", "{files}" ],
-				"config_files" => [ "/tmp/unused.js" ]
-			},
-			"html" => {
-				"enabled" => false,
-				"globs" => [ "**/*.html" ],
-				"command" => [ "node", "/tmp/unused.js", "{files}" ],
-				"config_files" => [ "/tmp/unused.js" ]
-			},
-			"erb" => {
-				"enabled" => false,
-				"globs" => [ "**/*.erb" ],
-				"command" => [ "ruby", "/tmp/unused.rb", "{files}" ],
-				"config_files" => [ "/tmp/unused.rb" ]
-			}
-		}
-		if include_javascript
-			languages[ "javascript" ] = {
-				"enabled" => true,
-				"globs" => [ "**/*.js" ],
-				"command" => [ "node", "~/.carson/lint/javascript.lint.js", "{files}" ],
-				"config_files" => [ "~/.carson/lint/javascript.lint.js" ]
-			}
-		end
-		File.write( config_path, JSON.generate( { "lint" => { "languages" => languages } } ) )
+		File.write( config_path, JSON.generate( { "lint" => { "command" => "true" } } ) )
 		with_env( "CARSON_CONFIG_FILE" => config_path, "HOME" => @tmp_dir ) do
 			Carson::Runtime.new(
 				repo_root: @repo_root,
@@ -109,20 +78,17 @@ private
 		end
 	end
 
-	def build_source_tree( include_javascript:, include_ruby: true )
+	def build_source_tree( files: {} )
 		source_root = File.join( @tmp_dir, "source" )
-		FileUtils.mkdir_p( File.join( source_root, "CODING" ) )
-		if include_ruby
-			File.write( File.join( source_root, "CODING", "rubocop.yml" ), "AllCops:\n  DisabledByDefault: true\n" )
-		end
-		if include_javascript
-			File.write( File.join( source_root, "CODING", "javascript.lint.js" ), "process.exit( 0 )\n" )
+		FileUtils.mkdir_p( source_root )
+		files.each do |name, content|
+			File.write( File.join( source_root, name ), content )
 		end
 		source_root
 	end
 
 	def build_git_source_repository
-		source_root = build_source_tree( include_javascript: false )
+		source_root = build_source_tree( files: { "rubocop.yml" => "AllCops:\n  DisabledByDefault: true\n" } )
 		system( "git", "init", source_root, out: File::NULL, err: File::NULL )
 		system( "git", "-C", source_root, "config", "user.name", "Carson Test", out: File::NULL, err: File::NULL )
 		system( "git", "-C", source_root, "config", "user.email", "carson-test@example.com", out: File::NULL, err: File::NULL )

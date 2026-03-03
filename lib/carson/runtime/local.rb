@@ -371,7 +371,11 @@ module Carson
 
 			# Calculates whole-file expected content and returns sync status plus apply payload.
 			def template_result_for_file( managed_file: )
-				template_path = File.join( github_templates_dir, File.basename( managed_file ) )
+				# Try subdirectory-aware path first (e.g. .github/workflows/carson-lint.yml),
+				# then fall back to flat basename lookup for backward compatibility.
+				relative_within_github = managed_file.delete_prefix( ".github/" )
+				template_path = File.join( github_templates_dir, relative_within_github )
+				template_path = File.join( github_templates_dir, File.basename( managed_file ) ) unless File.file?( template_path )
 				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil } unless File.file?( template_path )
 
 				expected_content = normalize_text( text: File.read( template_path ) )

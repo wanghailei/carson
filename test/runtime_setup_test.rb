@@ -99,7 +99,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		tty_input = build_tty_input( "\n\n\n\n" )
+		# 6 prompts: remote, branch, workflow, merge, lint command, lint enforcement
+		tty_input = build_tty_input( "\n\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -109,6 +110,8 @@ class RuntimeSetupTest < Minitest::Test
 			assert_equal Carson::Runtime::EXIT_OK, status
 			output = out.string
 			assert_match( /Config saved/, output )
+			assert_match( /Lint command/, output )
+			assert_match( /Lint enforcement/, output )
 		end
 	end
 
@@ -119,7 +122,7 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "upstream", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		tty_input = build_tty_input( "2\n\n\n\n" )
+		tty_input = build_tty_input( "2\n\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			runtime = build_setup_runtime( input: tty_input )
