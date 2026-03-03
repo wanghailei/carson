@@ -15,13 +15,15 @@ Repository controls degrade when local workflows diverge, review handling is inc
 - Predictable onboarding and daily operation for repository maintainers.
 
 ## In-scope capabilities
-- Local governance commands (`onboard`, `audit`, `sync`, `prune`, `prepare`, `inspect`, `template`, `review`, `offboard`).
+- Local governance commands (`onboard`, `audit`, `sync`, `prune`, `prepare`, `inspect`, `template`, `review`, `offboard`, `refresh`, `refresh --all`).
+- Portfolio governance commands (`govern`, `housekeep`).
+- Lint policy distribution via `lint policy`.
 - Review governance via `review gate` and `review sweep`.
 - Whole-file management of selected GitHub-native policy files under `.github/*`.
 - Strict exit status contract suitable for automation.
 
 ## Out-of-scope capabilities
-- Replacing GitHub as merge authority.
+- Replacing GitHub as merge authority (Carson has optional merge authority gated by `govern.merge.authority`, but defers to GitHub rulesets and human judgement by default).
 - Deciding business-domain policy for host repositories.
 - Executing force merges or bypassing required checks.
 - Persisting Carson-specific configuration inside host repositories.

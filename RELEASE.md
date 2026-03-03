@@ -5,6 +5,14 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.13.2 — Docs Refresh
+
+### What changed
+
+- Updated `docs/define.md`: added missing in-scope commands (`govern`, `housekeep`, `refresh --all`, `lint policy`); corrected out-of-scope merge authority statement.
+- Updated `docs/plan.md`: corrected test counts, added `prompt.rb` and `runtime_refresh_all_test.rb` to file structure, added `--loop SECONDS` and `refresh --all` to CLI section, updated delivery status.
+- Updated `API.md`: added `govern` config schema and environment overrides.
+
 ## 2.13.1 — Guided Governance Registration
 
 ### What changed

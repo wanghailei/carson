@@ -99,6 +99,39 @@ Environment overrides:
 - `CARSON_WORKFLOW_STYLE`
 - `CARSON_RUBY_INDENTATION`
 - `CARSON_LINT_POLICY_SOURCE`
+- `CARSON_GOVERN_REPOS`
+- `CARSON_GOVERN_MERGE_AUTHORITY`
+- `CARSON_GOVERN_MERGE_METHOD`
+- `CARSON_GOVERN_AGENT_PROVIDER`
+- `CARSON_GOVERN_CHECK_WAIT`
+
+`govern` schema:
+
+```json
+{
+  "govern": {
+    "repos": ["~/Dev/project-a", "~/Dev/project-b"],
+    "agent": {
+      "provider": "auto",
+      "codex": {},
+      "claude": {}
+    },
+    "check_wait": 30,
+    "merge": {
+      "authority": false,
+      "method": "squash"
+    }
+  }
+}
+```
+
+`govern` semantics:
+- `repos`: list of local repo paths to govern (empty = current repo only).
+- `agent.provider`: `"auto"`, `"codex"`, or `"claude"`.
+- `agent.codex` / `agent.claude`: provider-specific options (reserved).
+- `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
+- `merge.authority`: `false` (default) — Carson does not merge until explicitly enabled.
+- `merge.method`: `"squash"` (default), `"merge"`, or `"rebase"`.
 
 `lint` schema:
 
