@@ -757,8 +757,8 @@ module Carson
 			def managed_dirty_paths
 				template_paths = config.template_managed_files + config.template_superseded_files
 				linters_glob   = Dir.glob( File.join( repo_root, ".github/linters/**/*" ) )
-				                    .select { |p| File.file?( p ) }
-				                    .map { |p| p.delete_prefix( "#{repo_root}/" ) }
+					.select { |p| File.file?( p ) }
+					.map { |p| p.delete_prefix( "#{repo_root}/" ) }
 				candidates = ( template_paths + linters_glob ).uniq
 				return [] if candidates.empty?
 
