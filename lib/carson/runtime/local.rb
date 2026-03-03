@@ -746,6 +746,9 @@ module Carson
 			end
 
 			def push_prep_commit!
+				# JIT auto-commit is for feature branches only; main is protected from direct commits.
+				return if current_branch == config.main_branch
+
 				dirty = managed_dirty_paths
 				return if dirty.empty?
 
