@@ -5,6 +5,19 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.14.0 — Superseded File Cleanup on Template Apply
+
+### What changed
+
+- `carson template apply` now automatically removes files that Carson previously managed but has since renamed or replaced. Running `carson template apply` in a governed repo after upgrading to 2.14.0 will delete `.github/carson-instructions.md` without any manual intervention.
+- `carson template check` reports superseded files present in the repo as stale, listed with a `— superseded` annotation. Exit code `2` (BLOCK) if any stale files are detected.
+- `offboard` also removes superseded files as part of full Carson cleanup.
+- `carson.md` updated to reflect the new `template apply` behaviour.
+
+### No migration required
+
+No manual steps needed. Run `carson template apply` — Carson handles the rest.
+
 ## 2.13.3 — Rename carson-instructions.md to carson.md
 
 ### What changed

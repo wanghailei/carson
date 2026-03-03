@@ -339,27 +339,34 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Template Sync Check]"
 				results = template_results
+				stale = template_superseded_present
 				drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
 				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+				stale_count = stale.count
 				results.each do |entry|
 					puts_verbose "template_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
 				end
-				puts_verbose "template_summary: total=#{results.count} drift=#{drift_count} error=#{error_count}"
+				stale.each { |file| puts_verbose "template_file: #{file} status=stale reason=superseded" }
+				puts_verbose "template_summary: total=#{results.count} drift=#{drift_count} stale=#{stale_count} error=#{error_count}"
 				unless verbose?
-					if drift_count.positive?
-						drift_files = results.select { |entry| entry.fetch( :status ) == "drift" }.map { |entry| entry.fetch( :file ) }
-						puts_line "Templates: #{drift_count} of #{results.count} drifted"
-						drift_files.each { |file| puts_line "  #{file}" }
+					if ( drift_count + stale_count ).positive?
+						summary_parts = []
+						summary_parts << "#{drift_count} of #{results.count} drifted" if drift_count.positive?
+						summary_parts << "#{stale_count} stale" if stale_count.positive?
+						puts_line "Templates: #{summary_parts.join( ", " )}"
+						results.select { |entry| entry.fetch( :status ) == "drift" }.each { |entry| puts_line "  #{entry.fetch( :file )}" }
+						stale.each { |file| puts_line "  #{file} — superseded" }
 					else
 						puts_line "Templates: #{results.count} files in sync"
 					end
 				end
 				return EXIT_ERROR if error_count.positive?
 
-				drift_count.positive? ? EXIT_BLOCK : EXIT_OK
+				( drift_count + stale_count ).positive? ? EXIT_BLOCK : EXIT_OK
 			end
 
 			# Applies managed template files as full-file writes from Carson sources.
+			# Also removes superseded files that are no longer part of the managed set.
 			def template_apply!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -367,6 +374,7 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Template Sync Apply]"
 				results = template_results
+				stale = template_superseded_present
 				applied = 0
 				results.each do |entry|
 					if entry.fetch( :status ) == "error"
@@ -386,11 +394,22 @@ module Carson
 					applied += 1
 				end
 
+				removed = 0
+				stale.each do |file|
+					file_path = resolve_repo_path!( relative_path: file, label: "template.superseded_files entry #{file}" )
+					File.delete( file_path )
+					puts_verbose "template_file: #{file} status=removed reason=superseded"
+					removed += 1
+				end
+
 				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
-				puts_verbose "template_apply_summary: updated=#{applied} error=#{error_count}"
+				puts_verbose "template_apply_summary: updated=#{applied} removed=#{removed} error=#{error_count}"
 				unless verbose?
-					if applied.positive?
-						puts_line "Templates applied (#{applied} updated)."
+					if applied.positive? || removed.positive?
+						summary_parts = []
+						summary_parts << "#{applied} updated" if applied.positive?
+						summary_parts << "#{removed} removed" if removed.positive?
+						puts_line "Templates applied (#{summary_parts.join( ", " )})."
 					else
 						puts_line "Templates in sync."
 					end
@@ -426,6 +445,13 @@ module Carson
 
 			def template_results
 				config.template_managed_files.map { |managed_file| template_result_for_file( managed_file: managed_file ) }
+			end
+
+			def template_superseded_present
+				config.template_superseded_files.select do |file|
+					file_path = resolve_repo_path!( relative_path: file, label: "template.superseded_files entry #{file}" )
+					File.file?( file_path )
+				end
 			end
 
 			# Calculates whole-file expected content and returns sync status plus apply payload.
@@ -764,7 +790,7 @@ module Carson
 			end
 
 			def offboard_cleanup_targets
-				( config.template_managed_files + [
+				( config.template_managed_files + config.template_superseded_files + [
 					".github/workflows/carson-governance.yml",
 					".github/workflows/carson_policy.yml",
 					".carson.yml",

@@ -11,8 +11,8 @@ Carson has no `commit`, `push`, or `pr` commands. Use `git` and `gh` for those. 
 **Before committing:**
 ```bash
 carson audit           # full governance check — run before every commit
-carson template check  # detect drift in .github/* managed files
-carson template apply  # fix drift if detected
+carson template check  # detect drift in .github/* managed files, including stale superseded files
+carson template apply  # fix drift and remove superseded files
 ```
 
 **Before recommending merge:**
