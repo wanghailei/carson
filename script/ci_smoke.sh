@@ -337,6 +337,8 @@ expect_exit 0 "template check passes after apply" run_carson template check
 # safe-delete (git branch -d requires the tip to be reachable from HEAD).
 git add .github >/dev/null
 git -c core.hooksPath=.git/hooks commit -m "chore: commit managed files for smoke-test baseline" >/dev/null
+# Push to origin so local main stays in sync; avoids "main ahead" audit blocks later.
+git -c core.hooksPath=.git/hooks push origin main >/dev/null
 expect_exit 1 "unknown command returns runtime/configuration error" run_carson template lint
 expect_exit 1 "lint policy requires explicit source argument" run_carson lint policy
 
