@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.11.1 — Document Philosophy, Opinions, and Configurable Defaults
+
+### What changed
+
+- **README.md** — added "Opinions" section stating Carson's five iron-rule principles (outsider boundary, centralised lint, active review, self-diagnosing output, transparent governance).
+- **MANUAL.md** — added "Defaults and Why" section: principles recap plus comprehensive reference for all ten configurable defaults with options, rationale, and how to change each one.
+- Fixed stale Ruby prerequisite in both files: `>= 4.0` → `>= 3.4`.
+
+### What users must do now
+
+Nothing. Documentation only.
+
 ## 2.11.0 — Self-Diagnosing Audit and Duplicate-Remote Prevention
 
 ### What changed
