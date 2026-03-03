@@ -39,6 +39,12 @@ module Carson
 				merge_choice = prompt_merge_method
 				choices[ "govern.merge.method" ] = merge_choice unless merge_choice.nil?
 
+				lint_command_choice = prompt_lint_command
+				choices[ "lint.command" ] = lint_command_choice unless lint_command_choice.nil?
+
+				lint_enforcement_choice = prompt_lint_enforcement
+				choices[ "lint.enforcement" ] = lint_enforcement_choice unless lint_enforcement_choice.nil?
+
 				write_setup_config( choices: choices )
 			end
 
@@ -138,6 +144,34 @@ module Carson
 					{ label: "squash — one commit per PR (recommended)", value: "squash" },
 					{ label: "rebase — linear history, individual commits", value: "rebase" },
 					{ label: "merge — merge commits", value: "merge" }
+				]
+				prompt_choice( options: options, default: 0 )
+			end
+
+			def prompt_lint_command
+				puts_line ""
+				puts_line "Lint command"
+				options = [
+					{ label: "make lint", value: "make lint" },
+					{ label: "trunk check (Recommended)", value: "trunk check" },
+					{ label: "Other (enter command)", value: :other },
+					{ label: "Skip (use per-language lint.languages)", value: nil }
+				]
+				choice = prompt_choice( options: options, default: 1 )
+
+				if choice == :other
+					prompt_custom_value( label: "Lint command" )
+				else
+					choice
+				end
+			end
+
+			def prompt_lint_enforcement
+				puts_line ""
+				puts_line "Lint enforcement"
+				options = [
+					{ label: "strict — block on lint failure (default)", value: "strict" },
+					{ label: "advisory — warn but don't block", value: "advisory" }
 				]
 				prompt_choice( options: options, default: 0 )
 			end

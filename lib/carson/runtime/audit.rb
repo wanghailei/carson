@@ -162,9 +162,43 @@ module Carson
 					report
 				end
 
-			# Enforces configured multi-language lint policy before governance passes.
+			# Enforces configured lint policy before governance passes.
+			# Runs lint.command and gates on exit code. Skips when lint.command is not set.
 			def local_lint_quality_report
+				unless config.lint_command
+					report = {
+						status: "ok",
+						skip_reason: "lint.command not configured",
+						target_source: "none",
+						target_files_count: 0,
+						blocking_languages: 0,
+						languages: []
+					}
+					puts_verbose "lint: SKIP (lint.command not configured)"
+					return report
+				end
+
+				lint_command_report
+			rescue StandardError => e
+				report = {
+					status: "block",
+					skip_reason: e.message,
+					target_source: "unknown",
+					target_files_count: 0,
+					blocking_languages: 0,
+					languages: []
+				}
+				puts_line "BLOCK: local lint quality check failed (#{e.message})."
+				report
+			end
+
+			# Runs the lint.command and returns a structured report.
+			def lint_command_report
 				target_files, target_source = lint_target_files
+				advisory = config.lint_enforcement == "advisory"
+				command_value = config.lint_command
+				command_string = command_value.is_a?( Array ) ? command_value.join( " " ) : command_value.to_s
+
 				report = {
 					status: "ok",
 					skip_reason: nil,
@@ -175,32 +209,63 @@ module Carson
 				}
 				puts_verbose "lint_target_source: #{target_source}"
 				puts_verbose "lint_target_files_total: #{target_files.count}"
-				config.lint_languages.each do |language, entry|
-					language_report = lint_language_report(
-						language: language,
-						entry: entry,
-						target_files: target_files
-					)
-					report.fetch( :languages ) << language_report
-					next unless language_report.fetch( :status ) == "block"
+				puts_verbose "lint_command: #{command_string}"
+				puts_verbose "lint_enforcement: #{config.lint_enforcement}"
 
-					report[ :status ] = "block"
-					report[ :blocking_languages ] += 1
+				args = command_string.split( /\s+/ )
+				command_name = args.first.to_s.strip
+				unless command_available_for_lint?( command_name: command_name )
+					language_report = {
+						language: "lint.command",
+						enabled: true,
+						status: "block",
+						reason: "command not available: #{command_name}",
+						file_count: target_files.count,
+						files: target_files,
+						command: args,
+						config_files: [],
+						exit_code: EXIT_BLOCK
+					}
+					report[ :languages ] << language_report
+					report[ :status ] = advisory ? "ok" : "block"
+					report[ :blocking_languages ] = advisory ? 0 : 1
+					puts_verbose "lint_command_status: #{language_report.fetch( :status )}"
+					puts_line "WARN: lint command not available: #{command_name}" if advisory
+					return report
 				end
-				puts_verbose "lint_blocking_languages: #{report.fetch( :blocking_languages )}"
-				report
-			rescue StandardError => e
-				report ||= {
-					status: "block",
-					skip_reason: nil,
-					target_source: "unknown",
-					target_files_count: 0,
-					blocking_languages: 0,
-					languages: []
+
+				stdout_text, stderr_text, success, exit_code = local_command( *args )
+				language_report = {
+					language: "lint.command",
+					enabled: true,
+					status: success ? "ok" : "block",
+					reason: success ? nil : summarise_command_output(
+						stdout_text: stdout_text,
+						stderr_text: stderr_text,
+						fallback: "lint command failed"
+					),
+					file_count: target_files.count,
+					files: target_files,
+					command: args,
+					config_files: [],
+					exit_code: exit_code
 				}
-				report[ :status ] = "block"
-				report[ :skip_reason ] = e.message
-				puts_line "BLOCK: local lint quality check failed (#{e.message})."
+				report[ :languages ] << language_report
+
+				unless success
+					if advisory
+						report[ :status ] = "ok"
+						puts_verbose "lint_command_status: advisory_warn (exit #{exit_code})"
+						puts_line "WARN: lint command failed (exit #{exit_code}) — advisory mode, not blocking."
+					else
+						report[ :status ] = "block"
+						report[ :blocking_languages ] = 1
+						puts_verbose "lint_command_status: block (exit #{exit_code})"
+					end
+				else
+					puts_verbose "lint_command_status: ok"
+				end
+
 				report
 			end
 
@@ -274,85 +339,6 @@ module Carson
 				end.compact.uniq
 			end
 
-			def lint_language_report( language:, entry:, target_files: )
-				globs = entry.fetch( :globs )
-				candidate_files = Array( target_files ).select do |path|
-					globs.any? { |pattern| pattern_matches_path?( pattern: pattern, path: path ) }
-				end
-				report = {
-					language: language,
-					enabled: entry.fetch( :enabled ),
-					status: "ok",
-					reason: nil,
-					file_count: candidate_files.count,
-					files: candidate_files,
-					command: entry.fetch( :command ),
-					config_files: entry.fetch( :config_files ),
-					exit_code: 0
-				}
-				puts_verbose "lint_language: #{language} enabled=#{report.fetch( :enabled )} files=#{report.fetch( :file_count )}"
-				if language == "ruby" && outsider_mode?
-					local_rubocop_path = File.join( repo_root, ".rubocop.yml" )
-					if File.file?( local_rubocop_path )
-						report[ :status ] = "block"
-						report[ :reason ] = "repo-local RuboCop config is forbidden: #{relative_path( local_rubocop_path )}; remove it and use ~/.carson/lint/rubocop.yml."
-						report[ :exit_code ] = EXIT_BLOCK
-						puts_verbose "lint_#{language}_status: block"
-						puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
-						puts_verbose "ACTION: remove .rubocop.yml from this repository and run carson lint setup --source <path-or-git-url>."
-						return report
-					end
-				end
-				return report unless report.fetch( :enabled )
-				return report if candidate_files.empty?
-
-				missing_config_files = entry.fetch( :config_files ).reject { |path| File.file?( path ) }
-				unless missing_config_files.empty?
-					report[ :status ] = "block"
-					report[ :reason ] = "missing config files: #{missing_config_files.join( ', ' )}"
-					report[ :exit_code ] = EXIT_BLOCK
-					puts_verbose "lint_#{language}_status: block"
-					puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
-					puts_verbose "ACTION: run carson lint setup --source <path-or-git-url> to prepare ~/.carson/lint policy files."
-					return report
-				end
-
-				command = Array( entry.fetch( :command ) )
-				command_name = command.first.to_s.strip
-				if command_name.empty?
-					report[ :status ] = "block"
-					report[ :reason ] = "missing lint command"
-					report[ :exit_code ] = EXIT_BLOCK
-					puts_verbose "lint_#{language}_status: block"
-					puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
-					return report
-				end
-				unless command_available_for_lint?( command_name: command_name )
-					report[ :status ] = "block"
-					report[ :reason ] = "command not available: #{command_name}"
-					report[ :exit_code ] = EXIT_BLOCK
-					puts_verbose "lint_#{language}_status: block"
-					puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}"
-					return report
-				end
-
-				args = expanded_lint_command_args( command: command, files: candidate_files )
-				stdout_text, stderr_text, success, exit_code = local_command( *args )
-				report[ :exit_code ] = exit_code
-				unless success
-					report[ :status ] = "block"
-					report[ :reason ] = summarise_command_output(
-						stdout_text: stdout_text,
-						stderr_text: stderr_text,
-						fallback: "lint command failed for #{language}"
-					)
-				end
-				puts_verbose "lint_#{language}_status: #{report.fetch( :status )}"
-				puts_verbose "lint_#{language}_exit: #{report.fetch( :exit_code )}"
-				puts_verbose "lint_#{language}_reason: #{report.fetch( :reason )}" unless report.fetch( :reason ).nil?
-				report
-			end
-
 			def command_available_for_lint?( command_name: )
 				return false if command_name.to_s.strip.empty?
 
@@ -371,26 +357,6 @@ module Carson
 					next false if entry.to_s.strip.empty?
 					File.executable?( File.join( entry, command_name ) )
 				end
-			end
-
-			def expanded_lint_command_args( command:, files: )
-				expanded_command = Array( command ).map do |arg|
-					text = arg.to_s
-					if text == "{files}"
-						text
-					elsif text.start_with?( "~" )
-						File.expand_path( text )
-					elsif text.include?( "/" ) && !text.start_with?( "/" )
-						File.expand_path( text, repo_root )
-					else
-						text
-					end
-				end
-				if expanded_command.include?( "{files}" )
-					return expanded_command.flat_map { |arg| arg == "{files}" ? Array( files ) : arg }
-				end
-
-				expanded_command + Array( files )
 			end
 
 			# Local command runner for repository-context tools used by audit lint checks.

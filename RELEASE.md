@@ -5,6 +5,34 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.12.0 — Language-Agnostic Lint Policy Distribution + MegaLinter
+
+### What changed
+
+- **Lint policy distribution is now language-agnostic.** `carson lint policy --source <path-or-git-url>` copies all files from the source repo root into the governed repo's `.github/linters/` directory, where MegaLinter auto-discovers them. Works for any linter config: rubocop.yml, biome.json, ruff.toml, .erb-lint.yml, etc.
+- **New `lint.command` config key.** Local audit lint is now a single user-configured command (e.g. `"make lint"`, `"trunk check"`, `["ruff", "check"]`). Replaces the old per-language `lint.languages` system entirely.
+- **New `lint.enforcement` config key.** `"strict"` (default) blocks on lint failure; `"advisory"` warns but does not block.
+- **New `lint.policy_source` config key.** Default: `wanghailei/lint.git`. Sets the default source for lint policy distribution.
+- **MegaLinter CI workflow template.** `carson onboard` now installs `.github/workflows/carson-lint.yml`, which runs MegaLinter on PRs and pushes to main.
+- **Interactive setup prompts.** `carson setup` now asks for lint command and enforcement mode.
+- **Removed `lint.languages`** — all per-language lint configuration, Ruby-specific lint runners, and hardcoded language definitions are gone.
+- **Removed `lint setup` subcommand alias** — use `carson lint policy` instead.
+- **Removed `--legacy` flag** from `carson lint policy`.
+- **Source repo layout simplified** — lint config files live at the source repo root; no `CODING/` subdirectory required.
+
+### Breaking changes
+
+- `lint.languages` config key no longer exists. If your config references it, remove it.
+- `carson lint setup` no longer works. Use `carson lint policy --source <path-or-git-url>`.
+- Lint policy files are now written to `<repo>/.github/linters/` (not `~/.carson/lint/`).
+
+### What users must do now
+
+1. Upgrade Carson to `2.12.0` and run `carson refresh`.
+2. Remove any `lint.languages` entries from your Carson config.
+3. Set `lint.command` in your config if you want local lint during audit (e.g. `"make lint"`).
+4. Run `carson lint policy --source <your-policy-repo>` to distribute linter configs to `.github/linters/`.
+
 ## 2.11.3 — Refine RubyGems Description Tone
 
 ### What changed
