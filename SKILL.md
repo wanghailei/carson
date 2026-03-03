@@ -33,7 +33,7 @@ When you see exit 2, do NOT bypass it. Read the output, fix the root cause, and 
 Carson audit output is structured as labelled key-value lines prefixed with ⧓. Key sections:
 
 - **Working Tree** — staged/unstaged status.
-- **Local Lint Quality** — per-language lint results. `lint_ruby_status: ok` means clean.
+- **Local Lint Quality** — lint command result. `lint_command_status: ok` means clean.
 - **Main Sync Status** — whether local main matches remote. If ahead, reset drift before committing.
 - **Scope Integrity Guard** — checks that commits stay within a single business intent and scope group.
 - **Audit Result** — final verdict: `status: ok` (clean), `status: attention` (advisory, not blocking), `status: block` (must fix).
@@ -99,4 +99,4 @@ Check that `govern.merge.method` in config matches what GitHub allows. If the re
 - Carson never lives inside governed repositories. No `.carson.yml`, no `bin/carson`, no `.tools/carson/`.
 - Carson-managed files in repos are limited to `.github/*` templates.
 - Carson's hooks live at `~/.carson/hooks/<version>/`, never in `.git/hooks/`.
-- Lint policy lives at `~/.carson/lint/`, seeded by `carson lint setup --source <policy-repo>`.
+- Lint policy is distributed via `carson lint policy --source <policy-repo>` into each repo's `.github/linters/`.

@@ -22,7 +22,6 @@ Carson is an autonomous governance runtime that lives on your workstation and in
 │                                               │
 │  ~/.carson/            Carson config          │
 │  ~/.carson/hooks/      Git hooks              │
-│  ~/.carson/lint/       Lint policy            │
 │  ~/.carson/cache/      Reports                │
 │  ~/.carson/govern/     Dispatch state         │
 │                                               │
@@ -45,7 +44,7 @@ This separation is Carson's defining trait — the **outsider boundary**: no Car
 Carson is opinionated about governance. These are non-negotiable principles, not configurable defaults:
 
 - **Outsider boundary** — Carson lives outside your repo, never inside. No Carson-owned artefacts in your repository. Offboarding leaves no trace.
-- **Centralised lint** — lint policy at `~/.carson/lint/`, shared across all repos. Repo-local config files are forbidden — one source of truth, zero drift.
+- **Centralised lint** — lint policy distributed from a central source into each repo's `.github/linters/`. One source of truth, zero drift.
 - **Active review** — undisposed reviewer findings block merge. Feedback must be acknowledged, not buried.
 - **Self-diagnosing output** — every message names the cause and the fix. If you need to debug Carson's output, the output failed.
 - **Transparent governance** — Carson prepares everything for merge but never oversteps. It does not make decisions for you without telling you.
@@ -54,8 +53,8 @@ Everything else — workflow style, merge method, remote name, main branch — i
 
 The data flow:
 
-1. You maintain a **policy source** — a directory or git repository containing your lint rules (e.g. `CODING/rubocop.yml`). Carson copies these to `~/.carson/lint/` via `carson lint setup`.
-2. `carson onboard` installs git hooks, synchronises `.github/*` templates, and runs a first governance audit on a host repository.
+1. You maintain a **policy source** — a directory or git repository containing your lint config files (e.g. `.rubocop.yml`, `biome.json`, `ruff.toml`). `carson lint policy --source <repo>` copies these into each governed repo's `.github/linters/`, where MegaLinter auto-discovers them.
+2. `carson onboard` installs git hooks, synchronises `.github/*` templates (including a MegaLinter CI workflow), and runs a first governance audit on a host repository.
 3. From that point, every commit triggers `carson audit` through the managed `pre-commit` hook. The same `carson audit` runs in GitHub Actions. If it passes locally, it passes in CI.
 4. `carson review gate` enforces review accountability: it blocks merge until every actionable reviewer comment has been formally acknowledged by the PR author through a **disposition comment**.
 5. `carson govern` triages all open PRs across your portfolio. Ready PRs are merged and housekept. Failing PRs get a coding agent dispatched to fix them. Stuck PRs are escalated for your attention.
@@ -75,7 +74,7 @@ The data flow:
 
 | Command | What it does |
 |---|---|
-| `carson lint setup` | Seed `~/.carson/lint/` from your policy source. |
+| `carson lint policy --source <repo>` | Distribute lint configs from policy source into `.github/linters/`. |
 | `carson onboard` | One-command baseline: hooks + templates + first audit. |
 | `carson prepare` | Install or refresh Carson-managed global hooks. |
 | `carson refresh` | Re-apply hooks, templates, and audit after upgrading Carson. |
@@ -116,10 +115,10 @@ gem install --user-install carson
 carson version
 ```
 
-**Prepare your lint policy.** A policy source is any directory (or git URL) that contains a `CODING/` folder with your lint configuration files. For Ruby, the required file is `CODING/rubocop.yml`. Carson copies these into `~/.carson/lint/` so that every governed repository uses the same rules:
+**Prepare your lint policy.** A policy source is any directory (or git URL) containing your lint configuration files (`.rubocop.yml`, `biome.json`, `ruff.toml`, etc.). Carson copies these into the governed repo's `.github/linters/` where MegaLinter auto-discovers them:
 
 ```bash
-carson lint setup --source /path/to/your-policy-repo
+carson lint policy --source /path/to/your-policy-repo
 ```
 
 **Onboard a repository:**
