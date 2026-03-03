@@ -94,7 +94,7 @@ jobs:
 
 Notes:
 - When upgrading Carson, update both `carson_ref` and `carson_version` together.
-- `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint setup`.
+- `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint policy`.
 - The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
 
 ## Daily Operations

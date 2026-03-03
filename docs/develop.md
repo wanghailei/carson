@@ -128,7 +128,7 @@ When checks are pending and the PR was recently updated (within `govern.check_wa
 │  1. INSTALL & ONBOARD                                           │
 │                                                                 │
 │  gem install carson                                             │
-│  carson lint setup --source <policy-repo>                       │
+│  carson lint policy --source <policy-repo>                       │
 │  carson onboard /path/to/repo                                   │
 │    ├── prepare  (copy hooks, write workflow_style flag)          │
 │    ├── template apply  (sync .github/* files)                   │

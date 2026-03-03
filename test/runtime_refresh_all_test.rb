@@ -144,7 +144,9 @@ private
 	def create_git_repo( parent:, name: )
 		path = File.join( parent, name )
 		FileUtils.mkdir_p( path )
-		system( "git", "init", path, out: File::NULL, err: File::NULL )
+		system( "git", "init", "--initial-branch=main", path, out: File::NULL, err: File::NULL )
+		system( "git", "-C", path, "config", "user.email", "test@test.local", out: File::NULL, err: File::NULL )
+		system( "git", "-C", path, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 		system( "git", "-C", path, "commit", "--allow-empty", "-m", "initial", out: File::NULL, err: File::NULL )
 		path
 	end
