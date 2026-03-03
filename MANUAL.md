@@ -94,7 +94,7 @@ jobs:
 
 Notes:
 - When upgrading Carson, update both `carson_ref` and `carson_version` together.
-- `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint setup`.
+- `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint policy`.
 - The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
 
 ## Daily Operations
@@ -241,7 +241,7 @@ Where lint configuration files come from and where they land.
 - Default source: **`wanghailei/lint.git`**. A central repository containing lint configs for all languages.
 - Target: **`<repo>/.github/linters/`**. MegaLinter auto-discovers configs here in CI.
 
-Change: `carson lint policy --source <path-or-git-url>` or `lint.policy_source` in config.
+Change: `carson lint policy --source <path-or-git-url>` or `lint.policy_source` in config. After changing policy, run `carson refresh --all` to propagate to all governed repositories.
 
 #### Scope integrity
 
@@ -337,6 +337,7 @@ carson template check
 
 **Hook version mismatch after upgrade**
 - Run `carson refresh` to re-apply hooks and templates for the new Carson version.
+- Run `carson refresh --all` to refresh all governed repositories at once.
 
 ## Offboard a Repository
 

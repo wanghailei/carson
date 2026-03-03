@@ -5,6 +5,12 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.13.0 — Refresh All Governed Repositories
+
+### What changed
+
+- **`carson refresh --all`** refreshes every governed repository in a single command. Iterates `govern.repos`, runs hooks + templates + audit on each, prints a per-repo summary line, and returns non-zero if any repo fails. Verbose mode streams full diagnostics per repo.
+
 ## 2.12.0 — Language-Agnostic Lint Policy Distribution + MegaLinter
 
 ### What changed

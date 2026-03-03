@@ -247,6 +247,40 @@ module Carson
 				audit_status
 			end
 
+			# Re-applies hooks, templates, and audit across all governed repositories.
+			def refresh_all!
+				repos = config.govern_repos
+				if repos.empty?
+					puts_line "ERROR: no governed repositories configured. Add repos via carson setup or govern.repos in ~/.carson/config.json."
+					return EXIT_ERROR
+				end
+
+				puts_line ""
+				puts_line "Refresh all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
+				refreshed = 0
+				failed = 0
+
+				repos.each do |repo_path|
+					repo_name = File.basename( repo_path )
+					unless Dir.exist?( repo_path )
+						puts_line "#{repo_name}: FAIL (path not found)"
+						failed += 1
+						next
+					end
+
+					status = refresh_single_repo( repo_path: repo_path, repo_name: repo_name )
+					if status == EXIT_ERROR
+						failed += 1
+					else
+						refreshed += 1
+					end
+				end
+
+				puts_line ""
+				puts_line "Refresh all complete: #{refreshed} refreshed, #{failed} failed."
+				failed.zero? ? EXIT_OK : EXIT_ERROR
+			end
+
 			# Removes Carson-managed repository integration so a host repository can retire Carson cleanly.
 			def offboard!
 				puts_verbose ""
@@ -364,6 +398,30 @@ module Carson
 			end
 
 		private
+
+			# Refreshes a single governed repository using a scoped Runtime.
+			def refresh_single_repo( repo_path:, repo_name: )
+				if verbose?
+					rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err, verbose: true )
+				else
+					rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: StringIO.new, err: StringIO.new )
+				end
+				status = rt.refresh!
+				label = refresh_status_label( status: status )
+				puts_line "#{repo_name}: #{label}"
+				status
+			rescue StandardError => e
+				puts_line "#{repo_name}: FAIL (#{e.message})"
+				EXIT_ERROR
+			end
+
+			def refresh_status_label( status: )
+				case status
+				when EXIT_OK then "OK"
+				when EXIT_BLOCK then "BLOCK"
+				else "FAIL"
+				end
+			end
 
 			def template_results
 				config.template_managed_files.map { |managed_file| template_result_for_file( managed_file: managed_file ) }

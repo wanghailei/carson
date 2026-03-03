@@ -71,7 +71,7 @@ jobs:
         env:
           CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
         run: |
-          carson lint setup --source https://github.com/wanghailei/ai.git --ref main --force
+          carson lint policy --source https://github.com/wanghailei/ai.git --ref main --force
           carson prepare
           carson audit
 
