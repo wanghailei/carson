@@ -16,4 +16,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	esac
 done
 
-carson template apply --push-prep || exit 1
+if [[ -n "${CARSON_BIN:-}" ]]; then
+	ruby "$CARSON_BIN" template apply --push-prep || exit 1
+else
+	carson template apply --push-prep || exit 1
+fi
