@@ -5,6 +5,25 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.13.3 — Rename carson-instructions.md to carson.md
+
+### What changed
+
+- Renamed `.github/carson-instructions.md` → `.github/carson.md` in both the template set and the Carson repo itself. Shorter name, consistent with Carson's naming conventions.
+- Enriched `carson.md` content: added Commands section (before committing, before merge, housekeeping), exit codes table, and clearer headings. Governance rules are unchanged.
+- Updated agent pointer files: `CLAUDE.md` and `copilot-instructions.md` now point to `AGENTS.md`; `AGENTS.md` points to `carson.md`. One extra level of indirection, zero new files to maintain.
+
+### Migration
+
+In each governed repository, run:
+
+```bash
+git rm .github/carson-instructions.md
+carson template apply
+```
+
+`carson template apply` writes the new `carson.md` and updates the pointer files. The old `carson-instructions.md` must be removed manually — Carson will not delete it automatically.
+
 ## 2.13.2 — Docs Refresh
 
 ### What changed

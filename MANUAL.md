@@ -299,10 +299,9 @@ Carson writes managed files that help interactive agents (Claude Code, Codex, Co
 
 **How it works:**
 
-- `.github/carson-instructions.md` — the single source of truth containing the full governance baseline. This file tells agents what Carson is, what commands to run, and what rules to follow.
-- `.github/CLAUDE.md` — read by Claude Code at session start. Points to `carson-instructions.md`.
-- `.github/AGENTS.md` — read by Codex at session start. Points to `carson-instructions.md`.
-- `.github/copilot-instructions.md` — read by GitHub Copilot. Points to `carson-instructions.md`.
+- `.github/AGENTS.md` — full governance baseline; read by Codex and other agents. Points to `carson.md`.
+- `.github/CLAUDE.md` — read by Claude Code at session start. Points to `AGENTS.md`.
+- `.github/copilot-instructions.md` — read by GitHub Copilot. Points to `AGENTS.md`.
 
 Each agent reads its own expected filename and follows the reference to the shared baseline. One file to maintain, zero drift across agents.
 

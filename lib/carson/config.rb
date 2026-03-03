@@ -48,7 +48,7 @@ module Carson
 					}
 				},
 				"template" => {
-					"managed_files" => [ ".github/carson-instructions.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md", ".github/workflows/carson-lint.yml" ]
+					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md", ".github/workflows/carson-lint.yml" ]
 				},
 				"lint" => {
 					"policy_source" => "wanghailei/lint.git"
