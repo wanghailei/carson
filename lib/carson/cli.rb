@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [setup|audit|sync|prune|prepare|inspect|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|lint policy --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
+				opts.banner = "Usage: carson [setup|audit|check|sync|prune|prepare|inspect|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|lint policy --source <path-or-git-url>|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|housekeep|version]"
 			end
 		end
 
@@ -264,6 +264,8 @@ module Carson
 				runtime.prepare!
 			when "inspect"
 				runtime.inspect!
+			when "check"
+				runtime.check!
 			when "onboard"
 				runtime.onboard!
 			when "refresh"
