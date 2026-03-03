@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.15.3 — Initial Commit Guard
+
+### What changed
+
+- `carson audit` and `carson check` now return success in repositories with no commits (HEAD does not exist). Previously, the pre-commit hook called `git rev-parse --abbrev-ref HEAD` which crashed, creating a chicken-and-egg problem that blocked the very first commit.
+- Shell hooks (`prepare-commit-msg`, `pre-merge-commit`) now exit cleanly when HEAD is absent, allowing the initial commit without `--no-verify`.
+
+### No migration required
+
+Run `carson prepare` in existing repositories to refresh hooks. No configuration changes needed.
+
 ## 2.15.2 — Release Guard
 
 ### What changed

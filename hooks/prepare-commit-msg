@@ -5,6 +5,9 @@ hooks_dir="$(cd "$(dirname "$0")" && pwd)"
 style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "branch")"
 [ "$style" = "trunk" ] && exit 0
 
+# Allow the very first commit in a new repository (HEAD does not exist yet).
+git rev-parse --verify HEAD >/dev/null 2>&1 || exit 0
+
 branch_name="$(git rev-parse --abbrev-ref HEAD)"
 if [[ "$branch_name" == "main" || "$branch_name" == "master" ]]; then
 	echo "Carson policy: direct commits on ${branch_name} are blocked. Work on a feature branch and merge via PR." >&2
