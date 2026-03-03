@@ -8,7 +8,7 @@ For the mental model and command overview, see `README.md`. For formal interface
 Prerequisites: Ruby `>= 3.4`, `gem` and `git` in `PATH`. `gh` (GitHub CLI) recommended for full review governance.
 
 ```bash
-gem install --user-install carson
+gem install carson
 ```
 
 If `carson` is not found after installation:
@@ -202,7 +202,7 @@ These define what Carson *is*. They are not configurable.
 - **Outsider boundary** — Carson never places its own artefacts inside a governed repository.
 - **Centralised lint** — one policy source distributed into each repo's `.github/linters/`, zero per-repo drift. MegaLinter enforces it in CI.
 - **Active review** — undisposed reviewer findings block merge; feedback must be acknowledged.
-- **Self-diagnosing output** — every message names the cause and the fix.
+- **Self-diagnosing output** — every warning and error names what went wrong, why, and what to do next.
 - **Transparent governance** — Carson prepares everything for merge but never makes decisions without telling you.
 
 ### Configurable defaults
@@ -299,10 +299,9 @@ Carson writes managed files that help interactive agents (Claude Code, Codex, Co
 
 **How it works:**
 
-- `.github/carson-instructions.md` — the single source of truth containing the full governance baseline. This file tells agents what Carson is, what commands to run, and what rules to follow.
-- `.github/CLAUDE.md` — read by Claude Code at session start. Points to `carson-instructions.md`.
-- `.github/AGENTS.md` — read by Codex at session start. Points to `carson-instructions.md`.
-- `.github/copilot-instructions.md` — read by GitHub Copilot. Points to `carson-instructions.md`.
+- `.github/AGENTS.md` — full governance baseline; read by Codex and other agents. Points to `carson.md`.
+- `.github/CLAUDE.md` — read by Claude Code at session start. Points to `AGENTS.md`.
+- `.github/copilot-instructions.md` — read by GitHub Copilot. Points to `AGENTS.md`.
 
 Each agent reads its own expected filename and follows the reference to the shared baseline. One file to maintain, zero drift across agents.
 

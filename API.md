@@ -73,7 +73,7 @@ Blocked Carson artefacts in host repositories:
 - `.tools/carson/*`
 
 Allowed Carson-managed persistence in host repositories:
-- `.github/carson-instructions.md` — governance baseline (source of truth)
+- `.github/carson.md` — governance baseline (source of truth)
 - `.github/copilot-instructions.md` — agent discovery pointer for Copilot
 - `.github/CLAUDE.md` — agent discovery pointer for Claude Code
 - `.github/AGENTS.md` — agent discovery pointer for Codex

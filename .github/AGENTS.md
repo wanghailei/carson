@@ -1,1 +1,1 @@
-Read `.github/carson-instructions.md` for repository governance rules enforced by Carson.
+Read `.github/carson.md` for repository governance rules enforced by Carson.
