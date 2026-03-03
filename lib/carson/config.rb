@@ -8,7 +8,7 @@ module Carson
 	class Config
 		attr_accessor :git_remote
 		attr_reader :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:path_groups, :template_managed_files,
+			:path_groups, :template_managed_files, :template_superseded_files,
 			:lint_policy_source,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
@@ -48,7 +48,8 @@ module Carson
 					}
 				},
 				"template" => {
-					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md", ".github/workflows/carson-lint.yml" ]
+					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md", ".github/workflows/carson-lint.yml" ],
+					"superseded_files" => [ ".github/carson-instructions.md" ]
 				},
 				"lint" => {
 					"policy_source" => "wanghailei/lint.git"
@@ -216,6 +217,7 @@ module Carson
 			@path_groups = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "path_groups" ).transform_values { |value| normalize_patterns( value: value ) }
 
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
+			@template_superseded_files = fetch_optional_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "superseded_files" )
 			lint_hash = fetch_hash( hash: data, key: "lint" )
 			@lint_policy_source = lint_hash.fetch( "policy_source", "" ).to_s.strip
 
