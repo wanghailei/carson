@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.11.0 — Self-Diagnosing Audit and Duplicate-Remote Prevention
+
+### What changed
+
+- **Audit concise output now names the remote and suggests recovery actions.** "Main sync (origin): ahead by 1 — git fetch origin, or carson setup to switch remote." instead of the opaque "Main sync: ahead by 1 — reset local drift." The remote name is visible; the fix is embedded.
+- **Setup warns when multiple remotes share the same URL.** Interactive mode annotates duplicates with `[duplicate]` and prints a warning. Silent mode logs a `duplicate_remotes:` verbose line. URL normalisation treats SSH and HTTPS variants as equal (`git@github.com:user/repo.git` matches `https://github.com/user/repo`).
+
+### What users must do now
+
+1. Upgrade Carson to `2.11.0`.
+2. If you have duplicate remotes (e.g. both `origin` and `github` pointing to the same URL), remove the stale one with `git remote remove <name>`.
+
 ## 2.10.0 — Lower Ruby Requirement to 3.4
 
 ### What changed
