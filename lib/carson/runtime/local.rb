@@ -766,7 +766,10 @@ module Carson
 				return [] if candidates.empty?
 
 				stdout_text, = git_capture_soft( "status", "--porcelain", "--", *candidates )
-				stdout_text.to_s.lines.map { |l| l[ 3.. ].strip }.reject( &:empty? )
+				stdout_text.to_s.lines
+					.reject { |l| l.start_with?( "??" ) }
+					.map { |l| l[ 3.. ].strip }
+					.reject( &:empty? )
 			end
 
 			def inside_git_work_tree?
