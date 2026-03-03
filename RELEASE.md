@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.11.3 — Refine RubyGems Description Tone
+
+### What changed
+
+- **Gemspec** — rewrote summary and description with engineer-professional tone. Factual, concrete, no slogans.
+
+### What users must do now
+
+Nothing. Metadata only.
+
 ## 2.11.2 — Improve RubyGems Summary and Description
 
 ### What changed
