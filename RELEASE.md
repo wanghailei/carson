@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.15.2 — Release Guard
+
+### What changed
+
+- `release.yml` now fails with a clear error if `RELEASE.md` is missing an entry for the version being released. Previously it silently fell back to `"Release $version"`, creating GitHub Releases with no content.
+- Recovery path: add the missing `RELEASE.md` entry in a commit, then re-dispatch the release workflow manually via `workflow_dispatch`.
+
+### No migration required
+
+No configuration or workflow changes needed.
+
 ## 2.15.1 — Codex Review Fixes
 
 ### What changed
