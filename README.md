@@ -61,7 +61,7 @@ Carson is opinionated about governance. These are non-negotiable principles, not
 - **Self-diagnosing output** — every message names the cause and the fix. If you need to debug Carson's output, the output failed.
 - **Transparent governance** — Carson prepares everything for merge but never oversteps. It does not make decisions for you without telling you.
 
-Everything else — workflow style, merge method, remote name, main branch — is a configurable default chosen during `carson setup`. See `MANUAL.md` for the full list of defaults and why each was chosen.
+Everything else bends to your preference. Which branch is main, how PRs are merged, which repositories to govern, which coding agent to dispatch, where your lint policy lives — Carson asks during setup and remembers. Sensible defaults are provided; you only change what matters to you. See `MANUAL.md` for the full list.
 
 ## Quickstart
 
