@@ -12,12 +12,17 @@ VALIDATE_ALL_CODEBASE: false
 # Exclude vendored, generated, and dependency directories.
 FILTER_REGEX_EXCLUDE: "(vendor/|node_modules/|public/packs|public/assets|tmp/|log/|coverage/)"
 
+# Lint code, not prose. Disable documentation-oriented descriptors.
+DISABLE:
+  - MARKDOWN
+  - RST
+  - SPELL
+
 # Disable linters that are too noisy without per-project configuration.
 # checkov and kics are IaC security scanners — they flag Carson's own
 # workflow permissions (issues: write, pull-requests: write) as overly
 # permissive, but MegaLinter needs these to post PR comments.
 DISABLE_LINTERS:
-  - SPELL_CSPELL
   - COPYPASTE_JSCPD
   - HTML_DJLINT
   - REPOSITORY_CHECKOV
