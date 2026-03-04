@@ -12,8 +12,18 @@ VALIDATE_ALL_CODEBASE: false
 # Exclude vendored, generated, and dependency directories.
 FILTER_REGEX_EXCLUDE: "(vendor/|node_modules/|public/packs|public/assets|tmp/|log/|coverage/)"
 
+# Lint code, not prose. Disable documentation-oriented descriptors.
+DISABLE:
+  - MARKDOWN
+  - RST
+  - SPELL
+
 # Disable linters that are too noisy without per-project configuration.
+# checkov/kics flag Carson workflow permissions as overly permissive.
+# devskim floods Rails apps with false-positive security warnings.
 DISABLE_LINTERS:
-  - SPELL_CSPELL
   - COPYPASTE_JSCPD
   - HTML_DJLINT
+  - REPOSITORY_CHECKOV
+  - REPOSITORY_DEVSKIM
+  - REPOSITORY_KICS

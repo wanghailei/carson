@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.17.3 — Disable DevSkim
+
+### What changed
+
+- Disabled `REPOSITORY_DEVSKIM` in MegaLinter config. DevSkim floods Rails apps with false-positive security warnings (78 warnings on a fresh Rails 8 scaffold).
+
+### No migration required
+
+Run `carson refresh` — the updated template propagates automatically.
+
 ## 2.17.2 — Lint Code, Not Prose
 
 ### What changed
