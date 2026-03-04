@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.15.4 — Lint Workflow Fix
+
+### What changed
+
+- Removed explicit `LINTER_RULES_PATH: .github/linters` from the Carson Lint workflow template. MegaLinter v8 crashes with `ValueError` when the directory does not exist. The path is already MegaLinter's default — omitting it lets MegaLinter use `.github/linters/` when present and silently skip when absent.
+
+### Migration
+
+Run `carson refresh` in governed repositories to pick up the updated workflow.
+
 ## 2.15.3 — Initial Commit Guard
 
 ### What changed
