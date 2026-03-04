@@ -8,7 +8,7 @@ module Carson
 	class Config
 		attr_accessor :git_remote
 		attr_reader :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:path_groups, :template_managed_files, :template_superseded_files,
+			:path_groups, :template_managed_files, :template_superseded_files, :template_canonical,
 			:lint_policy_source,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
@@ -48,8 +48,9 @@ module Carson
 					}
 				},
 				"template" => {
-					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md", ".github/workflows/carson-lint.yml", ".github/.mega-linter.yml" ],
-					"superseded_files" => [ ".github/carson-instructions.md" ]
+					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md" ],
+					"superseded_files" => [ ".github/carson-instructions.md", ".github/workflows/carson-lint.yml", ".github/.mega-linter.yml" ],
+					"canonical" => nil
 				},
 				"lint" => {
 					"policy_source" => "wanghailei/lint.git"
@@ -218,6 +219,8 @@ module Carson
 
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
 			@template_superseded_files = fetch_optional_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "superseded_files" )
+			@template_canonical = fetch_optional_path( hash: fetch_hash( hash: data, key: "template" ), key: "canonical" )
+			resolve_canonical_files!
 			lint_hash = fetch_hash( hash: data, key: "lint" )
 			@lint_policy_source = lint_hash.fetch( "policy_source", "" ).to_s.strip
 
@@ -346,6 +349,29 @@ module Carson
 				File.expand_path( path )
 			rescue ArgumentError
 				path
+			end
+
+			# Returns an expanded path string, or nil when the value is absent/blank.
+			def fetch_optional_path( hash:, key: )
+				value = hash[ key ]
+				return nil if value.nil?
+				text = value.to_s.strip
+				return nil if text.empty?
+				safe_expand_path( text )
+			end
+
+			# Discovers files in the canonical directory and appends them to managed_files.
+			# Canonical files mirror the .github/ structure and are synced alongside Carson's own governance files.
+			def resolve_canonical_files!
+				return if @template_canonical.nil? || @template_canonical.empty?
+				return unless Dir.exist?( @template_canonical )
+
+				Dir.glob( File.join( @template_canonical, "**", "*" ) ).sort.each do |absolute_path|
+					next unless File.file?( absolute_path )
+					relative = absolute_path.delete_prefix( "#{@template_canonical}/" )
+					managed_path = ".github/#{relative}"
+					@template_managed_files << managed_path unless @template_managed_files.include?( managed_path )
+				end
 			end
 	end
 end

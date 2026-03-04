@@ -99,16 +99,33 @@ Notes:
 - `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint policy`.
 - The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
 
-### MegaLinter in CI
+### Canonical Templates
 
-Carson manages a MegaLinter workflow template (`carson-lint.yml`) that is applied to governed repositories via `carson template apply`. MegaLinter auto-discovers lint configs from `.github/linters/` — the same directory populated by `carson lint policy`. This means:
+Carson manages 5 governance files (carson.md, CLAUDE.md, AGENTS.md, copilot-instructions.md, pull_request_template.md). Beyond those, you can tell Carson about your own canonical `.github/` files — CI workflows, linter configs, dependabot settings, anything that belongs in `.github/`.
 
-- **Policy source** (your central lint repo) defines the rules.
-- **`carson lint policy`** distributes the rules into each repo.
-- **MegaLinter** (in GitHub Actions) enforces the rules.
-- **`carson govern`** reads CI check status (including MegaLinter results) and acts on it.
+Set `template.canonical` in `~/.carson/config.json`:
 
-Carson's `audit` gates on CI check status reported by GitHub — it does not duplicate MegaLinter's work locally. If MegaLinter fails in CI, `carson govern` classifies the PR accordingly and can dispatch a coding agent to fix the issues.
+```json
+{
+  "template": {
+    "canonical": "~/AI/LINT"
+  }
+}
+```
+
+That directory mirrors the `.github/` structure:
+
+```
+~/AI/LINT/
+├── workflows/
+│   └── lint.yml          → deployed to .github/workflows/lint.yml
+├── .mega-linter.yml      → deployed to .github/.mega-linter.yml
+└── dependabot.yml        → deployed to .github/dependabot.yml
+```
+
+Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. `carson template check` detects drift, `carson template apply` writes them, and `carson refresh` propagates them to the remote.
+
+**Why this design.** Lint, CI, and tooling config are personal decisions — not governance decisions. Carson's job is to deliver your canonical files reliably, not to decide what they should contain.
 
 ## Daily Operations
 
@@ -200,7 +217,7 @@ Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. Th
 These define what Carson *is*. They are not configurable.
 
 - **Outsider boundary** — Carson never places its own artefacts inside a governed repository.
-- **Centralised lint** — one policy source distributed into each repo's `.github/linters/`, zero per-repo drift. MegaLinter enforces it in CI.
+- **Canonical delivery** — your canonical `.github/` files distributed into each governed repo, zero per-repo drift. What those files contain is your call.
 - **Active review** — undisposed reviewer findings block merge; feedback must be acknowledged.
 - **Self-diagnosing output** — every warning and error names what went wrong, why, and what to do next.
 - **Transparent governance** — Carson prepares everything for merge but never makes decisions without telling you.

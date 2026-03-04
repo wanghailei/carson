@@ -5,6 +5,30 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.19.0 — Canonical Templates, Lint Removed
+
+### What changed
+
+- **Lint templates removed from Carson.** `carson-lint.yml` and `.mega-linter.yml` are no longer managed by Carson. Both are now superseded — `carson refresh` will delete them from governed repos automatically. Lint is a personal decision, not a governance decision.
+- **New `template.canonical` config key.** Point Carson at a directory of your canonical `.github/` files and Carson syncs them to all governed repos alongside its own governance files. You control the content; Carson handles the delivery.
+
+### Migration
+
+1. Run `carson refresh` in each governed repo. Carson will remove the old lint files automatically.
+2. If you want lint, create your own workflow files and set `template.canonical` in `~/.carson/config.json`:
+
+```json
+{
+  "template": {
+    "canonical": "~/AI/LINT"
+  }
+}
+```
+
+That directory mirrors `.github/` structure — for example, `workflows/lint.yml` deploys to `.github/workflows/lint.yml`.
+
+3. Run `carson refresh` again to deploy your canonical files.
+
 ## 2.18.0 — Audit Attention Detail
 
 ### What changed
