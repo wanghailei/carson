@@ -952,10 +952,12 @@ class RuntimeGovernTest < Minitest::Test
 
 	# --- Review bot_usernames config tests ---
 
-	def test_config_review_bot_usernames_default_empty
+	def test_config_review_bot_usernames_default_populated
 		with_env( "CARSON_CONFIG_FILE" => "" ) do
 			c = Carson::Config.load( repo_root: "." )
-			assert_equal [], c.review_bot_usernames
+			assert_includes c.review_bot_usernames, "gemini-code-assist[bot]"
+			assert_includes c.review_bot_usernames, "github-actions[bot]"
+			assert_includes c.review_bot_usernames, "dependabot[bot]"
 		end
 	end
 

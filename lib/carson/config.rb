@@ -59,7 +59,7 @@ module Carson
 					"style" => "branch"
 				},
 				"review" => {
-					"bot_usernames" => [],
+					"bot_usernames" => [ "gemini-code-assist[bot]", "github-actions[bot]", "dependabot[bot]" ],
 					"wait_seconds" => 10,
 					"poll_seconds" => 15,
 					"max_polls" => 20,

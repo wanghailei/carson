@@ -27,6 +27,7 @@ module Carson
 
 					Array( details.fetch( :comments ) ).each do |comment|
 						next if comment.fetch( :author ) == pr_author
+						next if bot_username?( author: comment.fetch( :author ) )
 						hits = matched_risk_keywords( text: comment.fetch( :body ) )
 						next if hits.empty?
 						event_time = parse_time_or_nil( text: comment.fetch( :created_at ) )
@@ -43,6 +44,7 @@ module Carson
 
 					Array( details.fetch( :reviews ) ).each do |review|
 						next if review.fetch( :author ) == pr_author
+						next if bot_username?( author: review.fetch( :author ) )
 						hits = matched_risk_keywords( text: review.fetch( :body ) )
 						next if hits.empty?
 						event_time = parse_time_or_nil( text: review.fetch( :created_at ) )
@@ -59,6 +61,7 @@ module Carson
 
 					Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) }.each do |comment|
 						next if comment.fetch( :author ) == pr_author
+						next if bot_username?( author: comment.fetch( :author ) )
 						hits = matched_risk_keywords( text: comment.fetch( :body ) )
 						next if hits.empty?
 						event_time = parse_time_or_nil( text: comment.fetch( :created_at ) )
