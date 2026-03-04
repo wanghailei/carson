@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.17.2 — Lint Code, Not Prose
+
+### What changed
+
+- Disabled entire `MARKDOWN`, `RST`, and `SPELL` descriptors in MegaLinter config. Carson governs code quality — prose linting is out of scope and creates noise on documentation-heavy repos.
+- Removed now-redundant `SPELL_CSPELL` from `DISABLE_LINTERS` (covered by the descriptor-level `SPELL` disable).
+
+### No migration required
+
+Run `carson refresh` — the updated template propagates automatically.
+
 ## 2.17.1 — Disable IaC Security Scanners
 
 ### What changed
