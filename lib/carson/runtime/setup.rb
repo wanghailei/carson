@@ -39,6 +39,8 @@ module Carson
 				merge_choice = prompt_merge_method
 				choices[ "govern.merge.method" ] = merge_choice unless merge_choice.nil?
 
+				canonical_choice = prompt_canonical_template
+				choices[ "template.canonical" ] = canonical_choice unless canonical_choice.nil?
 
 				write_setup_config( choices: choices )
 			end
@@ -141,6 +143,20 @@ module Carson
 					{ label: "merge — merge commits", value: "merge" }
 				]
 				prompt_choice( options: options, default: 0 )
+			end
+
+			def prompt_canonical_template
+				puts_line ""
+				puts_line "Canonical template directory"
+				current = config.template_canonical
+				if current && !current.empty?
+					puts_line "  Currently set to: #{current}"
+					puts_line "  Leave blank to keep current value."
+				else
+					puts_line "  A directory of .github/ files to sync across governed repos."
+					puts_line "  Leave blank to skip for now."
+				end
+				prompt_custom_value( label: "Path" )
 			end
 
 			def prompt_choice( options:, default: )
