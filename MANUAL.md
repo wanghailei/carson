@@ -345,6 +345,7 @@ Common environment overrides:
 | `CARSON_REVIEW_DISPOSITION_PREFIX` | Required prefix for disposition comments. |
 | `CARSON_REVIEW_SWEEP_WINDOW_DAYS` | Lookback window for review sweep. |
 | `CARSON_REVIEW_SWEEP_STATES` | PR states to include in sweep. |
+| `CARSON_REVIEW_BOT_USERNAMES` | Comma-separated bot usernames to ignore in review gate and sweep. |
 | `CARSON_WORKFLOW_STYLE` | Workflow style override (`branch` or `trunk`). |
 | `CARSON_RUBY_INDENTATION` | Ruby indentation policy (`tabs`, `spaces`, or `either`). |
 

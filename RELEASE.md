@@ -5,6 +5,13 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.21.0 — Review Sweep Skips Bot Authors
+
+### What changed
+
+- **Review sweep now skips bot-authored findings.** The sweep uses the same `bot_username?` guard as the review gate — comments, reviews, and review thread comments from configured bot usernames are excluded from sweep findings.
+- **Default bot usernames populated.** `review.bot_usernames` now ships with `gemini-code-assist[bot]`, `github-actions[bot]`, and `dependabot[bot]`. Previously empty, requiring manual configuration. Override via `CARSON_REVIEW_BOT_USERNAMES` or `~/.carson/config.json`.
+
 ## 2.20.0 — Prune Orphan Branches
 
 ### What changed
