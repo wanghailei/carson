@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.16.0 — Auto-propagate Template Changes
+
+### What changed
+
+- `carson refresh` now auto-propagates template updates to the remote. When template drift is detected and applied locally, Carson creates a git worktree, writes the updated templates, commits, and pushes — no manual git workflow required.
+- **Branch workflow** (default): pushes to `carson/template-sync` and creates (or updates) a PR. Re-running refresh force-pushes updates to the same branch.
+- **Trunk workflow**: pushes template changes directly to main.
+- The worktree approach ensures zero disturbance to the user's working tree and current branch.
+- `carson refresh --all` now surfaces PR URLs and push refs in the per-repo summary line.
+- New public `template_sync_result` accessor on `Runtime` for cross-module access to propagation outcomes.
+
+### Migration
+
+No configuration changes needed. Run `carson refresh` — template updates are now automatically pushed upstream.
+
 ## 2.15.4 — Lint Workflow Fix
 
 ### What changed
