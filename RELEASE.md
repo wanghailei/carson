@@ -5,6 +5,20 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.17.0 — MegaLinter Configuration Template
+
+### What changed
+
+- Added `.mega-linter.yml` as a Carson-managed template, deployed to `.github/.mega-linter.yml` in governed repositories. Previously MegaLinter ran with its own defaults, ignoring project-level configs and producing thousands of false positives.
+- **Project configs first**: `LINTER_RULES_PATH: "."` tells MegaLinter to use project-root config files (`.rubocop.yml`, `.eslintrc`, etc.) instead of built-in defaults. Fixes the RuboCop indentation mismatch.
+- **Vendor exclusions**: `FILTER_REGEX_EXCLUDE` skips `vendor/`, `node_modules/`, `public/packs`, `public/assets`, `tmp/`, `log/`, and `coverage/`.
+- **Noisy linters disabled**: `SPELL_CSPELL` (needs per-project dictionary), `COPYPASTE_JSCPD` (false positives on generated code), `HTML_DJLINT` (designed for Jinja, not ERB).
+- Updated `carson-lint.yml` workflow with `MEGALINTER_CONFIG: .github/.mega-linter.yml` to point MegaLinter at the non-default config location.
+
+### Migration
+
+Run `carson refresh` — the new template is applied automatically and propagated to governed repos.
+
 ## 2.16.1 — Template Propagation Cleanup Fix
 
 ### What changed
