@@ -46,7 +46,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
 			canonical_dir = File.join( tmp_dir, "canonical" )
 			FileUtils.mkdir_p( canonical_dir )
-			File.write( File.join( canonical_dir, "dependabot.yml" ), "version: 2\n" )
+			File.write( File.join( canonical_dir, "labeler.yml" ), "bug:\n" )
 
 			repo_root = create_git_repo( parent: tmp_dir, name: "repo" )
 			tool_root = File.expand_path( "..", __dir__ )
@@ -71,9 +71,9 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				runtime.template_apply!
 
 				# Verify the canonical file was written to the repo.
-				deployed_path = File.join( repo_root, ".github", "dependabot.yml" )
+				deployed_path = File.join( repo_root, ".github", "labeler.yml" )
 				assert File.file?( deployed_path ), "Expected canonical file to be deployed"
-				assert_equal "version: 2\n", File.read( deployed_path )
+				assert_equal "bug:\n", File.read( deployed_path )
 			end
 		end
 	end

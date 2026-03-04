@@ -101,7 +101,7 @@ Notes:
 
 ### Canonical Templates
 
-Carson manages 5 governance files (carson.md, CLAUDE.md, AGENTS.md, copilot-instructions.md, pull_request_template.md). Beyond those, you can tell Carson about your own canonical `.github/` files — CI workflows, linter configs, dependabot settings, anything that belongs in `.github/`.
+Carson manages 5 governance files (carson.md, CLAUDE.md, AGENTS.md, copilot-instructions.md, pull_request_template.md). Beyond those, you can tell Carson about your own canonical `.github/` files — CI workflows, linter configs, labeller rules, anything that belongs in `.github/`.
 
 Set `template.canonical` in `~/.carson/config.json`:
 
@@ -120,7 +120,7 @@ That directory mirrors the `.github/` structure:
 ├── workflows/
 │   └── lint.yml          → deployed to .github/workflows/lint.yml
 ├── .mega-linter.yml      → deployed to .github/.mega-linter.yml
-└── dependabot.yml        → deployed to .github/dependabot.yml
+└── labeler.yml           → deployed to .github/labeler.yml
 ```
 
 Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. `carson template check` detects drift, `carson template apply` writes them, and `carson refresh` propagates them to the remote.
