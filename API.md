@@ -79,7 +79,7 @@ Allowed Carson-managed persistence in host repositories:
 - `.github/CLAUDE.md` — agent discovery pointer for Claude Code
 - `.github/AGENTS.md` — agent discovery pointer for Codex
 - `.github/pull_request_template.md` — PR template
-- `.github/workflows/carson-lint.yml` — MegaLinter CI workflow
+- Any file discovered from `template.canonical` — user's canonical `.github/` files
 
 ## Configuration interface
 
@@ -133,6 +133,19 @@ Environment overrides:
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
 - `merge.authority`: `true` (default) — Carson may merge autonomously. Set to `false` to require explicit enablement.
 - `merge.method`: `"squash"` (default), `"merge"`, or `"rebase"`.
+
+`template` schema:
+
+```json
+{
+  "template": {
+    "canonical": "~/AI/LINT"
+  }
+}
+```
+
+`template` semantics:
+- `canonical`: path to a directory of canonical `.github/` files. Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. The directory mirrors `.github/` structure — `workflows/lint.yml` deploys to `.github/workflows/lint.yml`. Default: `nil` (no canonical files).
 
 `lint` schema:
 

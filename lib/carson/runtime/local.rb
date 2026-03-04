@@ -483,10 +483,8 @@ module Carson
 			# Also removes superseded files present in the worktree.
 			def template_propagate_write_files!( worktree_dir: )
 				config.template_managed_files.each do |managed_file|
-					relative_within_github = managed_file.delete_prefix( ".github/" )
-					template_path = File.join( github_templates_dir, relative_within_github )
-					template_path = File.join( github_templates_dir, File.basename( managed_file ) ) unless File.file?( template_path )
-					next unless File.file?( template_path )
+					template_path = template_source_path( managed_file: managed_file )
+					next if template_path.nil?
 
 					target_path = File.join( worktree_dir, managed_file )
 					FileUtils.mkdir_p( File.dirname( target_path ) )
@@ -665,12 +663,8 @@ module Carson
 
 			# Calculates whole-file expected content and returns sync status plus apply payload.
 			def template_result_for_file( managed_file: )
-				# Try subdirectory-aware path first (e.g. .github/workflows/carson-lint.yml),
-				# then fall back to flat basename lookup for backward compatibility.
-				relative_within_github = managed_file.delete_prefix( ".github/" )
-				template_path = File.join( github_templates_dir, relative_within_github )
-				template_path = File.join( github_templates_dir, File.basename( managed_file ) ) unless File.file?( template_path )
-				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil } unless File.file?( template_path )
+				template_path = template_source_path( managed_file: managed_file )
+				return { file: managed_file, status: "error", reason: "missing template #{File.basename( managed_file )}", applied_content: nil } if template_path.nil?
 
 				expected_content = normalize_text( text: File.read( template_path ) )
 				file_path = resolve_repo_path!( relative_path: managed_file, label: "template.managed_files entry #{managed_file}" )
@@ -690,6 +684,28 @@ module Carson
 			# GitHub managed template source directory inside Carson repository.
 			def github_templates_dir
 				File.join( tool_root, "templates", ".github" )
+			end
+
+			# Resolves the source file path for a managed template.
+			# Checks the user's canonical directory first, then falls back to Carson's built-in templates.
+			def template_source_path( managed_file: )
+				relative_within_github = managed_file.delete_prefix( ".github/" )
+
+				# Canonical source: the user's canonical .github/ files.
+				canonical = config.template_canonical
+				if canonical && !canonical.empty?
+					canonical_path = File.join( canonical, relative_within_github )
+					return canonical_path if File.file?( canonical_path )
+				end
+
+				# Carson built-in templates: subdirectory-aware path first, then flat basename fallback.
+				template_path = File.join( github_templates_dir, relative_within_github )
+				return template_path if File.file?( template_path )
+
+				basename_path = File.join( github_templates_dir, File.basename( managed_file ) )
+				return basename_path if File.file?( basename_path )
+
+				nil
 			end
 
 			# Canonical hook template location inside Carson repository.
