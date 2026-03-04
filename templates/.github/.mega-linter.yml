@@ -13,7 +13,12 @@ VALIDATE_ALL_CODEBASE: false
 FILTER_REGEX_EXCLUDE: "(vendor/|node_modules/|public/packs|public/assets|tmp/|log/|coverage/)"
 
 # Disable linters that are too noisy without per-project configuration.
+# checkov and kics are IaC security scanners — they flag Carson's own
+# workflow permissions (issues: write, pull-requests: write) as overly
+# permissive, but MegaLinter needs these to post PR comments.
 DISABLE_LINTERS:
   - SPELL_CSPELL
   - COPYPASTE_JSCPD
   - HTML_DJLINT
+  - REPOSITORY_CHECKOV
+  - REPOSITORY_KICS

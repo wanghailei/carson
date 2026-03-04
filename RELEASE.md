@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.17.1 — Disable IaC Security Scanners
+
+### What changed
+
+- Disabled `REPOSITORY_CHECKOV` and `REPOSITORY_KICS` in the MegaLinter config template. Both are IaC security scanners that flag Carson's own workflow permissions (`issues: write`, `pull-requests: write`) as overly permissive — but MegaLinter needs these to post PR comments. Same false positive in every governed repo.
+
+### No migration required
+
+Run `carson refresh` — the updated template propagates automatically.
+
 ## 2.17.0 — MegaLinter Configuration Template
 
 ### What changed
