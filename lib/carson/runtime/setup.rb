@@ -376,6 +376,22 @@ module Carson
 				input.start_with?( "y" )
 			end
 
+			# Removes a repo path from govern.repos in global config.
+			def remove_govern_repo!( repo_path: )
+				config_path = Config.global_config_path( repo_root: repo_root )
+				return if config_path.empty? || !File.file?( config_path )
+
+				existing_data = load_existing_config( path: config_path )
+				repos = Array( existing_data.dig( "govern", "repos" ) )
+				updated = repos.reject { |entry| File.expand_path( entry ) == File.expand_path( repo_path ) }
+				return if updated.length == repos.length
+
+				existing_data[ "govern" ] ||= {}
+				existing_data[ "govern" ][ "repos" ] = updated
+				File.write( config_path, JSON.pretty_generate( existing_data ) )
+				reload_config_after_setup!
+			end
+
 			# Appends a repo path to govern.repos without replacing the array via deep_merge.
 			def append_govern_repo!( repo_path: )
 				config_path = Config.global_config_path( repo_root: repo_root )

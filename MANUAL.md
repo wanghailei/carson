@@ -362,7 +362,7 @@ To retire Carson from a repository:
 carson offboard /path/to/your-repo
 ```
 
-This removes Carson-managed host artefacts and unsets `core.hooksPath` when it points to Carson-managed global hooks.
+This removes Carson-managed host artefacts, unsets `core.hooksPath` when it points to Carson-managed global hooks, and deregisters the repository from `govern.repos` so `carson govern` and `carson refresh --all` no longer target it.
 
 ## Related Documents
 
