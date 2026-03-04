@@ -20,7 +20,7 @@ carson <command> [subcommand] [arguments]
 | `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. |
 | `carson prepare` | Install or refresh Carson-managed global hooks. |
 | `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. |
-| `carson offboard [repo_path]` | Remove Carson-managed host artefacts and detach Carson hooks path where applicable. |
+| `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
 
 ### Daily commands
 

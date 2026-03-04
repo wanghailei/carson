@@ -361,6 +361,90 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	# --- Governance deregistration tests ---
+
+	def test_remove_govern_repo_removes_registered_path
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ "/tmp/test-repo" ] } } ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			runtime.send( :remove_govern_repo!, repo_path: "/tmp/test-repo" )
+
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" ) || []
+			assert_empty repos
+		end
+	end
+
+	def test_remove_govern_repo_preserves_other_repos
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ "/tmp/repo-a", "/tmp/repo-b", "/tmp/repo-c" ] } } ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			runtime.send( :remove_govern_repo!, repo_path: "/tmp/repo-b" )
+
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" )
+			assert_equal [ "/tmp/repo-a", "/tmp/repo-c" ], repos
+		end
+	end
+
+	def test_remove_govern_repo_noop_when_not_registered
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		original = { "govern" => { "repos" => [ "/tmp/repo-a" ] }, "workflow" => { "style" => "trunk" } }
+		File.write( config_path, JSON.generate( original ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			runtime.send( :remove_govern_repo!, repo_path: "/tmp/not-registered" )
+
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal [ "/tmp/repo-a" ], saved.dig( "govern", "repos" )
+			assert_equal "trunk", saved.dig( "workflow", "style" ), "existing config should be untouched"
+		end
+	end
+
+	def test_offboard_deregisters_govern_repo
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		expanded_repo = File.expand_path( @repo_root )
+
+		# Onboard first (non-interactive) to install hooks + register govern
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ expanded_repo ] } } ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			# Verify repo is registered
+			pre_config = JSON.parse( File.read( config_path ) )
+			assert_includes pre_config.dig( "govern", "repos" ), expanded_repo
+
+			# Offboard
+			out = StringIO.new
+			runtime = build_onboard_runtime( input: StringIO.new, out_stream: out )
+			status = runtime.offboard!
+			assert_equal Carson::Runtime::EXIT_OK, status
+
+			# Verify repo is deregistered
+			post_config = JSON.parse( File.read( config_path ) )
+			repos = post_config.dig( "govern", "repos" ) || []
+			refute_includes repos, expanded_repo
+		end
+	end
+
+
 private
 
 	def build_setup_runtime( input:, out_stream: nil )
