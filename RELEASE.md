@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.16.1 — Template Propagation Cleanup Fix
+
+### What changed
+
+- Template propagation now deletes the local `carson/template-sync` branch after worktree cleanup. Previously, the worktree was removed but the local branch it created was left behind in the governed repository, polluting the user's branch list.
+
+### No migration required
+
+Run `carson refresh` — the fix takes effect immediately. Stale `carson/template-sync` branches in governed repos can be removed with `git branch -D carson/template-sync`.
+
 ## 2.16.0 — Auto-propagate Template Changes
 
 ### What changed

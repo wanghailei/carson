@@ -591,10 +591,11 @@ module Carson
 				pr_url
 			end
 
-			# Removes the worktree regardless of state.
+			# Removes the worktree and the local sync branch it created.
 			def template_propagate_cleanup!( worktree_dir: )
 				git_run( "worktree", "remove", "--force", worktree_dir )
-				puts_verbose "template_propagate: worktree cleaned up"
+				git_run( "branch", "-D", TEMPLATE_SYNC_BRANCH )
+				puts_verbose "template_propagate: worktree and local branch cleaned up"
 			rescue StandardError => e
 				puts_verbose "template_propagate: cleanup warning (#{e.message})"
 			end
