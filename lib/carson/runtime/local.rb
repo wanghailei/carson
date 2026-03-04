@@ -34,35 +34,45 @@ module Carson
 				git_system!( "switch", start_branch ) if switched && branch_exists?( branch_name: start_branch )
 			end
 
-			# Removes stale local branches that track remote refs already deleted upstream.
+			# Removes stale local branches (gone upstream) and orphan branches (no tracking) with merged PR evidence.
 			def prune!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
 				git_system!( "fetch", config.git_remote, "--prune" )
 				active_branch = current_branch
-				stale_branches = stale_local_branches
-				return prune_no_stale_branches if stale_branches.empty?
+				counters = { deleted: 0, skipped: 0 }
 
-				counters = prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch )
+				stale_branches = stale_local_branches
+				prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch, counters: counters )
+
+				orphan_branches = orphan_local_branches( active_branch: active_branch )
+				prune_orphan_branch_entries( orphan_branches: orphan_branches, counters: counters )
+
+				return prune_no_stale_branches if counters.fetch( :deleted ).zero? && counters.fetch( :skipped ).zero?
+
 				puts_verbose "prune_summary: deleted=#{counters.fetch( :deleted )} skipped=#{counters.fetch( :skipped )}"
 				unless verbose?
-					puts_line "Pruned #{counters.fetch( :deleted )} stale branch#{plural_suffix( count: counters.fetch( :deleted ) )}."
+					deleted_count = counters.fetch( :deleted )
+					if deleted_count.zero?
+						puts_line "No stale branches."
+					else
+						puts_line "Pruned #{deleted_count} stale branch#{plural_suffix( count: deleted_count )}."
+					end
 				end
 				EXIT_OK
 			end
 
 			def prune_no_stale_branches
 				if verbose?
-					puts_line "OK: no stale local branches tracking deleted #{config.git_remote} branches."
+					puts_line "OK: no stale or orphan branches to prune."
 				else
 					puts_line "No stale branches."
 				end
 				EXIT_OK
 			end
 
-			def prune_stale_branch_entries( stale_branches:, active_branch: )
-				counters = { deleted: 0, skipped: 0 }
+			def prune_stale_branch_entries( stale_branches:, active_branch:, counters: { deleted: 0, skipped: 0 } )
 				stale_branches.each do |entry|
 					outcome = prune_stale_branch_entry( entry: entry, active_branch: active_branch )
 					counters[ outcome ] += 1
@@ -851,10 +861,8 @@ module Carson
 				violations
 			end
 
-			# NOTE: prune only targets local branches that meet both conditions:
-			# 1) branch tracks configured remote (`github/*` by default), and
-			# 2) upstream tracking state is marked as gone after fetch --prune.
-			# Branches without upstream tracking are intentionally excluded.
+			# Detects local branches whose upstream tracking is marked [gone] after fetch --prune.
+			# Branches without upstream tracking are handled separately by orphan_local_branches.
 			def stale_local_branches
 				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.map do |line|
 					branch, upstream, track = line.strip.split( "\t", 3 )
@@ -865,6 +873,70 @@ module Carson
 
 					{ branch: branch, upstream: upstream, track: track }
 				end.compact
+			end
+
+			# Detects local branches with no upstream tracking ref — candidates for orphan pruning.
+			# Filters out protected branches, the active branch, and Carson's own sync branch.
+			def orphan_local_branches( active_branch: )
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" ).lines.filter_map do |line|
+					branch, upstream = line.strip.split( "\t", 2 )
+					branch = branch.to_s.strip
+					upstream = upstream.to_s.strip
+					next if branch.empty?
+					next unless upstream.empty?
+					next if config.protected_branches.include?( branch )
+					next if branch == active_branch
+					next if branch == TEMPLATE_SYNC_BRANCH
+
+					branch
+				end
+			end
+
+			# Processes orphan branches: verifies merged PR evidence via GitHub API before deleting.
+			def prune_orphan_branch_entries( orphan_branches:, counters: )
+				return counters if orphan_branches.empty?
+				return counters unless gh_available?
+
+				orphan_branches.each do |branch|
+					outcome = prune_orphan_branch_entry( branch: branch )
+					counters[ outcome ] += 1
+				end
+				counters
+			end
+
+			# Checks a single orphan branch for merged PR evidence and force-deletes if confirmed.
+			def prune_orphan_branch_entry( branch: )
+				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+				unless tip_sha_success
+					error_text = tip_sha_error.to_s.strip
+					error_text = "unable to read local branch tip sha" if error_text.empty?
+					puts_verbose "skip_orphan_branch: #{branch} reason=#{error_text}"
+					return :skipped
+				end
+				branch_tip_sha = tip_sha_text.to_s.strip
+				if branch_tip_sha.empty?
+					puts_verbose "skip_orphan_branch: #{branch} reason=unable to read local branch tip sha"
+					return :skipped
+				end
+
+				merged_pr, error = merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				if merged_pr.nil?
+					reason = error.to_s.strip
+					reason = "no merged PR evidence for branch tip into #{config.main_branch}" if reason.empty?
+					puts_verbose "skip_orphan_branch: #{branch} reason=#{reason}"
+					return :skipped
+				end
+
+				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				if force_success
+					out.print force_stdout if verbose? && !force_stdout.empty?
+					puts_verbose "deleted_orphan_branch: #{branch} merged_pr=#{merged_pr.fetch( :url )}"
+					return :deleted
+				end
+
+				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
+				puts_verbose "fail_delete_orphan_branch: #{branch} reason=#{force_error_text}"
+				:skipped
 			end
 
 			# Safe delete can fail after squash merges because branch tip is no longer an ancestor.

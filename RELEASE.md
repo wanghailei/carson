@@ -5,6 +5,14 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.20.0 — Prune Orphan Branches
+
+### What changed
+
+- **`carson prune` now detects orphan branches.** Local branches with no upstream tracking are pruned when GitHub confirms a merged PR matching the exact branch name and tip SHA. Previously, only branches with `[gone]` upstream tracking were detected — branches that were never pushed with `-u` or lost tracking would linger indefinitely.
+- Orphan deletions count towards the same "Pruned N stale branches." total in concise output. Verbose output uses distinct `deleted_orphan_branch:` / `skip_orphan_branch:` log lines.
+- Carson's own `carson/template-sync` branch and protected branches are excluded from orphan detection.
+
 ## 2.19.1 — Remove Dependabot References
 
 ### What changed
