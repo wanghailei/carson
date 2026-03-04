@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.18.0 — Audit Attention Detail
+
+### What changed
+
+- `carson audit` now enumerates what needs attention in concise (non-verbose) output. Previously the user saw only "Audit: attention" with no detail; now each attention source prints a specific line explaining the problem and next step.
+- Covers all attention sources: main sync errors, PR/check failures and pending, default branch CI baseline (critical and advisory), and scope integrity warnings.
+- Block-level baseline problems also surface concise detail (previously silent in non-verbose mode).
+
+### No migration required
+
+No configuration or workflow changes needed.
+
 ## 2.17.3 — Disable DevSkim
 
 ### What changed
