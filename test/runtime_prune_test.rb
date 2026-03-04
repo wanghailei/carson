@@ -9,7 +9,7 @@ class RuntimePruneTest < Minitest::Test
 		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
 			repo_root = File.join( tmp_dir, "repo" )
-			system( "git", "init", "--bare", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
 			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
@@ -151,7 +151,7 @@ class RuntimePruneTest < Minitest::Test
 		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
 			repo_root = File.join( tmp_dir, "repo" )
-			system( "git", "init", "--bare", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
 			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
@@ -228,7 +228,7 @@ class RuntimePruneTest < Minitest::Test
 		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
 			repo_root = File.join( tmp_dir, "repo" )
-			system( "git", "init", "--bare", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
 			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
@@ -274,7 +274,7 @@ class RuntimePruneTest < Minitest::Test
 		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
 			repo_root = File.join( tmp_dir, "repo" )
-			system( "git", "init", "--bare", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
 			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
