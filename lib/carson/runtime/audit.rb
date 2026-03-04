@@ -33,6 +33,7 @@ module Carson
 					puts_verbose "main_vs_remote_main: unknown"
 					puts_verbose "WARN: unable to calculate main sync status (#{main_error})."
 					audit_state = "attention" if audit_state == "ok"
+					audit_concise_problems << "Main sync: unable to determine — check remote connectivity."
 				elsif ahead_count.positive?
 					puts_verbose "main_vs_remote_main_ahead: #{ahead_count}"
 					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
@@ -54,13 +55,52 @@ module Carson
 				puts_verbose "[PR and Required Checks (gh)]"
 				monitor_report = pr_and_check_report
 				audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
+				if monitor_report.fetch( :status ) == "skipped"
+					audit_concise_problems << "Checks: skipped (#{monitor_report.fetch( :skip_reason )})."
+				elsif monitor_report.fetch( :status ) == "attention"
+					checks = monitor_report.fetch( :checks )
+					fail_n = checks.fetch( :failing_count )
+					pend_n = checks.fetch( :pending_count )
+					total = checks.fetch( :required_total )
+					if fail_n.positive? && pend_n.positive?
+						audit_concise_problems << "Checks: #{fail_n} failing, #{pend_n} pending of #{total} required."
+					elsif fail_n.positive?
+						audit_concise_problems << "Checks: #{fail_n} of #{total} failing."
+					elsif pend_n.positive?
+						audit_concise_problems << "Checks: pending (#{total - pend_n} of #{total} complete)."
+					elsif checks.fetch( :status ) == "skipped"
+						audit_concise_problems << "Checks: skipped (#{checks.fetch( :skip_reason )})."
+					end
+				end
 				puts_verbose ""
 				puts_verbose "[Default Branch CI Baseline (gh)]"
 				default_branch_baseline = default_branch_ci_baseline_report
 				audit_state = "block" if default_branch_baseline.fetch( :status ) == "block"
 				audit_state = "attention" if audit_state == "ok" && default_branch_baseline.fetch( :status ) != "ok"
+				baseline_st = default_branch_baseline.fetch( :status )
+				if baseline_st == "block"
+					parts = []
+					parts << "#{default_branch_baseline.fetch( :failing_count )} failing" if default_branch_baseline.fetch( :failing_count ).positive?
+					parts << "#{default_branch_baseline.fetch( :pending_count )} pending" if default_branch_baseline.fetch( :pending_count ).positive?
+					parts << "no check-runs for active workflows" if default_branch_baseline.fetch( :no_check_evidence )
+					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )} — merge blocked."
+				elsif baseline_st == "attention"
+					parts = []
+					parts << "#{default_branch_baseline.fetch( :advisory_failing_count )} advisory failing" if default_branch_baseline.fetch( :advisory_failing_count ).positive?
+					parts << "#{default_branch_baseline.fetch( :advisory_pending_count )} advisory pending" if default_branch_baseline.fetch( :advisory_pending_count ).positive?
+					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )}."
+				elsif baseline_st == "skipped"
+					audit_concise_problems << "Baseline: skipped (#{default_branch_baseline.fetch( :skip_reason )})."
+				end
 				scope_guard = print_scope_integrity_guard
 				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
+				if scope_guard.fetch( :status ) == "attention"
+					if scope_guard.fetch( :split_required )
+						audit_concise_problems << "Scope: multiple module groups touched."
+					else
+						audit_concise_problems << "Scope: unmatched paths — classify via scope.path_groups."
+					end
+				end
 					write_and_print_pr_monitor_report(
 						report: monitor_report.merge(
 							default_branch_baseline: default_branch_baseline,
