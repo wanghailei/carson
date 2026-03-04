@@ -19,7 +19,7 @@ carson <command> [subcommand] [arguments]
 | `carson lint policy --source <path-or-git-url> [--ref <git-ref>] [--force]` | Distribute lint configs from a central source into the governed repo's `.github/linters/`. |
 | `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. |
 | `carson prepare` | Install or refresh Carson-managed global hooks. |
-| `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. |
+| `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
 
 ### Daily commands

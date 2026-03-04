@@ -354,6 +354,15 @@ carson template check
 - Run `carson refresh` to re-apply hooks and templates for the new Carson version.
 - Run `carson refresh --all` to refresh all governed repositories at once.
 
+**Template auto-propagation**
+
+When `carson refresh` detects template drift, it applies the updates locally and then auto-propagates them to the remote:
+
+- **Branch workflow** (default): creates a `carson/template-sync` branch, pushes updates, and opens (or updates) a PR. Re-running refresh force-pushes to the same branch — idempotent.
+- **Trunk workflow**: pushes template changes directly to main.
+
+Propagation uses a temporary git worktree so the user's working tree and current branch are never disturbed. If propagation fails (no remote, push denied), the local apply still succeeds — propagation errors are reported but non-blocking.
+
 ## Offboard a Repository
 
 To retire Carson from a repository:

@@ -33,7 +33,10 @@ module Carson
 			@config = Config.load( repo_root: repo_root )
 			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
+			@template_sync_result = nil
 		end
+
+		attr_reader :template_sync_result
 
 	private
 

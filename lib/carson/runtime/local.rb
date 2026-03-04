@@ -2,6 +2,7 @@ module Carson
 	class Runtime
 		module Local
 			TEMPLATE_SYNC_BRANCH = "carson/template-sync".freeze
+
 			def sync!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -217,8 +218,11 @@ module Carson
 					hook_status = prepare!
 					return hook_status unless hook_status == EXIT_OK
 
+					drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
 					template_status = template_apply!
 					return template_status unless template_status == EXIT_OK
+
+					@template_sync_result = template_propagate!( drift_count: drift_count )
 
 					audit_status = audit!
 					if audit_status == EXIT_OK
@@ -242,6 +246,8 @@ module Carson
 				else
 					puts_line "Templates in sync."
 				end
+
+				@template_sync_result = template_propagate!( drift_count: template_drift_count )
 
 				audit_status = audit!
 				puts_line "Refresh complete."
@@ -425,6 +431,201 @@ module Carson
 
 		private
 
+			# Orchestrates worktree-based template propagation to the remote.
+			# Skips silently when there is no drift or no remote configured.
+			# Returns a result hash stored in @template_sync_result.
+			def template_propagate!( drift_count: )
+				if drift_count.zero?
+					puts_verbose "template_propagate: skip (no drift)"
+					return { status: :skip, reason: "no drift" }
+				end
+
+				unless git_remote_exists?( remote_name: config.git_remote )
+					puts_verbose "template_propagate: skip (no remote #{config.git_remote})"
+					return { status: :skip, reason: "no remote" }
+				end
+
+				worktree_dir = nil
+				begin
+					worktree_dir = template_propagate_create_worktree!
+					template_propagate_write_files!( worktree_dir: worktree_dir )
+					committed = template_propagate_commit!( worktree_dir: worktree_dir )
+					unless committed
+						puts_verbose "template_propagate: skip (no changes after write)"
+						return { status: :skip, reason: "no changes" }
+					end
+					result = template_propagate_deliver!( worktree_dir: worktree_dir )
+					template_propagate_report!( result: result )
+					result
+				rescue StandardError => e
+					puts_verbose "template_propagate: error (#{e.message})"
+					{ status: :error, reason: e.message }
+				ensure
+					template_propagate_cleanup!( worktree_dir: worktree_dir ) if worktree_dir
+				end
+			end
+
+			# Creates a detached worktree from the remote main, checks out the sync branch,
+			# and disables hooks so Carson's own pre-commit never fires inside the worktree.
+			def template_propagate_create_worktree!
+				worktree_dir = File.join( Dir.tmpdir, "carson-template-sync-#{Process.pid}-#{Time.now.to_i}" )
+				wt_git = Adapters::Git.new( repo_root: worktree_dir )
+
+				git_system!( "fetch", config.git_remote, config.main_branch )
+				git_system!( "worktree", "add", "--detach", worktree_dir, "#{config.git_remote}/#{config.main_branch}" )
+				wt_git.run( "checkout", "-B", TEMPLATE_SYNC_BRANCH )
+				wt_git.run( "config", "core.hooksPath", "/dev/null" )
+				puts_verbose "template_propagate: worktree created at #{worktree_dir}"
+				worktree_dir
+			end
+
+			# Copies all Carson template source files into the worktree.
+			# Also removes superseded files present in the worktree.
+			def template_propagate_write_files!( worktree_dir: )
+				config.template_managed_files.each do |managed_file|
+					relative_within_github = managed_file.delete_prefix( ".github/" )
+					template_path = File.join( github_templates_dir, relative_within_github )
+					template_path = File.join( github_templates_dir, File.basename( managed_file ) ) unless File.file?( template_path )
+					next unless File.file?( template_path )
+
+					target_path = File.join( worktree_dir, managed_file )
+					FileUtils.mkdir_p( File.dirname( target_path ) )
+					expected_content = normalize_text( text: File.read( template_path ) )
+					File.write( target_path, expected_content )
+					puts_verbose "template_propagate: wrote #{managed_file}"
+				end
+
+				template_superseded_present_in( root: worktree_dir ).each do |file|
+					file_path = File.join( worktree_dir, file )
+					File.delete( file_path )
+					puts_verbose "template_propagate: removed superseded #{file}"
+				end
+			end
+
+			# Stages all changes in the worktree and commits if there is an actual diff.
+			# Returns true if a commit was created, false if worktree content matches remote.
+			def template_propagate_commit!( worktree_dir: )
+				wt_git = Adapters::Git.new( repo_root: worktree_dir )
+				wt_git.run( "add", "--all" )
+
+				_, _, no_diff, = wt_git.run( "diff", "--cached", "--quiet" )
+				return false if no_diff
+
+				wt_git.run( "commit", "-m", "chore: sync Carson #{Carson::VERSION} managed templates" )
+				puts_verbose "template_propagate: committed"
+				true
+			end
+
+			# Dispatches to trunk or branch delivery based on workflow style.
+			def template_propagate_deliver!( worktree_dir: )
+				if config.workflow_style == "trunk"
+					template_propagate_deliver_trunk!( worktree_dir: worktree_dir )
+				else
+					template_propagate_deliver_branch!( worktree_dir: worktree_dir )
+				end
+			end
+
+			# Trunk mode: push template changes directly to main.
+			def template_propagate_deliver_trunk!( worktree_dir: )
+				wt_git = Adapters::Git.new( repo_root: worktree_dir )
+				stdout_text, stderr_text, success, = wt_git.run( "push", config.git_remote, "HEAD:refs/heads/#{config.main_branch}" )
+				unless success
+					error_text = stderr_text.to_s.strip
+					error_text = "push to #{config.main_branch} failed" if error_text.empty?
+					raise error_text
+				end
+				puts_verbose "template_propagate: pushed to #{config.main_branch}"
+				{ status: :pushed, ref: config.main_branch }
+			end
+
+			# Branch mode: force-push the sync branch and ensure a PR exists.
+			def template_propagate_deliver_branch!( worktree_dir: )
+				wt_git = Adapters::Git.new( repo_root: worktree_dir )
+				stdout_text, stderr_text, success, = wt_git.run( "push", "--force-with-lease", config.git_remote, "#{TEMPLATE_SYNC_BRANCH}:#{TEMPLATE_SYNC_BRANCH}" )
+				unless success
+					error_text = stderr_text.to_s.strip
+					error_text = "push #{TEMPLATE_SYNC_BRANCH} failed" if error_text.empty?
+					raise error_text
+				end
+				puts_verbose "template_propagate: pushed #{TEMPLATE_SYNC_BRANCH}"
+
+				pr_url = template_propagate_ensure_pr!( worktree_dir: worktree_dir )
+				{ status: :pr, branch: TEMPLATE_SYNC_BRANCH, pr_url: pr_url }
+			end
+
+			# Checks for an existing open PR from the sync branch; creates one if none exists.
+			# Returns the PR URL.
+			def template_propagate_ensure_pr!( worktree_dir: )
+				wt_gh = Adapters::GitHub.new( repo_root: worktree_dir )
+
+				# Check for existing open PR.
+				stdout_text, _, success, = wt_gh.run(
+					"pr", "list",
+					"--head", TEMPLATE_SYNC_BRANCH,
+					"--base", config.main_branch,
+					"--state", "open",
+					"--json", "url",
+					"--jq", ".[0].url"
+				)
+				existing_url = stdout_text.to_s.strip
+				if success && !existing_url.empty?
+					puts_verbose "template_propagate: existing PR #{existing_url}"
+					return existing_url
+				end
+
+				# Create new PR.
+				stdout_text, stderr_text, success, = wt_gh.run(
+					"pr", "create",
+					"--head", TEMPLATE_SYNC_BRANCH,
+					"--base", config.main_branch,
+					"--title", "chore: sync Carson #{Carson::VERSION} managed templates",
+					"--body", "Auto-generated by `carson refresh`.\n\nUpdates managed template files to match Carson #{Carson::VERSION}."
+				)
+				unless success
+					error_text = stderr_text.to_s.strip
+					error_text = "gh pr create failed" if error_text.empty?
+					raise error_text
+				end
+				pr_url = stdout_text.to_s.strip
+				puts_verbose "template_propagate: created PR #{pr_url}"
+				pr_url
+			end
+
+			# Removes the worktree regardless of state.
+			def template_propagate_cleanup!( worktree_dir: )
+				git_run( "worktree", "remove", "--force", worktree_dir )
+				puts_verbose "template_propagate: worktree cleaned up"
+			rescue StandardError => e
+				puts_verbose "template_propagate: cleanup warning (#{e.message})"
+			end
+
+			# Prints a human-readable summary of the propagation result.
+			def template_propagate_report!( result: )
+				case result.fetch( :status )
+				when :pushed
+					puts_line "Templates pushed to #{result.fetch( :ref )}."
+				when :pr
+					puts_line "Template sync PR: #{result.fetch( :pr_url )}"
+				end
+			end
+
+			# Checks which superseded files exist under an arbitrary root directory.
+			def template_superseded_present_in( root: )
+				config.template_superseded_files.select do |file|
+					File.file?( File.join( root, file ) )
+				end
+			end
+
+			def refresh_sync_suffix( result: )
+				return "" if result.nil?
+
+				case result.fetch( :status )
+				when :pushed then " (templates pushed to #{result.fetch( :ref )})"
+				when :pr then " (PR: #{result.fetch( :pr_url )})"
+				else ""
+				end
+			end
+
 			# Refreshes a single governed repository using a scoped Runtime.
 			def refresh_single_repo( repo_path:, repo_name: )
 				if verbose?
@@ -434,7 +635,8 @@ module Carson
 				end
 				status = rt.refresh!
 				label = refresh_status_label( status: status )
-				puts_line "#{repo_name}: #{label}"
+				sync_suffix = refresh_sync_suffix( result: rt.template_sync_result )
+				puts_line "#{repo_name}: #{label}#{sync_suffix}"
 				status
 			rescue StandardError => e
 				puts_line "#{repo_name}: FAIL (#{e.message})"
