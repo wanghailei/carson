@@ -101,6 +101,12 @@ module Carson
 						audit_concise_problems << "Scope: unmatched paths — classify via scope.path_groups."
 					end
 				end
+				if config.template_canonical.nil? || config.template_canonical.to_s.empty?
+					puts_verbose ""
+					puts_verbose "[Canonical Templates]"
+					puts_verbose "HINT: canonical templates not configured — run carson setup to enable."
+					audit_concise_problems << "Hint: canonical templates not configured — run carson setup to enable."
+				end
 					write_and_print_pr_monitor_report(
 						report: monitor_report.merge(
 							default_branch_baseline: default_branch_baseline,

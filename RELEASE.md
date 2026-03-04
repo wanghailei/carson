@@ -5,6 +5,13 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.22.0 — Setup Prompts for Canonical Templates
+
+### What changed
+
+- **`carson setup` now prompts for canonical template directory.** The interactive setup flow includes a new prompt to configure `template.canonical`, the directory of `.github/` files synced across governed repos. Shows the current value when one is already set.
+- **Audit hints when canonical templates are not configured.** `carson audit` now emits a hint when `template.canonical` is unset, guiding users to run `carson setup`.
+
 ## 2.21.0 — Review Sweep Skips Bot Authors
 
 ### What changed

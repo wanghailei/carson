@@ -99,8 +99,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 4 prompts: remote, branch, workflow, merge
-		tty_input = build_tty_input( "\n\n\n\n" )
+		# 5 prompts: remote, branch, workflow, merge, canonical template
+		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -120,7 +120,7 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "upstream", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		tty_input = build_tty_input( "2\n\n\n\n" )
+		tty_input = build_tty_input( "2\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			runtime = build_setup_runtime( input: tty_input )
@@ -221,8 +221,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 4 setup prompts (enter defaults) + "y" for governance registration
-		tty_input = build_tty_input( "\n\n\n\ny\n" )
+		# 5 setup prompts (enter defaults) + "y" for governance registration
+		tty_input = build_tty_input( "\n\n\n\n\ny\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -244,8 +244,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 4 setup prompts (enter defaults) + "n" for governance registration
-		tty_input = build_tty_input( "\n\n\n\nn\n" )
+		# 5 setup prompts (enter defaults) + "n" for governance registration
+		tty_input = build_tty_input( "\n\n\n\n\nn\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -312,8 +312,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# Setup will prompt (4 prompts: remote, branch, workflow, merge) + governance registration
-		tty_input = build_tty_input( "\n\n\n\nn\n" )
+		# Setup will prompt (5 prompts: remote, branch, workflow, merge, canonical) + governance registration
+		tty_input = build_tty_input( "\n\n\n\n\nn\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -444,6 +444,69 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	# --- Canonical template prompt tests ---
+
+	def test_setup_interactive_canonical_path_accepted
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# 4 default prompts + canonical path
+		tty_input = build_tty_input( "\n\n\n\n/tmp/my-templates\n" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			runtime.setup!
+
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "/tmp/my-templates", saved.dig( "template", "canonical" )
+		end
+	end
+
+	def test_setup_interactive_canonical_blank_skipped
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# 4 default prompts + blank canonical
+		tty_input = build_tty_input( "\n\n\n\n\n" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: tty_input )
+			runtime.setup!
+
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			assert_nil saved.dig( "template", "canonical" ), "blank input should not write template.canonical"
+		end
+	end
+
+	def test_setup_interactive_canonical_shows_existing_value
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "template" => { "canonical" => "/existing/path" } } ) )
+
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# 4 default prompts + blank canonical (keep existing)
+		tty_input = build_tty_input( "\n\n\n\n\n" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			runtime.setup!
+
+			assert_match( /Currently set to: \/existing\/path/, out.string )
+		end
+	end
 
 private
 
