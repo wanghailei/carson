@@ -17,7 +17,7 @@ class ConfigCanonicalTest < Minitest::Test
 			canonical_dir = File.join( dir, "canonical" )
 			FileUtils.mkdir_p( File.join( canonical_dir, "workflows" ) )
 			File.write( File.join( canonical_dir, "workflows", "lint.yml" ), "name: Lint\n" )
-			File.write( File.join( canonical_dir, "dependabot.yml" ), "version: 2\n" )
+			File.write( File.join( canonical_dir, "labeler.yml" ), "bug:\n" )
 
 			config_path = File.join( dir, "config.json" )
 			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
@@ -25,7 +25,7 @@ class ConfigCanonicalTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				config = Carson::Config.load( repo_root: dir )
 				assert_equal canonical_dir, config.template_canonical
-				assert_includes config.template_managed_files, ".github/dependabot.yml"
+				assert_includes config.template_managed_files, ".github/labeler.yml"
 				assert_includes config.template_managed_files, ".github/workflows/lint.yml"
 			end
 		end

@@ -5,6 +5,12 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.19.1 — Remove Dependabot References
+
+### What changed
+
+- Replaced all Dependabot example references in documentation and tests with `labeler.yml`. Carson never had a Dependabot feature — these were illustrative filenames for the canonical template system.
+
 ## 2.19.0 — Canonical Templates, Lint Removed
 
 ### What changed
