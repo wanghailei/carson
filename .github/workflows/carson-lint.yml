@@ -18,5 +18,6 @@ jobs:
           fetch-depth: 0
       - uses: oxsecurity/megalinter@v8
         env:
+          MEGALINTER_CONFIG: .github/.mega-linter.yml
           VALIDATE_ALL_CODEBASE: false
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
