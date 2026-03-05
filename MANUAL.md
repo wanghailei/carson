@@ -230,7 +230,7 @@ These are starting points chosen during `carson setup`. Every default has a reas
 
 How code reaches main.
 
-- **`branch`** (default) — every change goes through a PR. Hooks block direct commits and pushes to main/master. PRs enforce review, scope integrity, and CI gates before code reaches main.
+- **`branch`** (default) — every change goes through a PR. Hooks block direct commits and pushes to main/master. PRs enforce review and CI gates before code reaches main.
 - **`trunk`** — commit directly to main. Hooks allow all commits. Suits solo projects or flat teams that don't need PR-based review.
 
 Change: `carson setup` or `CARSON_WORKFLOW_STYLE`.
@@ -278,14 +278,6 @@ Where lint configuration files come from and where they land.
 - Target: **`<repo>/.github/linters/`**. MegaLinter auto-discovers configs here in CI.
 
 Change: `carson lint policy --source <path-or-git-url>` or `lint.policy_source` in config. After changing policy, run `carson refresh --all` to propagate to all governed repositories.
-
-#### Scope integrity
-
-Whether cross-module changes are flagged.
-
-- Default: **advisory** (attention, not block). Carson informs you when staged files span multiple module groups (e.g. both `domain` and `ui`), but doesn't prevent the commit. Useful for awareness; not a hard gate.
-
-Customise groups: `scope.path_groups` in config.
 
 #### Review disposition
 

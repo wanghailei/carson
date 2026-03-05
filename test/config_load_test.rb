@@ -3,11 +3,6 @@ require_relative "test_helper"
 class ConfigLoadTest < Minitest::Test
 	include CarsonTestSupport
 
-	def test_default_scope_path_groups_include_install_script_under_tool
-		config = Carson::Config.load( repo_root: Dir.pwd )
-		assert_includes config.path_groups.fetch( "tool" ), "install.sh"
-	end
-
 	def test_env_overrides_global_config_values
 		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
 			config_path = File.join( dir, "config.json" )

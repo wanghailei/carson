@@ -112,7 +112,7 @@ Configuration contract:
 
 A PR is merge-ready when three independent conditions are satisfied:
 
-1. **`carson audit` passes (exit 0)** — governance is clean. This covers lint policy compliance, scope integrity (staged changes stay within expected path boundaries), and outsider boundary enforcement (no Carson artefacts in the host repo). Carson owns this entirely.
+1. **`carson audit` passes (exit 0)** — governance is clean. This covers lint policy compliance and outsider boundary enforcement (no Carson artefacts in the host repo). Carson owns this entirely.
 2. **`carson review gate` passes (exit 0)** — all actionable review comments are resolved. Every risk keyword and change request from reviewers has a disposition comment from the PR author. Carson owns this entirely.
 3. **All GitHub required status checks green** — the repository's own CI: test suite, build steps, type checking, and any other checks the repository defines. Carson does not own these; it queries their status via `gh`.
 
@@ -212,7 +212,7 @@ When checks are pending and the PR was recently updated (within `govern.check_wa
 │  2. LOCAL WORK                                                  │
 │                                                                 │
 │  code → git add → git commit                                    │
-│    ├── pre-commit hook  → carson audit (lint, scope, boundary)  │
+│    ├── pre-commit hook  → carson audit (boundary)  │
 │    └── prepare-commit-msg hook                                  │
 │         ├── trunk mode  → allow (exit 0)                        │
 │         └── branch mode → block commits on main/master          │
