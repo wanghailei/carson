@@ -5,6 +5,12 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.23.0 — Warm Onboard Welcome Guide
+
+### What changed
+
+- **`carson onboard` closing block rewritten as a warm next-step guide.** Replaces the terse "Carson is ready" message with a concierge-style welcome that explains what Carson placed in `.github/`, why it matters, and what to do before the first push.
+
 ## 2.22.0 — Setup Prompts for Canonical Templates
 
 ### What changed
