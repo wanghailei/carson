@@ -443,7 +443,7 @@ cd "$work_repo"
 original_hooks_path_govern="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
 git add -A >/dev/null
-git commit -m "commit templates for govern smoke tests" >/dev/null
+git diff --cached --quiet || git commit -m "commit templates for govern smoke tests" >/dev/null
 git push origin main >/dev/null
 if [[ -n "$original_hooks_path_govern" ]]; then
 	git config core.hooksPath "$original_hooks_path_govern"
