@@ -1162,10 +1162,22 @@ module Carson
 				audit_status = onboard_run_audit!
 
 				puts_line ""
-				puts_line "Carson is ready. Workflow: #{config.workflow_style}"
-				puts_line "Reconfigure anytime: carson setup"
+				puts_line "Carson at your service."
 
 				prompt_govern_registration! if self.in.respond_to?( :tty? ) && self.in.tty?
+
+				puts_line ""
+				puts_line "Your repository is set up. Carson has placed files in your"
+				puts_line "project's .github/ directory — pull request templates,"
+				puts_line "guidelines for AI coding assistants, and any CI or lint"
+				puts_line "rules you've configured. Once pushed to GitHub, they'll"
+				puts_line "ensure every pull request follows a consistent standard"
+				puts_line "and all checks run automatically."
+				puts_line ""
+				puts_line "Before your first push, have a look through .github/ to"
+				puts_line "make sure everything is to your liking."
+				puts_line ""
+				puts_line "To adjust any setting: carson setup"
 
 				audit_status
 			end

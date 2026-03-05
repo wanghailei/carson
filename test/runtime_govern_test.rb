@@ -1041,8 +1041,8 @@ class RuntimeGovernTest < Minitest::Test
 				)
 				runtime.onboard!
 				output = out.string
-				assert_includes output, "Carson is ready. Workflow: branch"
-				assert_includes output, "Reconfigure anytime: carson setup"
+				assert_includes output, "Carson at your service."
+				assert_includes output, "To adjust any setting: carson setup"
 			end
 		end
 	end
