@@ -1,0 +1,17 @@
+# Canonical Ruff (Python) baseline.
+# Deployed to governed repositories via Carson's template.canonical mechanism.
+
+[lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+	"E101", # Indentation contains mixed spaces and tabs — conflicts with tab-only policy.
+	"E501", # Line length is a developer decision.
+	"W191", # Indentation contains tabs — we require tabs, not forbid them.
+]
+
+[lint.isort]
+known-first-party = []
+
+[format]
+indent-style = "tab"
+quote-style = "double"
