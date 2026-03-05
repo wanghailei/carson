@@ -75,7 +75,6 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Default Branch CI Baseline (gh)]"
 				default_branch_baseline = default_branch_ci_baseline_report
-				audit_state = "block" if default_branch_baseline.fetch( :status ) == "block"
 				audit_state = "attention" if audit_state == "ok" && default_branch_baseline.fetch( :status ) != "ok"
 				baseline_st = default_branch_baseline.fetch( :status )
 				if baseline_st == "block"
@@ -83,7 +82,7 @@ module Carson
 					parts << "#{default_branch_baseline.fetch( :failing_count )} failing" if default_branch_baseline.fetch( :failing_count ).positive?
 					parts << "#{default_branch_baseline.fetch( :pending_count )} pending" if default_branch_baseline.fetch( :pending_count ).positive?
 					parts << "no check-runs for active workflows" if default_branch_baseline.fetch( :no_check_evidence )
-					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )} — merge blocked."
+					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )} — fix before merge."
 				elsif baseline_st == "attention"
 					parts = []
 					parts << "#{default_branch_baseline.fetch( :advisory_failing_count )} advisory failing" if default_branch_baseline.fetch( :advisory_failing_count ).positive?
