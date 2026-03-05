@@ -5,6 +5,15 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.25.0 — Onboard/Offboard UX Improvements
+
+### What changed
+
+- **`carson offboard` now asks for TTY confirmation** before removing files. In non-TTY environments (CI, scripts), offboard proceeds without prompting, preserving backwards compatibility.
+- **Offboard prints post-removal guidance** ("commit the removals and push to finalise offboarding") so users know what to do next.
+- **Non-TTY `carson onboard` now shows a govern registration hint** ("to register for portfolio governance: carson onboard in a TTY") instead of silently skipping the prompt.
+- **`carson setup` shows current values** for workflow style and merge method when re-running, and pre-selects the current choice as the default. Previously only canonical template showed its current value.
+
 ## 2.24.0 — Remove Scope Integrity Guard
 
 ### What changed
