@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [setup|audit|sync|prune|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]|audit|sync|prune|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -74,6 +74,8 @@ module Carson
 			when "version"
 				parser.parse!( argv )
 				{ command: "version" }
+			when "setup"
+				parse_setup_command( argv: argv, parser: parser, err: err )
 			when "onboard", "offboard"
 				parse_repo_path_command( command: command, argv: argv, parser: parser, err: err )
 			when "refresh"
@@ -88,6 +90,28 @@ module Carson
 				parser.parse!( argv )
 				{ command: command }
 			end
+		end
+
+		def self.parse_setup_command( argv:, parser:, err: )
+			options = {}
+			setup_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]"
+				opts.on( "--remote NAME", "Git remote name" ) { |v| options[ "git.remote" ] = v }
+				opts.on( "--main-branch NAME", "Main branch name" ) { |v| options[ "git.main_branch" ] = v }
+				opts.on( "--workflow STYLE", "Workflow style (branch or trunk)" ) { |v| options[ "workflow.style" ] = v }
+				opts.on( "--merge METHOD", "Merge method (squash, rebase, or merge)" ) { |v| options[ "govern.merge.method" ] = v }
+				opts.on( "--canonical PATH", "Canonical template directory path" ) { |v| options[ "template.canonical" ] = v }
+			end
+			setup_parser.parse!( argv )
+			unless argv.empty?
+				err.puts "#{BADGE} Unexpected arguments for setup: #{argv.join( ' ' )}"
+				err.puts setup_parser
+				return { command: :invalid }
+			end
+			{ command: "setup", cli_choices: options }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
 		def self.parse_repo_path_command( command:, argv:, parser:, err: )
@@ -209,7 +233,7 @@ module Carson
 
 			case command
 			when "setup"
-				runtime.setup!
+				runtime.setup!( cli_choices: parsed.fetch( :cli_choices, {} ) )
 			when "audit"
 				runtime.audit!
 			when "sync"

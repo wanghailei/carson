@@ -5,6 +5,27 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.28.0 — Non-Interactive CLI Flags for Setup
+
+### What changed
+
+- **`carson setup` now accepts optional CLI flags** to configure settings without interactive prompts:
+  - `--remote NAME` sets `git.remote`
+  - `--main-branch NAME` sets `git.main_branch`
+  - `--workflow STYLE` sets `workflow.style` (branch or trunk)
+  - `--merge METHOD` sets `govern.merge.method` (squash, rebase, or merge)
+  - `--canonical PATH` sets `template.canonical`
+- When any flag is present, interactive prompts are skipped and only the specified values are written.
+- When no flags are present, existing behaviour is preserved (interactive in TTY, silent detection in non-TTY).
+
+### Why
+
+Running `carson setup` in non-TTY environments (CI pipelines, agent scripts) previously required manually editing `config.json`. CLI flags allow fully automated configuration without file manipulation.
+
+### Migration
+
+No action required. Existing behaviour is unchanged when no flags are provided.
+
 ## 2.27.0 — Absorbed Branch Pruning
 
 ### What changed
