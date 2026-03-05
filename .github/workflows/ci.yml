@@ -26,6 +26,9 @@ jobs:
         with:
           ruby-version: "4.0"
 
+      - name: Refresh
+        run: ruby exe/carson refresh
+
       - name: Audit
         env:
           GH_TOKEN: ${{ github.token }}

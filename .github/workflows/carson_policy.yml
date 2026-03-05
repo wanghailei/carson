@@ -58,6 +58,10 @@ jobs:
           gem build carson.gemspec
           gem install --local "carson-${{ inputs.carson_version }}.gem"
 
+      - name: Carson refresh
+        working-directory: host
+        run: carson refresh
+
       - name: Carson audit
         working-directory: host
         run: carson audit
