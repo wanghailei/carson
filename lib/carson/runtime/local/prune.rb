@@ -1,7 +1,8 @@
 module Carson
 	class Runtime
 		module Local
-			# Removes stale local branches (gone upstream) and orphan branches (no tracking) with merged PR evidence.
+			# Removes stale local branches (gone upstream), orphan branches (no tracking) with merged PR evidence,
+			# and absorbed branches (content already on main, no open PR).
 			def prune!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -15,6 +16,9 @@ module Carson
 
 				orphan_branches = orphan_local_branches( active_branch: active_branch )
 				prune_orphan_branch_entries( orphan_branches: orphan_branches, counters: counters )
+
+				absorbed_branches = absorbed_local_branches( active_branch: active_branch )
+				prune_absorbed_branch_entries( absorbed_branches: absorbed_branches, counters: counters )
 
 				return prune_no_stale_branches if counters.fetch( :deleted ).zero? && counters.fetch( :skipped ).zero?
 
@@ -145,6 +149,107 @@ module Carson
 
 					branch
 				end
+			end
+
+			# Detects local branches whose upstream still exists but whose content is already on main.
+			# Two-step evidence: (1) find the merge-base, (2) verify every file the branch changed
+			# relative to the merge-base has identical content on main.
+			def absorbed_local_branches( active_branch: )
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
+					branch, upstream, track = line.strip.split( "\t", 3 )
+					branch = branch.to_s.strip
+					upstream = upstream.to_s.strip
+					track = track.to_s
+					next if branch.empty?
+					next if upstream.empty?
+					next if track.include?( "gone" )
+					next if config.protected_branches.include?( branch )
+					next if branch == active_branch
+					next if branch == TEMPLATE_SYNC_BRANCH
+
+					next unless branch_absorbed_into_main?( branch: branch )
+
+					{ branch: branch, upstream: upstream }
+				end
+			end
+
+			# Returns true when the branch has no unique content relative to main.
+			def branch_absorbed_into_main?( branch: )
+				# Fast path: branch is a strict ancestor of main (fully merged).
+				_, _, is_ancestor, = git_run( "merge-base", "--is-ancestor", branch, config.main_branch )
+				return true if is_ancestor
+
+				# Find the merge-base between main and the branch.
+				merge_base_text, _, mb_success, = git_run( "merge-base", config.main_branch, branch )
+				return false unless mb_success
+
+				merge_base = merge_base_text.to_s.strip
+				return false if merge_base.empty?
+
+				# List every file the branch changed relative to the merge-base.
+				changed_text, _, changed_success, = git_run( "diff", "--name-only", merge_base, branch )
+				return false unless changed_success
+
+				changed_files = changed_text.to_s.strip.lines.map( &:strip ).reject( &:empty? )
+				return true if changed_files.empty?
+
+				# Compare only those files between branch tip and main tip.
+				# If identical, every branch change is already on main.
+				_, _, identical, = git_run( "diff", "--quiet", branch, config.main_branch, "--", *changed_files )
+				identical
+			end
+
+			# Processes absorbed branches: verifies no open PR exists before deleting local and remote.
+			def prune_absorbed_branch_entries( absorbed_branches:, counters: )
+				return counters if absorbed_branches.empty?
+				return counters unless gh_available?
+
+				absorbed_branches.each do |entry|
+					outcome = prune_absorbed_branch_entry( branch: entry.fetch( :branch ), upstream: entry.fetch( :upstream ) )
+					counters[ outcome ] += 1
+				end
+				counters
+			end
+
+			# Checks a single absorbed branch for open PRs and deletes local + remote if safe.
+			def prune_absorbed_branch_entry( branch:, upstream: )
+				if branch_has_open_pr?( branch: branch )
+					puts_verbose "skip_absorbed_branch: #{branch} reason=open PR exists"
+					return :skipped
+				end
+
+				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				unless force_success
+					error_text = normalise_branch_delete_error( error_text: force_stderr )
+					puts_verbose "fail_delete_absorbed_branch: #{branch} reason=#{error_text}"
+					return :skipped
+				end
+
+				out.print force_stdout if verbose? && !force_stdout.empty?
+
+				remote_branch = upstream.sub( "#{config.git_remote}/", "" )
+				git_run( "push", config.git_remote, "--delete", remote_branch )
+
+				puts_verbose "deleted_absorbed_branch: #{branch} (upstream=#{upstream})"
+				:deleted
+			end
+
+			# Returns true if the branch has at least one open PR.
+			def branch_has_open_pr?( branch: )
+				owner, repo = repository_coordinates
+				stdout_text, _, success, = gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=open",
+					"-f", "head=#{owner}:#{branch}",
+					"-f", "per_page=1"
+				)
+				return true unless success
+
+				results = Array( JSON.parse( stdout_text ) )
+				!results.empty?
+			rescue StandardError
+				true
 			end
 
 			# Processes orphan branches: verifies merged PR evidence via GitHub API before deleting.

@@ -40,7 +40,7 @@ class RuntimePruneTest < Minitest::Test
 					err: err,
 					verbose: verbose
 				)
-				yield runtime, repo_root, bare_root, out
+				yield runtime, repo_root, bare_root, out, mock_bin
 			end
 		end
 	end
@@ -70,8 +70,40 @@ class RuntimePruneTest < Minitest::Test
 		tip_sha
 	end
 
+	# Creates a tracked branch whose content is then independently added to main.
+	# The branch has tracking, remote still exists, but content is identical on main.
+	def create_absorbed_branch( repo_root:, branch_name: )
+		# Create branch with a unique file, push to remote.
+		system( "git", "-C", repo_root, "checkout", "-b", branch_name, out: File::NULL, err: File::NULL )
+		File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature content\n" )
+		system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "work on #{branch_name}", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+
+		# Simulate the same content landing on main via a different PR.
+		File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature content\n" )
+		system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "land #{branch_name} content via other PR", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+	end
+
+	# Creates a tracked branch with content that differs from main (not absorbed).
+	def create_active_tracked_branch( repo_root:, branch_name: )
+		system( "git", "-C", repo_root, "checkout", "-b", branch_name, out: File::NULL, err: File::NULL )
+		File.write( File.join( repo_root, "#{branch_name}.txt" ), "unique content\n" )
+		system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "work on #{branch_name}", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+	end
+
 	def branch_exists?( repo_root:, branch_name: )
 		system( "git", "-C", repo_root, "rev-parse", "--verify", branch_name, out: File::NULL, err: File::NULL )
+	end
+
+	def remote_branch_exists?( repo_root:, branch_name: )
+		system( "git", "-C", repo_root, "rev-parse", "--verify", "origin/#{branch_name}", out: File::NULL, err: File::NULL )
 	end
 
 	def mock_gh_with_merged_pr( branch_shas: )
@@ -138,12 +170,50 @@ class RuntimePruneTest < Minitest::Test
 		BASH
 	end
 
+	def mock_gh_with_open_pr( branch_name: )
+		pr_json = JSON.generate( [ {
+			"number" => 99,
+			"html_url" => "https://github.com/test/repo/pull/99",
+			"state" => "open",
+			"head" => { "ref" => branch_name },
+			"base" => { "ref" => "main" }
+		} ] )
+
+		<<~BASH
+			#!/usr/bin/env bash
+			if [[ "$1" == "--version" ]]; then
+				echo "gh version mock"
+				exit 0
+			fi
+			if [[ "$1" == "repo" && "$2" == "view" ]]; then
+				echo "test/repo"
+				exit 0
+			fi
+			if [[ "$1" == "api" ]]; then
+				if echo "$@" | grep -q "state=open"; then
+					if echo "$@" | grep -q "head=test:#{branch_name}"; then
+						cat <<'PRJSON'
+			#{pr_json}
+			PRJSON
+						exit 0
+					fi
+				fi
+				echo "[]"
+				exit 0
+			fi
+			echo "unsupported: $*" >&2
+			exit 1
+		BASH
+	end
+
 	def mock_gh_unavailable
 		<<~BASH
 			#!/usr/bin/env bash
 			exit 1
 		BASH
 	end
+
+	# --- Orphan branch tests ---
 
 	def test_orphan_deleted_with_merged_pr_evidence
 		branch_name = "feature-orphan"
@@ -195,7 +265,7 @@ class RuntimePruneTest < Minitest::Test
 	def test_orphan_skipped_without_merged_pr_evidence
 		branch_name = "feature-no-evidence"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
 			create_orphan_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should exist before prune"
@@ -209,7 +279,7 @@ class RuntimePruneTest < Minitest::Test
 	def test_orphan_skipped_when_gh_unavailable
 		branch_name = "feature-no-gh"
 
-		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, out|
+		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, out, _mock_bin|
 			create_orphan_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should exist before prune"
@@ -324,6 +394,118 @@ class RuntimePruneTest < Minitest::Test
 				assert_includes output, "deleted_local_branch_force: #{gone_branch}"
 				assert_includes output, "prune_summary: deleted=2"
 			end
+		end
+	end
+
+	# --- Absorbed branch tests ---
+
+	def test_absorbed_branch_deleted_when_content_on_main
+		branch_name = "feature-absorbed"
+
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
+
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should exist before prune"
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should be deleted"
+			assert_includes out.string, "deleted_absorbed_branch: #{branch_name}"
+		end
+	end
+
+	def test_absorbed_branch_deletes_remote_too
+		branch_name = "feature-absorbed-remote"
+
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
+
+			# Fetch so we can verify remote ref exists.
+			system( "git", "-C", repo_root, "fetch", "origin", out: File::NULL, err: File::NULL )
+			assert remote_branch_exists?( repo_root: repo_root, branch_name: branch_name ), "remote branch should exist before prune"
+
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "local branch should be deleted"
+
+			# After prune, remote branch should also be gone.
+			system( "git", "-C", repo_root, "fetch", "origin", "--prune", out: File::NULL, err: File::NULL )
+			refute remote_branch_exists?( repo_root: repo_root, branch_name: branch_name ), "remote branch should be deleted"
+		end
+	end
+
+	def test_absorbed_branch_preserved_when_unique_content
+		branch_name = "feature-active"
+
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_active_tracked_branch( repo_root: repo_root, branch_name: branch_name )
+
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "active branch should exist before prune"
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "active branch with unique content should be preserved"
+			refute_includes out.string, "deleted_absorbed_branch"
+		end
+	end
+
+	def test_absorbed_branch_skipped_when_open_pr_exists
+		branch_name = "feature-with-pr"
+
+		with_prune_repo( mock_gh_script: mock_gh_with_open_pr( branch_name: branch_name ) ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
+
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should exist before prune"
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch with open PR should be preserved"
+			assert_includes out.string, "skip_absorbed_branch: #{branch_name} reason=open PR exists"
+		end
+	end
+
+	def test_absorbed_branch_skipped_when_gh_unavailable
+		branch_name = "feature-no-gh-absorbed"
+
+		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
+
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should exist before prune"
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should be preserved when gh unavailable"
+			refute_includes out.string, "deleted_absorbed_branch"
+		end
+	end
+
+	def test_absorbed_ancestor_branch_deleted
+		branch_name = "feature-ancestor"
+
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			# Create branch at current main, then advance main. Branch becomes strict ancestor.
+			system( "git", "-C", repo_root, "branch", branch_name, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "new-work.txt" ), "main advanced\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "advance main", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "ancestor branch should exist before prune"
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "ancestor branch should be deleted"
+			assert_includes out.string, "deleted_absorbed_branch: #{branch_name}"
+		end
+	end
+
+	def test_absorbed_branch_concise_output
+		branch_name = "feature-absorbed-concise"
+
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
+
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should be deleted"
+			assert_includes out.string, "Pruned 1 stale branch."
+			refute_includes out.string, "deleted_absorbed_branch"
 		end
 	end
 end

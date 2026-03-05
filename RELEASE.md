@@ -5,6 +5,24 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.27.0 — Absorbed Branch Pruning
+
+### What changed
+
+- **`carson prune` now detects and removes absorbed branches.** An absorbed branch is one whose upstream still exists but whose content is already on main — every file the branch changed has identical content on main. This catches branches whose work landed via a different PR, cherry-pick, or independent re-implementation.
+- Detection uses a two-step evidence check: (1) find the merge-base, (2) compare only the files the branch changed. If all are identical on main, the branch is absorbed.
+- Fast path: branches that are strict ancestors of main (fully merged via fast-forward) are also detected.
+- Safety: absorbed branches are only deleted when no open PR exists. If `gh` is unavailable, absorbed detection is skipped entirely.
+- Both local and remote branches are cleaned up.
+
+### Why
+
+Carson already pruned stale branches (upstream deleted) and orphan branches (no tracking, merged PR evidence). But branches whose remote still existed and had tracking were invisible to prune — even when their content had already landed on main through other means. This gap left repositories cluttered with dead branches that required manual investigation to clean up.
+
+### Migration
+
+No action required. `carson prune` gains the new detection automatically.
+
 ## 2.26.0 — Baseline Check No Longer Blocks Commits
 
 ### What changed
