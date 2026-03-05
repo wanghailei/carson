@@ -123,6 +123,17 @@ module Carson
 					puts_line "ERROR: #{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
+				if self.in.respond_to?( :tty? ) && self.in.tty?
+					puts_line ""
+					puts_line "This will remove Carson hooks, managed .github/ files,"
+					puts_line "and deregister this repository from portfolio governance."
+					puts_line "Continue?"
+					unless prompt_yes_no( default: false )
+						puts_line "Offboard cancelled."
+						return EXIT_OK
+					end
+				end
+
 				hooks_status = disable_carson_hooks_path!
 				return hooks_status unless hooks_status == EXIT_OK
 
@@ -148,6 +159,8 @@ module Carson
 				else
 					puts_line "Removed #{removed_count} file#{plural_suffix( count: removed_count )}. Offboard complete."
 				end
+				puts_line ""
+				puts_line "Next: commit the removals and push to finalise offboarding."
 				EXIT_OK
 			end
 
@@ -174,12 +187,16 @@ module Carson
 				puts_line ""
 				puts_line "Carson at your service."
 
-				prompt_govern_registration! if self.in.respond_to?( :tty? ) && self.in.tty?
+				if self.in.respond_to?( :tty? ) && self.in.tty?
+					prompt_govern_registration!
+				else
+					puts_line "To register for portfolio governance: carson onboard (in a TTY)"
+				end
 
 				puts_line ""
 				puts_line "Your repository is set up. Carson has placed files in your"
 				puts_line "project's .github/ directory — pull request templates,"
-				puts_line "guidelines for AI coding assistants, and any CI or lint"
+				puts_line "guidelines for AI coding assistants, and any canonical"
 				puts_line "rules you've configured. Once pushed to GitHub, they'll"
 				puts_line "ensure every pull request follows a consistent standard"
 				puts_line "and all checks run automatically."

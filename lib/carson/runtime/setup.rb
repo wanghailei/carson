@@ -127,22 +127,28 @@ module Carson
 			def prompt_workflow_style
 				puts_line ""
 				puts_line "Workflow style"
+				current = config.workflow_style
+				puts_line "  Currently: #{current}" unless current.nil? || current.empty?
 				options = [
 					{ label: "branch — enforce PR-only merges (default)", value: "branch" },
 					{ label: "trunk — commit directly to main", value: "trunk" }
 				]
-				prompt_choice( options: options, default: 0 )
+				default_index = options.index { |o| o.fetch( :value ) == current } || 0
+				prompt_choice( options: options, default: default_index )
 			end
 
 			def prompt_merge_method
 				puts_line ""
 				puts_line "Merge method"
+				current = config.govern_merge_method
+				puts_line "  Currently: #{current}" unless current.nil? || current.empty?
 				options = [
 					{ label: "squash — one commit per PR (recommended)", value: "squash" },
 					{ label: "rebase — linear history, individual commits", value: "rebase" },
 					{ label: "merge — merge commits", value: "merge" }
 				]
-				prompt_choice( options: options, default: 0 )
+				default_index = options.index { |o| o.fetch( :value ) == current } || 0
+				prompt_choice( options: options, default: default_index )
 			end
 
 			def prompt_canonical_template
