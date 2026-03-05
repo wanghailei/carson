@@ -508,6 +508,115 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	# --- CLI choices (non-interactive flags) tests ---
+
+	def test_setup_cli_choices_writes_remote
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			status = runtime.setup!( cli_choices: { "git.remote" => "github" } )
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "github", saved.dig( "git", "remote" )
+		end
+	end
+
+	def test_setup_cli_choices_writes_multiple_values
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			status = runtime.setup!( cli_choices: {
+				"git.remote" => "upstream",
+				"git.main_branch" => "main",
+				"workflow.style" => "trunk",
+				"govern.merge.method" => "rebase",
+				"template.canonical" => "/tmp/canonical"
+			} )
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "upstream", saved.dig( "git", "remote" )
+			assert_equal "main", saved.dig( "git", "main_branch" )
+			assert_equal "trunk", saved.dig( "workflow", "style" )
+			assert_equal "rebase", saved.dig( "govern", "merge", "method" )
+			assert_equal "/tmp/canonical", saved.dig( "template", "canonical" )
+		end
+	end
+
+	def test_setup_cli_choices_merges_with_existing_config
+		config_dir = File.join( @tmp_dir, ".carson" )
+		FileUtils.mkdir_p( config_dir )
+		config_path = File.join( config_dir, "config.json" )
+		File.write( config_path, JSON.generate( { "workflow" => { "style" => "branch" } } ) )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			runtime = build_setup_runtime( input: StringIO.new )
+			runtime.setup!( cli_choices: { "git.remote" => "github" } )
+
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "github", saved.dig( "git", "remote" ), "cli_choices remote should be saved"
+			assert_equal "branch", saved.dig( "workflow", "style" ), "existing workflow style should be preserved"
+		end
+	end
+
+	def test_setup_cli_choices_skips_interactive_prompts
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+
+		# TTY input that would fail if prompts were actually shown (no input lines)
+		tty_input = build_tty_input( "" )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			status = runtime.setup!( cli_choices: { "git.remote" => "origin" } )
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			# Should not contain interactive prompt text
+			refute_includes out.string, "Git remote"
+			refute_includes out.string, "Main branch"
+			refute_includes out.string, "Workflow style"
+		end
+	end
+
+	def test_setup_empty_cli_choices_falls_through_to_normal_behaviour
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			status = runtime.setup!( cli_choices: {} )
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			# Non-TTY input with empty cli_choices should run silent_setup
+			assert_match( /detected_remote:/, out.string )
+		end
+	end
+
+	def test_setup_cli_choices_outside_git_repo_writes_config
+		non_git_dir = File.join( @tmp_dir, "not-a-repo" )
+		FileUtils.mkdir_p( non_git_dir )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			out = StringIO.new
+			err = StringIO.new
+			runtime = Carson::Runtime.new(
+				repo_root: non_git_dir,
+				tool_root: File.expand_path( "..", __dir__ ),
+				out: out,
+				err: err,
+				in_stream: StringIO.new,
+				verbose: true
+			)
+			status = runtime.setup!( cli_choices: { "workflow.style" => "trunk" } )
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			assert_equal "trunk", saved.dig( "workflow", "style" )
+		end
+	end
+
 private
 
 	def build_setup_runtime( input:, out_stream: nil )

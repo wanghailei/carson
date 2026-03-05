@@ -9,6 +9,11 @@ class CLITest < Minitest::Test
 			@messages = []
 		end
 
+		def setup!( cli_choices: {} )
+			@calls << [ :setup, cli_choices ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def audit!
 			@calls << :audit
 			Carson::Runtime::EXIT_OK
@@ -194,5 +199,105 @@ class CLITest < Minitest::Test
 		status = Carson::CLI.dispatch( parsed: { command: "refresh:all" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, status
 		assert_equal [ :refresh_all ], runtime.calls
+	end
+
+	# --- setup CLI flag tests ---
+
+	def test_parse_args_setup_with_no_flags_returns_empty_cli_choices
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup" ], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		assert_equal( {}, parsed.fetch( :cli_choices ) )
+	end
+
+	def test_parse_args_setup_with_remote_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "--remote", "github" ], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		assert_equal "github", parsed.fetch( :cli_choices )[ "git.remote" ]
+	end
+
+	def test_parse_args_setup_with_main_branch_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "--main-branch", "develop" ], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		assert_equal "develop", parsed.fetch( :cli_choices )[ "git.main_branch" ]
+	end
+
+	def test_parse_args_setup_with_workflow_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "--workflow", "trunk" ], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		assert_equal "trunk", parsed.fetch( :cli_choices )[ "workflow.style" ]
+	end
+
+	def test_parse_args_setup_with_merge_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "--merge", "squash" ], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		assert_equal "squash", parsed.fetch( :cli_choices )[ "govern.merge.method" ]
+	end
+
+	def test_parse_args_setup_with_canonical_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "--canonical", "/tmp/my-templates" ], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		assert_equal "/tmp/my-templates", parsed.fetch( :cli_choices )[ "template.canonical" ]
+	end
+
+	def test_parse_args_setup_with_all_flags
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [
+			"setup",
+			"--remote", "github",
+			"--main-branch", "main",
+			"--workflow", "branch",
+			"--merge", "squash",
+			"--canonical", "/tmp/templates"
+		], out: out, err: err )
+		assert_equal "setup", parsed.fetch( :command )
+		choices = parsed.fetch( :cli_choices )
+		assert_equal "github", choices[ "git.remote" ]
+		assert_equal "main", choices[ "git.main_branch" ]
+		assert_equal "branch", choices[ "workflow.style" ]
+		assert_equal "squash", choices[ "govern.merge.method" ]
+		assert_equal "/tmp/templates", choices[ "template.canonical" ]
+	end
+
+	def test_parse_args_setup_with_unexpected_positional_args
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "extra-arg" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Unexpected arguments for setup"
+	end
+
+	def test_parse_args_setup_with_unknown_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "setup", "--unknown-flag" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_setup_with_cli_choices_to_runtime
+		runtime = FakeRuntime.new
+		choices = { "git.remote" => "github" }
+		status = Carson::CLI.dispatch( parsed: { command: "setup", cli_choices: choices }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :setup, choices ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_setup_without_cli_choices_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "setup" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :setup, {} ] ], runtime.calls
 	end
 end

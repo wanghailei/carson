@@ -6,13 +6,17 @@ module Carson
 		module Setup
 			WELL_KNOWN_REMOTES = %w[origin github upstream].freeze
 
-			def setup!
+			def setup!( cli_choices: {} )
 				puts_verbose ""
 				puts_verbose "[Setup]"
 
 				unless inside_git_work_tree?
 					puts_line "WARN: not a git repository. Skipping remote and branch detection."
-					return write_setup_config( choices: {} )
+					return write_setup_config( choices: cli_choices )
+				end
+
+				unless cli_choices.empty?
+					return write_setup_config( choices: cli_choices )
 				end
 
 				if self.in.respond_to?( :tty? ) && self.in.tty?
