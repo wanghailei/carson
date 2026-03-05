@@ -1,14 +1,14 @@
 #!/usr/bin/env ruby
-require_relative "../lib/carson/config"
 
 module Carson
 	module RubyIndentationGuard
 	module_function
 
+		POLICY = "tabs"
+
 		def run!
 			repo_root = File.expand_path( "..", __dir__ )
-			config = Carson::Config.load( repo_root: repo_root )
-			policy = config.ruby_indentation
+			policy = POLICY
 			violations = ruby_files( repo_root: repo_root ).flat_map do |path|
 				file_violations( path: path, repo_root: repo_root, policy: policy )
 			end
