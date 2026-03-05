@@ -11,7 +11,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" )
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -37,7 +37,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" )
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -64,7 +64,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" ),
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "branch"
 			) do
 				out = StringIO.new
@@ -111,7 +111,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" ),
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
 				out = StringIO.new
@@ -149,7 +149,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" ),
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
 				out = StringIO.new
@@ -183,7 +183,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" ),
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
 				out = StringIO.new
@@ -210,7 +210,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" )
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
 				out = StringIO.new
 				err = StringIO.new

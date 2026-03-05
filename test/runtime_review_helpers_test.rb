@@ -141,8 +141,7 @@ class RuntimeReviewHelpersTest < Minitest::Test
 			[ JSON.generate( payload ), "", true, 0 ]
 		end
 
-		evidence, error_text = @runtime.send(
-			:merged_pr_for_branch,
+		evidence, error_text = @runtime.send( :merged_pr_for_branch,
 			branch: "feature/huge-pagination",
 			branch_tip_sha: "abc123"
 		)

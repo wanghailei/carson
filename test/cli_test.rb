@@ -2,12 +2,11 @@ require_relative "test_helper"
 
 class CLITest < Minitest::Test
 	class FakeRuntime
-		attr_reader :calls, :messages, :lint_args
+		attr_reader :calls, :messages
 
 		def initialize
 			@calls = []
 			@messages = []
-			@lint_args = nil
 		end
 
 		def audit!
@@ -42,17 +41,6 @@ class CLITest < Minitest::Test
 
 		def review_sweep!
 			@calls << :review_sweep
-			Carson::Runtime::EXIT_OK
-		end
-
-		def lint_setup!( source:, ref:, force: )
-			@calls << :lint_setup
-			@lint_args = { source: source, ref: ref, force: force }
-			Carson::Runtime::EXIT_OK
-		end
-
-		def check!
-			@calls << :check
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -94,58 +82,11 @@ class CLITest < Minitest::Test
 		assert_equal "review:gate", review.fetch( :command )
 	end
 
-	def test_parse_args_lint_policy_requires_source
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "lint", "policy" ], out: out, err: err )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Missing required --source"
-	end
-
-	def test_parse_args_lint_policy_with_options
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args(
-			argv: [ "lint", "policy", "--source", "https://example.com/repo.git", "--ref", "stable", "--force" ],
-			out: out,
-			err: err
-		)
-
-		assert_equal "lint:setup", parsed.fetch( :command )
-		assert_equal "https://example.com/repo.git", parsed.fetch( :source )
-		assert_equal "stable", parsed.fetch( :ref )
-		assert_equal true, parsed.fetch( :force )
-	end
-
 	def test_dispatch_routes_to_expected_runtime_method
 		runtime = FakeRuntime.new
 		status = Carson::CLI.dispatch( parsed: { command: "template:apply" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, status
 		assert_equal [ :template_apply ], runtime.calls
-	end
-
-	def test_dispatch_passes_lint_setup_arguments
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch(
-			parsed: {
-				command: "lint:setup",
-				source: "/tmp/source",
-				ref: "main",
-				force: true
-			},
-			runtime: runtime
-		)
-
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ :lint_setup ], runtime.calls
-		assert_equal(
-			{
-				source: "/tmp/source",
-				ref: "main",
-				force: true
-			},
-			runtime.lint_args
-		)
 	end
 
 	def test_parse_args_refresh_without_path
@@ -253,19 +194,5 @@ class CLITest < Minitest::Test
 		status = Carson::CLI.dispatch( parsed: { command: "refresh:all" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, status
 		assert_equal [ :refresh_all ], runtime.calls
-	end
-
-	def test_parse_args_check_command
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "check" ], out: out, err: err )
-		assert_equal "check", parsed.fetch( :command )
-	end
-
-	def test_dispatch_routes_check_to_runtime
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch( parsed: { command: "check" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ :check ], runtime.calls
 	end
 end

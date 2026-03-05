@@ -9,7 +9,7 @@ carson_bin="$repo_root/exe/carson"
 
 # Shared launch helpers for Carson invocations in smoke scenarios.
 run_carson() {
-	HOME="$tmp_root/fakehome" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
+	HOME="$tmp_root/fakehome" CARSON_HOOKS_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
 }
 
 run_carson_with_mock_gh() {
@@ -25,14 +25,14 @@ run_carson_with_mock_gh_scenario() {
 run_carson_with_config() {
 	local config_path="$1"
 	shift
-	HOME="$tmp_root/fakehome" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$config_path" ruby "$carson_bin" "$@"
+	HOME="$tmp_root/fakehome" CARSON_HOOKS_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$config_path" ruby "$carson_bin" "$@"
 }
 
 run_carson_with_report_env() {
 	local report_home="$1"
 	local report_tmpdir="$2"
 	shift 2
-	HOME="$report_home" TMPDIR="$report_tmpdir" CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
+	HOME="$report_home" TMPDIR="$report_tmpdir" CARSON_HOOKS_PATH="$tmp_root/global-hooks" CARSON_CONFIG_FILE="$smoke_config_path" ruby "$carson_bin" "$@"
 }
 
 exit_text() {
@@ -72,7 +72,7 @@ mkdir -p "$tmp_base"
 tmp_root="$(mktemp -d "$tmp_base/carson-ci.XXXXXX")"
 mkdir -p "$tmp_root/fakehome"
 export HOME="$tmp_root/fakehome"
-export CARSON_HOOKS_BASE_PATH="$tmp_root/global-hooks"
+export CARSON_HOOKS_PATH="$tmp_root/global-hooks"
 export CARSON_BIN="$carson_bin"
 smoke_config_path="$tmp_root/carson-config.json"
 cat > "$smoke_config_path" <<EOF
@@ -245,7 +245,6 @@ if ! git -C "$init_repo" remote get-url origin >/dev/null 2>&1; then
 fi
 echo "PASS: onboard detected origin remote"
 cd "$init_repo"
-expect_exit 0 "inspect passes after onboard" run_carson inspect
 previous_hooks_dir="$tmp_root/previous-hooks/$expected_carson_version"
 mkdir -p "$previous_hooks_dir"
 cp "$tmp_root/global-hooks/$expected_carson_version/"* "$previous_hooks_dir/"
@@ -281,12 +280,9 @@ echo "PASS: offboard cleaned Carson-managed repo artefacts"
 expect_exit 0 "offboard is idempotent on an already cleaned repo" run_carson offboard
 expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 
-# Validate core setup flows (check/sync/hook/template).
+# Validate core setup flows (sync/hook/template).
 cd "$work_repo"
-expect_exit 2 "inspect blocks before hooks are installed" run_carson inspect
-expect_exit 0 "sync keeps local main aligned to origin/main" run_carson sync
-expect_exit 0 "prepare installs required hooks to global runtime path" run_carson prepare
-expect_exit 0 "inspect passes after prepare install" run_carson inspect
+expect_exit 0 "refresh syncs main and installs required hooks" run_carson refresh
 expect_exit 2 "audit blocks when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
 expect_exit 2 "audit blocks when default-branch baseline has pending check-runs" run_carson_with_mock_gh_scenario baseline_block_pending audit
 expect_exit 2 "audit blocks when default-branch workflows have no check-run evidence" run_carson_with_mock_gh_scenario baseline_block_no_evidence audit
@@ -340,30 +336,6 @@ git -c core.hooksPath=.git/hooks commit -m "chore: commit managed files for smok
 # Push to origin so local main stays in sync; avoids "main ahead" audit blocks later.
 git -c core.hooksPath=.git/hooks push origin main >/dev/null
 expect_exit 1 "unknown command returns runtime/configuration error" run_carson template lint
-expect_exit 1 "lint policy requires explicit source argument" run_carson lint policy
-
-setup_source="$tmp_root/lint-source"
-mkdir -p "$setup_source"
-cat > "$setup_source/.rubocop.yml" <<'EOF'
-AllCops:
-  DisabledByDefault: true
-EOF
-expect_exit 0 "lint policy copies configs from local source" run_carson lint policy --source "$setup_source"
-if [[ ! -f ".github/linters/.rubocop.yml" ]]; then
-	echo "FAIL: lint policy did not create .github/linters/.rubocop.yml" >&2
-	exit 1
-fi
-echo "PASS: lint policy created .github/linters/.rubocop.yml"
-
-setup_git_source="$tmp_root/lint-source-git"
-cp -R "$setup_source" "$setup_git_source"
-git init "$setup_git_source" >/dev/null
-git -C "$setup_git_source" config user.name "Carson CI"
-git -C "$setup_git_source" config user.email "carson-ci@example.com"
-git -C "$setup_git_source" add .
-git -C "$setup_git_source" commit -m "seed lint policy" >/dev/null
-git -C "$setup_git_source" branch -M main
-expect_exit 0 "lint policy clones configs from git URL" run_carson lint policy --source "file://$setup_git_source" --ref main --force
 
 
 # Validate report directory fallback precedence for invalid HOME.
@@ -466,19 +438,18 @@ printf 'runtime\n' > .tools/carson/README
 expect_exit 2 "outsider boundary blocks host repo .tools/carson" run_carson audit
 rm -rf .tools
 
-# Govern and housekeep smoke tests.
+# Govern smoke tests.
 cd "$work_repo"
 original_hooks_path_govern="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
 git add -A >/dev/null
-git commit -m "commit templates for govern smoke tests" >/dev/null
+git diff --cached --quiet || git commit -m "commit templates for govern smoke tests" >/dev/null
 git push origin main >/dev/null
 if [[ -n "$original_hooks_path_govern" ]]; then
 	git config core.hooksPath "$original_hooks_path_govern"
 else
 	git config --unset core.hooksPath 2>/dev/null || true
 fi
-expect_exit 0 "housekeep completes sync and prune" run_carson_with_mock_gh housekeep
 expect_exit 0 "govern --dry-run completes with no open PRs" run_carson_with_mock_gh govern --dry-run
 govern_output="$(run_carson_with_mock_gh govern --dry-run --json)"
 if [[ "$govern_output" != *"dry_run"* ]]; then

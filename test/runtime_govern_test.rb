@@ -248,7 +248,7 @@ class RuntimeGovernTest < Minitest::Test
 		end
 	end
 
-	def test_housekeep_calls_sync_and_prune
+	def test_housekeep_repo_calls_sync_and_prune
 		Dir.mktmpdir( "carson-govern-test", carson_tmp_root ) do |tmp_dir|
 			remote_repo = File.join( tmp_dir, "remote.git" )
 			work_repo = File.join( tmp_dir, "work" )
@@ -275,10 +275,8 @@ class RuntimeGovernTest < Minitest::Test
 					err: err,
 					verbose: true
 				)
-				status = runtime.housekeep!
-				assert_equal Carson::Runtime::EXIT_OK, status
+				runtime.send( :housekeep_repo!, repo_path: work_repo )
 				output = out.string
-				assert_includes output, "Housekeep"
 				assert_includes output, "in sync"
 			end
 		end
@@ -378,22 +376,12 @@ class RuntimeGovernTest < Minitest::Test
 		assert_equal( { dry_run: true, json_output: false, loop_seconds: nil }, runtime.govern_args )
 	end
 
-	def test_cli_dispatches_housekeep
-		runtime = Object.new
-		def runtime.housekeep!
-			Carson::Runtime::EXIT_OK
-		end
-		def runtime.puts_line( msg ); end
-		status = Carson::CLI.dispatch( parsed: { command: "housekeep" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, status
-	end
-
 	def test_config_govern_defaults
 		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |tmp_dir|
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 				c = Carson::Config.load( repo_root: "." )
 				assert_equal [], c.govern_repos
-				assert_equal true, c.govern_merge_authority
+				assert_equal true, c.govern_auto_merge
 				assert_equal "squash", c.govern_merge_method
 				assert_equal "auto", c.govern_agent_provider
 			end
@@ -404,13 +392,13 @@ class RuntimeGovernTest < Minitest::Test
 		with_env(
 			"CARSON_CONFIG_FILE" => "",
 			"CARSON_GOVERN_REPOS" => "~/Dev/a,~/Dev/b",
-			"CARSON_GOVERN_MERGE_AUTHORITY" => "true",
+			"CARSON_GOVERN_AUTO_MERGE" => "true",
 			"CARSON_GOVERN_MERGE_METHOD" => "squash",
 			"CARSON_GOVERN_AGENT_PROVIDER" => "codex"
 		) do
 			c = Carson::Config.load( repo_root: "." )
 			assert_equal 2, c.govern_repos.length
-			assert_equal true, c.govern_merge_authority
+			assert_equal true, c.govern_auto_merge
 			assert_equal "squash", c.govern_merge_method
 			assert_equal "codex", c.govern_agent_provider
 		end
@@ -989,7 +977,7 @@ class RuntimeGovernTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => hooks_base
+				"CARSON_HOOKS_PATH" => hooks_base
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -1000,7 +988,7 @@ class RuntimeGovernTest < Minitest::Test
 					err: err,
 					verbose: true
 				)
-				status = runtime.prepare!
+				status = runtime.send( :prepare! )
 				assert_equal Carson::Runtime::EXIT_OK, status
 				hooks_dir = runtime.send( :hooks_dir )
 				flag_path = File.join( hooks_dir, "workflow_style" )
@@ -1028,7 +1016,7 @@ class RuntimeGovernTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => hooks_base
+				"CARSON_HOOKS_PATH" => hooks_base
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -1066,29 +1054,4 @@ class RuntimeGovernTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, status
 	end
 
-	def test_cli_dispatches_inspect
-		runtime = Object.new
-		def runtime.inspect!
-			Carson::Runtime::EXIT_OK
-		end
-		def runtime.puts_line( msg ); end
-		status = Carson::CLI.dispatch(
-			parsed: { command: "inspect" },
-			runtime: runtime
-		)
-		assert_equal Carson::Runtime::EXIT_OK, status
-	end
-
-	def test_cli_dispatches_prepare
-		runtime = Object.new
-		def runtime.prepare!
-			Carson::Runtime::EXIT_OK
-		end
-		def runtime.puts_line( msg ); end
-		status = Carson::CLI.dispatch(
-			parsed: { command: "prepare" },
-			runtime: runtime
-		)
-		assert_equal Carson::Runtime::EXIT_OK, status
-	end
 end

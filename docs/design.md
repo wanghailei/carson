@@ -52,10 +52,10 @@ Interactive prompts are first-class UX surfaces, not implementation conveniences
 Example:
 
 ```
-⧓ No lint policy configured.
-  Register a policy source now? [Y/n]: _
+⧓ Template drift detected: .github/workflows/ci.yml
+  Apply managed version? [Y/n]: _
 
-  → Registered. Run: carson lint policy --apply
+  → Applied. Run: git add .github/workflows/ci.yml
 ```
 
 ## Documentation UX intent

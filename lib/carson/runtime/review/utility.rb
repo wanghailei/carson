@@ -14,7 +14,7 @@ module Carson
 
 				# Disposition records always start with configured prefix.
 				def disposition_prefixed?( text: )
-					text.to_s.lstrip.start_with?( config.review_disposition_prefix )
+					text.to_s.lstrip.start_with?( config.review_disposition )
 				end
 
 				# Extracts first matching disposition token from configured acknowledgement body.
@@ -48,7 +48,7 @@ module Carson
 				end
 
 				# Shared report writer for JSON plus Markdown pairs in global report output.
-				def write_report( report:, markdown_name:, json_name:, renderer: )
+				def report( report:, markdown_name:, json_name:, renderer: )
 					report_dir = report_dir_path
 					FileUtils.mkdir_p( report_dir )
 					markdown_path = File.join( report_dir, markdown_name )

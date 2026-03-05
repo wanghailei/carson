@@ -10,15 +10,13 @@ class ConfigLoadTest < Minitest::Test
 				config_path,
 				JSON.generate(
 					{
-						"review" => { "required_disposition_prefix" => "Global:" },
-						"style" => { "ruby_indentation" => "spaces" }
+						"review" => { "disposition" => "Global:" }
 					}
 				)
 			)
-			with_env( "CARSON_CONFIG_FILE" => config_path, "CARSON_REVIEW_DISPOSITION_PREFIX" => "Env:", "CARSON_RUBY_INDENTATION" => "either" ) do
+			with_env( "CARSON_CONFIG_FILE" => config_path, "CARSON_REVIEW_DISPOSITION" => "Env:" ) do
 				config = Carson::Config.load( repo_root: dir )
-				assert_equal "Env:", config.review_disposition_prefix
-				assert_equal "either", config.ruby_indentation
+				assert_equal "Env:", config.review_disposition
 			end
 		end
 	end
@@ -53,11 +51,6 @@ class ConfigLoadTest < Minitest::Test
 			config = Carson::Config.load( repo_root: Dir.pwd )
 			assert_equal [ "Custom sweep", "Other check" ], config.audit_advisory_check_names
 		end
-	end
-
-	def test_default_lint_policy_source
-		config = Carson::Config.load( repo_root: Dir.pwd )
-		assert_equal "wanghailei/lint.git", config.lint_policy_source
 	end
 
 end

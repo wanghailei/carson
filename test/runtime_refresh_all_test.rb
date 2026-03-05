@@ -12,7 +12,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
-				"CARSON_HOOKS_BASE_PATH" => File.join( tmp_dir, "hooks" )
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -44,7 +44,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => config_path,
-				"CARSON_HOOKS_BASE_PATH" => hooks_base
+				"CARSON_HOOKS_PATH" => hooks_base
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -80,7 +80,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => config_path,
-				"CARSON_HOOKS_BASE_PATH" => hooks_base
+				"CARSON_HOOKS_PATH" => hooks_base
 			) do
 				out = StringIO.new
 				err = StringIO.new
@@ -118,7 +118,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => config_path,
-				"CARSON_HOOKS_BASE_PATH" => hooks_base
+				"CARSON_HOOKS_PATH" => hooks_base
 			) do
 				out = StringIO.new
 				err = StringIO.new

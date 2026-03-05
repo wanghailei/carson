@@ -112,7 +112,7 @@ Configuration contract:
 
 A PR is merge-ready when three independent conditions are satisfied:
 
-1. **`carson audit` passes (exit 0)** — governance is clean. This covers lint policy compliance and outsider boundary enforcement (no Carson artefacts in the host repo). Carson owns this entirely.
+1. **`carson audit` passes (exit 0)** — governance is clean. This covers outsider boundary enforcement (no Carson artefacts in the host repo) and template drift detection. Carson owns this entirely.
 2. **`carson review gate` passes (exit 0)** — all actionable review comments are resolved. Every risk keyword and change request from reviewers has a disposition comment from the PR author. Carson owns this entirely.
 3. **All GitHub required status checks green** — the repository's own CI: test suite, build steps, type checking, and any other checks the repository defines. Carson does not own these; it queries their status via `gh`.
 
@@ -167,9 +167,9 @@ The first two are Carson-governed. The third is repository-governed. All three m
               │                  │
               ▼                  ▼
         ┌───────────┐     ┌───────────────┐
-        │housekeep  │     │ GitHub CI     │
-        │(sync +    │     │ runs checks   │
-        │ prune)    │     └───────┬───────┘
+        │ sync +    │     │ GitHub CI     │
+        │ prune     │     │ runs checks   │
+        │           │     └───────┬───────┘
         └───────────┘             │
                                   ▼
                          next govern cycle
@@ -201,9 +201,8 @@ When checks are pending and the PR was recently updated (within `govern.check_wa
 │  1. INSTALL & ONBOARD                                           │
 │                                                                 │
 │  gem install carson                                             │
-│  carson lint policy --source <policy-repo>                       │
 │  carson onboard /path/to/repo                                   │
-│    ├── prepare  (copy hooks, write workflow_style flag)          │
+│    ├── refresh  (install hooks, write workflow_style flag)       │
 │    ├── template apply  (sync .github/* files)                   │
 │    ├── audit  (first governance check)                          │
 │    └── guidance  (print workflow style, config hints)            │
@@ -242,11 +241,11 @@ When checks are pending and the PR was recently updated (within `govern.check_wa
 │  carson govern                                                  │
 │    ├── list open PRs across portfolio (gh pr list)              │
 │    ├── classify each PR (CI / review / audit status)            │
-│    │    ├── ready        → merge + housekeep                    │
+│    │    ├── ready        → merge + sync + prune                 │
 │    │    ├── ci_failing   → gather CI logs → dispatch agent      │
 │    │    ├── review_blocked → gather findings → dispatch agent   │
 │    │    └── pending      → skip (wait for checks)               │
-│    ├── housekeep (sync main + prune stale branches)             │
+│    ├── sync + prune (fast-forward main, remove stale branches)  │
 │    └── next cycle picks up agent push results                   │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -260,7 +259,7 @@ When checks are pending and the PR was recently updated (within `govern.check_wa
 
 ## Core Command Flow
 
-1. `onboard` sets baseline (`prepare`, `template apply`, `audit`) for a target repository.
+1. `onboard` sets baseline (`refresh`, `template apply`, `audit`) for a target repository.
 2. `audit` evaluates governance state and policy compliance.
 3. `sync` fast-forwards local `main` from configured remote.
 4. `prune` removes stale local branches tracking deleted upstream refs.

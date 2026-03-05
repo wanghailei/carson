@@ -81,18 +81,6 @@ module Carson
 				EXIT_OK
 			end
 
-			# Standalone housekeep: sync + prune.
-			def housekeep!
-				puts_verbose ""
-				puts_verbose "[Housekeep]"
-				sync_status = sync!
-				if sync_status != EXIT_OK
-					puts_line "housekeep: sync returned #{sync_status}; skipping prune."
-					return sync_status
-				end
-				prune!
-			end
-
 		private
 
 			# Resolves the list of repo paths to govern from config.
@@ -209,10 +197,6 @@ module Carson
 					return [ TRIAGE_REVIEW_BLOCKED, "changes requested by reviewer" ]
 				end
 
-				# Run audit and review gate checks for deeper analysis
-				audit_status, audit_detail = check_audit_status( pr: pr, repo_path: repo_path )
-				return [ TRIAGE_NEEDS_ATTENTION, audit_detail ] unless audit_status == :pass
-
 				review_status, review_detail = check_review_gate_status( pr: pr, repo_path: repo_path )
 				return [ TRIAGE_REVIEW_BLOCKED, review_detail ] unless review_status == :pass
 
@@ -243,20 +227,6 @@ module Carson
 
 			def check_state_pending?( state: )
 				[ "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED" ].include?( state.upcase )
-			end
-
-			# Checks if the PR's branch is available locally and defers audit. Returns [:pass/:fail, detail].
-			def check_audit_status( pr:, repo_path: )
-				branch = pr[ "headRefName" ].to_s
-				stdout_text, stderr_text, status = Open3.capture3(
-					"git", "rev-parse", "--verify", "refs/heads/#{branch}",
-					chdir: repo_path
-				)
-				unless status.success?
-					return [ :pass, "branch not local; skipping audit" ]
-				end
-
-				[ :pass, "audit deferred to merge gate" ]
 			end
 
 			# Checks review gate status. Returns [:pass/:fail, detail].
@@ -308,7 +278,7 @@ module Carson
 
 			# Merges a PR that has passed all gates.
 			def merge_if_ready!( pr:, repo_path: )
-				unless config.govern_merge_authority
+				unless config.govern_auto_merge
 					puts_line "    merge authority disabled; skipping merge"
 					return
 				end
@@ -373,14 +343,15 @@ module Carson
 				puts_line "    agent result: #{result.status} — #{result.summary.to_s[0, 120]}"
 			end
 
-			# Runs housekeep in the given repo after a successful merge.
+			# Runs sync + prune in the given repo after a successful merge.
 			def housekeep_repo!( repo_path: )
-				if repo_path == self.repo_root
-					housekeep!
+				rt = if repo_path == self.repo_root
+					self
 				else
-					rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
-					rt.housekeep!
+					Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
 				end
+				sync_status = rt.sync!
+				rt.prune! if sync_status == EXIT_OK
 			end
 
 			# Selects which agent provider to use based on config and availability.

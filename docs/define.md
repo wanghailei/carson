@@ -6,7 +6,7 @@ Carson is an outsider governance runtime that keeps repository governance consis
 Named after Carson, the head of household in Downton Abbey, Carson embodies the same role for your repositories: you write the code, Carson manages everything else — from commit-time checks through merge-readiness on GitHub to cleaning up your local workspace afterwards. Like the consummate head of staff, Carson runs the household with strict discipline and professional standards, but never oversteps — it prepares everything for the merge decision without making it, and keeps the estate (your repositories) in impeccable order without owning it.
 
 ## Problem statement
-Repository controls degrade when local workflows diverge, review handling is inconsistent, or policy checks are treated as optional. Developers should focus on writing code, not on manually running lint checks, chasing unresolved review comments, keeping templates in sync, or pruning stale branches. Teams need a repeatable governance layer that is strict enough for enterprise stability while remaining operationally practical — one that takes over the entire housekeeping burden so developers never think about it.
+Repository controls degrade when local workflows diverge, review handling is inconsistent, or policy checks are treated as optional. Developers should focus on writing code, not on chasing unresolved review comments, keeping templates in sync, or pruning stale branches. Teams need a repeatable governance layer that is strict enough for enterprise stability while remaining operationally practical — one that takes over the entire housekeeping burden so developers never think about it.
 
 ## Target outcomes
 - Deterministic governance checks for local and CI operation.
@@ -15,15 +15,14 @@ Repository controls degrade when local workflows diverge, review handling is inc
 - Predictable onboarding and daily operation for repository maintainers.
 
 ## In-scope capabilities
-- Local governance commands (`onboard`, `audit`, `sync`, `prune`, `prepare`, `inspect`, `template`, `review`, `offboard`, `refresh`, `refresh --all`).
-- Portfolio governance commands (`govern`, `housekeep`).
-- Lint policy distribution via `lint policy`.
+- Local governance commands (`onboard`, `audit`, `sync`, `prune`, `template`, `review`, `offboard`, `refresh`, `refresh --all`).
+- Portfolio governance commands (`govern`).
 - Review governance via `review gate` and `review sweep`.
 - Whole-file management of selected GitHub-native policy files under `.github/*`.
 - Strict exit status contract suitable for automation.
 
 ## Out-of-scope capabilities
-- Replacing GitHub as merge authority (Carson has optional merge authority gated by `govern.merge.authority`, but defers to GitHub rulesets and human judgement by default).
+- Replacing GitHub as merge authority (Carson has optional merge authority gated by `govern.auto_merge`, but defers to GitHub rulesets and human judgement by default).
 - Deciding business-domain policy for host repositories.
 - Executing force merges or bypassing required checks.
 - Persisting Carson-specific configuration inside host repositories.
@@ -49,7 +48,7 @@ The user does not think about Carson's installation again. If they upgrade, `bas
 
 ### Stage 2 — Onboarding a repository
 
-The user runs `carson onboard` once per repository. Carson asks only what it cannot detect: the merge method, whether to register the repo for portfolio governance, whether a central lint policy exists. Everything else — remote, main branch, workflow style — is inferred from the repository itself.
+The user runs `carson onboard` once per repository. Carson asks only what it cannot detect: the merge method and whether to register the repo for portfolio governance. Everything else — remote, main branch, workflow style — is inferred from the repository itself.
 
 After onboarding, the user commits the generated `.github/*` files. The repository is governed. That is the last time the user thinks about setup for that repository.
 

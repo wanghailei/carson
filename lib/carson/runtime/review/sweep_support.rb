@@ -199,7 +199,7 @@ module Carson
 
 				# Writes sweep artefacts for CI logs and local troubleshooting.
 				def write_review_sweep_report( report: )
-					markdown_path, json_path = write_report(
+					markdown_path, json_path = report(
 						report: report,
 						markdown_name: REVIEW_SWEEP_REPORT_MD,
 						json_name: REVIEW_SWEEP_REPORT_JSON,
