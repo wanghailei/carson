@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.24.0 — Remove Scope Integrity Guard
+
+### What changed
+
+- **Scope integrity guard removed from `carson audit`.** The guard classified changed files into path groups (tool, ui, test, domain, docs) and flagged commits crossing multiple groups. This required maintaining an explicit `scope.path_groups` list in `~/.carson/config.json` that went stale whenever a repository's directory structure changed. The maintenance burden outweighed the value.
+
+### Migration
+
+- The `scope.path_groups` config key is now ignored. Existing configs with this key will not cause errors — the data is silently unused.
+- The `path_groups` attribute has been removed from `Carson::Config`. Code referencing `config.path_groups` will raise `NoMethodError`.
+- PR template no longer includes `single_scope_group` and `cross-boundary_changes_justified` checklist items. The `single_business_intent` check remains — that is a human-level focus check, not mechanical path classification.
+
 ## 2.23.0 — Warm Onboard Welcome Guide
 
 ### What changed

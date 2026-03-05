@@ -8,7 +8,7 @@ module Carson
 	class Config
 		attr_accessor :git_remote
 		attr_reader :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:path_groups, :template_managed_files, :template_superseded_files, :template_canonical,
+			:template_managed_files, :template_superseded_files, :template_canonical,
 			:lint_policy_source,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
@@ -37,15 +37,6 @@ module Carson
 				"hooks" => {
 					"base_path" => "~/.carson/hooks",
 					"required_hooks" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
-				},
-				"scope" => {
-					"path_groups" => {
-						"tool" => [ "exe/**", "bin/**", "lib/**", "script/**", ".github/**", "templates/.github/**", "hooks/**", "install.sh", "README.md", "RELEASE.md", "VERSION", "carson.gemspec" ],
-						"ui" => [ "app/views/**", "app/assets/**", "app/javascript/**", "docs/ui_*.md" ],
-						"test" => [ "test/**", "spec/**", "features/**" ],
-						"domain" => [ "app/**", "db/**", "config/**" ],
-						"docs" => [ "docs/**", "*.md" ]
-					}
 				},
 				"template" => {
 					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md" ],
@@ -215,8 +206,6 @@ module Carson
 			@hooks_base_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "base_path" )
 			@required_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "required_hooks" )
 
-			@path_groups = fetch_hash( hash: fetch_hash( hash: data, key: "scope" ), key: "path_groups" ).transform_values { |value| normalize_patterns( value: value ) }
-
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
 			@template_superseded_files = fetch_optional_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "superseded_files" )
 			@template_canonical = fetch_optional_path( hash: fetch_hash( hash: data, key: "template" ), key: "canonical" )
@@ -267,7 +256,6 @@ module Carson
 				raise ConfigError, "git.protected_branches must include #{main_branch}" unless protected_branches.include?( main_branch )
 				raise ConfigError, "hooks.base_path cannot be empty" if hooks_base_path.empty?
 				raise ConfigError, "hooks.required_hooks cannot be empty" if required_hooks.empty?
-				raise ConfigError, "scope.path_groups cannot be empty" if path_groups.empty?
 				raise ConfigError, "review.required_disposition_prefix cannot be empty" if review_disposition_prefix.empty?
 				raise ConfigError, "review.risk_keywords cannot be empty" if review_risk_keywords.empty?
 				raise ConfigError, "review.sweep.states must contain one or both of open, closed" if ( review_sweep_states - [ "open", "closed" ] ).any? || review_sweep_states.empty?
@@ -328,13 +316,6 @@ module Carson
 			rescue ArgumentError, TypeError
 				raise ConfigError, "config key #{key} must be an integer"
 			end
-
-			def normalize_patterns( value: )
-				patterns = Array( value ).map { |entry| entry.to_s.strip }.reject( &:empty? )
-				raise ConfigError, "scope.path_groups entries must contain at least one glob" if patterns.empty?
-				patterns
-			end
-
 			def fetch_optional_boolean( hash:, key:, default:, key_path: nil )
 				value = hash.fetch( key, default )
 				return true if value == true

@@ -92,15 +92,6 @@ module Carson
 				elsif baseline_st == "skipped"
 					audit_concise_problems << "Baseline: skipped (#{default_branch_baseline.fetch( :skip_reason )})."
 				end
-				scope_guard = print_scope_integrity_guard
-				audit_state = "attention" if audit_state == "ok" && scope_guard.fetch( :status ) == "attention"
-				if scope_guard.fetch( :status ) == "attention"
-					if scope_guard.fetch( :split_required )
-						audit_concise_problems << "Scope: multiple module groups touched."
-					else
-						audit_concise_problems << "Scope: unmatched paths — classify via scope.path_groups."
-					end
-				end
 				if config.template_canonical.nil? || config.template_canonical.to_s.empty?
 					puts_verbose ""
 					puts_verbose "[Canonical Templates]"
@@ -552,112 +543,6 @@ module Carson
 				end
 				lines << ""
 				lines.join( "\n" )
-			end
-
-			# Evaluates scope integrity using staged paths first, then working-tree paths as fallback.
-			def print_scope_integrity_guard
-				staged = staged_files
-				files = staged.empty? ? changed_files : staged
-				files_source = staged.empty? ? "working_tree" : "staged"
-				return { status: "ok", split_required: false } if files.empty?
-
-				scope = scope_integrity_status( files: files, branch: current_branch )
-				puts_verbose ""
-				puts_verbose "[Scope Integrity Guard]"
-				puts_verbose "scope_file_source: #{files_source}"
-				puts_verbose "scope_file_count: #{files.count}"
-				puts_verbose "branch: #{scope.fetch( :branch )}"
-				puts_verbose "scope_basis: changed_paths_only"
-				puts_verbose "detected_groups: #{scope.fetch( :detected_groups ).sort.join( ', ' )}"
-				puts_verbose "core_groups: #{scope.fetch( :core_groups ).empty? ? 'none' : scope.fetch( :core_groups ).sort.join( ', ' )}"
-				puts_verbose "non_doc_groups: #{scope.fetch( :non_doc_groups ).empty? ? 'none' : scope.fetch( :non_doc_groups ).sort.join( ', ' )}"
-				puts_verbose "docs_only_changes: #{scope.fetch( :docs_only )}"
-				puts_verbose "unmatched_paths_count: #{scope.fetch( :unmatched_paths ).count}"
-				scope.fetch( :unmatched_paths ).each { |path| puts_verbose "unmatched_path: #{path}" }
-				puts_verbose "violating_files_count: #{scope.fetch( :violating_files ).count}"
-				scope.fetch( :violating_files ).each { |path| puts_verbose "violating_file: #{path} (group=#{scope.fetch( :grouped_paths ).fetch( path )})" }
-				puts_verbose "checklist_single_business_intent: pass"
-				puts_verbose "checklist_single_scope_group: #{scope.fetch( :split_required ) ? 'advisory' : 'pass'}"
-				puts_verbose "checklist_cross_boundary_changes_justified: #{( scope.fetch( :split_required ) || scope.fetch( :misc_present ) ) ? 'advisory' : 'pass'}"
-				if scope.fetch( :split_required )
-					puts_verbose "ACTION: multiple module groups detected (informational only)."
-				elsif scope.fetch( :misc_present )
-					puts_verbose "ACTION: unmatched paths detected; classify via scope.path_groups for stricter module checks."
-				else
-					puts_verbose "ACTION: scope integrity is within commit policy."
-				end
-				{ status: scope.fetch( :status ), split_required: scope.fetch( :split_required ) }
-			end
-
-			# Evaluates whether changed files stay within one core module group.
-			def scope_integrity_status( files:, branch: )
-				grouped_paths = files.map { |path| [ path, scope_group_for_path( path: path ) ] }.to_h
-				detected_groups = grouped_paths.values.uniq
-				non_doc_groups = detected_groups - [ "docs" ]
-				# Tests are supporting changes; they may travel with one core module group.
-				core_groups = non_doc_groups - [ "test", "misc" ]
-				mixed_core_groups = core_groups.length > 1
-				misc_present = non_doc_groups.include?( "misc" )
-				split_required = mixed_core_groups
-				unmatched_paths = files.select { |path| grouped_paths.fetch( path ) == "misc" }
-				violating_files = if split_required
-					files.select do |path|
-						group = grouped_paths.fetch( path )
-						next false if [ "docs", "test", "misc" ].include?( group )
-						core_groups.include?( group )
-					end
-				else
-					[]
-				end
-				{
-				branch: branch,
-				grouped_paths: grouped_paths,
-				detected_groups: detected_groups,
-				non_doc_groups: non_doc_groups,
-				core_groups: core_groups,
-				docs_only: non_doc_groups.empty?,
-				mixed_core_groups: mixed_core_groups,
-				misc_present: misc_present,
-				split_required: split_required,
-				unmatched_paths: unmatched_paths,
-				violating_files: violating_files,
-				status: ( split_required || misc_present ) ? "attention" : "ok"
-				}
-			end
-
-			# Resolves a path to configured scope group; unmatched paths become misc.
-			def scope_group_for_path( path: )
-				config.path_groups.each do |group, patterns|
-					return group if patterns.any? { |pattern| pattern_matches_path?( pattern: pattern, path: path ) }
-				end
-				"misc"
-			end
-
-			# Supports directory-wide /** prefixes and fnmatch for other patterns.
-			def pattern_matches_path?( pattern:, path: )
-				if pattern.end_with?( "/**" )
-					prefix = pattern.delete_suffix( "/**" )
-					return path == prefix || path.start_with?( "#{prefix}/" )
-				end
-				File.fnmatch?( pattern, path, File::FNM_PATHNAME | File::FNM_DOTMATCH )
-			end
-
-			# Uses index-only paths so commit hooks evaluate exactly what is being committed.
-			def staged_files
-				git_capture!( "diff", "--cached", "--name-only" ).lines.map do |line|
-					raw_path = line.to_s.strip
-					next if raw_path.empty?
-					raw_path.split( " -> " ).last
-				end.compact
-			end
-
-			# Parses `git status --porcelain` and normalises rename targets.
-			def changed_files
-				git_capture!( "status", "--porcelain" ).lines.map do |line|
-					raw_path = line[ 3.. ].to_s.strip
-					next if raw_path.empty?
-					raw_path.split( " -> " ).last
-				end.compact
 			end
 
 			# True when there are no staged/unstaged/untracked file changes.
