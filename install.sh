@@ -111,7 +111,3 @@ echo "Launcher linked: $carson_link"
 echo "If \`carson\` is not found, add \`$home_bin\` to PATH."
 
 "$carson_link" refresh --all || echo "Warning: one or more governed repos reported issues. Run 'carson refresh --all' to review."
-
-echo "Post-upgrade step (per governed repository):"
-echo "  carson prepare && carson inspect"
-echo "This aligns core.hooksPath to ~/.carson/hooks/${version}."
