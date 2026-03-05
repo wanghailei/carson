@@ -54,42 +54,49 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[PR and Required Checks (gh)]"
 				monitor_report = pr_and_check_report
-				audit_state = "attention" if audit_state == "ok" && monitor_report.fetch( :status ) != "ok"
-				if monitor_report.fetch( :status ) == "skipped"
-					audit_concise_problems << "Checks: skipped (#{monitor_report.fetch( :skip_reason )})."
-				elsif monitor_report.fetch( :status ) == "attention"
+				audit_state = "attention" if audit_state == "ok" && !%w[ok skipped].include?( monitor_report.fetch( :status ) )
+				if monitor_report.fetch( :status ) == "attention"
 					checks = monitor_report.fetch( :checks )
 					fail_n = checks.fetch( :failing_count )
 					pend_n = checks.fetch( :pending_count )
 					total = checks.fetch( :required_total )
+					fail_names = checks.fetch( :failing ).map { |e| e.fetch( :name ) }.join( ", " )
 					if fail_n.positive? && pend_n.positive?
-						audit_concise_problems << "Checks: #{fail_n} failing, #{pend_n} pending of #{total} required."
+						audit_concise_problems << "Checks: #{fail_n} failing (#{fail_names}), #{pend_n} pending of #{total} required."
 					elsif fail_n.positive?
-						audit_concise_problems << "Checks: #{fail_n} of #{total} failing."
+						audit_concise_problems << "Checks: #{fail_n} of #{total} failing (#{fail_names})."
 					elsif pend_n.positive?
 						audit_concise_problems << "Checks: pending (#{total - pend_n} of #{total} complete)."
-					elsif checks.fetch( :status ) == "skipped"
-						audit_concise_problems << "Checks: skipped (#{checks.fetch( :skip_reason )})."
 					end
 				end
 				puts_verbose ""
 				puts_verbose "[Default Branch CI Baseline (gh)]"
 				default_branch_baseline = default_branch_ci_baseline_report
-				audit_state = "attention" if audit_state == "ok" && default_branch_baseline.fetch( :status ) != "ok"
+				audit_state = "attention" if audit_state == "ok" && !%w[ok skipped].include?( default_branch_baseline.fetch( :status ) )
 				baseline_st = default_branch_baseline.fetch( :status )
 				if baseline_st == "block"
 					parts = []
-					parts << "#{default_branch_baseline.fetch( :failing_count )} failing" if default_branch_baseline.fetch( :failing_count ).positive?
-					parts << "#{default_branch_baseline.fetch( :pending_count )} pending" if default_branch_baseline.fetch( :pending_count ).positive?
+					if default_branch_baseline.fetch( :failing_count ).positive?
+						names = default_branch_baseline.fetch( :failing ).map { |e| e.fetch( :name ) }.join( ", " )
+						parts << "#{default_branch_baseline.fetch( :failing_count )} failing (#{names})"
+					end
+					if default_branch_baseline.fetch( :pending_count ).positive?
+						names = default_branch_baseline.fetch( :pending ).map { |e| e.fetch( :name ) }.join( ", " )
+						parts << "#{default_branch_baseline.fetch( :pending_count )} pending (#{names})"
+					end
 					parts << "no check-runs for active workflows" if default_branch_baseline.fetch( :no_check_evidence )
 					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )} — fix before merge."
 				elsif baseline_st == "attention"
 					parts = []
-					parts << "#{default_branch_baseline.fetch( :advisory_failing_count )} advisory failing" if default_branch_baseline.fetch( :advisory_failing_count ).positive?
-					parts << "#{default_branch_baseline.fetch( :advisory_pending_count )} advisory pending" if default_branch_baseline.fetch( :advisory_pending_count ).positive?
+					if default_branch_baseline.fetch( :advisory_failing_count ).positive?
+						names = default_branch_baseline.fetch( :advisory_failing ).map { |e| e.fetch( :name ) }.join( ", " )
+						parts << "#{default_branch_baseline.fetch( :advisory_failing_count )} advisory failing (#{names})"
+					end
+					if default_branch_baseline.fetch( :advisory_pending_count ).positive?
+						names = default_branch_baseline.fetch( :advisory_pending ).map { |e| e.fetch( :name ) }.join( ", " )
+						parts << "#{default_branch_baseline.fetch( :advisory_pending_count )} advisory pending (#{names})"
+					end
 					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )}."
-				elsif baseline_st == "skipped"
-					audit_concise_problems << "Baseline: skipped (#{default_branch_baseline.fetch( :skip_reason )})."
 				end
 				if config.template_canonical.nil? || config.template_canonical.to_s.empty?
 					puts_verbose ""

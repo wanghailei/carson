@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.29.0 — Audit Concise Output UX
+
+### What changed
+
+- **"Checks: skipped" and "Baseline: skipped" messages are no longer shown in concise audit output.** If checks cannot run (no PR, no required checks, `gh` unavailable), the audit stays silent instead of surfacing a misleading "skipped" line. Verbose mode still logs the skip reason for debugging.
+- **Audit state no longer bumps to "attention" for skipped checks.** A skip is a non-event, not a concern.
+- **Failing and pending check names are now included in concise messages.** Before: `Baseline (main): 1 failing — fix before merge.` After: `Baseline (main): 1 failing (lint) — fix before merge.` Same treatment applies to PR required checks and advisory baseline messages.
+
+### Migration
+
+- No action required. This is a display-only change to concise audit output.
+
 ## 2.28.0 — Non-Interactive CLI Flags for Setup
 
 ### What changed
