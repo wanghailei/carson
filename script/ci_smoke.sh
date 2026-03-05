@@ -283,9 +283,9 @@ expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 # Validate core setup flows (sync/hook/template).
 cd "$work_repo"
 expect_exit 0 "refresh syncs main and installs required hooks" run_carson refresh
-expect_exit 2 "audit blocks when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
-expect_exit 2 "audit blocks when default-branch baseline has pending check-runs" run_carson_with_mock_gh_scenario baseline_block_pending audit
-expect_exit 2 "audit blocks when default-branch workflows have no check-run evidence" run_carson_with_mock_gh_scenario baseline_block_no_evidence audit
+expect_exit 0 "audit reports attention (not block) when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
+expect_exit 0 "audit reports attention (not block) when default-branch baseline has pending check-runs" run_carson_with_mock_gh_scenario baseline_block_pending audit
+expect_exit 0 "audit reports attention (not block) when default-branch workflows have no check-run evidence" run_carson_with_mock_gh_scenario baseline_block_no_evidence audit
 for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 	if [[ ! -x "$tmp_root/global-hooks/$expected_carson_version/$required_hook" ]]; then
 		echo "FAIL: required hook missing or non-executable: $required_hook" >&2
