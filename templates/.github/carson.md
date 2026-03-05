@@ -24,7 +24,6 @@ carson review gate     # block until actionable review findings are resolved
 ```bash
 carson sync            # fast-forward local main from remote
 carson prune           # remove stale branches (safer than git branch -d on squash repos)
-carson housekeep       # sync + prune together
 ```
 
 ## Exit Codes

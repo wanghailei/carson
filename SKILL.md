@@ -1,16 +1,16 @@
 # Carson Skill
 
-You are working in a repository governed by Carson — a deterministic governance runtime. Carson handles git hooks, lint enforcement, PR triage, agent dispatch, merge, and cleanup. You provide the intelligence; Carson provides the infrastructure.
+You are working in a repository governed by Carson — a deterministic governance runtime. Carson handles git hooks, PR triage, agent dispatch, merge, and cleanup. You provide the intelligence; Carson provides the infrastructure.
 
 ## When to use Carson commands
 
 | User intent | Command | What happens |
 |---|---|---|
-| "Check if my code is ready" | `carson audit` | Lint, scope, boundary checks. Exit 0 = clean. Exit 2 = policy block. |
+| "Check if my code is ready" | `carson audit` | Scope, boundary checks. Exit 0 = clean. Exit 2 = policy block. |
 | "Is my PR mergeable?" | `carson review gate` | Polls for unresolved review threads and actionable comments. Blocks until resolved. |
 | "What's happening across my repos?" | `carson govern --dry-run` | Classifies every open PR without taking action. Read the summary. |
 | "Run governance continuously" | `carson govern --loop 300` | Triage-dispatch-merge cycle every 300 seconds. Ctrl-C to stop. |
-| "Merge ready PRs and dispatch fixes" | `carson govern` | Full autonomous cycle: merge, dispatch agents, escalate, housekeep. |
+| "Merge ready PRs and dispatch fixes" | `carson govern` | Full autonomous cycle: merge, dispatch agents, escalate. |
 | "Set up Carson for a repo" | `carson onboard /path/to/repo` | Installs hooks, syncs templates, runs first audit. |
 | "Refresh after upgrading Carson" | `carson refresh` | Re-applies hooks and templates for the current version. |
 | "Update my local main" | `carson sync` | Fast-forward local main from remote. Blocks if tree is dirty. |
@@ -18,13 +18,12 @@ You are working in a repository governed by Carson — a deterministic governanc
 | "Check template drift" | `carson template check` then `carson template apply` | Detect and fix .github/* drift. |
 | "Remove Carson from a repo" | `carson offboard /path/to/repo` | Removes hooks and managed files. |
 | "What version?" | `carson version` | Prints installed version with ⧓ badge. |
-| "Verify hook installation" | `carson inspect` | Checks hooks path, file existence, permissions. |
 
 ## Exit codes
 
 - `0` — success, all clear.
 - `1` — runtime or configuration error. Read the error message.
-- `2` — policy block. Something must be fixed before proceeding (lint violation, unresolved review, boundary breach).
+- `2` — policy block. Something must be fixed before proceeding (unresolved review, boundary breach).
 
 When you see exit 2, do NOT bypass it. Read the output, fix the root cause, and re-run.
 
@@ -88,7 +87,7 @@ Run `carson review gate` to see which comments need disposition. Respond to each
 This means a commit was made to main that couldn't be pushed (branch protection). Reset: `git checkout main && git reset --hard github/main`.
 
 **Hooks out of date after upgrade:**
-Run `carson prepare` to write new hook versions, then `carson inspect` to verify.
+Run `carson refresh` to re-apply hooks and templates for the current version.
 
 **Govern merge fails:**
 Check that `govern.merge.method` in config matches what GitHub allows. If the repo enforces linear history, only `rebase` works.
@@ -98,4 +97,3 @@ Check that `govern.merge.method` in config matches what GitHub allows. If the re
 - Carson never lives inside governed repositories. No `.carson.yml`, no `bin/carson`, no `.tools/carson/`.
 - Carson-managed files in repos are limited to `.github/*` templates.
 - Carson's hooks live at `~/.carson/hooks/<version>/`, never in `.git/hooks/`.
-- Lint policy is distributed via `carson lint policy --source <policy-repo>` into each repo's `.github/linters/`.

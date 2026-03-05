@@ -167,7 +167,7 @@ module Carson
 
 				# Writes review gate artefacts using fixed report names in global report output.
 				def write_review_gate_report( report: )
-					markdown_path, json_path = write_report(
+					markdown_path, json_path = report(
 						report: report,
 						markdown_name: REVIEW_GATE_REPORT_MD,
 						json_name: REVIEW_GATE_REPORT_JSON,

@@ -71,9 +71,9 @@ class ConfigCanonicalTest < Minitest::Test
 	end
 
 	def test_lint_files_are_superseded
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/workflows/carson-lint.yml"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/.mega-linter.yml"
 		config = Carson::Config.load( repo_root: Dir.pwd )
-		assert_includes config.template_superseded_files, ".github/workflows/carson-lint.yml"
-		assert_includes config.template_superseded_files, ".github/.mega-linter.yml"
 		refute_includes config.template_managed_files, ".github/workflows/carson-lint.yml"
 		refute_includes config.template_managed_files, ".github/.mega-linter.yml"
 	end

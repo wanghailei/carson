@@ -25,26 +25,7 @@ carson version
 
 ## First-Time Setup
 
-### Step 1: Prepare your lint policy
-
-Carson distributes lint configuration files from a central policy source — a directory or git repository you control — into each governed repo's `.github/linters/` directory, where MegaLinter auto-discovers them in CI.
-
-```bash
-carson lint policy --source /path/to/your-policy-repo
-```
-
-After this command, `.github/linters/` contains your lint configs (`.rubocop.yml`, `biome.json`, `ruff.toml`, etc.). MegaLinter uses these in CI. Every governed repository gets the same rules — this is how Carson keeps lint consistent across languages.
-
-Carson distributes policy; MegaLinter enforces it. Carson does not run linters itself — that responsibility belongs to MegaLinter in CI and to the developer's own local tooling.
-
-Options:
-- `--source <path-or-git-url>` — where to read policy files from (required).
-- `--ref <git-ref>` — branch or tag when `--source` is a git URL.
-- `--force` — overwrite existing `.github/linters/` files.
-
-Policy layout: lint config files sit at the root of the source repo (flat layout, no subdirectories required).
-
-### Step 2: Onboard a repository
+### Onboard a repository
 
 ```bash
 carson onboard /path/to/your-repo
@@ -69,7 +50,7 @@ carson setup
 
 Re-run the interactive setup quiz to change your remote, main branch, workflow style, or merge method. Choices are saved to `~/.carson/config.json`.
 
-### Step 3: Commit generated files
+### Commit generated files
 
 After `onboard`, commit the generated `.github/*` changes in your repository. From this point the repository is governed.
 
@@ -96,7 +77,7 @@ jobs:
 
 Notes:
 - When upgrading Carson, update both `carson_ref` and `carson_version` together.
-- `CARSON_READ_TOKEN` must have read access to your policy source repository so CI can run `carson lint policy`.
+- `CARSON_READ_TOKEN` must have read access to your policy source repository.
 - The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
 
 ### Canonical Templates
@@ -133,7 +114,6 @@ Carson discovers files in this directory and syncs them to governed repos alongs
 
 ```bash
 carson sync                                          # fast-forward local main
-carson lint policy --source /path/to/your-policy-repo # refresh policy if needed
 carson audit                                         # full governance check
 ```
 
@@ -268,16 +248,7 @@ Where Carson installs git hooks.
 
 - Default: **`~/.carson/hooks/<version>/`**. Outsider principle: hooks live outside your repo, versioned per Carson release, never committed to your repository.
 
-Change: `CARSON_HOOKS_BASE_PATH`.
-
-#### Lint policy source
-
-Where lint configuration files come from and where they land.
-
-- Default source: **`wanghailei/lint.git`**. A central repository containing lint configs for all languages.
-- Target: **`<repo>/.github/linters/`**. MegaLinter auto-discovers configs here in CI.
-
-Change: `carson lint policy --source <path-or-git-url>` or `lint.policy_source` in config. After changing policy, run `carson refresh --all` to propagate to all governed repositories.
+Change: `CARSON_HOOKS_PATH`.
 
 #### Review disposition
 
@@ -285,7 +256,7 @@ Whether reviewer findings require acknowledgement.
 
 - Default: **required**. Comments containing risk keywords (`bug`, `security`, `regression`, etc.) must have a `Disposition:` response from the PR author before merge. Prevents feedback from being buried.
 
-Change prefix: `CARSON_REVIEW_DISPOSITION_PREFIX`.
+Change: `CARSON_REVIEW_DISPOSITION`.
 
 #### Merge authority
 
@@ -293,7 +264,7 @@ Whether `carson govern` can merge PRs autonomously.
 
 - Default: **enabled**. Carson merges PRs that pass all gates (CI green, review clean, audit clean). PRs that need human judgement are escalated, never silently merged.
 
-Disable: `govern.merge_authority: false` in config.
+Disable: `govern.auto_merge: false` in config or `CARSON_GOVERN_AUTO_MERGE=false`.
 
 #### Output verbosity
 
@@ -330,14 +301,15 @@ Common environment overrides:
 
 | Variable | Purpose |
 |---|---|
-| `CARSON_HOOKS_BASE_PATH` | Custom hooks installation directory. |
+| `CARSON_HOOKS_PATH` | Custom hooks installation directory. |
 | `CARSON_REVIEW_WAIT_SECONDS` | Initial wait before first review poll. |
 | `CARSON_REVIEW_POLL_SECONDS` | Interval between review polls. |
 | `CARSON_REVIEW_MAX_POLLS` | Maximum review poll attempts. |
-| `CARSON_REVIEW_DISPOSITION_PREFIX` | Required prefix for disposition comments. |
+| `CARSON_REVIEW_DISPOSITION` | Required disposition keyword for review comments. |
 | `CARSON_REVIEW_SWEEP_WINDOW_DAYS` | Lookback window for review sweep. |
 | `CARSON_REVIEW_SWEEP_STATES` | PR states to include in sweep. |
 | `CARSON_REVIEW_BOT_USERNAMES` | Comma-separated bot usernames to ignore in review gate and sweep. |
+| `CARSON_GOVERN_AUTO_MERGE` | Enable or disable autonomous PR merging. |
 | `CARSON_WORKFLOW_STYLE` | Workflow style override (`branch` or `trunk`). |
 | `CARSON_RUBY_INDENTATION` | Ruby indentation policy (`tabs`, `spaces`, or `either`). |
 
@@ -350,7 +322,7 @@ For the full configuration schema, see `API.md`.
 - Confirm `$(ruby -e 'print Gem.user_dir')/bin` is in `PATH`.
 
 **`review gate` fails on actionable comments**
-- Respond with a valid disposition comment using the required prefix.
+- Respond with a valid disposition comment using the required disposition keyword.
 - Re-run `carson review gate`.
 
 **Template drift blocks**

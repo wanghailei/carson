@@ -7,16 +7,14 @@ module Carson
 	# Config is built-in only for outsider mode; host repositories do not carry Carson config files.
 	class Config
 		attr_accessor :git_remote
-		attr_reader :main_branch, :protected_branches, :hooks_base_path, :required_hooks,
-			:template_managed_files, :template_superseded_files, :template_canonical,
-			:lint_policy_source,
+		attr_reader :main_branch, :protected_branches, :hooks_path, :managed_hooks,
+			:template_managed_files, :template_canonical,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
-			:review_sweep_states, :review_disposition_prefix, :review_risk_keywords,
+			:review_sweep_states, :review_disposition, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
-			:ruby_indentation,
 			:audit_advisory_check_names,
 			:workflow_style,
-			:govern_repos, :govern_merge_authority, :govern_merge_method,
+			:govern_repos, :govern_auto_merge, :govern_merge_method,
 			:govern_agent_provider, :govern_dispatch_state_path,
 			:govern_check_wait
 
@@ -35,16 +33,12 @@ module Carson
 					"protected_branches" => [ "main", "master" ]
 				},
 				"hooks" => {
-					"base_path" => "~/.carson/hooks",
-					"required_hooks" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
+					"path" => "~/.carson/hooks",
+					"managed" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
 				},
 				"template" => {
 					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md" ],
-					"superseded_files" => [ ".github/carson-instructions.md", ".github/workflows/carson-lint.yml", ".github/.mega-linter.yml" ],
 					"canonical" => nil
-				},
-				"lint" => {
-					"policy_source" => "wanghailei/lint.git"
 				},
 				"workflow" => {
 					"style" => "branch"
@@ -54,7 +48,7 @@ module Carson
 					"wait_seconds" => 10,
 					"poll_seconds" => 15,
 					"max_polls" => 20,
-					"required_disposition_prefix" => "Disposition:",
+					"disposition" => "Disposition:",
 					"risk_keywords" => [ "bug", "security", "incorrect", "block", "fail", "regression" ],
 					"sweep" => {
 						"window_days" => 3,
@@ -70,10 +64,8 @@ module Carson
 				},
 				"govern" => {
 					"repos" => [],
-					"merge" => {
-						"authority" => true,
-						"method" => "squash"
-					},
+					"auto_merge" => true,
+					"merge_method" => "squash",
 					"agent" => {
 						"provider" => "auto",
 						"codex" => {},
@@ -81,11 +73,8 @@ module Carson
 					},
 					"dispatch_state_path" => "~/.carson/govern/dispatch_state.json",
 					"check_wait" => 30
-				},
-				"style" => {
-					"ruby_indentation" => "tabs"
 				}
-				}
+			}
 			end
 
 		def self.load_global_config_data( repo_root: )
@@ -138,8 +127,8 @@ module Carson
 		def self.apply_env_overrides( data: )
 			copy = deep_dup_value( value: data )
 			hooks = fetch_hash_section( data: copy, key: "hooks" )
-			hooks_path = ENV.fetch( "CARSON_HOOKS_BASE_PATH", "" ).to_s.strip
-			hooks[ "base_path" ] = hooks_path unless hooks_path.empty?
+			hooks_path = ENV.fetch( "CARSON_HOOKS_PATH", "" ).to_s.strip
+			hooks[ "path" ] = hooks_path unless hooks_path.empty?
 			workflow = fetch_hash_section( data: copy, key: "workflow" )
 			workflow_style = ENV.fetch( "CARSON_WORKFLOW_STYLE", "" ).to_s.strip
 			workflow[ "style" ] = workflow_style unless workflow_style.empty?
@@ -147,8 +136,8 @@ module Carson
 			review[ "wait_seconds" ] = env_integer( key: "CARSON_REVIEW_WAIT_SECONDS", fallback: review.fetch( "wait_seconds" ) )
 			review[ "poll_seconds" ] = env_integer( key: "CARSON_REVIEW_POLL_SECONDS", fallback: review.fetch( "poll_seconds" ) )
 			review[ "max_polls" ] = env_integer( key: "CARSON_REVIEW_MAX_POLLS", fallback: review.fetch( "max_polls" ) )
-			disposition_prefix = ENV.fetch( "CARSON_REVIEW_DISPOSITION_PREFIX", "" ).to_s.strip
-			review[ "required_disposition_prefix" ] = disposition_prefix unless disposition_prefix.empty?
+			disposition = ENV.fetch( "CARSON_REVIEW_DISPOSITION", "" ).to_s.strip
+			review[ "disposition" ] = disposition unless disposition.empty?
 			sweep = fetch_hash_section( data: review, key: "sweep" )
 			sweep[ "window_days" ] = env_integer( key: "CARSON_REVIEW_SWEEP_WINDOW_DAYS", fallback: sweep.fetch( "window_days" ) )
 			states = env_string_array( key: "CARSON_REVIEW_SWEEP_STATES" )
@@ -158,20 +147,13 @@ module Carson
 			audit = fetch_hash_section( data: copy, key: "audit" )
 			advisory_names = env_string_array( key: "CARSON_AUDIT_ADVISORY_CHECK_NAMES" )
 			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
-			lint = fetch_hash_section( data: copy, key: "lint" )
-			lint_policy_source_env = ENV.fetch( "CARSON_LINT_POLICY_SOURCE", "" ).to_s.strip
-			lint[ "policy_source" ] = lint_policy_source_env unless lint_policy_source_env.empty?
-			style = fetch_hash_section( data: copy, key: "style" )
-			ruby_indentation = ENV.fetch( "CARSON_RUBY_INDENTATION", "" ).to_s.strip
-			style[ "ruby_indentation" ] = ruby_indentation unless ruby_indentation.empty?
 			govern = fetch_hash_section( data: copy, key: "govern" )
 			govern_repos = env_string_array( key: "CARSON_GOVERN_REPOS" )
 			govern[ "repos" ] = govern_repos unless govern_repos.empty?
-			merge = fetch_hash_section( data: govern, key: "merge" )
-			govern_authority = ENV.fetch( "CARSON_GOVERN_MERGE_AUTHORITY", "" ).to_s.strip
-			merge[ "authority" ] = ( govern_authority == "true" ) unless govern_authority.empty?
+			govern_auto_merge = ENV.fetch( "CARSON_GOVERN_AUTO_MERGE", "" ).to_s.strip
+			govern[ "auto_merge" ] = ( govern_auto_merge == "true" ) unless govern_auto_merge.empty?
 			govern_method = ENV.fetch( "CARSON_GOVERN_MERGE_METHOD", "" ).to_s.strip
-			merge[ "method" ] = govern_method unless govern_method.empty?
+			govern[ "merge_method" ] = govern_method unless govern_method.empty?
 			agent = fetch_hash_section( data: govern, key: "agent" )
 			govern_provider = ENV.fetch( "CARSON_GOVERN_AGENT_PROVIDER", "" ).to_s.strip
 			agent[ "provider" ] = govern_provider unless govern_provider.empty?
@@ -203,15 +185,12 @@ module Carson
 			@main_branch = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "main_branch" )
 			@protected_branches = fetch_string_array( hash: fetch_hash( hash: data, key: "git" ), key: "protected_branches" )
 
-			@hooks_base_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "base_path" )
-			@required_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "required_hooks" )
+			@hooks_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" )
+			@managed_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "managed" )
 
 			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
-			@template_superseded_files = fetch_optional_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "superseded_files" )
 			@template_canonical = fetch_optional_path( hash: fetch_hash( hash: data, key: "template" ), key: "canonical" )
 			resolve_canonical_files!
-			lint_hash = fetch_hash( hash: data, key: "lint" )
-			@lint_policy_source = lint_hash.fetch( "policy_source", "" ).to_s.strip
 
 			workflow_hash = fetch_hash( hash: data, key: "workflow" )
 			@workflow_style = fetch_string( hash: workflow_hash, key: "style" ).downcase
@@ -220,7 +199,7 @@ module Carson
 			@review_wait_seconds = fetch_non_negative_integer( hash: review_hash, key: "wait_seconds" )
 			@review_poll_seconds = fetch_non_negative_integer( hash: review_hash, key: "poll_seconds" )
 			@review_max_polls = fetch_positive_integer( hash: review_hash, key: "max_polls" )
-			@review_disposition_prefix = fetch_string( hash: review_hash, key: "required_disposition_prefix" )
+			@review_disposition = fetch_string( hash: review_hash, key: "disposition" )
 			@review_risk_keywords = fetch_string_array( hash: review_hash, key: "risk_keywords" )
 			sweep_hash = fetch_hash( hash: review_hash, key: "sweep" )
 			@review_sweep_window_days = fetch_positive_integer( hash: sweep_hash, key: "window_days" )
@@ -231,14 +210,11 @@ module Carson
 			@review_bot_usernames = fetch_optional_string_array( hash: review_hash, key: "bot_usernames" )
 			audit_hash = fetch_hash( hash: data, key: "audit" )
 			@audit_advisory_check_names = fetch_optional_string_array( hash: audit_hash, key: "advisory_check_names" )
-			style_hash = fetch_hash( hash: data, key: "style" )
-			@ruby_indentation = fetch_string( hash: style_hash, key: "ruby_indentation" ).downcase
 
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |p| safe_expand_path( p ) }
-			govern_merge_hash = fetch_hash( hash: govern_hash, key: "merge" )
-			@govern_merge_authority = fetch_optional_boolean( hash: govern_merge_hash, key: "authority", default: true, key_path: "govern.merge.authority" )
-			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
+			@govern_auto_merge = fetch_optional_boolean( hash: govern_hash, key: "auto_merge", default: true, key_path: "govern.auto_merge" )
+			@govern_merge_method = fetch_string( hash: govern_hash, key: "merge_method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
 			dispatch_path = govern_hash.fetch( "dispatch_state_path" ).to_s
@@ -254,16 +230,15 @@ module Carson
 				raise ConfigError, "git.remote cannot be empty" if git_remote.empty?
 				raise ConfigError, "git.main_branch cannot be empty" if main_branch.empty?
 				raise ConfigError, "git.protected_branches must include #{main_branch}" unless protected_branches.include?( main_branch )
-				raise ConfigError, "hooks.base_path cannot be empty" if hooks_base_path.empty?
-				raise ConfigError, "hooks.required_hooks cannot be empty" if required_hooks.empty?
-				raise ConfigError, "review.required_disposition_prefix cannot be empty" if review_disposition_prefix.empty?
+				raise ConfigError, "hooks.path cannot be empty" if hooks_path.empty?
+				raise ConfigError, "hooks.managed cannot be empty" if managed_hooks.empty?
+				raise ConfigError, "review.disposition cannot be empty" if review_disposition.empty?
 				raise ConfigError, "review.risk_keywords cannot be empty" if review_risk_keywords.empty?
 				raise ConfigError, "review.sweep.states must contain one or both of open, closed" if ( review_sweep_states - [ "open", "closed" ] ).any? || review_sweep_states.empty?
 				raise ConfigError, "review.sweep.states cannot contain duplicates" unless review_sweep_states.uniq.length == review_sweep_states.length
 				raise ConfigError, "review.tracking_issue.title cannot be empty" if review_tracking_issue_title.empty?
 				raise ConfigError, "review.tracking_issue.label cannot be empty" if review_tracking_issue_label.empty?
 				raise ConfigError, "workflow.style must be one of trunk, branch" unless [ "trunk", "branch" ].include?( workflow_style )
-				raise ConfigError, "style.ruby_indentation must be one of tabs, spaces, either" unless [ "tabs", "spaces", "either" ].include?( ruby_indentation )
 				raise ConfigError, "govern.merge.method must be one of merge, squash, rebase" unless [ "merge", "squash", "rebase" ].include?( govern_merge_method )
 				raise ConfigError, "govern.agent.provider must be one of auto, codex, claude" unless [ "auto", "codex", "claude" ].include?( govern_agent_provider )
 			end

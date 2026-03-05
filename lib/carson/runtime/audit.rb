@@ -115,64 +115,6 @@ module Carson
 				audit_state == "block" ? EXIT_BLOCK : EXIT_OK
 			end
 
-			# Thin focused command: show required-check status for the current branch's open PR.
-			# Always exits 0 for pending or passing so callers never see a false "Error: Exit code 8".
-			def check!
-				unless head_exists?
-					puts_line "Checks: no commits yet."
-					return EXIT_OK
-				end
-				unless gh_available?
-					puts_line "Checks: gh CLI not available."
-					return EXIT_ERROR
-				end
-
-				pr_stdout, pr_stderr, pr_success, = gh_run(
-					"pr", "view", current_branch,
-					"--json", "number,title,url"
-				)
-				unless pr_success
-					error_text = gh_error_text( stdout_text: pr_stdout, stderr_text: pr_stderr, fallback: "no open PR for branch #{current_branch}" )
-					puts_line "Checks: #{error_text}."
-					return EXIT_ERROR
-				end
-				pr_data = JSON.parse( pr_stdout )
-				pr_number = pr_data[ "number" ].to_s
-
-				checks_stdout, checks_stderr, checks_success, checks_exit = gh_run(
-					"pr", "checks", pr_number, "--required", "--json", "name,state,bucket,workflow,link"
-				)
-				if checks_stdout.to_s.strip.empty?
-					error_text = gh_error_text( stdout_text: checks_stdout, stderr_text: checks_stderr, fallback: "required checks unavailable" )
-					puts_line "Checks: #{error_text}."
-					return EXIT_ERROR
-				end
-
-				checks_data = JSON.parse( checks_stdout )
-				pending = checks_data.select { |e| e[ "bucket" ].to_s == "pending" }
-				failing = checks_data.select { |e| check_entry_failing?( entry: e ) }
-				total = checks_data.count
-				# gh exits 8 when required checks are still pending (not a failure).
-				is_pending = !checks_success && checks_exit == 8
-
-				if failing.any?
-					puts_line "Checks: FAIL (#{failing.count} of #{total} failing)."
-					normalise_check_entries( entries: failing ).each { |e| puts_line "  #{e.fetch( :workflow )} / #{e.fetch( :name )} #{e.fetch( :link )}".strip }
-					return EXIT_BLOCK
-				end
-
-				if is_pending || pending.any?
-					puts_line "Checks: pending (#{total - pending.count} of #{total} complete)."
-					return EXIT_OK
-				end
-
-				puts_line "Checks: all passing (#{total} required)."
-				EXIT_OK
-			rescue JSON::ParserError => e
-				puts_line "Checks: invalid gh response (#{e.message})."
-				EXIT_ERROR
-			end
-
 		private
 			def pr_and_check_report
 				report = {

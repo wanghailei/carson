@@ -1,0 +1,292 @@
+module Carson
+	class Runtime
+		module Local
+			# Removes stale local branches (gone upstream) and orphan branches (no tracking) with merged PR evidence.
+			def prune!
+				fingerprint_status = block_if_outsider_fingerprints!
+				return fingerprint_status unless fingerprint_status.nil?
+
+				git_system!( "fetch", config.git_remote, "--prune" )
+				active_branch = current_branch
+				counters = { deleted: 0, skipped: 0 }
+
+				stale_branches = stale_local_branches
+				prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch, counters: counters )
+
+				orphan_branches = orphan_local_branches( active_branch: active_branch )
+				prune_orphan_branch_entries( orphan_branches: orphan_branches, counters: counters )
+
+				return prune_no_stale_branches if counters.fetch( :deleted ).zero? && counters.fetch( :skipped ).zero?
+
+				puts_verbose "prune_summary: deleted=#{counters.fetch( :deleted )} skipped=#{counters.fetch( :skipped )}"
+				unless verbose?
+					deleted_count = counters.fetch( :deleted )
+					if deleted_count.zero?
+						puts_line "No stale branches."
+					else
+						puts_line "Pruned #{deleted_count} stale branch#{plural_suffix( count: deleted_count )}."
+					end
+				end
+				EXIT_OK
+			end
+
+		private
+
+			def prune_no_stale_branches
+				if verbose?
+					puts_line "OK: no stale or orphan branches to prune."
+				else
+					puts_line "No stale branches."
+				end
+				EXIT_OK
+			end
+
+			def prune_stale_branch_entries( stale_branches:, active_branch:, counters: { deleted: 0, skipped: 0 } )
+				stale_branches.each do |entry|
+					outcome = prune_stale_branch_entry( entry: entry, active_branch: active_branch )
+					counters[ outcome ] += 1
+				end
+				counters
+			end
+
+			def prune_stale_branch_entry( entry:, active_branch: )
+				branch = entry.fetch( :branch )
+				upstream = entry.fetch( :upstream )
+				return prune_skip_stale_branch( type: :protected, branch: branch, upstream: upstream ) if config.protected_branches.include?( branch )
+				return prune_skip_stale_branch( type: :current, branch: branch, upstream: upstream ) if branch == active_branch
+
+				prune_delete_stale_branch( branch: branch, upstream: upstream )
+			end
+
+			def prune_skip_stale_branch( type:, branch:, upstream: )
+				status = type == :protected ? "skip_protected_branch" : "skip_current_branch"
+				puts_verbose "#{status}: #{branch} (upstream=#{upstream})"
+				:skipped
+			end
+
+			def prune_delete_stale_branch( branch:, upstream: )
+				stdout_text, stderr_text, success, = git_run( "branch", "-d", branch )
+				return prune_safe_delete_success( branch: branch, upstream: upstream, stdout_text: stdout_text ) if success
+
+				delete_error_text = normalise_branch_delete_error( error_text: stderr_text )
+				prune_force_delete_stale_branch(
+					branch: branch,
+					upstream: upstream,
+					delete_error_text: delete_error_text
+				)
+			end
+
+			def prune_safe_delete_success( branch:, upstream:, stdout_text: )
+				out.print stdout_text if verbose? && !stdout_text.empty?
+				puts_verbose "deleted_local_branch: #{branch} (upstream=#{upstream})"
+				:deleted
+			end
+
+			def prune_force_delete_stale_branch( branch:, upstream:, delete_error_text: )
+				merged_pr, force_error = force_delete_evidence_for_stale_branch(
+					branch: branch,
+					delete_error_text: delete_error_text
+				)
+				return prune_force_delete_skipped( branch: branch, upstream: upstream, delete_error_text: delete_error_text, force_error: force_error ) if merged_pr.nil?
+
+				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				return prune_force_delete_success( branch: branch, upstream: upstream, merged_pr: merged_pr, force_stdout: force_stdout ) if force_success
+
+				prune_force_delete_failed( branch: branch, upstream: upstream, force_stderr: force_stderr )
+			end
+
+			def prune_force_delete_success( branch:, upstream:, merged_pr:, force_stdout: )
+				out.print force_stdout if verbose? && !force_stdout.empty?
+				puts_verbose "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
+				:deleted
+			end
+
+			def prune_force_delete_failed( branch:, upstream:, force_stderr: )
+				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
+				puts_verbose "fail_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error_text}"
+				:skipped
+			end
+
+			def prune_force_delete_skipped( branch:, upstream:, delete_error_text:, force_error: )
+				puts_verbose "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{delete_error_text}"
+				puts_verbose "skip_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error}" unless force_error.to_s.strip.empty?
+				:skipped
+			end
+
+			def normalise_branch_delete_error( error_text: )
+				text = error_text.to_s.strip
+				text.empty? ? "unknown error" : text
+			end
+
+			# Detects local branches whose upstream tracking is marked [gone] after fetch --prune.
+			def stale_local_branches
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.map do |line|
+					branch, upstream, track = line.strip.split( "\t", 3 )
+					upstream = upstream.to_s
+					track = track.to_s
+					next if branch.to_s.empty? || upstream.empty?
+					next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
+
+					{ branch: branch, upstream: upstream, track: track }
+				end.compact
+			end
+
+			# Detects local branches with no upstream tracking ref — candidates for orphan pruning.
+			def orphan_local_branches( active_branch: )
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" ).lines.filter_map do |line|
+					branch, upstream = line.strip.split( "\t", 2 )
+					branch = branch.to_s.strip
+					upstream = upstream.to_s.strip
+					next if branch.empty?
+					next unless upstream.empty?
+					next if config.protected_branches.include?( branch )
+					next if branch == active_branch
+					next if branch == TEMPLATE_SYNC_BRANCH
+
+					branch
+				end
+			end
+
+			# Processes orphan branches: verifies merged PR evidence via GitHub API before deleting.
+			def prune_orphan_branch_entries( orphan_branches:, counters: )
+				return counters if orphan_branches.empty?
+				return counters unless gh_available?
+
+				orphan_branches.each do |branch|
+					outcome = prune_orphan_branch_entry( branch: branch )
+					counters[ outcome ] += 1
+				end
+				counters
+			end
+
+			# Checks a single orphan branch for merged PR evidence and force-deletes if confirmed.
+			def prune_orphan_branch_entry( branch: )
+				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+				unless tip_sha_success
+					error_text = tip_sha_error.to_s.strip
+					error_text = "unable to read local branch tip sha" if error_text.empty?
+					puts_verbose "skip_orphan_branch: #{branch} reason=#{error_text}"
+					return :skipped
+				end
+				branch_tip_sha = tip_sha_text.to_s.strip
+				if branch_tip_sha.empty?
+					puts_verbose "skip_orphan_branch: #{branch} reason=unable to read local branch tip sha"
+					return :skipped
+				end
+
+				merged_pr, error = merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				if merged_pr.nil?
+					reason = error.to_s.strip
+					reason = "no merged PR evidence for branch tip into #{config.main_branch}" if reason.empty?
+					puts_verbose "skip_orphan_branch: #{branch} reason=#{reason}"
+					return :skipped
+				end
+
+				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				if force_success
+					out.print force_stdout if verbose? && !force_stdout.empty?
+					puts_verbose "deleted_orphan_branch: #{branch} merged_pr=#{merged_pr.fetch( :url )}"
+					return :deleted
+				end
+
+				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
+				puts_verbose "fail_delete_orphan_branch: #{branch} reason=#{force_error_text}"
+				:skipped
+			end
+
+			# Safe delete can fail after squash merges because branch tip is no longer an ancestor.
+			def non_merged_delete_error?( error_text: )
+				error_text.to_s.downcase.include?( "not fully merged" )
+			end
+
+			# Guarded force-delete policy for stale branches.
+			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
+				return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
+				return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
+
+				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
+				unless tip_sha_success
+					error_text = tip_sha_error.to_s.strip
+					error_text = "unable to read local branch tip sha" if error_text.empty?
+					return [ nil, error_text ]
+				end
+				branch_tip_sha = tip_sha_text.to_s.strip
+				return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
+
+				merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+			end
+
+			# Finds merged PR evidence for the exact local branch tip.
+			def merged_pr_for_branch( branch:, branch_tip_sha: )
+				owner, repo = repository_coordinates
+				results = []
+				page = 1
+				max_pages = 50
+				loop do
+					stdout_text, stderr_text, success, = gh_run(
+						"api", "repos/#{owner}/#{repo}/pulls",
+						"--method", "GET",
+						"-f", "state=closed",
+						"-f", "base=#{config.main_branch}",
+						"-f", "head=#{owner}:#{branch}",
+						"-f", "sort=updated",
+						"-f", "direction=desc",
+						"-f", "per_page=100",
+						"-f", "page=#{page}"
+					)
+					unless success
+						error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
+						return [ nil, error_text ]
+					end
+					page_nodes = Array( JSON.parse( stdout_text ) )
+					break if page_nodes.empty?
+
+					page_nodes.each do |entry|
+						next unless entry.dig( "head", "ref" ).to_s == branch.to_s
+						next unless entry.dig( "base", "ref" ).to_s == config.main_branch
+						next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
+
+						merged_at = parse_time_or_nil( text: entry[ "merged_at" ] )
+						next if merged_at.nil?
+
+						results << {
+							number: entry[ "number" ],
+							url: entry[ "html_url" ].to_s,
+							merged_at: merged_at.utc.iso8601,
+							head_sha: entry.dig( "head", "sha" ).to_s
+						}
+						end
+						if page >= max_pages
+							probe_stdout_text, probe_stderr_text, probe_success, = gh_run(
+								"api", "repos/#{owner}/#{repo}/pulls",
+								"--method", "GET",
+								"-f", "state=closed",
+								"-f", "base=#{config.main_branch}",
+								"-f", "head=#{owner}:#{branch}",
+								"-f", "sort=updated",
+								"-f", "direction=desc",
+								"-f", "per_page=100",
+								"-f", "page=#{page + 1}"
+							)
+							unless probe_success
+								error_text = gh_error_text( stdout_text: probe_stdout_text, stderr_text: probe_stderr_text, fallback: "unable to verify merged PR pagination limit for branch #{branch}" )
+								return [ nil, error_text ]
+							end
+							probe_nodes = Array( JSON.parse( probe_stdout_text ) )
+							return [ nil, "merged PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ] unless probe_nodes.empty?
+							break
+						end
+						page += 1
+					end
+				latest = results.max_by { |item| item.fetch( :merged_at ) }
+				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
+
+				[ latest, nil ]
+			rescue JSON::ParserError => e
+				[ nil, "invalid gh JSON response (#{e.message})" ]
+			rescue StandardError => e
+				[ nil, e.message ]
+			end
+		end
+	end
+end

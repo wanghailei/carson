@@ -16,9 +16,7 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson setup` | Interactive quiz to configure remote, main branch, workflow, and merge method. Writes `~/.carson/config.json`. |
-| `carson lint policy --source <path-or-git-url> [--ref <git-ref>] [--force]` | Distribute lint configs from a central source into the governed repo's `.github/linters/`. |
-| `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. |
-| `carson prepare` | Install or refresh Carson-managed global hooks. |
+| `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
 | `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
 
@@ -37,7 +35,6 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level PR triage: classify, merge, dispatch agents, escalate. |
-| `carson housekeep` | Sync main + prune stale branches (also runs automatically after govern merges). |
 
 `--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
@@ -55,8 +52,6 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson version` | Print installed Carson version. |
-| `carson inspect` | Verify Carson-managed hook installation and repository setup. |
-| `carson check` | Report required CI check status for the current branch's open PR. Exits 0 for passing or pending; exits 2 for failing. Never exits 8. |
 
 ## Exit status contract
 
@@ -90,18 +85,16 @@ Override path:
 - `CARSON_CONFIG_FILE=/absolute/path/to/config.json`
 
 Environment overrides:
-- `CARSON_HOOKS_BASE_PATH`
+- `CARSON_HOOKS_PATH`
 - `CARSON_REVIEW_WAIT_SECONDS`
 - `CARSON_REVIEW_POLL_SECONDS`
 - `CARSON_REVIEW_MAX_POLLS`
-- `CARSON_REVIEW_DISPOSITION_PREFIX`
+- `CARSON_REVIEW_DISPOSITION`
 - `CARSON_REVIEW_SWEEP_WINDOW_DAYS`
 - `CARSON_REVIEW_SWEEP_STATES`
 - `CARSON_WORKFLOW_STYLE`
-- `CARSON_RUBY_INDENTATION`
-- `CARSON_LINT_POLICY_SOURCE`
 - `CARSON_GOVERN_REPOS`
-- `CARSON_GOVERN_MERGE_AUTHORITY`
+- `CARSON_GOVERN_AUTO_MERGE`
 - `CARSON_GOVERN_MERGE_METHOD`
 - `CARSON_GOVERN_AGENT_PROVIDER`
 - `CARSON_GOVERN_CHECK_WAIT`
@@ -118,8 +111,8 @@ Environment overrides:
       "claude": {}
     },
     "check_wait": 30,
+    "auto_merge": true,
     "merge": {
-      "authority": true,
       "method": "squash"
     }
   }
@@ -131,7 +124,7 @@ Environment overrides:
 - `agent.provider`: `"auto"`, `"codex"`, or `"claude"`.
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
-- `merge.authority`: `true` (default) — Carson may merge autonomously. Set to `false` to require explicit enablement.
+- `auto_merge`: `true` (default) — Carson may merge autonomously. Set to `false` to require explicit enablement.
 - `merge.method`: `"squash"` (default), `"merge"`, or `"rebase"`.
 
 `template` schema:
@@ -146,29 +139,6 @@ Environment overrides:
 
 `template` semantics:
 - `canonical`: path to a directory of canonical `.github/` files. Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. The directory mirrors `.github/` structure — `workflows/lint.yml` deploys to `.github/workflows/lint.yml`. Default: `nil` (no canonical files).
-
-`lint` schema:
-
-```json
-{
-  "lint": {
-    "policy_source": "wanghailei/lint.git"
-  }
-}
-```
-
-`lint` semantics:
-- `policy_source`: default source for `carson lint policy` when `--source` is not specified.
-
-Environment overrides:
-- `CARSON_LINT_POLICY_SOURCE` — overrides `lint.policy_source`.
-
-Private-source clone token for `carson lint policy`:
-- `CARSON_READ_TOKEN` (used when `--source` points to a private GitHub repository).
-
-Policy layout requirement:
-- Lint config files sit at the root of the source repo and are copied to `<governed-repo>/.github/linters/`.
-- MegaLinter auto-discovers configs in `.github/linters/` during CI.
 
 ## Output interface
 
