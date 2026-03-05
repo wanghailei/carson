@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.26.0 — Baseline Check No Longer Blocks Commits
+
+### What changed
+
+- **Default-branch CI baseline failures are now advisory, not blocking.** When main's CI is failing, `carson audit` reports it as `attention` instead of `block`. This eliminates the deadlock where a broken main prevented committing the fix on any branch. The baseline status is still reported so users are aware before merging.
+- Message changed from "merge blocked" to "fix before merge" to reflect the advisory nature.
+
+### Why
+
+Carson's pre-commit hook runs `audit`, which checks main's CI baseline. If main had a failing check, the audit hard-blocked all commits across every branch — including the branch carrying the fix. This circular dependency made it impossible to commit the repair without bypassing the hook entirely.
+
+### Migration
+
+No action required. The `CARSON_AUDIT_ADVISORY_CHECK_NAMES` env var workaround is no longer needed for this scenario.
+
 ## 2.25.0 — Onboard/Offboard UX Improvements
 
 ### What changed
