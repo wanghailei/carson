@@ -102,7 +102,7 @@ module Carson
 						puts_verbose "ACTION: hooks path mismatch (configured=#{configured_text}, expected=#{expected})."
 					end
 				end
-				message = strict ? "ACTION: run carson prepare to align hooks with Carson #{Carson::VERSION}." : "ACTION: run carson prepare to enforce local main protections."
+				message = strict ? "ACTION: run carson refresh to align hooks with Carson #{Carson::VERSION}." : "ACTION: run carson refresh to enforce local main protections."
 				puts_verbose message
 			end
 

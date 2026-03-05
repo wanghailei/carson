@@ -11,8 +11,6 @@ jobs:
     if: github.event_name == 'pull_request'
     name: Carson governance
     runs-on: ubuntu-latest
-    env:
-      RUBOCOP_VERSION: "1.81.0"
     permissions:
       contents: read
       pull-requests: read
@@ -27,23 +25,6 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
-
-      - name: Install pinned RuboCop
-        run: gem install rubocop -v "$RUBOCOP_VERSION" --no-document
-
-      - name: Lint policy setup
-        env:
-          CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
-        run: |
-          if [ -n "${CARSON_READ_TOKEN:-}" ]; then
-            ruby exe/carson lint policy --source https://github.com/wanghailei/ai.git --ref main --force
-          else
-            echo "CARSON_READ_TOKEN is unset; using repository fixture lint policy source." >&2
-            ruby exe/carson lint policy --source test/fixtures/lint_policy_source --force
-          fi
-
-      - name: Prepare
-        run: ruby exe/carson prepare
 
       - name: Audit
         env:
@@ -78,9 +59,6 @@ jobs:
         run: |
           ruby -c exe/carson
           ruby -c lib/carson.rb
-
-      - name: Lint policy setup
-        run: ruby exe/carson lint policy --source test/fixtures/lint_policy_source --force
 
       - name: RuboCop access modifier indentation
         run: |

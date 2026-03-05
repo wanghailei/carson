@@ -12,14 +12,9 @@ on:
         description: Exact Carson gem version expected in VERSION
         required: true
         type: string
-      rubocop_version:
-        description: Exact RuboCop gem version installed before Carson audit.
-        required: false
-        type: string
-        default: "1.81.0"
     secrets:
       CARSON_READ_TOKEN:
-        description: Read token for private lint-policy source repository.
+        description: Read token for private canonical-template source repository.
         required: false
 
 jobs:
@@ -63,17 +58,9 @@ jobs:
           gem build carson.gemspec
           gem install --local "carson-${{ inputs.carson_version }}.gem"
 
-      - name: Install pinned RuboCop
-        run: gem install rubocop -v "${{ inputs.rubocop_version }}" --no-document
-
       - name: Carson audit
         working-directory: host
-        env:
-          CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
-        run: |
-          carson lint policy --source https://github.com/wanghailei/ai.git --ref main --force
-          carson prepare
-          carson audit
+        run: carson audit
 
       - name: Carson review gate
         working-directory: host

@@ -24,7 +24,7 @@ module Carson
 				hooks_ok = hooks_health_report
 				unless hooks_ok
 					audit_state = "block"
-					audit_concise_problems << "Hooks: mismatch — run carson prepare."
+					audit_concise_problems << "Hooks: mismatch — run carson refresh."
 				end
 				puts_verbose ""
 				puts_verbose "[Main Sync Status]"
