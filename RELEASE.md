@@ -5,6 +5,25 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.10.2
+
+### What changed
+
+- **Path normalisation** — all worktree path comparisons now use `File.realpath` to handle symlink differences (e.g. `/tmp` → `/private/tmp` on macOS). Fixes worktree recognition failures in `worktree done`, `worktree remove`, and `status` where Git returns canonical paths that differ from Carson's internal paths.
+- **deliver --merge post-merge sync** — `sync_after_merge!` now pulls into the main worktree via `git -C` instead of attempting `git checkout main` (which always fails inside a feature worktree). Also adds a review gate check before merge (blocks on `CHANGES_REQUESTED`), marks the worktree done in session state after merge, and records sync result in structured output.
+- **Worktree repo pollution** — `worktree create` now auto-adds `.claude/` to `.git/info/exclude` (local-only, never committed) so worktree directories do not appear as untracked files in the host repository. Idempotent and outsider-safe.
+- **Worktree done push guard** — `worktree done` now blocks when a branch has unique unpushed commits and no remote ref exists. Previously the guard silently passed due to a `Process::Status` truthiness bug (`Open3.capture3` returns a Status object that is always truthy; now uses `.success?`). Branches with no unique commits (just created, no work done) are allowed through.
+
+### UX
+
+- `deliver --merge --json` output now includes `review`, `synced`, and optionally `sync_error` fields.
+- `worktree done` error messages distinguish "branch has not been pushed" from "worktree has unpushed commits", with specific recovery commands for each.
+- Host repositories stay clean after worktree creation — no more `?? .claude/` in `git status`.
+
+### Migration
+
+- No breaking changes. All fixes are backwards-compatible improvements to existing behaviour.
+
 ## 3.10.1
 
 ### What changed
