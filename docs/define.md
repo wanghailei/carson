@@ -120,6 +120,12 @@ If any step is skipped or reordered, the agent's shell CWD can land inside a del
 
 Carson must enforce this order so agents never have to remember it. The goal: worktree teardown is one command, always safe, never leaves debris.
 
-## Open decisions
+## Carson 3.0 — Theme
 
-**Overseer model (3.0.0).** Carson's current model is per-repo: `carson onboard` sets up each repository individually. The future model is central oversight: repositories are *registered* under Carson's protection, and Carson oversees all of them by default. This makes cross-repo operations natural — you never need to know which repo you're standing in to manage the estate. The vocabulary shifts from "onboard" to "register." This is the 3.0.0 boundary.
+**Carson is for coding agents.** This is the theme of Carson 3.0. The primary consumer of Carson's commands, lifecycle management, and governance is the coding agent — not the human developer directly. What makes working with agents best, therefore makes the human owners most happy with no burden, Carson should handle. The human owner benefits indirectly: when Carson keeps the agent's environment disciplined and predictable, the agent produces better work, and the human never has to intervene in housekeeping.
+
+### 3.0 scope
+
+**Overseer model.** Carson's current model is per-repo: `carson onboard` sets up each repository individually. The 3.0 model is central oversight: repositories are *registered* under Carson's protection, and Carson oversees all of them by default. This makes cross-repo operations natural — you never need to know which repo you're standing in to manage the estate. The vocabulary shifts from "onboard" to "register."
+
+**Licensing.** Commercial use may require a paid licence in 3.0. Open-source and personal use remain free.
