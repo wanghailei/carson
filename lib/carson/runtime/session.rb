@@ -1,6 +1,7 @@
 # Session state persistence for coding agents.
-# Maintains a lightweight JSON file per repository in ~/.carson/sessions/ so
-# agents can discover the current working context without re-running discovery commands.
+# Maintains a lightweight JSON file per session in ~/.carson/sessions/<repo_slug>/
+# so agents can discover the current working context without re-running discovery commands.
+# Multiple agents on the same repo each get their own session file.
 # Respects the outsider boundary: state lives in Carson's own space, not the repository.
 require "digest"
 
@@ -25,7 +26,7 @@ module Carson
 				)
 			end
 
-			# Clears session state for this repository.
+			# Clears session state for the current session.
 			def session_clear!( json_output: false )
 				path = session_file_path
 				File.delete( path ) if File.exist?( path )
@@ -54,19 +55,55 @@ module Carson
 
 				state[ :task ] = task if task
 				state[ :repo ] = repo_root
+				state[ :session_id ] = session_id
+				state[ :pid ] = Process.pid
 				state[ :updated_at ] = Time.now.utc.iso8601
 
 				write_session( state )
 			end
 
+			# Returns all active sessions for this repository.
+			# Each entry is a parsed session state hash with staleness annotation.
+			def session_list
+				dir = session_repo_dir
+				return [] unless Dir.exist?( dir )
+
+				Dir.glob( File.join( dir, "*.json" ) ).filter_map do |path|
+					data = JSON.parse( File.read( path ), symbolize_names: true ) rescue next
+					data[ :stale ] = session_stale?( data )
+					data
+				end
+			end
+
 		private
 
-			# Returns the session file path for this repository.
-			def session_file_path
-				sessions_dir = File.join( carson_home, "sessions" )
-				FileUtils.mkdir_p( sessions_dir )
+			# Returns a stable session identifier for this Runtime instance.
+			# PID + start timestamp — unique per process, stable across calls.
+			def session_id
+				@session_id ||= "#{Process.pid}-#{Time.now.utc.strftime( '%Y%m%d%H%M%S' )}"
+			end
+
+			# Returns the per-repo session directory: ~/.carson/sessions/<slug>/
+			# Migrates from the pre-3.9 single-file format if found.
+			def session_repo_dir
 				slug = session_repo_slug
-				File.join( sessions_dir, "#{slug}.json" )
+				dir = File.join( carson_home, "sessions", slug )
+
+				# Migrate from pre-3.9 single-file format: <slug>.json → <slug>/<session_id>.json
+				old_file = File.join( carson_home, "sessions", "#{slug}.json" )
+				if File.file?( old_file ) && !Dir.exist?( dir )
+					FileUtils.mkdir_p( dir )
+					migrated = File.join( dir, "migrated.json" )
+					FileUtils.mv( old_file, migrated )
+				end
+
+				FileUtils.mkdir_p( dir )
+				dir
+			end
+
+			# Returns the session file path for the current session.
+			def session_file_path
+				File.join( session_repo_dir, "#{session_id}.json" )
 			end
 
 			# Generates a readable, unique slug for the repository: basename-shortsha.
@@ -87,13 +124,14 @@ module Carson
 			# Reads session state from disk. Returns an empty hash if no state exists.
 			def read_session
 				path = session_file_path
-				return { repo: repo_root } unless File.exist?( path )
+				return { repo: repo_root, session_id: session_id } unless File.exist?( path )
 
 				data = JSON.parse( File.read( path ), symbolize_names: true )
 				data[ :repo ] = repo_root
+				data[ :session_id ] = session_id
 				data
 			rescue JSON::ParserError, StandardError
-				{ repo: repo_root }
+				{ repo: repo_root, session_id: session_id }
 			end
 
 			# Writes session state to disk as formatted JSON.
@@ -110,6 +148,35 @@ module Carson
 					string_key = key.to_s
 					result[ string_key ] = value.is_a?( Hash ) ? deep_stringify_keys( value ) : value
 				end
+			end
+
+			# Detects whether a session is stale — PID no longer running and updated
+			# more than 1 hour ago.
+			def session_stale?( data )
+				pid = data[ :pid ]
+				updated = data[ :updated_at ]
+
+				# If PID is still running, not stale.
+				if pid
+					begin
+						Process.kill( 0, pid.to_i )
+						return false
+					rescue Errno::ESRCH
+						# Process not running — check age.
+					rescue Errno::EPERM
+						# Process exists but we lack permission — assume active.
+						return false
+					end
+				end
+
+				# If no timestamp, assume stale.
+				return true unless updated
+
+				# Stale if last updated more than 1 hour ago.
+				age = Time.now.utc - Time.parse( updated )
+				age > 3600
+			rescue StandardError
+				true
 			end
 
 			# Unified output for session results — JSON or human-readable.

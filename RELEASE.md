@@ -5,6 +5,26 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.9.0 — Agent Coordination Signals
+
+### What changed
+
+- **Per-session state files** — each Runtime instance gets a unique session ID (`<pid>-<timestamp>`) and its own session file at `~/.carson/sessions/<repo_slug>/<session_id>.json`. Multiple agents on the same repo each have independent state that does not collide.
+- **Session ownership on worktrees** — `carson status` cross-references active session files to annotate each worktree with its owning session's PID, task, and staleness. Other agents can see which worktrees are in use and by whom.
+- **Staleness detection** — sessions whose PID is no longer running and whose last update is older than 1 hour are marked as `stale`. This signals to other agents that the worktree may be abandoned and available for cleanup.
+- **`session_list`** — new method that scans all session files for the current repo and returns structured data with staleness annotations.
+- **Migration from 3.8 format** — old single-file session state (`<slug>.json`) is automatically migrated to the per-session directory format on first access.
+
+### UX
+
+- `carson status` worktree listing now shows owner context: task description if set, PID if no task, or "stale session" if the owner is no longer running.
+- `carson session --json` now includes `session_id` and `pid` fields for correlation by other agents.
+- Human output unchanged when no session ownership data exists.
+
+### Migration
+
+- Automatic. The old `<slug>.json` file is moved into the new `<slug>/` directory as `migrated.json` on first access. No user action required.
+
 ## 3.8.0 — Session State
 
 ### What changed
