@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.10.3
+
+### What changed
+
+- **Drop `--delete-branch` from PR merge** — `carson deliver --merge` and `carson govern` no longer pass `--delete-branch` to `gh pr merge`. The flag causes `gh` to attempt switching the local checkout to `main` after deleting the branch, which always fails inside a worktree where `main` is already checked out in the main working tree. Branch cleanup is deferred to `carson prune`, which already handles this correctly.
+
+### Migration
+
+- No breaking changes. Merge behaviour is unchanged; only the post-merge local branch deletion attempt is removed.
+
 ## 3.10.2
 
 ### What changed

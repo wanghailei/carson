@@ -256,14 +256,16 @@ module Carson
 			end
 
 			# Merges the PR using the configured merge method.
+			# Deliberately omits --delete-branch: gh tries to switch the local
+			# checkout to main afterwards, which fails inside a worktree where
+			# main is already checked out. Branch cleanup deferred to `carson prune`.
 			def merge_pr!( number:, result: )
 				method = config.govern_merge_method
 				result[ :merge_method ] = method
 
 				_, stderr, success, = gh_run(
 					"pr", "merge", number.to_s,
-					"--#{method}",
-					"--delete-branch"
+					"--#{method}"
 				)
 
 				if success
@@ -272,7 +274,7 @@ module Carson
 					error_text = stderr.to_s.strip
 					error_text = "merge failed" if error_text.empty?
 					result[ :error ] = error_text
-					result[ :recovery ] = "gh pr merge #{number} --#{method} --delete-branch"
+					result[ :recovery ] = "gh pr merge #{number} --#{method}"
 					EXIT_ERROR
 				end
 			end
