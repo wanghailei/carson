@@ -102,7 +102,17 @@ When a repository no longer needs governance, `carson offboard` removes every Ca
 
 **`--all` is the elegant extension.** Every command that works on a single repository gains cross-repo reach through a single `--all` flag. No separate commands, no different mental model — same operation, wider scope. The flag says "do what you always do, but everywhere."
 
-**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson should own the full worktree lifecycle: create, track, and clean up — ensuring the teardown happens in the safe order (exit the worktree → `git worktree remove` → branch cleanup) so no agent is left stranded in a deleted directory.
+**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson should own the full worktree lifecycle: create, track, and clean up.
+
+The safe teardown order is an iron rule:
+
+1. Exit the worktree (cd to the main repository root).
+2. `git worktree remove <path>` — removes the directory and the worktree registration.
+3. Branch cleanup — delete the local branch, prune the remote.
+
+If any step is skipped or reordered, the agent's shell CWD can land inside a deleted directory. Once that happens, the shell tool becomes permanently unusable for the rest of the session — every command fails with "path does not exist" before it even runs. The only escape hatch is recreating the directory with a file-write tool, which is fragile and error-prone.
+
+Carson must enforce this order so agents never have to remember it. The goal: worktree teardown is one command, always safe, never leaves debris.
 
 ## Open decisions
 
