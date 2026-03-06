@@ -96,6 +96,12 @@ When a repository no longer needs governance, `carson offboard` removes every Ca
 
 **Failures are exact.** Exit codes are deterministic. `0` means success. `2` means policy blocked — a known, expected state, not an error. `1` means something unexpected went wrong. Automation can trust the exit code; humans can read the message.
 
+## Core design decision
+
+**Carson is for coding agents, not for humans.** The primary user of Carson's commands and lifecycle management is the coding agent working on behalf of the developer. What makes working with agents best — therefore makes the human owners most happy with no burden — Carson should handle. Carson is confident because it is professional and knows things deeply well. It does not hedge, guess, or ask unnecessary questions. It acts with the certainty of a butler who has managed the household for decades.
+
+The human owner benefits indirectly: when Carson keeps the agent's environment disciplined and predictable, the agent produces better work, and the human never has to intervene in housekeeping. The ideal state is that the human owner forgets Carson exists — everything just works.
+
 ## Architecture principles
 
 **Single-repo depth is the core.** Working on one repository thoroughly well is the essence and the foundation. Multi-repo governance is just the same discipline repeated across the estate. Get the single-repo story perfect first; multi-repo follows naturally with `--all`.

@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.31.0 — Worktree Lifecycle + Prune --all
+
+### What changed
+
+- **`carson worktree remove <name-or-path>`** — Safe worktree teardown in the correct order: removes the worktree directory and git registration, deletes the local branch, and cleans up the remote branch. Accepts either a full path or a short name (resolves under `.claude/worktrees/`). Prevents agents from being stranded in deleted directories.
+- **`carson prune --all`** — Prunes stale branches across all governed repositories. Same discipline as single-repo prune, applied to the full estate.
+
+### Migration
+
+- No action required. Both commands are additive.
+
 ## 2.30.0 — Prune Rebase Merge Support + Audit Noise Reduction
 
 ### What changed

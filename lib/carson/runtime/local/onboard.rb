@@ -115,6 +115,48 @@ module Carson
 				failed.zero? ? EXIT_OK : EXIT_ERROR
 			end
 
+			def prune_all!
+				repos = config.govern_repos
+				if repos.empty?
+					puts_line "No governed repositories configured."
+					puts_line "  Run carson onboard in each repo to register."
+					return EXIT_ERROR
+				end
+
+				puts_line ""
+				puts_line "Prune all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
+				succeeded = 0
+				failed = 0
+
+				repos.each do |repo_path|
+					repo_name = File.basename( repo_path )
+					unless Dir.exist?( repo_path )
+						puts_line "#{repo_name}: FAIL (path not found)"
+						failed += 1
+						next
+					end
+
+					begin
+						buf = verbose? ? out : StringIO.new
+						err_buf = verbose? ? err : StringIO.new
+						rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: buf, err: err_buf, verbose: verbose? )
+						status = rt.prune!
+						unless verbose?
+							summary = buf.string.lines.last.to_s.strip
+							puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"
+						end
+						status == EXIT_ERROR ? ( failed += 1 ) : ( succeeded += 1 )
+					rescue StandardError => e
+						puts_line "#{repo_name}: FAIL (#{e.message})"
+						failed += 1
+					end
+				end
+
+				puts_line ""
+				puts_line "Prune all complete: #{succeeded} pruned, #{failed} failed."
+				failed.zero? ? EXIT_OK : EXIT_ERROR
+			end
+
 			# Removes Carson-managed repository integration so a host repository can retire Carson cleanly.
 			def offboard!
 				puts_verbose ""
