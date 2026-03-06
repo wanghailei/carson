@@ -41,9 +41,6 @@ module Carson
 					)
 				end
 
-				# Record active worktree in session state.
-				update_session( worktree: { name: name, path: wt_path, branch: name } )
-
 				worktree_finish(
 					result: { command: "worktree create", status: "ok", name: name, path: wt_path, branch: name },
 					exit_code: EXIT_OK, json_output: json_output
@@ -154,10 +151,6 @@ module Carson
 						remote_deleted = true
 					end
 				end
-
-				# Clear worktree from session state.
-				update_session( worktree: :clear )
-
 				worktree_finish(
 					result: { command: "worktree remove", status: "ok", name: File.basename( resolved_path ),
 						branch: branch, branch_deleted: branch_deleted, remote_deleted: remote_deleted },

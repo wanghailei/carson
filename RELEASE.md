@@ -5,11 +5,24 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.12.0
+
+### What changed
+
+- **Drop session state** — removed the `session` and `session clear` CLI commands, session file persistence (`~/.carson/sessions/`), and all session side effects from `worktree create`, `worktree remove`, and `deliver`. Session state duplicated information already available from better sources (`git worktree list`, `gh pr list`, memory files). No agent ever read another agent's session file. Convention ("don't touch other sessions' worktrees") beat engineered tracking.
+- **Simplify status** — `carson status` no longer shows session ownership annotations on worktrees. Worktree display now shows name and branch only — the same information `git worktree list` provides.
+
+### Breaking changes
+
+- `carson session` and `carson session clear` no longer exist.
+- Session files in `~/.carson/sessions/` are no longer written or read. Existing files are inert.
+- `carson status` worktree entries no longer include `owner`, `owner_pid`, `owner_task`, or `stale` fields in JSON output.
+
 ## 3.11.0
 
 ### What changed
 
-- **Drop `worktree done`** — removed the `worktree done` subcommand entirely. `worktree remove` now handles everything: CWD safety guard, unpushed-commits guard, session state cleanup, branch and remote deletion. Two operations (create, remove) instead of three. Simpler, safer, less to remember.
+- **Drop `worktree done`** — removed the `worktree done` subcommand entirely. `worktree remove` now handles everything: CWD safety guard, unpushed-commits guard, branch and remote deletion. Two operations (create, remove) instead of three. Simpler, safer, less to remember.
 
 ### Breaking changes
 

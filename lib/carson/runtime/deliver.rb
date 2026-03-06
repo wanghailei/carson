@@ -36,10 +36,6 @@ module Carson
 
 				result[ :pr_number ] = pr_number
 				result[ :pr_url ] = pr_url
-
-				# Record PR in session state.
-				update_session( pr: { number: pr_number, url: pr_url } )
-
 				# Without --merge, we are done.
 				unless merge
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
@@ -78,10 +74,7 @@ module Carson
 
 				result[ :merged ] = true
 
-				# Step 6: clear worktree from session state.
-				update_session( worktree: :clear )
-
-				# Step 7: sync main in the main worktree.
+				# Step 6: sync main in the main worktree.
 				sync_after_merge!( remote: remote, main: main, result: result )
 
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
