@@ -96,13 +96,29 @@ When a repository no longer needs governance, `carson offboard` removes every Ca
 
 **Failures are exact.** Exit codes are deterministic. `0` means success. `2` means policy blocked — a known, expected state, not an error. `1` means something unexpected went wrong. Automation can trust the exit code; humans can read the message.
 
+## Core design decision
+
+**Carson is for coding agents, not for humans.** The primary user of Carson's commands and lifecycle management is the coding agent working on behalf of the developer. What makes working with agents best — therefore makes the human owners most happy with no burden — Carson should handle. Carson is confident because it is professional and knows things deeply well. It does not hedge, guess, or ask unnecessary questions. It acts with the certainty of a butler who has managed the household for decades.
+
+The human owner benefits indirectly: when Carson keeps the agent's environment disciplined and predictable, the agent produces better work, and the human never has to intervene in housekeeping. The ideal state is that the human owner forgets Carson exists — everything just works.
+
 ## Architecture principles
 
 **Single-repo depth is the core.** Working on one repository thoroughly well is the essence and the foundation. Multi-repo governance is just the same discipline repeated across the estate. Get the single-repo story perfect first; multi-repo follows naturally with `--all`.
 
 **`--all` is the elegant extension.** Every command that works on a single repository gains cross-repo reach through a single `--all` flag. No separate commands, no different mental model — same operation, wider scope. The flag says "do what you always do, but everywhere."
 
-**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson should own the full worktree lifecycle: create, track, and clean up — ensuring the teardown happens in the safe order (exit the worktree → `git worktree remove` → branch cleanup) so no agent is left stranded in a deleted directory.
+**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson should own the full worktree lifecycle: create, track, and clean up.
+
+The safe teardown order is an iron rule:
+
+1. Exit the worktree (cd to the main repository root).
+2. `git worktree remove <path>` — removes the directory and the worktree registration.
+3. Branch cleanup — delete the local branch, prune the remote.
+
+If any step is skipped or reordered, the agent's shell CWD can land inside a deleted directory. Once that happens, the shell tool becomes permanently unusable for the rest of the session — every command fails with "path does not exist" before it even runs. The only escape hatch is recreating the directory with a file-write tool, which is fragile and error-prone.
+
+Carson must enforce this order so agents never have to remember it. The goal: worktree teardown is one command, always safe, never leaves debris.
 
 ## Open decisions
 

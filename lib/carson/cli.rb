@@ -12,7 +12,7 @@ module Carson
 				return Runtime::EXIT_OK
 			end
 
-			if command == "refresh:all"
+			if %w[refresh:all prune:all].include?( command )
 				verbose = parsed.fetch( :verbose, false )
 				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, out: out, err: err, verbose: verbose )
 				return dispatch( parsed: parsed, runtime: runtime )
@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]|audit|sync|prune|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]|audit|sync|prune [--all]|worktree remove <name-or-path>|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -82,6 +82,10 @@ module Carson
 				parse_refresh_command( argv: argv, parser: parser, err: err )
 			when "template"
 				parse_template_subcommand( argv: argv, parser: parser, err: err )
+			when "prune"
+				parse_prune_command( argv: argv, parser: parser, err: err )
+			when "worktree"
+				parse_worktree_subcommand( argv: argv, parser: parser, err: err )
 			when "review"
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
 			when "govern"
@@ -152,6 +156,35 @@ module Carson
 				command: "refresh",
 				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
 			}
+		end
+
+		def self.parse_prune_command( argv:, parser:, err: )
+			all_flag = argv.delete( "--all" ) ? true : false
+			parser.parse!( argv )
+			return { command: "prune:all" } if all_flag
+			{ command: "prune" }
+		end
+
+		def self.parse_worktree_subcommand( argv:, parser:, err: )
+			action = argv.shift
+			if action.to_s.strip.empty?
+				err.puts "#{BADGE} Missing subcommand for worktree. Use: carson worktree remove <name-or-path>"
+				err.puts parser
+				return { command: :invalid }
+			end
+
+			case action
+			when "remove"
+				worktree_path = argv.shift
+				if worktree_path.to_s.strip.empty?
+					err.puts "#{BADGE} Missing path for worktree remove. Use: carson worktree remove <name-or-path>"
+					return { command: :invalid }
+				end
+				{ command: "worktree:remove", worktree_path: worktree_path }
+			else
+				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree remove <name-or-path>"
+				{ command: :invalid }
+			end
 		end
 
 		def self.parse_named_subcommand( command:, usage:, argv:, parser:, err: )
@@ -240,6 +273,10 @@ module Carson
 				runtime.sync!
 			when "prune"
 				runtime.prune!
+			when "prune:all"
+				runtime.prune_all!
+			when "worktree:remove"
+				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ) )
 			when "onboard"
 				runtime.onboard!
 			when "refresh"
