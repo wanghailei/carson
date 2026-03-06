@@ -95,3 +95,15 @@ When a repository no longer needs governance, `carson offboard` removes every Ca
 **Upgrades are invisible.** When Carson is updated, governed repositories are updated with it. The user should not need to visit each repository after an upgrade, remember to apply templates, or clean up old files. Carson does this automatically.
 
 **Failures are exact.** Exit codes are deterministic. `0` means success. `2` means policy blocked — a known, expected state, not an error. `1` means something unexpected went wrong. Automation can trust the exit code; humans can read the message.
+
+## Architecture principles
+
+**Single-repo depth is the core.** Working on one repository thoroughly well is the essence and the foundation. Multi-repo governance is just the same discipline repeated across the estate. Get the single-repo story perfect first; multi-repo follows naturally with `--all`.
+
+**`--all` is the elegant extension.** Every command that works on a single repository gains cross-repo reach through a single `--all` flag. No separate commands, no different mental model — same operation, wider scope. The flag says "do what you always do, but everywhere."
+
+**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson should own the full worktree lifecycle: create, track, and clean up — ensuring the teardown happens in the safe order (exit the worktree → `git worktree remove` → branch cleanup) so no agent is left stranded in a deleted directory.
+
+## Open decisions
+
+**Overseer model (3.0.0).** Carson's current model is per-repo: `carson onboard` sets up each repository individually. The future model is central oversight: repositories are *registered* under Carson's protection, and Carson oversees all of them by default. This makes cross-repo operations natural — you never need to know which repo you're standing in to manage the estate. The vocabulary shifts from "onboard" to "register." This is the 3.0.0 boundary.
