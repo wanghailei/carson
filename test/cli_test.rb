@@ -74,6 +74,16 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def prune!( json_output: false )
+			@calls << [ :prune, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def prune_all!
+			@calls << :prune_all
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -593,5 +603,59 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "sync", json: true }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :sync, { json_output: true } ] ], runtime.calls
+	end
+
+	# --- prune CLI tests ---
+
+	def test_parse_args_prune_defaults
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "prune" ], out: out, err: err )
+		assert_equal "prune", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_prune_with_json_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "prune", "--json" ], out: out, err: err )
+		assert_equal "prune", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_prune_with_all_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "prune", "--all" ], out: out, err: err )
+		assert_equal "prune:all", parsed.fetch( :command )
+	end
+
+	def test_parse_args_prune_with_all_and_json_flags
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "prune", "--all", "--json" ], out: out, err: err )
+		assert_equal "prune:all", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_dispatch_routes_prune_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "prune", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :prune, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_prune_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "prune", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :prune, { json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_prune_all_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "prune:all" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ :prune_all ], runtime.calls
 	end
 end
