@@ -200,6 +200,89 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- worktree done push guard ---
+
+	def test_worktree_done_blocks_when_branch_never_pushed
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "unpushed-branch" )
+
+		# Make a commit so the branch has unique work that hasn't been pushed.
+		wt_path = File.join( repo_root, ".claude", "worktrees", "unpushed-branch" )
+		File.write( File.join( wt_path, "work.txt" ), "local-only work" )
+		system( "git", "-C", wt_path, "add", "work.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", wt_path, "commit", "-m", "local work", out: File::NULL, err: File::NULL )
+
+		# No remote configured, so the branch has never been pushed.
+		reset_output( runtime )
+		result = runtime.worktree_done!( name: "unpushed-branch", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "block", json[ "status" ]
+		assert_includes json[ "error" ], "not been pushed"
+		assert json[ "recovery" ], "should include push recovery command"
+		assert_includes json[ "recovery" ], "push"
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+
+		cleanup_worktree( repo_root, wt_path, force: true )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_done_allows_empty_branch_without_remote
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "empty-branch" )
+
+		# No commits made, no remote — branch has no unique work, so done is safe.
+		reset_output( runtime )
+		result = runtime.worktree_done!( name: "empty-branch" )
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "empty-branch" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- worktree create excludes .claude/ from git status ---
+
+	def test_worktree_create_adds_claude_dir_to_git_exclude
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "exclude-test" )
+
+		exclude_path = File.join( repo_root, ".git", "info", "exclude" )
+		assert File.exist?( exclude_path ), ".git/info/exclude should exist"
+		exclude_content = File.read( exclude_path )
+		assert_includes exclude_content, ".claude/", ".claude/ should be in git exclude"
+
+		# Verify git status does not show .claude/ as untracked.
+		status_output, = Open3.capture3( "git", "status", "--porcelain", chdir: repo_root )
+		refute_includes status_output, ".claude/", "git status should not show .claude/"
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "exclude-test" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_does_not_duplicate_exclude_entry
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+
+		# Create two worktrees — .claude/ should appear in exclude only once.
+		runtime.worktree_create!( name: "first-wt" )
+		runtime.worktree_create!( name: "second-wt" )
+
+		exclude_path = File.join( repo_root, ".git", "info", "exclude" )
+		exclude_content = File.read( exclude_path )
+		matches = exclude_content.lines.count { |line| line.strip == ".claude/" }
+		assert_equal 1, matches, ".claude/ should appear exactly once in exclude"
+
+		wt1 = File.join( repo_root, ".claude", "worktrees", "first-wt" )
+		wt2 = File.join( repo_root, ".claude", "worktrees", "second-wt" )
+		cleanup_worktree( repo_root, wt1 )
+		cleanup_worktree( repo_root, wt2 )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- CWD safety ---
 
 	def test_worktree_remove_blocks_when_cwd_inside_worktree

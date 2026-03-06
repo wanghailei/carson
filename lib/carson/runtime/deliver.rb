@@ -51,7 +51,7 @@ module Carson
 
 				case ci_status
 				when :pass
-					# Continue to merge.
+					# Continue to review gate.
 				when :pending
 					result[ :recovery ] = "gh pr checks #{pr_number} --watch && carson deliver --merge"
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
@@ -63,14 +63,26 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				end
 
-				# Step 4: merge.
+				# Step 4: check review gate — block if changes are requested.
+				review = check_pr_review( number: pr_number )
+				result[ :review ] = review.to_s
+				if review == :changes_requested
+					result[ :error ] = "review changes requested on PR ##{pr_number}"
+					result[ :recovery ] = "address review comments, push, then `carson deliver --merge`"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+
+				# Step 5: merge.
 				merge_exit = merge_pr!( number: pr_number, result: result )
 				return deliver_finish( result: result, exit_code: merge_exit, json_output: json_output ) unless merge_exit == EXIT_OK
 
 				result[ :merged ] = true
 
-				# Step 5: sync main.
-				sync_after_merge!( remote: remote, main: main )
+				# Step 6: mark worktree done in session state.
+				update_session( worktree: :clear )
+
+				# Step 7: sync main in the main worktree.
+				sync_after_merge!( remote: remote, main: main, result: result )
 
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
@@ -225,6 +237,24 @@ module Carson
 				:pass
 			end
 
+			# Checks review decision on a PR. Returns :approved, :changes_requested, :review_required, or :none.
+			def check_pr_review( number: )
+				stdout, _, success, = gh_run(
+					"pr", "view", number.to_s,
+					"--json", "reviewDecision"
+				)
+				return :none unless success
+
+				data = JSON.parse( stdout ) rescue {}
+				decision = data[ "reviewDecision" ].to_s.strip.upcase
+				case decision
+				when "APPROVED" then :approved
+				when "CHANGES_REQUESTED" then :changes_requested
+				when "REVIEW_REQUIRED" then :review_required
+				else :none
+				end
+			end
+
 			# Merges the PR using the configured merge method.
 			def merge_pr!( number:, result: )
 				method = config.govern_merge_method
@@ -248,10 +278,22 @@ module Carson
 			end
 
 			# Syncs main after a successful merge.
-			def sync_after_merge!( remote:, main: )
-				git_run( "checkout", main )
-				git_run( "pull", remote, main )
-				puts_verbose "synced #{main} from #{remote}"
+			# Pulls into the main worktree directly — does not attempt checkout,
+			# because checkout would fail when running inside a feature worktree
+			# (main is already checked out in the main tree).
+			def sync_after_merge!( remote:, main:, result: )
+				main_root = main_worktree_root
+				_, pull_stderr, pull_success, = Open3.capture3(
+					"git", "-C", main_root, "pull", "--ff-only", remote, main
+				)
+				if pull_success
+					result[ :synced ] = true
+					puts_verbose "synced #{main} in #{main_root} from #{remote}"
+				else
+					result[ :synced ] = false
+					result[ :sync_error ] = pull_stderr.to_s.strip
+					puts_verbose "sync failed: #{pull_stderr.to_s.strip}"
+				end
 			end
 		end
 

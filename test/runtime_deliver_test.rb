@@ -126,6 +126,45 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- deliver! with merge + review gate ---
+
+	def test_deliver_merge_blocks_when_changes_requested
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass_changes_requested" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/review-block" )
+
+		result = runtime.deliver!( merge: true )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		output = output_string( runtime )
+		assert_includes output, "review changes requested"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_merge_json_includes_review_field
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/review-json" )
+
+		result = runtime.deliver!( merge: true, json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		json = JSON.parse( output_string( runtime ).strip )
+		assert json.key?( "review" ), "JSON should include review field"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_merge_json_includes_synced_field
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/sync-json" )
+
+		result = runtime.deliver!( merge: true, json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		json = JSON.parse( output_string( runtime ).strip )
+		# synced field should be present after merge (may be true or false depending on test setup).
+		assert json.key?( "synced" ), "JSON should include synced field after merge"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- Recovery messages ---
 
 	def test_deliver_main_branch_shows_recovery
@@ -231,9 +270,18 @@ private
 				exit 0
 			fi
 
-			# pr view — check for existing PR.
+			# pr view — check for existing PR or review decision.
 			if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
-				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" ]]; then
+				# Check if this is a reviewDecision query (from check_pr_review).
+				if echo "$*" | grep -q "reviewDecision"; then
+					if [[ "$scenario" == "ci_pass_changes_requested" ]]; then
+						echo '{"reviewDecision":"CHANGES_REQUESTED"}'
+						exit 0
+					fi
+					echo '{"reviewDecision":"APPROVED"}'
+					exit 0
+				fi
+				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" || "$scenario" == "ci_pass_changes_requested" ]]; then
 					cat <<'JSON'
 			{"number":42,"url":"https://github.com/mock/repo/pull/42"}
 			JSON
@@ -251,7 +299,7 @@ private
 
 			# pr checks — CI status.
 			if [[ "${1:-}" == "pr" && "${2:-}" == "checks" ]]; then
-				if [[ "$scenario" == "ci_pass" ]]; then
+				if [[ "$scenario" == "ci_pass" || "$scenario" == "ci_pass_changes_requested" ]]; then
 					cat <<'JSON'
 			[{"name":"CI","state":"SUCCESS","conclusion":"SUCCESS"}]
 			JSON

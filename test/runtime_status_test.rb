@@ -93,6 +93,41 @@ class RuntimeStatusTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# Path normalisation: status must filter the main worktree even when
+	# repo_root has a different canonical form than git reports (e.g. symlinks).
+	def test_status_filters_main_worktree_with_symlinked_path
+		Dir.mktmpdir( "carson-status-symlink-test", carson_tmp_root ) do |tmp_dir|
+			real_repo = File.join( tmp_dir, "real-repo" )
+			symlink_repo = File.join( tmp_dir, "link-repo" )
+
+			FileUtils.mkdir_p( real_repo )
+			File.symlink( real_repo, symlink_repo )
+
+			# Initialise git in the real directory.
+			system( "git", "-C", real_repo, "init", "-b", "main", out: File::NULL, err: File::NULL )
+			system( "git", "-C", real_repo, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", real_repo, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			File.write( File.join( real_repo, "README.md" ), "# Test" )
+			system( "git", "-C", real_repo, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", real_repo, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+
+			# Build runtime pointing at the symlink path.
+			out = StringIO.new
+			runtime = Carson::Runtime.new(
+				repo_root: symlink_repo,
+				tool_root: symlink_repo,
+				out: out,
+				err: StringIO.new,
+				verbose: false
+			)
+
+			runtime.status!( json_output: true )
+			data = JSON.parse( out.string )
+			# Main worktree should be filtered out — worktrees array should be empty.
+			assert_equal 0, data[ "worktrees" ].size, "main worktree should be filtered even with symlink"
+		end
+	end
+
 	def test_status_json_includes_governance
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
