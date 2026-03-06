@@ -1,5 +1,5 @@
-# Agent session briefing — one command to know the full state of the estate.
-# Gathers branch, working tree, worktrees, open PRs, stale branches,
+# Agent briefing — one command to know the full state of the estate.
+# Gathers branch, worktrees, open PRs, stale branches,
 # governance health, and version. Supports human-readable and JSON output.
 module Carson
 	class Runtime
@@ -81,49 +81,20 @@ module Carson
 				end
 			end
 
-			# Lists all worktrees with branch, lifecycle state, and session ownership.
+			# Lists all worktrees with branch name.
 			def gather_worktree_info
 				entries = worktree_list
-				sessions = session_list
-				ownership = build_worktree_ownership( sessions: sessions )
 
 				# Filter out the main worktree (the repository root itself).
 				# Use realpath for comparison — git returns canonical paths that may differ from repo_root.
 				canonical_root = realpath_safe( repo_root )
 				entries.reject { |wt| wt.fetch( :path ) == canonical_root }.map do |wt|
-					name = File.basename( wt.fetch( :path ) )
-					info = {
+					{
 						path: wt.fetch( :path ),
-						name: name,
+						name: File.basename( wt.fetch( :path ) ),
 						branch: wt.fetch( :branch, nil )
 					}
-					owner = ownership[ name ]
-					if owner
-						info[ :owner ] = owner[ :session_id ]
-						info[ :owner_pid ] = owner[ :pid ]
-						info[ :owner_task ] = owner[ :task ]
-						info[ :stale ] = owner[ :stale ]
-					end
-					info
 				end
-			end
-
-			# Builds a name-to-session mapping for worktree ownership.
-			def build_worktree_ownership( sessions: )
-				result = {}
-				sessions.each do |session|
-					wt = session[ :worktree ]
-					next unless wt
-					name = wt[ :name ] || wt[ "name" ]
-					next unless name
-					result[ name ] = {
-						session_id: session[ :session_id ] || session[ "session_id" ],
-						pid: session[ :pid ] || session[ "pid" ],
-						task: session[ :task ] || session[ "task" ],
-						stale: session[ :stale ]
-					}
-				end
-				result
 			end
 
 			# Queries open PRs via gh.
@@ -209,8 +180,7 @@ module Carson
 					puts_line "Worktrees:"
 					worktrees.each do |wt|
 						branch_label = wt.fetch( :branch ) || "(detached)"
-						owner_label = format_worktree_owner( worktree: wt )
-						puts_line "  #{wt.fetch( :name )}  #{branch_label}#{owner_label}"
+						puts_line "  #{wt.fetch( :name )}  #{branch_label}"
 					end
 				end
 
@@ -241,24 +211,6 @@ module Carson
 				unless templates == :in_sync
 					puts_line ""
 					puts_line "Templates: #{templates} — run `carson sync` to fix."
-				end
-			end
-
-			# Formats owner annotation for a worktree entry.
-			def format_worktree_owner( worktree: )
-				owner = worktree[ :owner ]
-				return "" unless owner
-
-				stale = worktree[ :stale ]
-				task = worktree[ :owner_task ]
-				pid = worktree[ :owner_pid ]
-
-				if stale
-					"  (stale session #{pid})"
-				elsif task
-					"  (#{task})"
-				else
-					"  (session #{pid})"
 				end
 			end
 

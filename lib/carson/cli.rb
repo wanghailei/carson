@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|session [--json] [--task T]|session clear [--json]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -98,8 +98,6 @@ module Carson
 				parse_deliver_command( argv: argv, err: err )
 			when "govern"
 				parse_govern_subcommand( argv: argv, err: err )
-			when "session"
-				parse_session_command( argv: argv, err: err )
 			else
 				parser.parse!( argv )
 				{ command: command }
@@ -334,29 +332,6 @@ module Carson
 			{ command: :invalid }
 		end
 
-		def self.parse_session_command( argv:, err: )
-			json_flag = argv.delete( "--json" ) ? true : false
-			task_value = nil
-			# Check for --task "description"
-			task_index = argv.index( "--task" )
-			if task_index
-				argv.delete_at( task_index )
-				task_value = argv.delete_at( task_index )
-				if task_value.to_s.strip.empty?
-					err.puts "#{BADGE} Missing value for --task. Use: carson session --task \"description\""
-					return { command: :invalid }
-				end
-			end
-
-			action = argv.first
-			if action == "clear"
-				argv.shift
-				return { command: "session:clear", json: json_flag }
-			end
-
-			{ command: "session", json: json_flag, task: task_value }
-		end
-
 		def self.dispatch( parsed:, runtime: )
 			command = parsed.fetch( :command )
 			return Runtime::EXIT_ERROR if command == :invalid
@@ -407,13 +382,6 @@ module Carson
 					json_output: parsed.fetch( :json, false ),
 					loop_seconds: parsed.fetch( :loop_seconds, nil )
 				)
-			when "session"
-				runtime.session!(
-					task: parsed.fetch( :task, nil ),
-					json_output: parsed.fetch( :json, false )
-				)
-			when "session:clear"
-				runtime.session_clear!( json_output: parsed.fetch( :json, false ) )
 			else
 				runtime.send( :puts_line, "Unknown command: #{command}" )
 				Runtime::EXIT_ERROR
