@@ -103,6 +103,103 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- JSON output tests ---
+
+	def test_worktree_create_json_success
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		result = runtime.worktree_create!( name: "json-feat", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "worktree create", json[ "command" ]
+		assert_equal "ok", json[ "status" ]
+		assert_equal "json-feat", json[ "name" ]
+		assert_equal "json-feat", json[ "branch" ]
+		assert json[ "path" ], "should include path"
+		assert_equal 0, json[ "exit_code" ]
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "json-feat" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_json_duplicate_error_with_recovery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "json-dupe" )
+
+		# Reset output buffer for second call.
+		runtime.instance_variable_get( :@out ).truncate( 0 )
+		runtime.instance_variable_get( :@out ).rewind
+
+		result = runtime.worktree_create!( name: "json-dupe", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "error", json[ "status" ]
+		assert_includes json[ "error" ], "already exists"
+		assert json[ "recovery" ], "should include recovery command"
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "json-dupe" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_done_json_success
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "json-done" )
+
+		runtime.instance_variable_get( :@out ).truncate( 0 )
+		runtime.instance_variable_get( :@out ).rewind
+
+		result = runtime.worktree_done!( name: "json-done", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "worktree done", json[ "command" ]
+		assert_equal "ok", json[ "status" ]
+		assert_equal "json-done", json[ "name" ]
+		assert json[ "next_step" ], "should include next_step"
+		assert_equal 0, json[ "exit_code" ]
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "json-done" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_done_json_dirty_blocks_with_recovery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "json-dirty" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "json-dirty" )
+		File.write( File.join( wt_path, "uncommitted.txt" ), "dirty" )
+
+		runtime.instance_variable_get( :@out ).truncate( 0 )
+		runtime.instance_variable_get( :@out ).rewind
+
+		result = runtime.worktree_done!( name: "json-dirty", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "block", json[ "status" ]
+		assert_includes json[ "error" ], "uncommitted"
+		assert json[ "recovery" ], "should include recovery command"
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+
+		cleanup_worktree( repo_root, wt_path, force: true )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_done_json_missing_name_error_with_recovery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		result = runtime.worktree_done!( name: nil, json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "error", json[ "status" ]
+		assert_includes json[ "error" ], "missing worktree name"
+		assert json[ "recovery" ], "should include recovery command"
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def init_git_repo( repo_root )

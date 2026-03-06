@@ -5,6 +5,24 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.7.0 — Worktree JSON + Recovery
+
+### What changed
+
+- **`carson worktree --json create|done|remove`** — machine-readable JSON output for all three worktree commands. Each returns a structured envelope with `command`, `status`, `name`, `exit_code`, and context-specific fields (`path`, `branch`, `next_step`).
+- **Recovery-aware worktree errors** — every error and block path includes a `recovery` field with the exact command to run next. Dirty worktree, missing name, unregistered worktree, unpushed commits — all include actionable recovery.
+- **Unified `worktree_finish` / `print_worktree_human`** — consistent output pattern matching deliver, sync, and prune.
+
+### UX
+
+- Human output preserved unchanged when `--json` is not passed.
+- `worktree done` includes `next_step` in JSON output pointing to `carson worktree remove`.
+- `worktree remove` includes `branch_deleted` and `remote_deleted` booleans for complete lifecycle visibility.
+
+### Migration
+
+- No breaking changes. All worktree commands without `--json` behave identically to 3.6.0.
+
 ## 3.6.0 — Prune JSON + Recovery
 
 ### What changed
