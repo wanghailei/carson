@@ -14,8 +14,8 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def audit!
-			@calls << :audit
+		def audit!( json_output: false )
+			@calls << [ :audit, { json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -501,5 +501,52 @@ class CLITest < Minitest::Test
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: true } ] ], runtime.calls
+	end
+
+	# --- audit CLI tests ---
+
+	def test_parse_args_audit_defaults
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "audit" ], out: out, err: err )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_audit_with_json_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "audit", "--json" ], out: out, err: err )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_audit_rejects_unexpected_arguments
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "audit", "extra" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Unexpected arguments for audit"
+	end
+
+	def test_dispatch_routes_audit_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "audit", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :audit, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_audit_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "audit", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :audit, { json_output: true } ] ], runtime.calls
+	end
+
+	def test_parse_args_no_args_defaults_to_audit_with_json_false
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [], out: out, err: err )
+		assert_equal "audit", parsed.fetch( :command )
 	end
 end

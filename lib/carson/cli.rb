@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit|sync|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -88,6 +88,8 @@ module Carson
 				parse_worktree_subcommand( argv: argv, parser: parser, err: err )
 			when "review"
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
+			when "audit"
+				parse_audit_command( argv: argv, err: err )
 			when "status"
 				parse_status_command( argv: argv, err: err )
 			when "deliver"
@@ -242,6 +244,15 @@ module Carson
 			{ command: :invalid }
 		end
 
+		def self.parse_audit_command( argv:, err: )
+			json_flag = argv.delete( "--json" ) ? true : false
+			unless argv.empty?
+				err.puts "#{BADGE} Unexpected arguments for audit: #{argv.join( ' ' )}"
+				return { command: :invalid }
+			end
+			{ command: "audit", json: json_flag }
+		end
+
 		def self.parse_status_command( argv:, err: )
 			json_flag = argv.delete( "--json" ) ? true : false
 			unless argv.empty?
@@ -321,7 +332,7 @@ module Carson
 			when "setup"
 				runtime.setup!( cli_choices: parsed.fetch( :cli_choices, {} ) )
 			when "audit"
-				runtime.audit!
+				runtime.audit!( json_output: parsed.fetch( :json, false ) )
 			when "sync"
 				runtime.sync!
 			when "prune"

@@ -1,13 +1,20 @@
+# Pre-commit audit — checks hooks, main sync, PR checks, and CI baseline.
+# Exits with EXIT_BLOCK when policy violations are found.
+# Supports --json for machine-readable structured output.
 require "cgi"
 
 module Carson
 	class Runtime
 		module Audit
-			def audit!
+			def audit!( json_output: false )
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 				unless head_exists?
-					puts_line "No commits yet — audit skipped for initial commit."
+					if json_output
+						out.puts JSON.pretty_generate( { command: "audit", status: "skipped", reason: "no commits yet", exit_code: EXIT_OK } )
+					else
+						puts_line "No commits yet — audit skipped for initial commit."
+					end
 					return EXIT_OK
 				end
 				audit_state = "ok"
@@ -22,6 +29,7 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Hooks]"
 				hooks_ok = hooks_health_report
+				hooks_status = hooks_ok ? "ok" : "mismatch"
 				unless hooks_ok
 					audit_state = "block"
 					audit_concise_problems << "Hooks: mismatch — run carson refresh."
@@ -29,23 +37,27 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Main Sync Status]"
 				ahead_count, behind_count, main_error = main_sync_counts
+				main_sync = { ahead: 0, behind: 0, status: "ok" }
 				if main_error
 					puts_verbose "main_vs_remote_main: unknown"
 					puts_verbose "WARN: unable to calculate main sync status (#{main_error})."
 					audit_state = "attention" if audit_state == "ok"
 					audit_concise_problems << "Main sync: unable to determine — check remote connectivity."
+					main_sync = { ahead: 0, behind: 0, status: "unknown", error: main_error }
 				elsif ahead_count.positive?
 					puts_verbose "main_vs_remote_main_ahead: #{ahead_count}"
 					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
 					puts_verbose "ACTION: local #{config.main_branch} is ahead of #{config.git_remote}/#{config.main_branch} by #{ahead_count} commit#{plural_suffix( count: ahead_count )}; reset local drift before commit/push workflows."
 					audit_state = "block"
 					audit_concise_problems << "Main sync (#{config.git_remote}): ahead by #{ahead_count} — git fetch #{config.git_remote}, or carson setup to switch remote."
+					main_sync = { ahead: ahead_count, behind: behind_count, status: "ahead" }
 				elsif behind_count.positive?
 					puts_verbose "main_vs_remote_main_ahead: #{ahead_count}"
 					puts_verbose "main_vs_remote_main_behind: #{behind_count}"
 					puts_verbose "ACTION: local #{config.main_branch} is behind #{config.git_remote}/#{config.main_branch} by #{behind_count} commit#{plural_suffix( count: behind_count )}; run carson sync."
 					audit_state = "attention" if audit_state == "ok"
 					audit_concise_problems << "Main sync (#{config.git_remote}): behind by #{behind_count} — run carson sync."
+					main_sync = { ahead: ahead_count, behind: behind_count, status: "behind" }
 				else
 					puts_verbose "main_vs_remote_main_ahead: 0"
 					puts_verbose "main_vs_remote_main_behind: 0"
@@ -109,15 +121,40 @@ module Carson
 							audit_status: audit_state
 						)
 					)
-				puts_verbose ""
-				puts_verbose "[Audit Result]"
-				puts_verbose "status: #{audit_state}"
-				puts_verbose( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
-				unless verbose?
-					audit_concise_problems.each { |problem| puts_line problem }
-					puts_line "Audit: #{audit_state}"
+				exit_code = audit_state == "block" ? EXIT_BLOCK : EXIT_OK
+
+				if json_output
+					result = {
+						command: "audit",
+						status: audit_state,
+						branch: current_branch,
+						hooks: { status: hooks_status },
+						main_sync: main_sync,
+						pr: monitor_report[ :pr ],
+						checks: monitor_report.fetch( :checks ),
+						baseline: {
+							status: default_branch_baseline.fetch( :status ),
+							repository: default_branch_baseline[ :repository ],
+							failing_count: default_branch_baseline.fetch( :failing_count ),
+							pending_count: default_branch_baseline.fetch( :pending_count ),
+							advisory_failing_count: default_branch_baseline.fetch( :advisory_failing_count ),
+							advisory_pending_count: default_branch_baseline.fetch( :advisory_pending_count )
+						},
+						problems: audit_concise_problems,
+						exit_code: exit_code
+					}
+					out.puts JSON.pretty_generate( result )
+				else
+					puts_verbose ""
+					puts_verbose "[Audit Result]"
+					puts_verbose "status: #{audit_state}"
+					puts_verbose( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
+					unless verbose?
+						audit_concise_problems.each { |problem| puts_line problem }
+						puts_line "Audit: #{audit_state}"
+					end
 				end
-				audit_state == "block" ? EXIT_BLOCK : EXIT_OK
+				exit_code
 			end
 
 		private
