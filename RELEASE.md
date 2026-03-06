@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.33.0 — Safe Worktree Remove
+
+### What changed
+
+- **`carson worktree remove` no longer force-removes by default.** If the worktree has uncommitted or untracked changes, Carson refuses with a clear message instead of silently discarding work. Pass `--force` to override when you intentionally want to discard changes.
+- **Template sync cleanup is safer.** Carson's internal template propagation tries safe worktree removal first, falling back to `--force` only for its own ephemeral sync worktree.
+
+### UX
+
+- Dirty worktree removal now shows the worktree name and actionable guidance: "Commit or discard changes first, or use --force to override."
+
+### Migration
+
+- No action required. Existing `carson worktree remove` calls without `--force` will now refuse on dirty worktrees instead of silently destroying uncommitted work.
+
 ## 2.32.0 — Worktree-Aware Pruning
 
 ### What changed
