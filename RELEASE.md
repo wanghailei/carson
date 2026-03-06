@@ -5,6 +5,22 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.5.0 — Sync JSON + Recovery
+
+### What changed
+
+- **`carson sync --json`** — machine-readable JSON output for the sync command. The JSON envelope includes `command`, `status`, `ahead`, `behind`, `main_branch`, `remote`, `exit_code`, and on failure: `error` and `recovery`.
+- **Recovery-aware sync errors** — dirty working tree now includes a recovery command in both human (`Recovery: ...`) and JSON output.
+
+### UX
+
+- JSON output suppresses git command output (fetch, pull) to keep the JSON envelope clean.
+- Human output remains unchanged when `--json` is not passed.
+
+### Migration
+
+- No breaking changes. `carson sync` without `--json` behaves identically to 3.4.0.
+
 ## 3.4.0 — Audit JSON
 
 ### What changed
