@@ -5,6 +5,28 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.0.0 — Agent-Oriented Carson
+
+### Theme
+
+Carson is for coding agents. The primary consumer of Carson's commands, lifecycle management, and governance is the coding agent working on behalf of the developer. Carson 3.0 reorients the product around this truth.
+
+### What changed
+
+- **`carson status` — agent session briefing.** One command to know the full state of the estate: current branch and dirty/sync state, active worktrees, open PRs with CI and review status, stale branches ready for pruning, and governance health. Supports `--json` for machine-readable structured output — agents can parse the response directly instead of scraping human text.
+- **Deferred worktree cleanup model.** Worktrees are no longer expected to be deleted immediately after use. The new lifecycle: create a worktree, do work, mark it done, clean up later in batch via `carson housekeep` or `carson prune`. This eliminates the #1 agent session crash: worktree directory disappearing while the agent's shell CWD is inside it.
+- **`docs/agent-orient.md` — the agent's needs document.** Written from the coding agent's authentic perspective: what it experiences, what friction exists, and what it needs Carson to become. This document guides all 3.0 development.
+
+### UX
+
+- `carson status` prints a concise briefing by default. Silence is preserved — status reports only what needs attention.
+- `carson status --json` produces a stable JSON schema for programmatic consumption.
+
+### Migration
+
+- No breaking changes. All 2.x commands continue to work unchanged.
+- `docs/plan.md` has been removed — superseded by `docs/agent-orient.md`.
+
 ## 2.33.0 — Safe Worktree Remove
 
 ### What changed

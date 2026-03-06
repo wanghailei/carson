@@ -67,13 +67,17 @@ The output must be structured — sections I can scan, not a wall of prose. Idea
 
 ### 2. Atomic worktree lifecycle
 
-Two operations. No more.
+Three operations. Create, mark done, clean up later.
 
 **Create:** `carson worktree create <name>` — creates the worktree, checks out a new branch, and reports the path. I cd into it and start working. One command, one result.
 
-**Done:** `carson worktree done` — handles everything from "I am finished in this worktree" through "workspace is clean." Specifically: (1) verifies I am inside a worktree, (2) ensures all changes are committed and pushed, (3) moves my shell to the main tree, (4) removes the worktree registration and directory, (5) prunes the branch if it has been merged. One command, complete lifecycle.
+**Done:** `carson worktree done` — marks the worktree as completed. Ensures all changes are committed and pushed. Records that the work is finished but does **not** delete the worktree. The directory stays. The branch stays. Deletion is deferred to batch cleanup.
 
-The critical safety invariant: my shell must never be inside a directory that is about to be deleted. `carson worktree done` must handle the cd-out step itself, or refuse to proceed if it cannot.
+**Housekeep:** `carson housekeep` (or `carson prune`) — cleans up all completed worktrees in one pass, at a time when no agents are active. This is the safe moment for deletion — no active shell is inside any of these directories.
+
+The insight: worktrees do not need immediate deletion. A worktree is cheap. The real danger is deleting a worktree while an agent's shell is inside it — that kills the session. Deferred cleanup eliminates that risk entirely. The rule is simple: **a work, a worktree** — one task per worktree, never reused, cleaned up in batch.
+
+This also means worktrees serve as a historical record. `carson status` can show what work was done, on which branches, and whether each is still active or completed. Useful context for any agent starting a new session.
 
 ### 3. PR lifecycle as one flow
 
@@ -81,9 +85,9 @@ After I finish coding and my changes are committed:
 
 `carson deliver` — pushes the branch, creates the PR (if not already open), and reports the PR URL.
 
-`carson deliver --merge` — does everything above, plus waits for CI (with a timeout), checks the review gate, and merges if all conditions pass. Then cleans up: removes the worktree, prunes the branch, syncs main.
+`carson deliver --merge` — does everything above, plus waits for CI (with a timeout), checks the review gate, and merges if all conditions pass. Then marks the worktree as done and syncs main. The worktree directory persists until batch housekeep.
 
-This collapses eight manual steps into one or two commands. The mechanical parts — push, create PR, wait, check, merge, clean — are handled. I focus on the part that requires judgement: writing the code.
+This collapses eight manual steps into one or two commands. The mechanical parts — push, create PR, wait, check, merge, mark done — are handled. I focus on the part that requires judgement: writing the code.
 
 ### 4. Machine-readable output
 
@@ -143,7 +147,7 @@ This already exists in some places (pre-commit hook, worktree remove). Extend it
 
 ## Goals
 
-1. **Zero session crashes from worktree lifecycle.** The number one operational failure mode must be eliminated entirely. Not reduced — eliminated.
+1. **Zero session crashes from worktree lifecycle.** The number one operational failure mode must be eliminated entirely. Not reduced — eliminated. Deferred cleanup is the mechanism: worktrees are never deleted during active sessions.
 
 2. **Session start in one command.** From "new session" to "I know the full state and can begin work" in a single `carson status` invocation.
 
@@ -178,10 +182,11 @@ This already exists in some places (pre-commit hook, worktree remove). Extend it
 
 ### Lifecycle contract
 
-- Every worktree has a clear owner (session ID) and lifecycle state (active, merged, abandoned).
+- Every worktree has a clear owner (session ID) and lifecycle state (active, done, abandoned).
 - Every PR has a traceable lifecycle from creation through merge to cleanup.
-- Cleanup after merge is automatic and complete: worktree removed, branch pruned, main synced.
-- No operation leaves debris. If Carson creates something, Carson can clean it up — and does.
+- Worktrees are marked done after merge but persist until batch housekeep. No worktree is deleted during an active agent session.
+- Batch housekeep clears all completed worktrees, prunes branches, and syncs main. One command, complete cleanup.
+- No operation leaves permanent debris. If Carson creates something, Carson can clean it up — on a safe schedule.
 
 ### Cooperation contract
 
