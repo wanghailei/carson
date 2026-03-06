@@ -78,7 +78,7 @@ module Carson
 
 				result[ :merged ] = true
 
-				# Step 6: mark worktree done in session state.
+				# Step 6: clear worktree from session state.
 				update_session( worktree: :clear )
 
 				# Step 7: sync main in the main worktree.
