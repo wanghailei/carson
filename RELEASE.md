@@ -5,6 +5,22 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.10.0 — CWD Safety Guard
+
+### What changed
+
+- **CWD-inside-worktree guard** — `carson worktree remove` now detects when the caller's working directory is inside the worktree being removed, and blocks with `EXIT_BLOCK` instead of proceeding. This eliminates the #1 agent session crash scenario: removing a worktree directory while the shell is inside it kills the shell permanently.
+- **Recovery command** — the block message includes the exact recovery: `cd <repo_root> && carson worktree remove <name>`.
+
+### UX
+
+- No change when the caller's CWD is outside the worktree — removal proceeds normally.
+- When blocked, the error is clear and the recovery is one command.
+
+### Migration
+
+- No breaking changes. New safety guard — previously dangerous operations now fail safely.
+
 ## 3.9.0 — Agent Coordination Signals
 
 ### What changed

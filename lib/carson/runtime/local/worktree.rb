@@ -133,6 +133,17 @@ module Carson
 					)
 				end
 
+				# Safety: refuse if the caller's shell CWD is inside the worktree.
+				# Removing a directory while a shell is inside it kills the shell permanently.
+				if cwd_inside_worktree?( worktree_path: resolved_path )
+					return worktree_finish(
+						result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
+							error: "current working directory is inside this worktree",
+							recovery: "cd #{repo_root} && carson worktree remove #{File.basename( resolved_path )}" },
+						exit_code: EXIT_BLOCK, json_output: json_output
+					)
+				end
+
 				branch = worktree_branch( path: resolved_path )
 				puts_verbose "worktree_remove: path=#{resolved_path} branch=#{branch} force=#{force}"
 
@@ -233,6 +244,17 @@ module Carson
 					puts_line "#{result[ :error ]&.capitalize || 'Blocked'}: #{result[ :name ]}"
 					puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
 				end
+			end
+
+			# Returns true when the process CWD is inside the given worktree path.
+			# This detects the most common session-crash scenario: removing a worktree
+			# while the caller's shell is inside it.
+			def cwd_inside_worktree?( worktree_path: )
+				cwd = Dir.pwd
+				normalised_wt = File.join( worktree_path, "" )
+				cwd == worktree_path || cwd.start_with?( normalised_wt )
+			rescue StandardError
+				false
 			end
 
 			# Resolves a worktree path: if it's a bare name, look under .claude/worktrees/.
