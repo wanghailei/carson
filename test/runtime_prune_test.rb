@@ -626,4 +626,125 @@ class RuntimePruneTest < Minitest::Test
 			refute_includes out.string, "No stale branches."
 		end
 	end
+
+	# --- JSON output tests ---
+
+	def test_json_output_no_stale_branches
+		with_prune_repo( verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			result = runtime.prune!( json_output: true )
+			json = JSON.parse( out.string.strip )
+			assert_equal "prune", json[ "command" ]
+			assert_equal "ok", json[ "status" ]
+			assert_equal 0, json[ "deleted" ]
+			assert_equal 0, json[ "skipped" ]
+			assert_equal [], json[ "branches" ]
+			assert_equal 0, json[ "exit_code" ]
+			assert_equal Carson::Runtime::EXIT_OK, result
+		end
+	end
+
+	def test_json_output_stale_branch_deleted
+		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
+			bare_root = File.join( tmp_dir, "bare" )
+			repo_root = File.join( tmp_dir, "repo" )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "init\n" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			tip_sha = create_gone_branch( repo_root: repo_root, bare_root: bare_root, branch_name: "feat-json" )
+			mock_script = mock_gh_with_merged_pr( branch_shas: { "feat-json" => { sha: tip_sha, number: 50 } } )
+
+			mock_bin = File.join( tmp_dir, "mock-bin" )
+			FileUtils.mkdir_p( mock_bin )
+			File.write( File.join( mock_bin, "gh" ), mock_script )
+			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => "",
+				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
+			) do
+				out = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					out: out,
+					err: StringIO.new,
+					verbose: false
+				)
+
+				result = runtime.prune!( json_output: true )
+				json = JSON.parse( out.string.strip )
+				assert_equal "ok", json[ "status" ]
+				assert_equal 1, json[ "deleted" ]
+				branch_entry = json[ "branches" ].find { |b| b[ "branch" ] == "feat-json" }
+				assert branch_entry, "branches array should contain feat-json"
+				assert_equal "stale", branch_entry[ "type" ]
+				assert_equal "deleted", branch_entry[ "action" ]
+				assert branch_entry[ "reason" ], "branch entry should have a reason"
+				assert_equal Carson::Runtime::EXIT_OK, result
+			end
+		end
+	end
+
+	def test_json_output_absorbed_branch_deleted
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: "feat-absorbed-json" )
+
+			result = runtime.prune!( json_output: true )
+			json = JSON.parse( out.string.strip )
+			assert_equal 1, json[ "deleted" ]
+			branch_entry = json[ "branches" ].find { |b| b[ "branch" ] == "feat-absorbed-json" }
+			assert branch_entry, "branches array should contain feat-absorbed-json"
+			assert_equal "absorbed", branch_entry[ "type" ]
+			assert_equal "deleted", branch_entry[ "action" ]
+			assert_equal Carson::Runtime::EXIT_OK, result
+		end
+	end
+
+	def test_json_output_worktree_blocked_branch_skipped
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: "feat-wt-json" )
+
+			result = runtime.prune!( json_output: true )
+			json = JSON.parse( out.string.strip )
+			assert_equal 0, json[ "deleted" ]
+			assert_equal 1, json[ "skipped" ]
+			branch_entry = json[ "branches" ].find { |b| b[ "branch" ] == "feat-wt-json" }
+			assert branch_entry, "branches array should contain feat-wt-json"
+			assert_equal "skipped", branch_entry[ "action" ]
+			assert_equal Carson::Runtime::EXIT_OK, result
+		end
+	end
+
+	def test_json_output_branch_entry_structure
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			create_absorbed_branch( repo_root: repo_root, branch_name: "feat-struct" )
+
+			runtime.prune!( json_output: true )
+			json = JSON.parse( out.string.strip )
+			entry = json[ "branches" ].first
+			assert entry, "branches array should have at least one entry"
+			assert entry.key?( "branch" ), "must have branch key"
+			assert entry.key?( "upstream" ), "must have upstream key"
+			assert entry.key?( "type" ), "must have type key"
+			assert entry.key?( "action" ), "must have action key"
+			assert entry.key?( "reason" ), "must have reason key"
+		end
+	end
+
+	def test_json_output_suppresses_git_fetch_stdout
+		with_prune_repo( verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+			runtime.prune!( json_output: true )
+			raw = out.string.strip
+			# Output should be valid JSON with no preceding text.
+			json = JSON.parse( raw )
+			assert_equal "prune", json[ "command" ]
+		end
+	end
 end

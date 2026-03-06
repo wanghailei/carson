@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -168,9 +168,10 @@ module Carson
 
 		def self.parse_prune_command( argv:, parser:, err: )
 			all_flag = argv.delete( "--all" ) ? true : false
+			json_flag = argv.delete( "--json" ) ? true : false
 			parser.parse!( argv )
-			return { command: "prune:all" } if all_flag
-			{ command: "prune" }
+			return { command: "prune:all", json: json_flag } if all_flag
+			{ command: "prune", json: json_flag }
 		end
 
 		def self.parse_worktree_subcommand( argv:, parser:, err: )
@@ -347,7 +348,7 @@ module Carson
 			when "sync"
 				runtime.sync!( json_output: parsed.fetch( :json, false ) )
 			when "prune"
-				runtime.prune!
+				runtime.prune!( json_output: parsed.fetch( :json, false ) )
 			when "prune:all"
 				runtime.prune_all!
 			when "worktree:create"

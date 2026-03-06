@@ -1,31 +1,74 @@
+# Removes stale local branches (gone upstream), orphan branches (no tracking) with merged PR evidence,
+# and absorbed branches (content already on main, no open PR).
+# Supports --json for machine-readable structured output with per-branch action details.
 module Carson
 	class Runtime
 		module Local
-			# Removes stale local branches (gone upstream), orphan branches (no tracking) with merged PR evidence,
-			# and absorbed branches (content already on main, no open PR).
-			def prune!
+			def prune!( json_output: false )
 				fingerprint_status = block_if_outsider_fingerprints!
-				return fingerprint_status unless fingerprint_status.nil?
+				unless fingerprint_status.nil?
+					if json_output
+						out.puts JSON.pretty_generate( {
+							command: "prune", status: "block",
+							error: "Carson-owned artefacts detected in host repository",
+							recovery: "remove Carson-owned files (.carson.yml, bin/carson, .tools/carson) then retry",
+							exit_code: EXIT_BLOCK
+						} )
+					end
+					return fingerprint_status
+				end
 
-				git_system!( "fetch", config.git_remote, "--prune" )
+				prune_git!( "fetch", config.git_remote, "--prune", json_output: json_output )
 				active_branch = current_branch
 				counters = { deleted: 0, skipped: 0 }
+				branches = []
 
 				stale_branches = stale_local_branches
-				prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch, counters: counters )
+				prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch, counters: counters, branches: branches )
 
 				orphan_branches = orphan_local_branches( active_branch: active_branch )
-				prune_orphan_branch_entries( orphan_branches: orphan_branches, counters: counters )
+				prune_orphan_branch_entries( orphan_branches: orphan_branches, counters: counters, branches: branches )
 
 				absorbed_branches = absorbed_local_branches( active_branch: active_branch )
-				prune_absorbed_branch_entries( absorbed_branches: absorbed_branches, counters: counters )
+				prune_absorbed_branch_entries( absorbed_branches: absorbed_branches, counters: counters, branches: branches )
 
-				return prune_no_stale_branches if counters.fetch( :deleted ).zero? && counters.fetch( :skipped ).zero?
+				prune_finish(
+					result: { command: "prune", status: "ok", branches: branches, deleted: counters.fetch( :deleted ), skipped: counters.fetch( :skipped ) },
+					exit_code: EXIT_OK, json_output: json_output, counters: counters
+				)
+			end
 
-				puts_verbose "prune_summary: deleted=#{counters.fetch( :deleted )} skipped=#{counters.fetch( :skipped )}"
+		private
+
+			# Unified output for prune results — JSON or human-readable.
+			def prune_finish( result:, exit_code:, json_output:, counters: )
+				result[ :exit_code ] = exit_code
+
+				if json_output
+					out.puts JSON.pretty_generate( result )
+				else
+					print_prune_human( counters: counters )
+				end
+
+				exit_code
+			end
+
+			# Human-readable output for prune results.
+			def print_prune_human( counters: )
+				deleted_count = counters.fetch( :deleted )
+				skipped_count = counters.fetch( :skipped )
+
+				if deleted_count.zero? && skipped_count.zero?
+					if verbose?
+						puts_line "OK: no stale or orphan branches to prune."
+					else
+						puts_line "No stale branches."
+					end
+					return
+				end
+
+				puts_verbose "prune_summary: deleted=#{deleted_count} skipped=#{skipped_count}"
 				unless verbose?
-					deleted_count = counters.fetch( :deleted )
-					skipped_count = counters.fetch( :skipped )
 					message = if deleted_count > 0 && skipped_count > 0
 						"Pruned #{deleted_count}, skipped #{skipped_count} (--verbose for details)."
 					elsif deleted_count > 0
@@ -35,24 +78,23 @@ module Carson
 					end
 					puts_line message
 				end
-				EXIT_OK
 			end
 
-		private
-
-			def prune_no_stale_branches
-				if verbose?
-					puts_line "OK: no stale or orphan branches to prune."
+			# Runs a git command, suppressing stdout in JSON mode to keep output clean.
+			def prune_git!( *args, json_output: false )
+				if json_output
+					_, stderr_text, success, = git_run( *args )
+					raise "git #{args.join( ' ' )} failed: #{stderr_text.to_s.strip}" unless success
 				else
-					puts_line "No stale branches."
+					git_system!( *args )
 				end
-				EXIT_OK
 			end
 
-			def prune_stale_branch_entries( stale_branches:, active_branch:, counters: { deleted: 0, skipped: 0 } )
+			def prune_stale_branch_entries( stale_branches:, active_branch:, counters: { deleted: 0, skipped: 0 }, branches: [] )
 				stale_branches.each do |entry|
-					outcome = prune_stale_branch_entry( entry: entry, active_branch: active_branch )
-					counters[ outcome ] += 1
+					result = prune_stale_branch_entry( entry: entry, active_branch: active_branch )
+					counters[ result.fetch( :action ) ] += 1
+					branches << result
 				end
 				counters
 			end
@@ -67,9 +109,10 @@ module Carson
 			end
 
 			def prune_skip_stale_branch( type:, branch:, upstream: )
+				reason = type == :protected ? "protected branch" : "current branch"
 				status = type == :protected ? "skip_protected_branch" : "skip_current_branch"
 				puts_verbose "#{status}: #{branch} (upstream=#{upstream})"
-				:skipped
+				{ action: :skipped, branch: branch, upstream: upstream, type: "stale", reason: reason }
 			end
 
 			def prune_delete_stale_branch( branch:, upstream: )
@@ -87,7 +130,7 @@ module Carson
 			def prune_safe_delete_success( branch:, upstream:, stdout_text: )
 				out.print stdout_text if verbose? && !stdout_text.empty?
 				puts_verbose "deleted_local_branch: #{branch} (upstream=#{upstream})"
-				:deleted
+				{ action: :deleted, branch: branch, upstream: upstream, type: "stale", reason: "upstream gone" }
 			end
 
 			def prune_force_delete_stale_branch( branch:, upstream:, delete_error_text: )
@@ -106,19 +149,19 @@ module Carson
 			def prune_force_delete_success( branch:, upstream:, merged_pr:, force_stdout: )
 				out.print force_stdout if verbose? && !force_stdout.empty?
 				puts_verbose "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
-				:deleted
+				{ action: :deleted, branch: branch, upstream: upstream, type: "stale", reason: "force deleted with PR evidence" }
 			end
 
 			def prune_force_delete_failed( branch:, upstream:, force_stderr: )
 				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
 				puts_verbose "fail_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error_text}"
-				:skipped
+				{ action: :skipped, branch: branch, upstream: upstream, type: "stale", reason: force_error_text }
 			end
 
 			def prune_force_delete_skipped( branch:, upstream:, delete_error_text:, force_error: )
 				puts_verbose "skip_delete_branch: #{branch} (upstream=#{upstream}) reason=#{delete_error_text}"
 				puts_verbose "skip_force_delete_branch: #{branch} (upstream=#{upstream}) reason=#{force_error}" unless force_error.to_s.strip.empty?
-				:skipped
+				{ action: :skipped, branch: branch, upstream: upstream, type: "stale", reason: delete_error_text }
 			end
 
 			def normalise_branch_delete_error( error_text: )
@@ -229,13 +272,14 @@ module Carson
 			end
 
 			# Processes absorbed branches: verifies no open PR exists before deleting local and remote.
-			def prune_absorbed_branch_entries( absorbed_branches:, counters: )
+			def prune_absorbed_branch_entries( absorbed_branches:, counters:, branches: [] )
 				return counters if absorbed_branches.empty?
 				return counters unless gh_available?
 
 				absorbed_branches.each do |entry|
-					outcome = prune_absorbed_branch_entry( branch: entry.fetch( :branch ), upstream: entry.fetch( :upstream ) )
-					counters[ outcome ] += 1
+					result = prune_absorbed_branch_entry( branch: entry.fetch( :branch ), upstream: entry.fetch( :upstream ) )
+					counters[ result.fetch( :action ) ] += 1
+					branches << result
 				end
 				counters
 			end
@@ -244,14 +288,14 @@ module Carson
 			def prune_absorbed_branch_entry( branch:, upstream: )
 				if branch_has_open_pr?( branch: branch )
 					puts_verbose "skip_absorbed_branch: #{branch} reason=open PR exists"
-					return :skipped
+					return { action: :skipped, branch: branch, upstream: upstream, type: "absorbed", reason: "open PR exists" }
 				end
 
 				force_stdout, force_stderr, force_success = force_delete_local_branch( branch: branch )
 				unless force_success
 					error_text = normalise_branch_delete_error( error_text: force_stderr )
 					puts_verbose "fail_delete_absorbed_branch: #{branch} reason=#{error_text}"
-					return :skipped
+					return { action: :skipped, branch: branch, upstream: upstream, type: "absorbed", reason: error_text }
 				end
 
 				out.print force_stdout if verbose? && !force_stdout.empty?
@@ -260,7 +304,7 @@ module Carson
 				git_run( "push", config.git_remote, "--delete", remote_branch )
 
 				puts_verbose "deleted_absorbed_branch: #{branch} (upstream=#{upstream})"
-				:deleted
+				{ action: :deleted, branch: branch, upstream: upstream, type: "absorbed", reason: "content already on main" }
 			end
 
 			# Returns true if the branch has at least one open PR.
@@ -282,13 +326,14 @@ module Carson
 			end
 
 			# Processes orphan branches: verifies merged PR evidence via GitHub API before deleting.
-			def prune_orphan_branch_entries( orphan_branches:, counters: )
+			def prune_orphan_branch_entries( orphan_branches:, counters:, branches: [] )
 				return counters if orphan_branches.empty?
 				return counters unless gh_available?
 
 				orphan_branches.each do |branch|
-					outcome = prune_orphan_branch_entry( branch: branch )
-					counters[ outcome ] += 1
+					result = prune_orphan_branch_entry( branch: branch )
+					counters[ result.fetch( :action ) ] += 1
+					branches << result
 				end
 				counters
 			end
@@ -300,12 +345,12 @@ module Carson
 					error_text = tip_sha_error.to_s.strip
 					error_text = "unable to read local branch tip sha" if error_text.empty?
 					puts_verbose "skip_orphan_branch: #{branch} reason=#{error_text}"
-					return :skipped
+					return { action: :skipped, branch: branch, upstream: "", type: "orphan", reason: error_text }
 				end
 				branch_tip_sha = tip_sha_text.to_s.strip
 				if branch_tip_sha.empty?
 					puts_verbose "skip_orphan_branch: #{branch} reason=unable to read local branch tip sha"
-					return :skipped
+					return { action: :skipped, branch: branch, upstream: "", type: "orphan", reason: "unable to read local branch tip sha" }
 				end
 
 				merged_pr, error = merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
@@ -313,19 +358,19 @@ module Carson
 					reason = error.to_s.strip
 					reason = "no merged PR evidence for branch tip into #{config.main_branch}" if reason.empty?
 					puts_verbose "skip_orphan_branch: #{branch} reason=#{reason}"
-					return :skipped
+					return { action: :skipped, branch: branch, upstream: "", type: "orphan", reason: reason }
 				end
 
 				force_stdout, force_stderr, force_success = force_delete_local_branch( branch: branch )
 				if force_success
 					out.print force_stdout if verbose? && !force_stdout.empty?
 					puts_verbose "deleted_orphan_branch: #{branch} merged_pr=#{merged_pr.fetch( :url )}"
-					return :deleted
+					return { action: :deleted, branch: branch, upstream: "", type: "orphan", reason: "merged PR evidence found" }
 				end
 
 				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
 				puts_verbose "fail_delete_orphan_branch: #{branch} reason=#{force_error_text}"
-				:skipped
+				{ action: :skipped, branch: branch, upstream: "", type: "orphan", reason: force_error_text }
 			end
 
 			# Safe delete can fail after squash merges because branch tip is no longer an ancestor.

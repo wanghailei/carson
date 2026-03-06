@@ -5,6 +5,24 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.6.0 — Prune JSON + Recovery
+
+### What changed
+
+- **`carson prune --json`** — machine-readable JSON output for the prune command. The JSON envelope includes `command`, `status`, `branches` (array of per-branch details), `deleted`, `skipped`, and `exit_code`. Each branch entry has `branch`, `upstream`, `type` (stale/orphan/absorbed), `action` (deleted/skipped), and `reason`.
+- **Recovery-aware prune errors** — outsider fingerprint blocks now include the specific recovery command in JSON output.
+- **Structured branch entries** — internal prune methods now return structured hashes instead of bare symbols, enabling per-branch detail collection for JSON mode.
+
+### UX
+
+- JSON output suppresses `git fetch` stdout to keep the JSON envelope clean.
+- Human output remains unchanged when `--json` is not passed.
+- All existing prune tests pass unchanged — human output behaviour is preserved.
+
+### Migration
+
+- No breaking changes. `carson prune` without `--json` behaves identically to 3.5.0.
+
 ## 3.5.0 — Sync JSON + Recovery
 
 ### What changed
