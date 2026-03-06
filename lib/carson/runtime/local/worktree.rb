@@ -136,10 +136,11 @@ module Carson
 				# Safety: refuse if the caller's shell CWD is inside the worktree.
 				# Removing a directory while a shell is inside it kills the shell permanently.
 				if cwd_inside_worktree?( worktree_path: resolved_path )
+					safe_root = main_worktree_root
 					return worktree_finish(
 						result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
 							error: "current working directory is inside this worktree",
-							recovery: "cd #{repo_root} && carson worktree remove #{File.basename( resolved_path )}" },
+							recovery: "cd #{safe_root} && carson worktree remove #{File.basename( resolved_path )}" },
 						exit_code: EXIT_BLOCK, json_output: json_output
 					)
 				end
@@ -255,6 +256,16 @@ module Carson
 				cwd == worktree_path || cwd.start_with?( normalised_wt )
 			rescue StandardError
 				false
+			end
+
+			# Returns the main (non-worktree) repository root.
+			# Uses git-common-dir to find the shared .git directory, then takes its parent.
+			# Falls back to repo_root if detection fails.
+			def main_worktree_root
+				common_dir, _, success, = git_run( "rev-parse", "--path-format=absolute", "--git-common-dir" )
+				return File.dirname( common_dir.strip ) if success && !common_dir.strip.empty?
+
+				repo_root
 			end
 
 			# Resolves a worktree path: if it's a bare name, look under .claude/worktrees/.
