@@ -88,7 +88,9 @@ module Carson
 				ownership = build_worktree_ownership( sessions: sessions )
 
 				# Filter out the main worktree (the repository root itself).
-				entries.reject { |wt| wt.fetch( :path ) == repo_root }.map do |wt|
+				# Use realpath for comparison — git returns canonical paths that may differ from repo_root.
+				canonical_root = realpath_safe( repo_root )
+				entries.reject { |wt| wt.fetch( :path ) == canonical_root }.map do |wt|
 					name = File.basename( wt.fetch( :path ) )
 					info = {
 						path: wt.fetch( :path ),

@@ -23,6 +23,10 @@ module Carson
 				# Determine the base branch (main branch from config).
 				base = config.main_branch
 
+				# Ensure .claude/ is excluded from git status in the host repository.
+				# Uses .git/info/exclude (local-only, never committed) to respect the outsider boundary.
+				ensure_claude_dir_excluded!
+
 				# Create the worktree with a new branch based on the main branch.
 				FileUtils.mkdir_p( worktrees_dir )
 				_, wt_stderr, wt_success, = git_run( "worktree", "add", wt_path, "-b", name, base )
@@ -69,8 +73,8 @@ module Carson
 				end
 
 				# Check for uncommitted changes in the worktree.
-				wt_status, _, status_success, = Open3.capture3( "git", "status", "--porcelain", chdir: resolved_path )
-				if status_success && !wt_status.strip.empty?
+				wt_status, _, status_result, = Open3.capture3( "git", "status", "--porcelain", chdir: resolved_path )
+				if status_result.success? && !wt_status.strip.empty?
 					return worktree_finish(
 						result: { command: "worktree done", status: "block", name: name,
 							error: "worktree has uncommitted changes",
@@ -80,12 +84,27 @@ module Carson
 				end
 
 				# Check for unpushed commits.
+				# If the remote branch does not exist, check whether the branch has unique commits
+				# versus the main branch. If it does, block — the work exists only locally.
+				# If the branch has no unique commits (just created, no work done), allow.
+				# Note: Open3.capture3 returns Process::Status (always truthy), so .success? is required.
 				branch = worktree_branch( path: resolved_path )
 				if branch
 					remote = config.git_remote
 					remote_ref = "#{remote}/#{branch}"
-					ahead, _, ahead_ok, = Open3.capture3( "git", "rev-list", "--count", "#{remote_ref}..#{branch}", chdir: resolved_path )
-					if ahead_ok && ahead.strip.to_i > 0
+					ahead, _, ahead_status, = Open3.capture3( "git", "rev-list", "--count", "#{remote_ref}..#{branch}", chdir: resolved_path )
+					if !ahead_status.success?
+						# Remote ref does not exist. Only block if the branch has unique commits vs main.
+						unique, _, unique_status, = Open3.capture3( "git", "rev-list", "--count", "#{config.main_branch}..#{branch}", chdir: resolved_path )
+						if unique_status.success? && unique.strip.to_i > 0
+							return worktree_finish(
+								result: { command: "worktree done", status: "block", name: name, branch: branch,
+									error: "branch has not been pushed to #{remote}",
+									recovery: "git -C #{resolved_path} push -u #{remote} #{branch}" },
+								exit_code: EXIT_BLOCK, json_output: json_output
+							)
+						end
+					elsif ahead.strip.to_i > 0
 						return worktree_finish(
 							result: { command: "worktree done", status: "block", name: name, branch: branch,
 								error: "worktree has unpushed commits",
@@ -250,10 +269,12 @@ module Carson
 			# Returns true when the process CWD is inside the given worktree path.
 			# This detects the most common session-crash scenario: removing a worktree
 			# while the caller's shell is inside it.
+			# Uses realpath on both sides to handle symlink differences (e.g. /tmp vs /private/tmp).
 			def cwd_inside_worktree?( worktree_path: )
-				cwd = Dir.pwd
-				normalised_wt = File.join( worktree_path, "" )
-				cwd == worktree_path || cwd.start_with?( normalised_wt )
+				cwd = realpath_safe( Dir.pwd )
+				wt = realpath_safe( worktree_path )
+				normalised_wt = File.join( wt, "" )
+				cwd == wt || cwd.start_with?( normalised_wt )
 			rescue StandardError
 				false
 			end
@@ -268,28 +289,57 @@ module Carson
 				repo_root
 			end
 
+			# Adds .claude/ to .git/info/exclude if not already present.
+			# This prevents worktree directories from appearing as untracked files
+			# in the host repository. Uses the local exclude file (never committed)
+			# so the host repo's .gitignore is never touched.
+			def ensure_claude_dir_excluded!
+				git_dir = File.join( repo_root, ".git" )
+				return unless File.directory?( git_dir )
+
+				info_dir = File.join( git_dir, "info" )
+				exclude_path = File.join( info_dir, "exclude" )
+
+				FileUtils.mkdir_p( info_dir )
+				existing = File.exist?( exclude_path ) ? File.read( exclude_path ) : ""
+				return if existing.lines.any? { |line| line.strip == ".claude/" }
+
+				File.open( exclude_path, "a" ) { |f| f.puts ".claude/" }
+			rescue StandardError
+				# Best-effort — do not block worktree creation if exclude fails.
+			end
+
 			# Resolves a worktree path: if it's a bare name, look under .claude/worktrees/.
+			# Returns the canonical (realpath) form so comparisons against git worktree list succeed,
+			# even when the OS resolves symlinks differently (e.g. /tmp → /private/tmp on macOS).
 			def resolve_worktree_path( worktree_path: )
-				return File.expand_path( worktree_path ) if worktree_path.include?( "/" )
+				if worktree_path.include?( "/" )
+					return realpath_safe( worktree_path )
+				end
 
 				candidate = File.join( repo_root, ".claude", "worktrees", worktree_path )
-				return candidate if Dir.exist?( candidate )
+				return realpath_safe( candidate ) if Dir.exist?( candidate )
 
-				File.expand_path( worktree_path )
+				realpath_safe( worktree_path )
 			end
 
 			# Returns true if the path is a registered git worktree.
+			# Compares using realpath to handle symlink differences.
 			def worktree_registered?( path: )
-				worktree_list.any? { |wt| wt.fetch( :path ) == path }
+				canonical = realpath_safe( path )
+				worktree_list.any? { |wt| wt.fetch( :path ) == canonical }
 			end
 
 			# Returns the branch name checked out in a worktree, or nil.
+			# Compares using realpath to handle symlink differences.
 			def worktree_branch( path: )
-				entry = worktree_list.find { |wt| wt.fetch( :path ) == path }
+				canonical = realpath_safe( path )
+				entry = worktree_list.find { |wt| wt.fetch( :path ) == canonical }
 				entry&.fetch( :branch, nil )
 			end
 
 			# Parses `git worktree list --porcelain` into structured entries.
+			# Normalises paths with realpath so comparisons work across symlink differences.
 			def worktree_list
 				output = git_capture!( "worktree", "list", "--porcelain" )
 				entries = []
@@ -300,7 +350,7 @@ module Carson
 						entries << current unless current.empty?
 						current = {}
 					elsif line.start_with?( "worktree " )
-						current[ :path ] = line.sub( "worktree ", "" )
+						current[ :path ] = realpath_safe( line.sub( "worktree ", "" ) )
 					elsif line.start_with?( "branch " )
 						current[ :branch ] = line.sub( "branch refs/heads/", "" )
 					elsif line == "detached"
@@ -309,6 +359,14 @@ module Carson
 				end
 				entries << current unless current.empty?
 				entries
+			end
+
+			# Resolves a path to its canonical form, tolerating non-existent paths.
+			# Falls back to File.expand_path when the path does not exist yet.
+			def realpath_safe( path )
+				File.realpath( path )
+			rescue Errno::ENOENT
+				File.expand_path( path )
 			end
 		end
 
