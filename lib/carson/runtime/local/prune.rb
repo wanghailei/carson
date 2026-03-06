@@ -305,6 +305,8 @@ module Carson
 			end
 
 			# Guarded force-delete policy for stale branches.
+			# Checks merged PR evidence first (exact SHA match), then falls back to
+			# absorbed-into-main detection (covers rebase merges where commit hashes change).
 			def force_delete_evidence_for_stale_branch( branch:, delete_error_text: )
 				return [ nil, "safe delete failure is not merge-related" ] unless non_merged_delete_error?( error_text: delete_error_text )
 				return [ nil, "gh CLI not available; cannot verify merged PR evidence" ] unless gh_available?
@@ -318,7 +320,21 @@ module Carson
 				branch_tip_sha = tip_sha_text.to_s.strip
 				return [ nil, "unable to read local branch tip sha" ] if branch_tip_sha.empty?
 
-				merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				merged_pr, error = merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				return [ merged_pr, error ] unless merged_pr.nil?
+
+				# Fallback: branch content is already on main (rebase/cherry-pick merges rewrite SHAs).
+				if branch_absorbed_into_main?( branch: branch )
+					absorbed_evidence = {
+						number: nil,
+						url: "absorbed into #{config.main_branch}",
+						merged_at: Time.now.utc.iso8601,
+						head_sha: branch_tip_sha
+					}
+					return [ absorbed_evidence, nil ]
+				end
+
+				[ nil, error ]
 			end
 
 			# Finds merged PR evidence for the exact local branch tip.

@@ -102,7 +102,6 @@ module Carson
 					puts_verbose ""
 					puts_verbose "[Canonical Templates]"
 					puts_verbose "HINT: canonical templates not configured — run carson setup to enable."
-					audit_concise_problems << "Hint: canonical templates not configured — run carson setup to enable."
 				end
 					write_and_print_pr_monitor_report(
 						report: monitor_report.merge(
