@@ -594,7 +594,9 @@ class RuntimePruneTest < Minitest::Test
 		worktree_dir
 	end
 
-	def test_absorbed_branch_in_clean_worktree_pruned
+	# Prune never removes worktrees — another session may own them.
+	# Branch is skipped with a diagnostic instead.
+	def test_absorbed_branch_in_worktree_skipped_with_diagnostic
 		branch_name = "feature-wt-clean"
 
 		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
@@ -605,28 +607,10 @@ class RuntimePruneTest < Minitest::Test
 
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
-			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should be deleted after prune"
-			refute Dir.exist?( wt_dir ), "worktree directory should be removed after prune"
-			assert_includes out.string, "worktree_removed_for_prune:"
-			assert_includes out.string, "deleted_absorbed_branch: #{branch_name}"
-		end
-	end
-
-	def test_absorbed_branch_in_dirty_worktree_skipped
-		branch_name = "feature-wt-dirty"
-
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
-			wt_dir = create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: branch_name )
-
-			# Dirty the worktree with uncommitted changes.
-			File.write( File.join( wt_dir, "uncommitted.txt" ), "dirty\n" )
-			system( "git", "-C", wt_dir, "add", "uncommitted.txt", out: File::NULL, err: File::NULL )
-
-			status = runtime.prune!
-			assert_equal Carson::Runtime::EXIT_OK, status
-			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch in dirty worktree should be preserved"
-			assert Dir.exist?( wt_dir ), "dirty worktree should be preserved"
-			assert_includes out.string, "skip_worktree_remove:"
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch in worktree must be preserved"
+			assert Dir.exist?( wt_dir ), "worktree must not be removed by prune"
+			assert_includes out.string, "skip_worktree_blocked: #{branch_name}"
+			assert_includes out.string, "carson worktree remove"
 		end
 	end
 
@@ -634,11 +618,7 @@ class RuntimePruneTest < Minitest::Test
 		branch_name = "feature-wt-skipped-concise"
 
 		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
-			wt_dir = create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: branch_name )
-
-			# Dirty the worktree so prune skips it.
-			File.write( File.join( wt_dir, "uncommitted.txt" ), "dirty\n" )
-			system( "git", "-C", wt_dir, "add", "uncommitted.txt", out: File::NULL, err: File::NULL )
+			create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: branch_name )
 
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status

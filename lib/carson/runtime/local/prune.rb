@@ -126,25 +126,19 @@ module Carson
 				text.empty? ? "unknown error" : text
 			end
 
-			# Attempts git branch -D. If blocked by a worktree, safely removes the worktree
-			# first (no --force — refuses if worktree has uncommitted changes) and retries.
+			# Attempts git branch -D. If blocked by a worktree, skips with a diagnostic —
+			# prune never removes worktrees because another session may own them.
 			def force_delete_local_branch( branch: )
 				stdout, stderr, success, = git_run( "branch", "-D", branch )
 				return [ stdout, stderr, success ] if success
-				return [ stdout, stderr, false ] unless worktree_blocked_error?( error_text: stderr )
 
-				wt_path = worktree_path_for_branch( branch: branch )
-				return [ stdout, stderr, false ] if wt_path.nil?
-
-				rm_stdout, rm_stderr, rm_success, = git_run( "worktree", "remove", wt_path )
-				unless rm_success
-					error_text = rm_stderr.to_s.strip
-					puts_verbose "skip_worktree_remove: #{wt_path} (branch=#{branch}) reason=#{error_text}"
-					return [ stdout, stderr, false ]
+				if worktree_blocked_error?( error_text: stderr )
+					wt_path = worktree_path_for_branch( branch: branch )
+					hint = wt_path ? "run: carson worktree remove #{File.basename( wt_path )}" : "remove the worktree first"
+					puts_verbose "skip_worktree_blocked: #{branch} (#{hint})"
 				end
-				puts_verbose "worktree_removed_for_prune: #{wt_path} (branch=#{branch})"
 
-				git_run( "branch", "-D", branch )
+				[ stdout, stderr, false ]
 			end
 
 			def worktree_blocked_error?( error_text: )
