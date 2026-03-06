@@ -279,6 +279,28 @@ module Carson
 				false
 			end
 
+			# Returns the branch checked out in the worktree that contains the process CWD,
+			# or nil if CWD is not inside any worktree. Used by prune to proactively
+			# protect the CWD worktree's branch from deletion.
+			# Matches the longest (most specific) path because worktree directories
+			# live under the main repo tree (.claude/worktrees/).
+			def cwd_worktree_branch
+				cwd = realpath_safe( Dir.pwd )
+				best_branch = nil
+				best_length = -1
+				worktree_list.each do |wt|
+					wt_path = wt.fetch( :path )
+					normalised = File.join( wt_path, "" )
+					if ( cwd == wt_path || cwd.start_with?( normalised ) ) && wt_path.length > best_length
+						best_branch = wt.fetch( :branch, nil )
+						best_length = wt_path.length
+					end
+				end
+				best_branch
+			rescue StandardError
+				nil
+			end
+
 			# Returns the main (non-worktree) repository root.
 			# Uses git-common-dir to find the shared .git directory, then takes its parent.
 			# Falls back to repo_root if detection fails.
