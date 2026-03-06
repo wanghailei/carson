@@ -5,6 +5,23 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.4.0 — Audit JSON
+
+### What changed
+
+- **`carson audit --json`** — machine-readable JSON output for the audit command. The JSON envelope includes `command`, `status`, `branch`, `hooks`, `main_sync`, `pr`, `checks`, `baseline`, `problems`, and `exit_code`. Agents can parse audit results programmatically instead of regex-matching human-readable text.
+
+### UX
+
+- JSON output is only produced when `--json` is passed; default human-readable output is unchanged.
+- The `problems` array contains the same concise problem strings shown in non-verbose human output, making it easy for agents to surface actionable issues.
+- `hooks.status` is `"ok"` or `"mismatch"`, `main_sync.status` is `"ok"`, `"ahead"`, `"behind"`, or `"unknown"`.
+
+### Migration
+
+- No breaking changes. `carson audit` without `--json` behaves identically to 3.3.0.
+- The `audit!` method now accepts `json_output:` keyword argument (default `false`).
+
 ## 3.3.0 — Deliver Refinements
 
 ### What changed
