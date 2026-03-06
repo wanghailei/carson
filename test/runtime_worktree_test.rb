@@ -30,13 +30,16 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
-	def create_worktree( repo_root:, worktree_name: )
+	def create_worktree( repo_root:, worktree_name:, push: true )
 		worktree_dir = File.join( repo_root, ".claude", "worktrees", worktree_name )
 		branch_name = "worktree-#{worktree_name}"
 		system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_dir, out: File::NULL, err: File::NULL )
 		File.write( File.join( worktree_dir, "#{worktree_name}.txt" ), "work\n" )
 		system( "git", "-C", worktree_dir, "add", ".", out: File::NULL, err: File::NULL )
 		system( "git", "-C", worktree_dir, "commit", "-m", "work on #{worktree_name}", out: File::NULL, err: File::NULL )
+		if push
+			system( "git", "-C", worktree_dir, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+		end
 		{ path: worktree_dir, branch: branch_name }
 	end
 
@@ -129,6 +132,41 @@ class RuntimeWorktreeTest < Minitest::Test
 			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ), force: true )
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute Dir.exist?( wt.fetch( :path ) ), "dirty worktree should be removed with --force"
+		end
+	end
+
+	def test_worktree_remove_blocks_unpushed_commits
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "unpushed-rm", push: false )
+
+			# Branch has a commit that was never pushed — remove should block.
+			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			assert_equal Carson::Runtime::EXIT_BLOCK, status
+			assert Dir.exist?( wt.fetch( :path ) ), "worktree must be preserved when unpushed"
+			assert_includes out.string, "not been pushed"
+			assert_includes out.string, "--force"
+		end
+	end
+
+	def test_worktree_remove_allows_pushed_branch
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			# Helper pushes by default — branch is safe to remove.
+			wt = create_worktree( repo_root: repo_root, worktree_name: "pushed-rm" )
+
+			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute Dir.exist?( wt.fetch( :path ) ), "pushed worktree should be removed"
+		end
+	end
+
+	def test_worktree_remove_force_overrides_unpushed_guard
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "force-unpushed", push: false )
+
+			# Branch has unpushed commits but --force should override.
+			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ), force: true )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute Dir.exist?( wt.fetch( :path ) ), "force should remove even with unpushed commits"
 		end
 	end
 

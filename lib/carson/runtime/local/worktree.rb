@@ -1,14 +1,15 @@
 # Safe worktree lifecycle management for coding agents.
-# Three operations: create, done (mark completed), remove (batch cleanup).
-# The deferred deletion model: worktrees persist after use, cleaned up later.
+# Three operations: create, done (mark completed), remove (full cleanup).
+# Remove guards against unpushed commits and CWD-inside-worktree — safe by default.
 # Supports --json for machine-readable structured output with recovery commands.
 module Carson
 	class Runtime
 		module Local
 
 			# Creates a new worktree under .claude/worktrees/<name> with a fresh branch.
+			# Uses main_worktree_root so this works even when called from inside a worktree.
 			def worktree_create!( name:, json_output: false )
-				worktrees_dir = File.join( repo_root, ".claude", "worktrees" )
+				worktrees_dir = File.join( main_worktree_root, ".claude", "worktrees" )
 				wt_path = File.join( worktrees_dir, name )
 
 				if Dir.exist?( wt_path )
@@ -83,35 +84,16 @@ module Carson
 					)
 				end
 
-				# Check for unpushed commits.
-				# If the remote branch does not exist, check whether the branch has unique commits
-				# versus the main branch. If it does, block — the work exists only locally.
-				# If the branch has no unique commits (just created, no work done), allow.
-				# Note: Open3.capture3 returns Process::Status (always truthy), so .success? is required.
+				# Check for unpushed commits using shared guard.
 				branch = worktree_branch( path: resolved_path )
-				if branch
-					remote = config.git_remote
-					remote_ref = "#{remote}/#{branch}"
-					ahead, _, ahead_status, = Open3.capture3( "git", "rev-list", "--count", "#{remote_ref}..#{branch}", chdir: resolved_path )
-					if !ahead_status.success?
-						# Remote ref does not exist. Only block if the branch has unique commits vs main.
-						unique, _, unique_status, = Open3.capture3( "git", "rev-list", "--count", "#{config.main_branch}..#{branch}", chdir: resolved_path )
-						if unique_status.success? && unique.strip.to_i > 0
-							return worktree_finish(
-								result: { command: "worktree done", status: "block", name: name, branch: branch,
-									error: "branch has not been pushed to #{remote}",
-									recovery: "git -C #{resolved_path} push -u #{remote} #{branch}" },
-								exit_code: EXIT_BLOCK, json_output: json_output
-							)
-						end
-					elsif ahead.strip.to_i > 0
-						return worktree_finish(
-							result: { command: "worktree done", status: "block", name: name, branch: branch,
-								error: "worktree has unpushed commits",
-								recovery: "git -C #{resolved_path} push #{remote} #{branch}" },
-							exit_code: EXIT_BLOCK, json_output: json_output
-						)
-					end
+				unpushed = check_unpushed_commits( branch: branch, worktree_path: resolved_path )
+				if unpushed
+					return worktree_finish(
+						result: { command: "worktree done", status: "block", name: name, branch: branch,
+							error: unpushed[ :error ],
+							recovery: unpushed[ :recovery ] },
+						exit_code: EXIT_BLOCK, json_output: json_output
+					)
 				end
 
 				# Clear worktree from session state.
@@ -166,6 +148,21 @@ module Carson
 
 				branch = worktree_branch( path: resolved_path )
 				puts_verbose "worktree_remove: path=#{resolved_path} branch=#{branch} force=#{force}"
+
+				# Safety: refuse if the branch has unpushed commits (unless --force).
+				# Prevents accidental destruction of work that exists only locally.
+				unless force
+					unpushed = check_unpushed_commits( branch: branch, worktree_path: resolved_path )
+					if unpushed
+						return worktree_finish(
+							result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
+								branch: branch,
+								error: unpushed[ :error ],
+								recovery: unpushed[ :recovery ] },
+							exit_code: EXIT_BLOCK, json_output: json_output
+						)
+					end
+				end
 
 				# Step 1: remove the worktree (directory + git registration).
 				rm_args = [ "worktree", "remove" ]
@@ -279,6 +276,29 @@ module Carson
 				false
 			end
 
+			# Checks whether a branch has unpushed commits that would be lost on removal.
+			# Returns nil if safe, or { error:, recovery: } hash if unpushed work exists.
+			def check_unpushed_commits( branch:, worktree_path: )
+				return nil unless branch
+
+				remote = config.git_remote
+				remote_ref = "#{remote}/#{branch}"
+				ahead, _, ahead_status, = Open3.capture3( "git", "rev-list", "--count", "#{remote_ref}..#{branch}", chdir: worktree_path )
+				if !ahead_status.success?
+					# Remote ref does not exist. Only block if the branch has unique commits vs main.
+					unique, _, unique_status, = Open3.capture3( "git", "rev-list", "--count", "#{config.main_branch}..#{branch}", chdir: worktree_path )
+					if unique_status.success? && unique.strip.to_i > 0
+						return { error: "branch has not been pushed to #{remote}",
+							recovery: "git -C #{worktree_path} push -u #{remote} #{branch}, or use --force to override" }
+					end
+				elsif ahead.strip.to_i > 0
+					return { error: "worktree has unpushed commits",
+						recovery: "git -C #{worktree_path} push #{remote} #{branch}, or use --force to override" }
+				end
+
+				nil
+			end
+
 			# Returns the main (non-worktree) repository root.
 			# Uses git-common-dir to find the shared .git directory, then takes its parent.
 			# Falls back to repo_root if detection fails.
@@ -293,8 +313,9 @@ module Carson
 			# This prevents worktree directories from appearing as untracked files
 			# in the host repository. Uses the local exclude file (never committed)
 			# so the host repo's .gitignore is never touched.
+			# Uses main_worktree_root — worktrees have .git as a file, not a directory.
 			def ensure_claude_dir_excluded!
-				git_dir = File.join( repo_root, ".git" )
+				git_dir = File.join( main_worktree_root, ".git" )
 				return unless File.directory?( git_dir )
 
 				info_dir = File.join( git_dir, "info" )
@@ -312,12 +333,14 @@ module Carson
 			# Resolves a worktree path: if it's a bare name, look under .claude/worktrees/.
 			# Returns the canonical (realpath) form so comparisons against git worktree list succeed,
 			# even when the OS resolves symlinks differently (e.g. /tmp → /private/tmp on macOS).
+			# Uses main_worktree_root (not repo_root) so resolution works from inside worktrees.
 			def resolve_worktree_path( worktree_path: )
 				if worktree_path.include?( "/" )
 					return realpath_safe( worktree_path )
 				end
 
-				candidate = File.join( repo_root, ".claude", "worktrees", worktree_path )
+				root = main_worktree_root
+				candidate = File.join( root, ".claude", "worktrees", worktree_path )
 				return realpath_safe( candidate ) if Dir.exist?( candidate )
 
 				realpath_safe( worktree_path )
