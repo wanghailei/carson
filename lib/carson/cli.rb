@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit|sync|deliver [--merge] [--title T] [--body-file F]|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit|sync|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -252,10 +252,11 @@ module Carson
 		end
 
 		def self.parse_deliver_command( argv:, err: )
-			options = { merge: false, title: nil, body_file: nil }
+			options = { merge: false, json: false, title: nil, body_file: nil }
 			deliver_parser = OptionParser.new do |opts|
-				opts.banner = "Usage: carson deliver [--merge] [--title TITLE] [--body-file PATH]"
+				opts.banner = "Usage: carson deliver [--merge] [--json] [--title TITLE] [--body-file PATH]"
 				opts.on( "--merge", "Also merge the PR if CI passes" ) { options[ :merge ] = true }
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				opts.on( "--title TITLE", "PR title (defaults to branch name)" ) { |v| options[ :title ] = v }
 				opts.on( "--body-file PATH", "File containing PR body text" ) { |v| options[ :body_file ] = v }
 			end
@@ -268,6 +269,7 @@ module Carson
 			{
 				command: "deliver",
 				merge: options.fetch( :merge ),
+				json: options.fetch( :json ),
 				title: options[ :title ],
 				body_file: options[ :body_file ]
 			}
@@ -348,7 +350,8 @@ module Carson
 				runtime.deliver!(
 					merge: parsed.fetch( :merge, false ),
 					title: parsed.fetch( :title, nil ),
-					body_file: parsed.fetch( :body_file, nil )
+					body_file: parsed.fetch( :body_file, nil ),
+					json_output: parsed.fetch( :json, false )
 				)
 			when "review:gate"
 				runtime.review_gate!

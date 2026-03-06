@@ -87,6 +87,79 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- JSON output ---
+
+	def test_deliver_json_on_main_includes_error_and_recovery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		result = runtime.deliver!( json_output: true )
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "cannot deliver from main", json[ "error" ]
+		assert_includes json[ "recovery" ], "git checkout"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_json_includes_pr_number_and_url
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "existing_pr" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/json-test" )
+
+		result = runtime.deliver!( json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal 42, json[ "pr_number" ]
+		assert_includes json[ "pr_url" ], "pull/42"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_json_merge_includes_ci_and_merged
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/json-merge" )
+
+		result = runtime.deliver!( merge: true, json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "pass", json[ "ci" ]
+		assert_equal true, json[ "merged" ]
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- Recovery messages ---
+
+	def test_deliver_main_branch_shows_recovery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		runtime.deliver!
+		output = output_string( runtime )
+		assert_includes output, "Recovery:"
+		assert_includes output, "git checkout"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_merge_ci_fail_shows_recovery
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_fail" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/ci-fail-recover" )
+
+		runtime.deliver!( merge: true )
+		output = output_string( runtime )
+		assert_includes output, "Recovery:"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_merge_ci_pending_shows_recovery
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pending" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/ci-pending-recover" )
+
+		runtime.deliver!( merge: true )
+		output = output_string( runtime )
+		assert_includes output, "Recovery:"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- default_pr_title ---
 
 	def test_default_pr_title_from_branch_name
