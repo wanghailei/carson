@@ -5,6 +5,23 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.3.0 — Deliver Refinements
+
+### What changed
+
+- **`carson deliver --json`** — machine-readable JSON output for agent consumption. The JSON envelope includes `command`, `branch`, `pr_number`, `pr_url`, `ci`, `merged`, `exit_code`, and — on failure — `error` and `recovery` fields.
+- **Recovery-aware errors** — every deliver error path now includes a concrete `recovery` command showing the user exactly what to run next. Human output shows `Recovery: <command>`, JSON output includes a `recovery` field.
+
+### UX
+
+- JSON output uses `JSON.pretty_generate` for readability when inspected by humans.
+- Recovery commands are context-specific: push failures suggest `git pull --rebase && git push`, main-branch errors suggest `git checkout -b <branch>`, CI failures suggest `gh pr checks` with re-deliver.
+- Human output for CI pending and CI fail states now includes recovery guidance.
+
+### Migration
+
+- No breaking changes. `carson deliver` without `--json` behaves identically to 3.2.0.
+
 ## 3.2.0 — Deliver
 
 ### What changed

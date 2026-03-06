@@ -2,73 +2,135 @@
 # Collapses the 8-step manual PR flow into one or two commands.
 # `carson deliver` pushes and creates the PR.
 # `carson deliver --merge` also merges if CI is green.
+# `carson deliver --json` outputs structured result for agent consumption.
 module Carson
 	class Runtime
 		module Deliver
 			# Entry point for `carson deliver`.
 			# Pushes current branch, creates a PR if needed, reports the PR URL.
 			# With merge: true, also merges if CI passes and cleans up.
-			def deliver!( merge: false, title: nil, body_file: nil )
+			def deliver!( merge: false, title: nil, body_file: nil, json_output: false )
 				branch = current_branch
 				main = config.main_branch
 				remote = config.git_remote
+				result = { command: "deliver", branch: branch }
 
 				# Guard: cannot deliver from main.
 				if branch == main
-					puts_line "ERROR: cannot deliver from #{main}. Switch to a feature branch first."
-					return EXIT_ERROR
+					result[ :error ] = "cannot deliver from #{main}"
+					result[ :recovery ] = "git checkout -b <branch-name>"
+					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
 				end
 
 				# Step 1: push the branch.
-				push_result = push_branch!( branch: branch, remote: remote )
-				return push_result unless push_result == EXIT_OK
+				push_exit = push_branch!( branch: branch, remote: remote, result: result )
+				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
 
 				# Step 2: find or create the PR.
 				pr_number, pr_url = find_or_create_pr!(
-					branch: branch, title: title, body_file: body_file
+					branch: branch, title: title, body_file: body_file, result: result
 				)
-				return EXIT_ERROR if pr_number.nil?
+				if pr_number.nil?
+					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+				end
 
-				puts_line "PR: ##{pr_number} #{pr_url}"
+				result[ :pr_number ] = pr_number
+				result[ :pr_url ] = pr_url
 
 				# Without --merge, we are done.
-				return EXIT_OK unless merge
+				unless merge
+					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
+				end
 
 				# Step 3: check CI status.
 				ci_status = check_pr_ci( number: pr_number )
+				result[ :ci ] = ci_status.to_s
+
 				case ci_status
 				when :pass
-					puts_line "CI: pass"
+					# Continue to merge.
 				when :pending
-					puts_line "CI: pending — merge when checks complete."
-					return EXIT_OK
+					result[ :recovery ] = "gh pr checks #{pr_number} --watch && carson deliver --merge"
+					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				when :fail
-					puts_line "CI: failing — fix before merging."
-					return EXIT_BLOCK
+					result[ :recovery ] = "gh pr checks #{pr_number} — fix failures, push, then `carson deliver --merge`"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				else
-					puts_line "CI: unknown — check manually."
-					return EXIT_OK
+					result[ :recovery ] = "gh pr checks #{pr_number}"
+					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				end
 
 				# Step 4: merge.
-				merge_result = merge_pr!( number: pr_number )
-				return merge_result unless merge_result == EXIT_OK
+				merge_exit = merge_pr!( number: pr_number, result: result )
+				return deliver_finish( result: result, exit_code: merge_exit, json_output: json_output ) unless merge_exit == EXIT_OK
+
+				result[ :merged ] = true
 
 				# Step 5: sync main.
 				sync_after_merge!( remote: remote, main: main )
 
-				EXIT_OK
+				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
 
 		private
 
+			# Outputs the final result — JSON or human-readable — and returns exit code.
+			def deliver_finish( result:, exit_code:, json_output: )
+				result[ :exit_code ] = exit_code
+
+				if json_output
+					out.puts JSON.pretty_generate( result )
+				else
+					print_deliver_human( result: result )
+				end
+
+				exit_code
+			end
+
+			# Human-readable output for deliver results.
+			def print_deliver_human( result: )
+				exit_code = result.fetch( :exit_code )
+
+				if result[ :error ]
+					puts_line "ERROR: #{result[ :error ]}"
+					puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					return
+				end
+
+				if result[ :pr_number ]
+					puts_line "PR: ##{result[ :pr_number ]} #{result[ :pr_url ]}"
+				end
+
+				if result[ :ci ]
+					ci = result[ :ci ]
+					case ci
+					when "pass"
+						puts_line "CI: pass"
+					when "pending"
+						puts_line "CI: pending — merge when checks complete."
+						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					when "fail"
+						puts_line "CI: failing — fix before merging."
+						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					else
+						puts_line "CI: #{ci} — check manually."
+						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					end
+				end
+
+				if result[ :merged ]
+					puts_line "Merged PR ##{result[ :pr_number ]} via #{result[ :merge_method ]}."
+				end
+			end
+
 			# Pushes the branch to the remote with tracking.
-			def push_branch!( branch:, remote: )
+			def push_branch!( branch:, remote:, result: )
 				_, push_stderr, push_success, = git_run( "push", "-u", remote, branch )
 				unless push_success
 					error_text = push_stderr.to_s.strip
 					error_text = "push failed" if error_text.empty?
-					puts_line "ERROR: #{error_text}"
+					result[ :error ] = error_text
+					result[ :recovery ] = "git pull #{remote} #{branch} --rebase && git push -u #{remote} #{branch}"
 					return EXIT_ERROR
 				end
 				puts_verbose "pushed #{branch} to #{remote}"
@@ -77,13 +139,13 @@ module Carson
 
 			# Finds an existing PR for the branch, or creates a new one.
 			# Returns [number, url] or [nil, nil] on failure.
-			def find_or_create_pr!( branch:, title: nil, body_file: nil )
+			def find_or_create_pr!( branch:, title: nil, body_file: nil, result: )
 				# Check for existing PR.
 				existing = find_existing_pr( branch: branch )
 				return existing if existing.first
 
 				# Create a new PR.
-				create_pr!( branch: branch, title: title, body_file: body_file )
+				create_pr!( branch: branch, title: title, body_file: body_file, result: result )
 			end
 
 			# Queries gh for an open PR on this branch.
@@ -104,7 +166,7 @@ module Carson
 
 			# Creates a PR via gh. Title defaults to branch name humanised.
 			# Returns [number, url] or [nil, nil] on failure.
-			def create_pr!( branch:, title: nil, body_file: nil )
+			def create_pr!( branch:, title: nil, body_file: nil, result: )
 				pr_title = title || default_pr_title( branch: branch )
 
 				args = [ "pr", "create", "--title", pr_title, "--head", branch ]
@@ -118,7 +180,8 @@ module Carson
 				unless success
 					error_text = stderr.to_s.strip
 					error_text = "pr create failed" if error_text.empty?
-					puts_line "ERROR: #{error_text}"
+					result[ :error ] = error_text
+					result[ :recovery ] = "gh pr create --title '#{pr_title}' --head #{branch}"
 					return [ nil, nil ]
 				end
 
@@ -160,21 +223,23 @@ module Carson
 			end
 
 			# Merges the PR using the configured merge method.
-			def merge_pr!( number: )
+			def merge_pr!( number:, result: )
 				method = config.govern_merge_method
-				stdout, stderr, success, = gh_run(
+				result[ :merge_method ] = method
+
+				_, stderr, success, = gh_run(
 					"pr", "merge", number.to_s,
 					"--#{method}",
 					"--delete-branch"
 				)
 
 				if success
-					puts_line "Merged PR ##{number} via #{method}."
 					EXIT_OK
 				else
 					error_text = stderr.to_s.strip
 					error_text = "merge failed" if error_text.empty?
-					puts_line "ERROR: #{error_text}"
+					result[ :error ] = error_text
+					result[ :recovery ] = "gh pr merge #{number} --#{method} --delete-branch"
 					EXIT_ERROR
 				end
 			end

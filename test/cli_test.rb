@@ -64,8 +64,8 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def deliver!( merge: false, title: nil, body_file: nil )
-			@calls << [ :deliver, { merge: merge, title: title, body_file: body_file } ]
+		def deliver!( merge: false, title: nil, body_file: nil, json_output: false )
+			@calls << [ :deliver, { merge: merge, title: title, body_file: body_file, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -419,6 +419,7 @@ class CLITest < Minitest::Test
 		parsed = Carson::CLI.parse_args( argv: [ "deliver" ], out: out, err: err )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :merge )
+		assert_equal false, parsed.fetch( :json )
 		assert_nil parsed[ :title ]
 		assert_nil parsed[ :body_file ]
 	end
@@ -467,13 +468,21 @@ class CLITest < Minitest::Test
 		assert_includes err.string, "Unexpected arguments for deliver"
 	end
 
+	def test_parse_args_deliver_with_json_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--json" ], out: out, err: err )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
 	def test_dispatch_routes_deliver_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
 			command: "deliver", merge: false, title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil } ] ], runtime.calls
+		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_deliver_with_merge_to_runtime
@@ -482,6 +491,15 @@ class CLITest < Minitest::Test
 			command: "deliver", merge: true, title: "T", body_file: "/tmp/b.md"
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: true, title: "T", body_file: "/tmp/b.md" } ] ], runtime.calls
+		assert_equal [ [ :deliver, { merge: true, title: "T", body_file: "/tmp/b.md", json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_deliver_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: {
+			command: "deliver", merge: false, json: true, title: nil, body_file: nil
+		}, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: true } ] ], runtime.calls
 	end
 end
