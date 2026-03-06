@@ -175,12 +175,13 @@ module Carson
 
 			case action
 			when "remove"
+				force = argv.delete( "--force" ) ? true : false
 				worktree_path = argv.shift
 				if worktree_path.to_s.strip.empty?
 					err.puts "#{BADGE} Missing path for worktree remove. Use: carson worktree remove <name-or-path>"
 					return { command: :invalid }
 				end
-				{ command: "worktree:remove", worktree_path: worktree_path }
+				{ command: "worktree:remove", worktree_path: worktree_path, force: force }
 			else
 				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree remove <name-or-path>"
 				{ command: :invalid }
@@ -276,7 +277,7 @@ module Carson
 			when "prune:all"
 				runtime.prune_all!
 			when "worktree:remove"
-				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ) )
+				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ) )
 			when "onboard"
 				runtime.onboard!
 			when "refresh"

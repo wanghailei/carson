@@ -244,7 +244,9 @@ module Carson
 			end
 
 			def template_propagate_cleanup!( worktree_dir: )
-				git_run( "worktree", "remove", "--force", worktree_dir )
+				# Try safe removal first; fall back to force only for Carson's own sync worktree.
+				_, _, safe_success, = git_run( "worktree", "remove", worktree_dir )
+				git_run( "worktree", "remove", "--force", worktree_dir ) unless safe_success
 				git_run( "branch", "-D", TEMPLATE_SYNC_BRANCH )
 				puts_verbose "template_propagate: worktree and local branch cleaned up"
 			rescue StandardError => e
