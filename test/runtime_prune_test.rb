@@ -495,6 +495,72 @@ class RuntimePruneTest < Minitest::Test
 		end
 	end
 
+	# Simulates a rebase merge: stale branch (upstream gone), content on main, but SHA
+	# doesn't match any merged PR. The absorbed fallback should force-delete it.
+	def test_stale_branch_deleted_via_absorbed_fallback
+		branch_name = "feature-rebase-merged"
+
+		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
+			bare_root = File.join( tmp_dir, "bare" )
+			repo_root = File.join( tmp_dir, "repo" )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "init\n" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			# Create branch, push, then simulate rebase merge: same content lands on main
+			# with different commit (different SHA). Then delete remote branch.
+			system( "git", "-C", repo_root, "checkout", "-b", branch_name, out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature work\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "work on #{branch_name}", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+
+			# Land the same content on main (simulates rebase merge creating new commits).
+			File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature work\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "rebase-merged #{branch_name}", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			# Delete remote branch so it becomes [gone].
+			system( "git", "-C", bare_root, "branch", "-D", branch_name, out: File::NULL, err: File::NULL )
+
+			# Mock gh returns NO merged PR evidence (SHA mismatch).
+			mock_script = mock_gh_no_evidence
+			mock_bin = File.join( tmp_dir, "mock-bin" )
+			FileUtils.mkdir_p( mock_bin )
+			File.write( File.join( mock_bin, "gh" ), mock_script )
+			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => "",
+				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
+			) do
+				out = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					out: out,
+					err: StringIO.new,
+					verbose: true
+				)
+
+				assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "stale branch should exist before prune"
+				status = runtime.prune!
+				assert_equal Carson::Runtime::EXIT_OK, status
+				refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "stale branch should be deleted via absorbed fallback"
+				assert_includes out.string, "deleted_local_branch_force: #{branch_name}"
+				assert_includes out.string, "absorbed into main"
+			end
+		end
+	end
+
 	def test_absorbed_branch_concise_output
 		branch_name = "feature-absorbed-concise"
 

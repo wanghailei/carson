@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.30.0 — Prune Rebase Merge Support + Audit Noise Reduction
+
+### What changed
+
+- **`carson prune` now handles rebase and cherry-pick merges.** When a stale branch fails SHA-based merged PR evidence (commit hashes change after rebase), prune falls back to content-level comparison against main. If the branch content is already absorbed into main, it is safely deleted.
+- **Canonical templates hint removed from concise audit output.** The "canonical templates not configured" message no longer appears on every commit. Verbose mode retains it for debugging.
+
+### Migration
+
+- No action required. Prune behaviour is strictly more capable; existing workflows are unaffected.
+
 ## 2.29.0 — Audit Concise Output UX
 
 ### What changed
