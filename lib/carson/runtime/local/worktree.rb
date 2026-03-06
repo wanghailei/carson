@@ -2,7 +2,83 @@ module Carson
 	class Runtime
 		module Local
 			# Safe worktree lifecycle management for coding agents.
-			# Enforces the teardown order: exit worktree → git worktree remove → branch cleanup.
+			# Three operations: create, done (mark completed), remove (batch cleanup).
+			# The deferred deletion model: worktrees persist after use, cleaned up later.
+
+			# Creates a new worktree under .claude/worktrees/<name> with a fresh branch.
+			def worktree_create!( name: )
+				worktrees_dir = File.join( repo_root, ".claude", "worktrees" )
+				wt_path = File.join( worktrees_dir, name )
+
+				if Dir.exist?( wt_path )
+					puts_line "ERROR: worktree already exists: #{name}"
+					puts_line "  Path: #{wt_path}"
+					return EXIT_ERROR
+				end
+
+				# Determine the base branch (main branch from config).
+				base = config.main_branch
+
+				# Create the worktree with a new branch based on the main branch.
+				FileUtils.mkdir_p( worktrees_dir )
+				_, wt_stderr, wt_success, = git_run( "worktree", "add", wt_path, "-b", name, base )
+				unless wt_success
+					error_text = wt_stderr.to_s.strip
+					error_text = "unable to create worktree" if error_text.empty?
+					puts_line "ERROR: #{error_text}"
+					return EXIT_ERROR
+				end
+
+				puts_line "Worktree created: #{name}"
+				puts_line "  Path: #{wt_path}"
+				puts_line "  Branch: #{name}"
+				EXIT_OK
+			end
+
+			# Marks a worktree as completed without deleting it.
+			# Verifies all changes are committed. Deferred deletion — cleanup happens later.
+			def worktree_done!( name: nil )
+				if name.to_s.strip.empty?
+					# Try to detect current worktree from CWD.
+					puts_line "ERROR: missing worktree name. Use: carson worktree done <name>"
+					return EXIT_ERROR
+				end
+
+				resolved_path = resolve_worktree_path( worktree_path: name )
+
+				unless worktree_registered?( path: resolved_path )
+					puts_line "ERROR: #{name} is not a registered worktree."
+					return EXIT_ERROR
+				end
+
+				# Check for uncommitted changes in the worktree.
+				wt_status, _, status_success, = Open3.capture3( "git", "status", "--porcelain", chdir: resolved_path )
+				if status_success && !wt_status.strip.empty?
+					puts_line "Worktree has uncommitted changes: #{name}"
+					puts_line "  Commit your changes first, then run `carson worktree done #{name}` again."
+					return EXIT_BLOCK
+				end
+
+				# Check for unpushed commits.
+				branch = worktree_branch( path: resolved_path )
+				if branch
+					remote = config.git_remote
+					remote_ref = "#{remote}/#{branch}"
+					ahead, _, ahead_ok, = Open3.capture3( "git", "rev-list", "--count", "#{remote_ref}..#{branch}", chdir: resolved_path )
+					if ahead_ok && ahead.strip.to_i > 0
+						puts_line "Worktree has unpushed commits: #{name}"
+						puts_line "  Push with `git -C #{resolved_path} push #{remote} #{branch}` first."
+						return EXIT_BLOCK
+					end
+				end
+
+				puts_line "Worktree done: #{name}"
+				puts_line "  Branch: #{branch || '(detached)'}"
+				puts_line "  Cleanup later with `carson worktree remove #{name}` or `carson housekeep`."
+				EXIT_OK
+			end
+
+			# Removes a worktree: directory, git registration, and branch.
 			# Never forces removal — if the worktree has uncommitted changes, refuses unless
 			# the user explicitly passes force: true via CLI --force flag.
 			def worktree_remove!( worktree_path:, force: false )

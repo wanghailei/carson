@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]|audit|sync|prune [--all]|worktree remove <name-or-path>|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit|sync|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -170,12 +170,22 @@ module Carson
 		def self.parse_worktree_subcommand( argv:, parser:, err: )
 			action = argv.shift
 			if action.to_s.strip.empty?
-				err.puts "#{BADGE} Missing subcommand for worktree. Use: carson worktree remove <name-or-path>"
+				err.puts "#{BADGE} Missing subcommand for worktree. Use: carson worktree create|done|remove <name>"
 				err.puts parser
 				return { command: :invalid }
 			end
 
 			case action
+			when "create"
+				name = argv.shift
+				if name.to_s.strip.empty?
+					err.puts "#{BADGE} Missing name for worktree create. Use: carson worktree create <name>"
+					return { command: :invalid }
+				end
+				{ command: "worktree:create", worktree_name: name }
+			when "done"
+				name = argv.shift
+				{ command: "worktree:done", worktree_name: name }
 			when "remove"
 				force = argv.delete( "--force" ) ? true : false
 				worktree_path = argv.shift
@@ -185,7 +195,7 @@ module Carson
 				end
 				{ command: "worktree:remove", worktree_path: worktree_path, force: force }
 			else
-				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree remove <name-or-path>"
+				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree create|done|remove <name>"
 				{ command: :invalid }
 			end
 		end
@@ -289,6 +299,10 @@ module Carson
 				runtime.prune!
 			when "prune:all"
 				runtime.prune_all!
+			when "worktree:create"
+				runtime.worktree_create!( name: parsed.fetch( :worktree_name ) )
+			when "worktree:done"
+				runtime.worktree_done!( name: parsed.fetch( :worktree_name, nil ) )
 			when "worktree:remove"
 				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ) )
 			when "onboard"

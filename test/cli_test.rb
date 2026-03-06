@@ -54,6 +54,16 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def worktree_create!( name: )
+			@calls << [ :worktree_create, { name: name } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def worktree_done!( name: nil )
+			@calls << [ :worktree_done, { name: name } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -344,5 +354,55 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "status", json: true }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :status, { json_output: true } ] ], runtime.calls
+	end
+
+	# --- worktree create CLI tests ---
+
+	def test_parse_args_worktree_create
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "worktree", "create", "my-feature" ], out: out, err: err )
+		assert_equal "worktree:create", parsed.fetch( :command )
+		assert_equal "my-feature", parsed.fetch( :worktree_name )
+	end
+
+	def test_parse_args_worktree_create_missing_name
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "worktree", "create" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Missing name"
+	end
+
+	def test_dispatch_routes_worktree_create
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "worktree:create", worktree_name: "feat" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :worktree_create, { name: "feat" } ] ], runtime.calls
+	end
+
+	# --- worktree done CLI tests ---
+
+	def test_parse_args_worktree_done_with_name
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "worktree", "done", "my-feature" ], out: out, err: err )
+		assert_equal "worktree:done", parsed.fetch( :command )
+		assert_equal "my-feature", parsed.fetch( :worktree_name )
+	end
+
+	def test_parse_args_worktree_done_without_name
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "worktree", "done" ], out: out, err: err )
+		assert_equal "worktree:done", parsed.fetch( :command )
+		assert_nil parsed.fetch( :worktree_name )
+	end
+
+	def test_dispatch_routes_worktree_done
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "worktree:done", worktree_name: "feat" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :worktree_done, { name: "feat" } ] ], runtime.calls
 	end
 end
