@@ -165,14 +165,79 @@ class RuntimeSessionTest < Minitest::Test
 
 	# --- session file path ---
 
-	def test_session_file_uses_repo_basename_and_hash
+	def test_session_file_lives_in_repo_slug_directory
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		path = runtime.send( :session_file_path )
-		basename = File.basename( repo_root )
-		assert_includes File.basename( path ), basename
+		# File is <session_id>.json inside a per-repo directory.
 		assert path.end_with?( ".json" )
 		assert_includes path, "sessions"
+		# Parent directory should include repo basename.
+		parent = File.basename( File.dirname( path ) )
+		assert_includes parent, File.basename( repo_root )
+
+		cleanup_session( repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- session_id ---
+
+	def test_session_id_includes_pid
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		sid = runtime.send( :session_id )
+		assert_includes sid, Process.pid.to_s
+
+		cleanup_session( repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_session_id_is_stable_across_calls
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		id1 = runtime.send( :session_id )
+		id2 = runtime.send( :session_id )
+		assert_equal id1, id2
+
+		cleanup_session( repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- session_list ---
+
+	def test_session_list_returns_active_sessions
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.send( :update_session, task: "my task" )
+
+		sessions = runtime.session_list
+		assert_equal 1, sessions.size
+		assert_equal "my task", sessions.first[ :task ]
+		assert_equal false, sessions.first[ :stale ]
+
+		cleanup_session( repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_session_list_detects_stale_sessions
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+
+		# Write a session file with a dead PID and old timestamp.
+		dir = runtime.send( :session_repo_dir )
+		stale_data = {
+			"repo" => repo_root,
+			"session_id" => "99999-20250101000000",
+			"pid" => 99999,
+			"task" => "old task",
+			"updated_at" => "2025-01-01T00:00:00Z"
+		}
+		File.write( File.join( dir, "99999-20250101000000.json" ), JSON.pretty_generate( stale_data ) )
+
+		sessions = runtime.session_list
+		stale = sessions.find { |s| s[ :session_id ] == "99999-20250101000000" }
+		assert stale, "should find stale session"
+		assert_equal true, stale[ :stale ]
 
 		cleanup_session( repo_root )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -214,6 +279,38 @@ class RuntimeSessionTest < Minitest::Test
 		refute json.key?( "worktree" ), "worktree should be cleared after done"
 
 		wt_path = File.join( repo_root, ".claude", "worktrees", "done-wt" )
+		cleanup_worktree( repo_root, wt_path )
+		cleanup_session( repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- worktree ownership coordination ---
+
+	def test_session_records_session_id_and_pid
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.session!( task: "test", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert json[ "session_id" ], "should include session_id"
+		assert_includes json[ "session_id" ], Process.pid.to_s
+
+		cleanup_session( repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_records_ownership_in_session
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "owned-wt" )
+
+		# Session should record this worktree.
+		sessions = runtime.session_list
+		assert_equal 1, sessions.size
+		wt = sessions.first[ :worktree ]
+		assert wt, "session should have worktree"
+		assert_equal "owned-wt", ( wt[ :name ] || wt[ "name" ] )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "owned-wt" )
 		cleanup_worktree( repo_root, wt_path )
 		cleanup_session( repo_root )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -261,8 +358,12 @@ private
 	def cleanup_session( repo_root )
 		basename = File.basename( repo_root )
 		short_hash = Digest::SHA256.hexdigest( repo_root )[ 0, 8 ]
-		session_file = File.join( Dir.home, ".carson", "sessions", "#{basename}-#{short_hash}.json" )
-		File.delete( session_file ) if File.exist?( session_file )
+		# New per-session directory format.
+		session_dir = File.join( Dir.home, ".carson", "sessions", "#{basename}-#{short_hash}" )
+		FileUtils.remove_entry( session_dir ) if Dir.exist?( session_dir )
+		# Old single-file format (migration).
+		old_file = File.join( Dir.home, ".carson", "sessions", "#{basename}-#{short_hash}.json" )
+		File.delete( old_file ) if File.exist?( old_file )
 	end
 
 	def output_string( runtime )
