@@ -64,6 +64,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def deliver!( merge: false, title: nil, body_file: nil )
+			@calls << [ :deliver, { merge: merge, title: title, body_file: body_file } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -404,5 +409,79 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "worktree:done", worktree_name: "feat" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :worktree_done, { name: "feat" } ] ], runtime.calls
+	end
+
+	# --- deliver CLI tests ---
+
+	def test_parse_args_deliver_defaults
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "deliver" ], out: out, err: err )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :merge )
+		assert_nil parsed[ :title ]
+		assert_nil parsed[ :body_file ]
+	end
+
+	def test_parse_args_deliver_with_merge_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--merge" ], out: out, err: err )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :merge )
+	end
+
+	def test_parse_args_deliver_with_title
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--title", "My PR" ], out: out, err: err )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal "My PR", parsed.fetch( :title )
+	end
+
+	def test_parse_args_deliver_with_body_file
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--body-file", "/tmp/body.md" ], out: out, err: err )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal "/tmp/body.md", parsed.fetch( :body_file )
+	end
+
+	def test_parse_args_deliver_with_all_flags
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [
+			"deliver", "--merge", "--title", "Fix bug", "--body-file", "/tmp/b.md"
+		], out: out, err: err )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :merge )
+		assert_equal "Fix bug", parsed.fetch( :title )
+		assert_equal "/tmp/b.md", parsed.fetch( :body_file )
+	end
+
+	def test_parse_args_deliver_rejects_unexpected_arguments
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "deliver", "extra" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Unexpected arguments for deliver"
+	end
+
+	def test_dispatch_routes_deliver_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: {
+			command: "deliver", merge: false, title: nil, body_file: nil
+		}, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_deliver_with_merge_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: {
+			command: "deliver", merge: true, title: "T", body_file: "/tmp/b.md"
+		}, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :deliver, { merge: true, title: "T", body_file: "/tmp/b.md" } ] ], runtime.calls
 	end
 end

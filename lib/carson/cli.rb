@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit|sync|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit|sync|deliver [--merge] [--title T] [--body-file F]|prune [--all]|worktree create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -90,6 +90,8 @@ module Carson
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
 			when "status"
 				parse_status_command( argv: argv, err: err )
+			when "deliver"
+				parse_deliver_command( argv: argv, err: err )
 			when "govern"
 				parse_govern_subcommand( argv: argv, err: err )
 			else
@@ -249,6 +251,31 @@ module Carson
 			{ command: "status", json: json_flag }
 		end
 
+		def self.parse_deliver_command( argv:, err: )
+			options = { merge: false, title: nil, body_file: nil }
+			deliver_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson deliver [--merge] [--title TITLE] [--body-file PATH]"
+				opts.on( "--merge", "Also merge the PR if CI passes" ) { options[ :merge ] = true }
+				opts.on( "--title TITLE", "PR title (defaults to branch name)" ) { |v| options[ :title ] = v }
+				opts.on( "--body-file PATH", "File containing PR body text" ) { |v| options[ :body_file ] = v }
+			end
+			deliver_parser.parse!( argv )
+			unless argv.empty?
+				err.puts "#{BADGE} Unexpected arguments for deliver: #{argv.join( ' ' )}"
+				err.puts deliver_parser
+				return { command: :invalid }
+			end
+			{
+				command: "deliver",
+				merge: options.fetch( :merge ),
+				title: options[ :title ],
+				body_file: options[ :body_file ]
+			}
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
+		end
+
 		def self.parse_govern_subcommand( argv:, err: )
 			options = {
 				dry_run: false,
@@ -317,6 +344,12 @@ module Carson
 				runtime.template_check!
 			when "template:apply"
 				runtime.template_apply!( push_prep: parsed.fetch( :push_prep, false ) )
+			when "deliver"
+				runtime.deliver!(
+					merge: parsed.fetch( :merge, false ),
+					title: parsed.fetch( :title, nil ),
+					body_file: parsed.fetch( :body_file, nil )
+				)
 			when "review:gate"
 				runtime.review_gate!
 			when "review:sweep"

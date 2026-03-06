@@ -111,6 +111,18 @@ if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
 	exit 0
 fi
 
+# Handle `pr view` for deliver command — no existing PR by default.
+if [[ "${1:-}" == "pr" && "${2:-}" == "view" && "$scenario" == "default" ]]; then
+	echo "no pull requests found" >&2
+	exit 1
+fi
+
+# Handle `pr create` for deliver command.
+if [[ "${1:-}" == "pr" && "${2:-}" == "create" ]]; then
+	echo "https://github.com/mock/mock-repo/pull/77"
+	exit 0
+fi
+
 if [[ "$scenario" == "baseline_block_failing" || "$scenario" == "baseline_block_pending" || "$scenario" == "baseline_block_no_evidence" ]]; then
 	if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
 		echo "mock: no pull request for branch" >&2
@@ -243,6 +255,22 @@ if ! echo "$status_json" | ruby -rjson -e 'JSON.parse($stdin.read)' 2>/dev/null;
 	exit 1
 fi
 echo "PASS: status --json produces valid JSON"
+
+# Deliver command smoke tests — must be on a feature branch with a remote.
+git switch -c feature/deliver-smoke >/dev/null
+printf "deliver smoke\n" > deliver_smoke.txt
+git add deliver_smoke.txt
+git -c core.hooksPath=.git/hooks commit -m "deliver smoke test" >/dev/null
+
+expect_exit 0 "deliver pushes and reports PR URL" run_carson_with_mock_gh deliver
+
+# Deliver on main should fail.
+git switch main >/dev/null
+expect_exit 1 "deliver blocks on main branch" run_carson_with_mock_gh deliver
+
+# Clean up feature branch.
+git branch -D feature/deliver-smoke >/dev/null
+echo "PASS: deliver smoke tests"
 
 git clone "$remote_repo" "$init_repo" >/dev/null
 (
