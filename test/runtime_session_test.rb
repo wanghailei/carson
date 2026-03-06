@@ -263,23 +263,21 @@ class RuntimeSessionTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	# --- worktree_done! side effect ---
+	# --- worktree_remove! side effect ---
 
-	def test_worktree_done_clears_session_state
+	def test_worktree_remove_clears_session_state
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
-		runtime.worktree_create!( name: "done-wt" )
+		runtime.worktree_create!( name: "remove-wt" )
 
 		reset_output( runtime )
-		runtime.worktree_done!( name: "done-wt" )
+		runtime.worktree_remove!( worktree_path: "remove-wt" )
 
 		reset_output( runtime )
 		runtime.session!( json_output: true )
 		json = JSON.parse( output_string( runtime ).strip )
-		refute json.key?( "worktree" ), "worktree should be cleared after done"
+		refute json.key?( "worktree" ), "worktree should be cleared after remove"
 
-		wt_path = File.join( repo_root, ".claude", "worktrees", "done-wt" )
-		cleanup_worktree( repo_root, wt_path )
 		cleanup_session( repo_root )
 		destroy_runtime_repo( repo_root: repo_root )
 	end

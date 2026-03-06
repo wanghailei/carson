@@ -1,6 +1,6 @@
 # Safe worktree lifecycle management for coding agents.
-# Three operations: create, done (mark completed), remove (full cleanup).
-# Remove guards against unpushed commits and CWD-inside-worktree — safe by default.
+# Two operations: create and remove. Remove is safe by default — guards against
+# CWD-inside-worktree and unpushed commits. Use --force to override.
 # Supports --json for machine-readable structured output with recovery commands.
 module Carson
 	class Runtime
@@ -46,62 +46,6 @@ module Carson
 
 				worktree_finish(
 					result: { command: "worktree create", status: "ok", name: name, path: wt_path, branch: name },
-					exit_code: EXIT_OK, json_output: json_output
-				)
-			end
-
-			# Marks a worktree as completed without deleting it.
-			# Verifies all changes are committed. Deferred deletion — cleanup happens later.
-			def worktree_done!( name: nil, json_output: false )
-				if name.to_s.strip.empty?
-					return worktree_finish(
-						result: { command: "worktree done", status: "error",
-							error: "missing worktree name",
-							recovery: "carson worktree done <name>" },
-						exit_code: EXIT_ERROR, json_output: json_output
-					)
-				end
-
-				resolved_path = resolve_worktree_path( worktree_path: name )
-
-				unless worktree_registered?( path: resolved_path )
-					return worktree_finish(
-						result: { command: "worktree done", status: "error", name: name,
-							error: "#{name} is not a registered worktree",
-							recovery: "git worktree list" },
-						exit_code: EXIT_ERROR, json_output: json_output
-					)
-				end
-
-				# Check for uncommitted changes in the worktree.
-				wt_status, _, status_result, = Open3.capture3( "git", "status", "--porcelain", chdir: resolved_path )
-				if status_result.success? && !wt_status.strip.empty?
-					return worktree_finish(
-						result: { command: "worktree done", status: "block", name: name,
-							error: "worktree has uncommitted changes",
-							recovery: "git -C #{resolved_path} add -A && git -C #{resolved_path} commit, then carson worktree done #{name}" },
-						exit_code: EXIT_BLOCK, json_output: json_output
-					)
-				end
-
-				# Check for unpushed commits using shared guard.
-				branch = worktree_branch( path: resolved_path )
-				unpushed = check_unpushed_commits( branch: branch, worktree_path: resolved_path )
-				if unpushed
-					return worktree_finish(
-						result: { command: "worktree done", status: "block", name: name, branch: branch,
-							error: unpushed[ :error ],
-							recovery: unpushed[ :recovery ] },
-						exit_code: EXIT_BLOCK, json_output: json_output
-					)
-				end
-
-				# Clear worktree from session state.
-				update_session( worktree: :clear )
-
-				worktree_finish(
-					result: { command: "worktree done", status: "ok", name: name, branch: branch || "(detached)",
-						next_step: "carson worktree remove #{name}" },
 					exit_code: EXIT_OK, json_output: json_output
 				)
 			end
@@ -211,6 +155,9 @@ module Carson
 					end
 				end
 
+				# Clear worktree from session state.
+				update_session( worktree: :clear )
+
 				worktree_finish(
 					result: { command: "worktree remove", status: "ok", name: File.basename( resolved_path ),
 						branch: branch, branch_deleted: branch_deleted, remote_deleted: remote_deleted },
@@ -245,10 +192,6 @@ module Carson
 						puts_line "Worktree created: #{result[ :name ]}"
 						puts_line "  Path: #{result[ :path ]}"
 						puts_line "  Branch: #{result[ :branch ]}"
-					when "worktree done"
-						puts_line "Worktree done: #{result[ :name ]}"
-						puts_line "  Branch: #{result[ :branch ]}"
-						puts_line "  Cleanup later with `#{result[ :next_step ]}` or `carson housekeep`."
 					when "worktree remove"
 						unless verbose?
 							puts_line "Worktree removed: #{result[ :name ]}"

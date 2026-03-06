@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.11.0
+
+### What changed
+
+- **Drop `worktree done`** — removed the `worktree done` subcommand entirely. `worktree remove` now handles everything: CWD safety guard, unpushed-commits guard, session state cleanup, branch and remote deletion. Two operations (create, remove) instead of three. Simpler, safer, less to remember.
+
+### Breaking changes
+
+- `carson worktree done <name>` no longer exists. Use `carson worktree remove <name>` instead. Add `--force` to override safety guards.
+
 ## 3.10.5
 
 ### What changed
@@ -15,6 +25,18 @@ Release-note scope rule:
 ### Migration
 
 - No breaking changes. New safety guard — previously git-protected operations now fail earlier with clearer diagnostics.
+
+## 3.10.4
+
+### What changed
+
+- **Worktree remove guards unpushed commits** — `carson worktree remove` now checks for unpushed commits before deleting a worktree. Blocks with recovery guidance (push command or `--force` to override). Prevents accidental destruction of work that exists only locally.
+- **Shared unpushed-commits check** — extracted `check_unpushed_commits` method used by `worktree remove`, eliminating code duplication.
+- **Fix resolve path from inside worktrees** — `resolve_worktree_path` now uses `main_worktree_root` instead of `repo_root` for bare-name resolution. Previously, calling `carson worktree remove <name>` from inside a worktree would look in the wrong directory.
+
+### Migration
+
+- No breaking changes. `--force` overrides the new unpushed-commits guard.
 
 ## 3.10.3
 

@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|done|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|session [--json] [--task T]|session clear [--json]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|session [--json] [--task T]|session clear [--json]|version]"
 			end
 		end
 
@@ -180,7 +180,7 @@ module Carson
 			json_flag = argv.delete( "--json" ) ? true : false
 			action = argv.shift
 			if action.to_s.strip.empty?
-				err.puts "#{BADGE} Missing subcommand for worktree. Use: carson worktree create|done|remove <name>"
+				err.puts "#{BADGE} Missing subcommand for worktree. Use: carson worktree create|remove <name>"
 				err.puts parser
 				return { command: :invalid }
 			end
@@ -193,9 +193,6 @@ module Carson
 					return { command: :invalid }
 				end
 				{ command: "worktree:create", worktree_name: name, json: json_flag }
-			when "done"
-				name = argv.shift
-				{ command: "worktree:done", worktree_name: name, json: json_flag }
 			when "remove"
 				force = argv.delete( "--force" ) ? true : false
 				worktree_path = argv.shift
@@ -205,7 +202,7 @@ module Carson
 				end
 				{ command: "worktree:remove", worktree_path: worktree_path, force: force, json: json_flag }
 			else
-				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree create|done|remove <name>"
+				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree create|remove <name>"
 				{ command: :invalid }
 			end
 		end
@@ -379,8 +376,6 @@ module Carson
 				runtime.prune_all!
 			when "worktree:create"
 				runtime.worktree_create!( name: parsed.fetch( :worktree_name ), json_output: parsed.fetch( :json, false ) )
-			when "worktree:done"
-				runtime.worktree_done!( name: parsed.fetch( :worktree_name, nil ), json_output: parsed.fetch( :json, false ) )
 			when "worktree:remove"
 				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ), json_output: parsed.fetch( :json, false ) )
 			when "onboard"
