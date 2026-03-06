@@ -5,6 +5,28 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.8.0 — Session State
+
+### What changed
+
+- **`carson session`** — reads and displays the current session state for a repository. Shows active worktree, PR, task description, and last-updated timestamp.
+- **`carson session --task "description"`** — records a task description in session state so agents resuming work can discover the current objective.
+- **`carson session clear`** — removes all session state for the current repository.
+- **`carson session --json`** / **`carson session clear --json`** — machine-readable JSON output for all session commands.
+- **Side-effect integration** — `worktree_create!` automatically records the active worktree in session state; `worktree_done!` clears it; `deliver!` records the PR number and URL.
+- **Outsider-safe storage** — session files live at `~/.carson/sessions/<basename>-<hash>.json`, outside the user's repository.
+
+### UX
+
+- Human output shows a concise summary: session name, worktree, PR, task, and timestamp.
+- "No active session state" displayed when no context has been recorded.
+- Session state persists across Carson invocations — agents can `carson session --json` to discover context without re-running discovery commands.
+- `update_session` uses a `:clear` sentinel to selectively remove fields without touching others.
+
+### Migration
+
+- No breaking changes. New command — no existing behaviour affected.
+
 ## 3.7.0 — Worktree JSON + Recovery
 
 ### What changed
