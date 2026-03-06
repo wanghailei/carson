@@ -89,6 +89,16 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def session!( task: nil, json_output: false )
+			@calls << [ :session, { task: task, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def session_clear!( json_output: false )
+			@calls << [ :session_clear, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -698,5 +708,60 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "prune:all" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ :prune_all ], runtime.calls
+	end
+
+	# --- session CLI tests ---
+
+	def test_parse_args_session_defaults
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "session" ], out: out, err: err )
+		assert_equal "session", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+		assert_nil parsed[ :task ]
+	end
+
+	def test_parse_args_session_with_json
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "session", "--json" ], out: out, err: err )
+		assert_equal "session", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_session_with_task
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "session", "--task", "Implement prune --json" ], out: out, err: err )
+		assert_equal "session", parsed.fetch( :command )
+		assert_equal "Implement prune --json", parsed.fetch( :task )
+	end
+
+	def test_parse_args_session_clear
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "session", "clear" ], out: out, err: err )
+		assert_equal "session:clear", parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_session_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "session", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :session, { task: nil, json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_session_with_task_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "session", json: false, task: "Fix bug" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :session, { task: "Fix bug", json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_session_clear_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "session:clear", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :session_clear, { json_output: false } ] ], runtime.calls
 	end
 end
