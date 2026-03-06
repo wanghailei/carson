@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 2.32.0 — Worktree-Aware Pruning
+
+### What changed
+
+- **Prune now clears worktrees that block branch deletion.** When a branch is checked out in a worktree, `carson prune` safely removes the worktree first (refuses if uncommitted changes exist), then deletes the branch. Previously, these branches were silently skipped.
+- **Honest skip reporting.** Non-verbose output no longer says "No stale branches" when branches were detected but couldn't be pruned. Shows "Skipped N branch(es)" or "Pruned N, skipped M" as appropriate, with a `--verbose` hint.
+
+### Migration
+
+- No action required. Existing prune behaviour is strictly improved.
+
 ## 2.31.0 — Worktree Lifecycle + Prune --all
 
 ### What changed
