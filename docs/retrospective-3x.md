@@ -52,9 +52,9 @@ BUT: the `--json` flag was a forcing function for clean internal architecture. B
 
 ---
 
-## Overbuilt — solved problems that don't exist
+## Overbuilt — solved problems that don't exist (all cut)
 
-### Session state (Need #7)
+### Session state (Need #7) — *removed in 3.12.0*
 
 The session file records active worktree, open PR, task description. But:
 - `git worktree list` already shows active worktrees.
@@ -65,7 +65,7 @@ The session file duplicates information available from better sources. The visio
 
 **Root cause:** the requirement was reasoned from the constraint ("I have no persistent memory") rather than from an observed failure. The existing mechanism (memory files + git state) was already sufficient. The requirement assumed insufficiency without evidence.
 
-### Agent coordination signals (Need #8)
+### Agent coordination signals (Need #8) — *never built; convention works*
 
 Ownership annotations, staleness detection (PID tracking), cross-referencing sessions to worktrees. Clever engineering. Zero usage.
 
@@ -75,7 +75,7 @@ The session ID fragmentation problem (different PID per `carson` call) means the
 
 **Root cause:** anticipated coordination failures that never occurred. Zero inter-agent collisions have happened since the iron rule was established. Convention beat tooling.
 
-### `worktree done` (part of Need #2)
+### `worktree done` (part of Need #2) — *removed in 3.11.0*
 
 The original vision was two operations: create and done. The implementation became three: create, done, remove. In practice, `done` is rarely used. The real workflow is: create → work → deliver → cd out → remove.
 
@@ -118,3 +118,15 @@ The best engineering came from solving problems the agent had already experience
 5. **Safety before convenience.** The CWD guard (Need #9) prevented the worst failure mode. It should have been built in the first batch, not the last. Priority should weight severity of the problem, not elegance of the solution.
 
 6. **Two operations > three operations.** The original vision of two worktree operations was right. Adding a third (`done`) created friction without adding safety. The safety came from a structural mechanism (the CWD guard), not a procedural step.
+
+---
+
+## Resolution (3.11.0–3.12.0)
+
+All overbuilt items identified in this retrospective have been resolved:
+
+- **`worktree done`**: removed in 3.11.0 (−268 lines). Two operations, not three.
+- **Session state**: removed in 3.12.0 (−771 lines). Convention over machinery.
+- **Agent coordination signals**: never built. The iron rule works.
+
+Total subtraction: −1,039 lines from the codebase. The retrospective paid for itself.
