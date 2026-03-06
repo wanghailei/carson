@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]|audit|sync|prune [--all]|worktree remove <name-or-path>|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]|audit|sync|prune [--all]|worktree remove <name-or-path>|onboard [repo_path]|refresh [--all|repo_path]|offboard [repo_path]|template check|template apply|review gate|review sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -88,6 +88,8 @@ module Carson
 				parse_worktree_subcommand( argv: argv, parser: parser, err: err )
 			when "review"
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
+			when "status"
+				parse_status_command( argv: argv, err: err )
 			when "govern"
 				parse_govern_subcommand( argv: argv, err: err )
 			else
@@ -228,6 +230,15 @@ module Carson
 			{ command: :invalid }
 		end
 
+		def self.parse_status_command( argv:, err: )
+			json_flag = argv.delete( "--json" ) ? true : false
+			unless argv.empty?
+				err.puts "#{BADGE} Unexpected arguments for status: #{argv.join( ' ' )}"
+				return { command: :invalid }
+			end
+			{ command: "status", json: json_flag }
+		end
+
 		def self.parse_govern_subcommand( argv:, err: )
 			options = {
 				dry_run: false,
@@ -266,6 +277,8 @@ module Carson
 			return Runtime::EXIT_ERROR if command == :invalid
 
 			case command
+			when "status"
+				runtime.status!( json_output: parsed.fetch( :json, false ) )
 			when "setup"
 				runtime.setup!( cli_choices: parsed.fetch( :cli_choices, {} ) )
 			when "audit"

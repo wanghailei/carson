@@ -49,6 +49,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def status!( json_output: false )
+			@calls << [ :status, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -299,5 +304,45 @@ class CLITest < Minitest::Test
 		status = Carson::CLI.dispatch( parsed: { command: "setup" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, status
 		assert_equal [ [ :setup, {} ] ], runtime.calls
+	end
+
+	# --- status CLI tests ---
+
+	def test_parse_args_status_returns_status_command
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "status" ], out: out, err: err )
+		assert_equal "status", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_status_with_json_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "status", "--json" ], out: out, err: err )
+		assert_equal "status", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_status_rejects_unexpected_arguments
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "status", "extra" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Unexpected arguments for status"
+	end
+
+	def test_dispatch_routes_status_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "status", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :status, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_status_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "status", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :status, { json_output: true } ] ], runtime.calls
 	end
 end

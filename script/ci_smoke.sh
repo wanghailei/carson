@@ -105,6 +105,12 @@ if [[ "${1:-}" == "--version" ]]; then
 	exit 0
 fi
 
+# Handle `pr list` for status command.
+if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+	echo "[]"
+	exit 0
+fi
+
 if [[ "$scenario" == "baseline_block_failing" || "$scenario" == "baseline_block_pending" || "$scenario" == "baseline_block_no_evidence" ]]; then
 	if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
 		echo "mock: no pull request for branch" >&2
@@ -228,6 +234,15 @@ printf "# Carson Smoke Repo\n" > README.md
 git add README.md
 git commit -m "initial commit" >/dev/null
 git push -u origin main >/dev/null
+
+# Status command smoke tests — run against the initialised work repo.
+expect_exit 0 "status reports version and branch info" run_carson_with_mock_gh status
+status_json="$(run_carson_with_mock_gh status --json)"
+if ! echo "$status_json" | ruby -rjson -e 'JSON.parse($stdin.read)' 2>/dev/null; then
+	echo "FAIL: status --json does not produce valid JSON" >&2
+	exit 1
+fi
+echo "PASS: status --json produces valid JSON"
 
 git clone "$remote_repo" "$init_repo" >/dev/null
 (
