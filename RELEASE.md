@@ -5,17 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## 3.10.4
+## 3.10.5
 
 ### What changed
 
-- **Worktree remove guards unpushed commits** — `carson worktree remove` now checks for unpushed commits before deleting a worktree. Blocks with recovery guidance (push command or `--force` to override). Prevents accidental destruction of work that exists only locally.
-- **Shared unpushed-commits check** — extracted `check_unpushed_commits` method used by both `worktree done` and `worktree remove`, eliminating code duplication.
-- **Fix resolve path from inside worktrees** — `resolve_worktree_path` now uses `main_worktree_root` instead of `repo_root` for bare-name resolution. Previously, calling `carson worktree remove <name>` from inside a worktree would look in the wrong directory.
+- **CWD guard for prune** — `carson prune` now proactively detects when the process CWD is inside a worktree and skips that worktree's branch in all prune paths (stale, orphan, absorbed). Previously, prune relied on git's own refusal to delete a branch checked out in a worktree — accidental protection, not principled safety. The new guard matches the same CWD-awareness that `worktree remove` already has.
+- **`cwd_worktree_branch` helper** — new method that finds the branch checked out in the worktree containing the process CWD. Uses longest-path matching because worktree directories live inside the main repo tree (`.claude/worktrees/`).
 
 ### Migration
 
-- No breaking changes. `--force` overrides the new unpushed-commits guard.
+- No breaking changes. New safety guard — previously git-protected operations now fail earlier with clearer diagnostics.
 
 ## 3.10.3
 
