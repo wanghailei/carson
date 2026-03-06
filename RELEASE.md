@@ -5,6 +5,24 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.1.0 — Worktree Lifecycle
+
+### What changed
+
+- **`carson worktree create <name>`** — creates a worktree under `.claude/worktrees/<name>` with a new branch based on main. One command, one result: path and branch name reported.
+- **`carson worktree done <name>`** — marks a worktree as completed without deleting it. Verifies all changes are committed and pushed. Blocks with actionable guidance if uncommitted changes or unpushed commits exist. The worktree directory persists for batch cleanup later.
+- **Deferred deletion model.** The full worktree lifecycle is now: create → work → done → batch cleanup. No worktree is deleted during an active session. Cleanup happens later via `carson worktree remove` or `carson housekeep`.
+
+### UX
+
+- `carson worktree create` reports path and branch — ready to `cd` into immediately.
+- `carson worktree done` gives recovery commands when changes are uncommitted or unpushed.
+- Error messages across worktree subcommands now show `create|done|remove` in usage hints.
+
+### Migration
+
+- No breaking changes. `carson worktree remove` continues to work as before.
+
 ## 3.0.0 — Agent-Oriented Carson
 
 ### Theme
