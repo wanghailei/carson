@@ -277,6 +277,7 @@ module Carson
 			end
 
 			# Merges a PR that has passed all gates.
+			# Omits --delete-branch (fails inside worktrees). Cleanup via `carson prune`.
 			def merge_if_ready!( pr:, repo_path: )
 				unless config.govern_auto_merge
 					puts_line "    merge authority disabled; skipping merge"
@@ -288,7 +289,6 @@ module Carson
 				stdout_text, stderr_text, status = Open3.capture3(
 					"gh", "pr", "merge", number.to_s,
 					"--#{method}",
-					"--delete-branch",
 					chdir: repo_path
 				)
 				if status.success?
