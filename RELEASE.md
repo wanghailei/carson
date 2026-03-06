@@ -5,6 +5,12 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.10.1
+
+### What changed
+
+- **CWD guard recovery points to main worktree** — the recovery command in the CWD safety block now uses `git rev-parse --git-common-dir` to find the main repository root, not the current worktree's root. Previously, when invoked from inside a worktree, the recovery command would `cd` back to the worktree itself instead of the main repo.
+
 ## 3.10.0 — CWD Safety Guard
 
 ### What changed
