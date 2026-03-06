@@ -20,16 +20,17 @@ module Carson
 
 				prune_git!( "fetch", config.git_remote, "--prune", json_output: json_output )
 				active_branch = current_branch
+				cwd_branch = cwd_worktree_branch
 				counters = { deleted: 0, skipped: 0 }
 				branches = []
 
 				stale_branches = stale_local_branches
-				prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch, counters: counters, branches: branches )
+				prune_stale_branch_entries( stale_branches: stale_branches, active_branch: active_branch, cwd_branch: cwd_branch, counters: counters, branches: branches )
 
-				orphan_branches = orphan_local_branches( active_branch: active_branch )
+				orphan_branches = orphan_local_branches( active_branch: active_branch, cwd_branch: cwd_branch )
 				prune_orphan_branch_entries( orphan_branches: orphan_branches, counters: counters, branches: branches )
 
-				absorbed_branches = absorbed_local_branches( active_branch: active_branch )
+				absorbed_branches = absorbed_local_branches( active_branch: active_branch, cwd_branch: cwd_branch )
 				prune_absorbed_branch_entries( absorbed_branches: absorbed_branches, counters: counters, branches: branches )
 
 				prune_finish(
@@ -90,27 +91,28 @@ module Carson
 				end
 			end
 
-			def prune_stale_branch_entries( stale_branches:, active_branch:, counters: { deleted: 0, skipped: 0 }, branches: [] )
+			def prune_stale_branch_entries( stale_branches:, active_branch:, cwd_branch: nil, counters: { deleted: 0, skipped: 0 }, branches: [] )
 				stale_branches.each do |entry|
-					result = prune_stale_branch_entry( entry: entry, active_branch: active_branch )
+					result = prune_stale_branch_entry( entry: entry, active_branch: active_branch, cwd_branch: cwd_branch )
 					counters[ result.fetch( :action ) ] += 1
 					branches << result
 				end
 				counters
 			end
 
-			def prune_stale_branch_entry( entry:, active_branch: )
+			def prune_stale_branch_entry( entry:, active_branch:, cwd_branch: nil )
 				branch = entry.fetch( :branch )
 				upstream = entry.fetch( :upstream )
 				return prune_skip_stale_branch( type: :protected, branch: branch, upstream: upstream ) if config.protected_branches.include?( branch )
 				return prune_skip_stale_branch( type: :current, branch: branch, upstream: upstream ) if branch == active_branch
+				return prune_skip_stale_branch( type: :cwd_worktree, branch: branch, upstream: upstream ) if cwd_branch && branch == cwd_branch
 
 				prune_delete_stale_branch( branch: branch, upstream: upstream )
 			end
 
 			def prune_skip_stale_branch( type:, branch:, upstream: )
-				reason = type == :protected ? "protected branch" : "current branch"
-				status = type == :protected ? "skip_protected_branch" : "skip_current_branch"
+				reason = { protected: "protected branch", current: "current branch", cwd_worktree: "checked out in CWD worktree" }.fetch( type, type.to_s )
+				status = { protected: "skip_protected_branch", current: "skip_current_branch", cwd_worktree: "skip_cwd_worktree_branch" }.fetch( type, "skip_#{type}" )
 				puts_verbose "#{status}: #{branch} (upstream=#{upstream})"
 				{ action: :skipped, branch: branch, upstream: upstream, type: "stale", reason: reason }
 			end
@@ -208,7 +210,7 @@ module Carson
 			end
 
 			# Detects local branches with no upstream tracking ref — candidates for orphan pruning.
-			def orphan_local_branches( active_branch: )
+			def orphan_local_branches( active_branch:, cwd_branch: nil )
 				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" ).lines.filter_map do |line|
 					branch, upstream = line.strip.split( "\t", 2 )
 					branch = branch.to_s.strip
@@ -217,6 +219,7 @@ module Carson
 					next unless upstream.empty?
 					next if config.protected_branches.include?( branch )
 					next if branch == active_branch
+					next if cwd_branch && branch == cwd_branch
 					next if branch == TEMPLATE_SYNC_BRANCH
 
 					branch
@@ -226,7 +229,7 @@ module Carson
 			# Detects local branches whose upstream still exists but whose content is already on main.
 			# Two-step evidence: (1) find the merge-base, (2) verify every file the branch changed
 			# relative to the merge-base has identical content on main.
-			def absorbed_local_branches( active_branch: )
+			def absorbed_local_branches( active_branch:, cwd_branch: nil )
 				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
 					branch, upstream, track = line.strip.split( "\t", 3 )
 					branch = branch.to_s.strip
@@ -237,6 +240,7 @@ module Carson
 					next if track.include?( "gone" )
 					next if config.protected_branches.include?( branch )
 					next if branch == active_branch
+					next if cwd_branch && branch == cwd_branch
 					next if branch == TEMPLATE_SYNC_BRANCH
 
 					next unless branch_absorbed_into_main?( branch: branch )
