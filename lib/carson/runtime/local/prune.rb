@@ -25,11 +25,15 @@ module Carson
 				puts_verbose "prune_summary: deleted=#{counters.fetch( :deleted )} skipped=#{counters.fetch( :skipped )}"
 				unless verbose?
 					deleted_count = counters.fetch( :deleted )
-					if deleted_count.zero?
-						puts_line "No stale branches."
+					skipped_count = counters.fetch( :skipped )
+					message = if deleted_count > 0 && skipped_count > 0
+						"Pruned #{deleted_count}, skipped #{skipped_count} (--verbose for details)."
+					elsif deleted_count > 0
+						"Pruned #{deleted_count} stale branch#{plural_suffix( count: deleted_count )}."
 					else
-						puts_line "Pruned #{deleted_count} stale branch#{plural_suffix( count: deleted_count )}."
+						"Skipped #{skipped_count} branch#{plural_suffix( count: skipped_count )} (--verbose for details)."
 					end
+					puts_line message
 				end
 				EXIT_OK
 			end
@@ -93,7 +97,7 @@ module Carson
 				)
 				return prune_force_delete_skipped( branch: branch, upstream: upstream, delete_error_text: delete_error_text, force_error: force_error ) if merged_pr.nil?
 
-				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				force_stdout, force_stderr, force_success = force_delete_local_branch( branch: branch )
 				return prune_force_delete_success( branch: branch, upstream: upstream, merged_pr: merged_pr, force_stdout: force_stdout ) if force_success
 
 				prune_force_delete_failed( branch: branch, upstream: upstream, force_stderr: force_stderr )
@@ -120,6 +124,37 @@ module Carson
 			def normalise_branch_delete_error( error_text: )
 				text = error_text.to_s.strip
 				text.empty? ? "unknown error" : text
+			end
+
+			# Attempts git branch -D. If blocked by a worktree, safely removes the worktree
+			# first (no --force — refuses if worktree has uncommitted changes) and retries.
+			def force_delete_local_branch( branch: )
+				stdout, stderr, success, = git_run( "branch", "-D", branch )
+				return [ stdout, stderr, success ] if success
+				return [ stdout, stderr, false ] unless worktree_blocked_error?( error_text: stderr )
+
+				wt_path = worktree_path_for_branch( branch: branch )
+				return [ stdout, stderr, false ] if wt_path.nil?
+
+				rm_stdout, rm_stderr, rm_success, = git_run( "worktree", "remove", wt_path )
+				unless rm_success
+					error_text = rm_stderr.to_s.strip
+					puts_verbose "skip_worktree_remove: #{wt_path} (branch=#{branch}) reason=#{error_text}"
+					return [ stdout, stderr, false ]
+				end
+				puts_verbose "worktree_removed_for_prune: #{wt_path} (branch=#{branch})"
+
+				git_run( "branch", "-D", branch )
+			end
+
+			def worktree_blocked_error?( error_text: )
+				error_text.to_s.downcase.include?( "used by worktree" )
+			end
+
+			# Returns the worktree path for a branch, or nil if not checked out in any worktree.
+			def worktree_path_for_branch( branch: )
+				entry = worktree_list.find { |wt| wt.fetch( :branch, nil ) == branch }
+				entry&.fetch( :path, nil )
 			end
 
 			# Detects local branches whose upstream tracking is marked [gone] after fetch --prune.
@@ -218,7 +253,7 @@ module Carson
 					return :skipped
 				end
 
-				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				force_stdout, force_stderr, force_success = force_delete_local_branch( branch: branch )
 				unless force_success
 					error_text = normalise_branch_delete_error( error_text: force_stderr )
 					puts_verbose "fail_delete_absorbed_branch: #{branch} reason=#{error_text}"
@@ -287,7 +322,7 @@ module Carson
 					return :skipped
 				end
 
-				force_stdout, force_stderr, force_success, = git_run( "branch", "-D", branch )
+				force_stdout, force_stderr, force_success = force_delete_local_branch( branch: branch )
 				if force_success
 					out.print force_stdout if verbose? && !force_stdout.empty?
 					puts_verbose "deleted_orphan_branch: #{branch} merged_pr=#{merged_pr.fetch( :url )}"
