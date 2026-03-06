@@ -1,38 +1,82 @@
+# Syncs local main branch with remote main.
+# Supports --json for machine-readable structured output.
 module Carson
 	class Runtime
 		module Local
-			def sync!
+			def sync!( json_output: false )
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
 				unless working_tree_clean?
-					puts_line "BLOCK: working tree is dirty; commit/stash first, then run carson sync."
-					return EXIT_BLOCK
+					return sync_finish(
+						result: { command: "sync", status: "block", error: "working tree is dirty", recovery: "git add -A && git commit, then carson sync" },
+						exit_code: EXIT_BLOCK, json_output: json_output
+					)
 				end
 				start_branch = current_branch
 				switched = false
-				git_system!( "fetch", config.git_remote, "--prune" )
+				sync_git!( "fetch", config.git_remote, "--prune", json_output: json_output )
 				if start_branch != config.main_branch
-					git_system!( "switch", config.main_branch )
+					sync_git!( "switch", config.main_branch, json_output: json_output )
 					switched = true
 				end
-				git_system!( "pull", "--ff-only", config.git_remote, config.main_branch )
+				sync_git!( "pull", "--ff-only", config.git_remote, config.main_branch, json_output: json_output )
 				ahead_count, behind_count, error_text = main_sync_counts
 				if error_text
-					puts_line "BLOCK: unable to verify main sync state (#{error_text})."
-					return EXIT_BLOCK
+					return sync_finish(
+						result: { command: "sync", status: "block", error: "unable to verify main sync state (#{error_text})" },
+						exit_code: EXIT_BLOCK, json_output: json_output
+					)
 				end
 				if ahead_count.zero? && behind_count.zero?
-					puts_line "OK: local #{config.main_branch} is now in sync with #{config.git_remote}/#{config.main_branch}."
-					return EXIT_OK
+					return sync_finish(
+						result: { command: "sync", status: "ok", ahead: 0, behind: 0, main_branch: config.main_branch, remote: config.git_remote },
+						exit_code: EXIT_OK, json_output: json_output
+					)
 				end
-				puts_line "BLOCK: local #{config.main_branch} still diverges (ahead=#{ahead_count}, behind=#{behind_count})."
-				EXIT_BLOCK
+				sync_finish(
+					result: { command: "sync", status: "block", ahead: ahead_count, behind: behind_count, main_branch: config.main_branch, remote: config.git_remote, error: "local #{config.main_branch} still diverges" },
+					exit_code: EXIT_BLOCK, json_output: json_output
+				)
 			ensure
 				git_system!( "switch", start_branch ) if switched && branch_exists?( branch_name: start_branch )
 			end
 
 		private
+
+			# Runs a git command, suppressing stdout/stderr in JSON mode to keep output clean.
+			def sync_git!( *args, json_output: false )
+				if json_output
+					_, stderr_text, success, = git_run( *args )
+					raise "git #{args.join( ' ' )} failed: #{stderr_text.to_s.strip}" unless success
+				else
+					git_system!( *args )
+				end
+			end
+
+			# Unified output for sync results — JSON or human-readable.
+			def sync_finish( result:, exit_code:, json_output: )
+				result[ :exit_code ] = exit_code
+
+				if json_output
+					out.puts JSON.pretty_generate( result )
+				else
+					print_sync_human( result: result )
+				end
+
+				exit_code
+			end
+
+			# Human-readable output for sync results.
+			def print_sync_human( result: )
+				if result[ :error ]
+					puts_line "BLOCK: #{result[ :error ]}."
+					puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					return
+				end
+
+				puts_line "OK: local #{result[ :main_branch ]} is now in sync with #{result[ :remote ]}/#{result[ :main_branch ]}."
+			end
 
 			# Returns ahead/behind counts for local main versus configured remote main.
 			def main_sync_counts

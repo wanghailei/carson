@@ -64,6 +64,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def sync!( json_output: false )
+			@calls << [ :sync, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def deliver!( merge: false, title: nil, body_file: nil, json_output: false )
 			@calls << [ :deliver, { merge: merge, title: title, body_file: body_file, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
@@ -548,5 +553,45 @@ class CLITest < Minitest::Test
 		err = StringIO.new
 		parsed = Carson::CLI.parse_args( argv: [], out: out, err: err )
 		assert_equal "audit", parsed.fetch( :command )
+	end
+
+	# --- sync CLI tests ---
+
+	def test_parse_args_sync_defaults
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "sync" ], out: out, err: err )
+		assert_equal "sync", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_sync_with_json_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "sync", "--json" ], out: out, err: err )
+		assert_equal "sync", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_sync_rejects_unexpected_arguments
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "sync", "extra" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Unexpected arguments for sync"
+	end
+
+	def test_dispatch_routes_sync_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "sync", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :sync, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_sync_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "sync", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :sync, { json_output: true } ] ], runtime.calls
 	end
 end
