@@ -5,6 +5,24 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.2.0 — Deliver
+
+### What changed
+
+- **`carson deliver`** — pushes the current branch to the remote, creates a PR if none exists, and reports the PR URL. Collapses the manual push/create-PR/report cycle into one command.
+- **`carson deliver --merge`** — does everything above, plus checks CI status and merges the PR if all checks pass. Reports pending or failing CI with actionable guidance. Uses the configured merge method (squash, rebase, or merge). Syncs main after merge.
+- **`carson deliver --title "..." --body-file <path>`** — optional PR title and body file for custom PR metadata. Title defaults to a humanised branch name.
+
+### UX
+
+- `carson deliver` guards against delivering from main — exits with an error and recovery guidance.
+- `carson deliver --merge` reports CI status clearly: pass, pending, or failing.
+- Default PR title is generated from the branch name (e.g. `feature/add-search` becomes "Feature: add search").
+
+### Migration
+
+- No breaking changes. All existing commands continue to work unchanged.
+
 ## 3.1.0 — Worktree Lifecycle
 
 ### What changed
