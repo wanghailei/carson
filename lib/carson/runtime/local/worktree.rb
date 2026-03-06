@@ -7,8 +7,9 @@ module Carson
 		module Local
 
 			# Creates a new worktree under .claude/worktrees/<name> with a fresh branch.
+			# Uses main_worktree_root so this works even when called from inside a worktree.
 			def worktree_create!( name:, json_output: false )
-				worktrees_dir = File.join( repo_root, ".claude", "worktrees" )
+				worktrees_dir = File.join( main_worktree_root, ".claude", "worktrees" )
 				wt_path = File.join( worktrees_dir, name )
 
 				if Dir.exist?( wt_path )
@@ -312,8 +313,9 @@ module Carson
 			# This prevents worktree directories from appearing as untracked files
 			# in the host repository. Uses the local exclude file (never committed)
 			# so the host repo's .gitignore is never touched.
+			# Uses main_worktree_root — worktrees have .git as a file, not a directory.
 			def ensure_claude_dir_excluded!
-				git_dir = File.join( repo_root, ".git" )
+				git_dir = File.join( main_worktree_root, ".git" )
 				return unless File.directory?( git_dir )
 
 				info_dir = File.join( git_dir, "info" )
