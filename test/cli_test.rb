@@ -54,13 +54,18 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def worktree_create!( name: )
-			@calls << [ :worktree_create, { name: name } ]
+		def worktree_create!( name:, json_output: false )
+			@calls << [ :worktree_create, { name: name, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
-		def worktree_done!( name: nil )
-			@calls << [ :worktree_done, { name: name } ]
+		def worktree_done!( name: nil, json_output: false )
+			@calls << [ :worktree_done, { name: name, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def worktree_remove!( worktree_path:, force: false, json_output: false )
+			@calls << [ :worktree_remove, { worktree_path: worktree_path, force: force, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -398,7 +403,22 @@ class CLITest < Minitest::Test
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "worktree:create", worktree_name: "feat" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :worktree_create, { name: "feat" } ] ], runtime.calls
+		assert_equal [ [ :worktree_create, { name: "feat", json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_worktree_create_with_json
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "worktree:create", worktree_name: "feat", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :worktree_create, { name: "feat", json_output: true } ] ], runtime.calls
+	end
+
+	def test_parse_args_worktree_create_with_json
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "worktree", "--json", "create", "my-feature" ], out: out, err: err )
+		assert_equal "worktree:create", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
 	end
 
 	# --- worktree done CLI tests ---
@@ -423,7 +443,28 @@ class CLITest < Minitest::Test
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "worktree:done", worktree_name: "feat" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :worktree_done, { name: "feat" } ] ], runtime.calls
+		assert_equal [ [ :worktree_done, { name: "feat", json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_worktree_done_with_json
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "worktree:done", worktree_name: "feat", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :worktree_done, { name: "feat", json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_worktree_remove
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "worktree:remove", worktree_path: "feat", force: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :worktree_remove, { worktree_path: "feat", force: false, json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_worktree_remove_with_json
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "worktree:remove", worktree_path: "feat", force: true, json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :worktree_remove, { worktree_path: "feat", force: true, json_output: true } ] ], runtime.calls
 	end
 
 	# --- deliver CLI tests ---
