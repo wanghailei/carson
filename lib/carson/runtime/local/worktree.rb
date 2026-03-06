@@ -3,7 +3,9 @@ module Carson
 		module Local
 			# Safe worktree lifecycle management for coding agents.
 			# Enforces the teardown order: exit worktree → git worktree remove → branch cleanup.
-			def worktree_remove!( worktree_path: )
+			# Never forces removal — if the worktree has uncommitted changes, refuses unless
+			# the user explicitly passes force: true via CLI --force flag.
+			def worktree_remove!( worktree_path:, force: false )
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
@@ -17,14 +19,23 @@ module Carson
 				end
 
 				branch = worktree_branch( path: resolved_path )
-				puts_verbose "worktree_remove: path=#{resolved_path} branch=#{branch}"
+				puts_verbose "worktree_remove: path=#{resolved_path} branch=#{branch} force=#{force}"
 
 				# Step 1: remove the worktree (directory + git registration).
-				rm_stdout, rm_stderr, rm_success, = git_run( "worktree", "remove", "--force", resolved_path )
+				# Try safe removal first. Only use --force if the user explicitly requested it.
+				rm_args = [ "worktree", "remove" ]
+				rm_args << "--force" if force
+				rm_args << resolved_path
+				rm_stdout, rm_stderr, rm_success, = git_run( *rm_args )
 				unless rm_success
 					error_text = rm_stderr.to_s.strip
 					error_text = "unable to remove worktree" if error_text.empty?
-					puts_line "ERROR: #{error_text}"
+					if !force && ( error_text.downcase.include?( "untracked" ) || error_text.downcase.include?( "modified" ) )
+						puts_line "Worktree has uncommitted changes: #{File.basename( resolved_path )}"
+						puts_line "  Commit or discard changes first, or use --force to override."
+					else
+						puts_line "ERROR: #{error_text}"
+					end
 					return EXIT_ERROR
 				end
 				puts_verbose "worktree_removed: #{resolved_path}"

@@ -104,6 +104,34 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	def test_worktree_remove_dirty_refused_without_force
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-refuse" )
+
+			# Add uncommitted changes to the worktree.
+			File.write( File.join( wt.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+
+			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			assert_equal Carson::Runtime::EXIT_ERROR, status
+			assert Dir.exist?( wt.fetch( :path ) ), "dirty worktree must be preserved without --force"
+			assert_includes out.string, "uncommitted changes"
+			assert_includes out.string, "--force"
+		end
+	end
+
+	def test_worktree_remove_dirty_accepted_with_force
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-force" )
+
+			# Add uncommitted changes to the worktree.
+			File.write( File.join( wt.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+
+			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ), force: true )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute Dir.exist?( wt.fetch( :path ) ), "dirty worktree should be removed with --force"
+		end
+	end
+
 	def test_worktree_remove_concise_output
 		Dir.mktmpdir( "carson-worktree-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
