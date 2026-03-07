@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.15.0
+
+### What changed
+
+- **`carson housekeep` command** — sync + prune for repositories. Carson knocks each gate humbly:
+  - `carson housekeep` — serve the repo you are standing in.
+  - `carson housekeep <repo>` — serve a named governed repo (resolved by basename, case-insensitive).
+  - `carson housekeep --all` — knock each governed repo's gate in turn.
+- Supports `--json` for machine-readable output in all three modes.
+
+### UX improvement
+
+- Fixed double-badge display when housekeep summarises prune results.
+- JSON mode suppresses human-readable lines cleanly.
+
 ## 3.14.0
 
 ### What changed
