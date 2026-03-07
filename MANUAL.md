@@ -108,6 +108,40 @@ Carson discovers files in this directory and syncs them to governed repos alongs
 
 **Why this design.** Lint, CI, and tooling config are personal decisions — not governance decisions. Carson's job is to deliver your canonical files reliably, not to decide what they should contain.
 
+## Agent Worktree Workflow
+
+The core workflow for coding agents using Carson. One command per step, full lifecycle.
+
+**1. Create a worktree** — Carson auto-syncs main before branching (3.13.0+), so the worktree always starts from the latest code:
+
+```bash
+carson worktree create my-feature
+cd /path/to/.claude/worktrees/my-feature
+```
+
+**2. Work** — make changes, commit, iterate.
+
+**3. Deliver and merge** — push, create PR, merge when CI passes. After merge, Carson prints the exact next command (3.13.0+):
+
+```bash
+carson deliver --merge
+# Output: Merged PR #N via squash.
+#   Next: cd /path/to/repo && carson worktree remove my-feature
+```
+
+**4. Clean up** — follow the printed next step. After squash merge, Carson detects the content is on main and allows removal without `--force` (3.13.1+):
+
+```bash
+cd /path/to/repo && carson worktree remove my-feature
+carson prune
+```
+
+**Safety guards** — `worktree remove` blocks when:
+- Shell CWD is inside the worktree (prevents session crash).
+- Branch has unpushed commits with content that differs from main (prevents data loss).
+
+After squash or rebase merge, the content matches main — removal proceeds without `--force`.
+
 ## Daily Operations
 
 **Start of work:**
