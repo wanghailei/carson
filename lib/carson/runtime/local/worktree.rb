@@ -1,6 +1,7 @@
 # Safe worktree lifecycle management for coding agents.
-# Two operations: create and remove. Remove is safe by default — guards against
-# CWD-inside-worktree and unpushed commits. Use --force to override.
+# Two operations: create and remove. Create auto-syncs main before branching.
+# Remove is safe by default — guards against CWD-inside-worktree and unpushed
+# commits. Content-aware: allows removal after squash/rebase merge without --force.
 # Supports --json for machine-readable structured output with recovery commands.
 module Carson
 	class Runtime
