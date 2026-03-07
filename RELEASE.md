@@ -5,6 +5,15 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.15.1
+
+### What changed
+
+- **Dead worktree reaping** — `housekeep` now reaps dead worktrees before pruning. Unblocks prune for branches held by stale worktrees.
+- Two-layer dead check: fast content-absorbed test, then definitive merged-PR evidence via GitHub API. Covers simple merges and rebase/squash cases where main has evolved.
+- Safe removal only — refuses dirty working trees (`git worktree remove` without `--force`).
+- Deletes the local branch after removal (unless protected).
+
 ## 3.15.0
 
 ### What changed

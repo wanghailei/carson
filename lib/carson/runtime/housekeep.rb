@@ -1,8 +1,9 @@
-# Housekeeping — sync + prune for a repository.
+# Housekeeping — sync, reap dead worktrees, and prune for a repository.
 # carson housekeep <repo>  — serve one repo by name or path.
 # carson housekeep         — serve the repo you are standing in.
 # carson housekeep --all   — serve all governed repos.
 require "json"
+require "open3"
 require "stringio"
 
 module Carson
@@ -41,6 +42,50 @@ module Carson
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
 
+			# Removes dead worktrees — those with a merged PR and a clean working tree.
+			# Unblocks prune for the branches they hold.
+			# Two-layer dead check:
+			#   1. Fast: branch content is fully absorbed into main (covers simple cases).
+			#   2. Definitive: a merged PR exists for this branch (covers rebase/squash where
+			#      main has since evolved the same files).
+			def reap_dead_worktrees!
+				return unless gh_available?
+
+				main_root = main_worktree_root
+				worktrees = worktree_list
+
+				worktrees.each do |wt|
+					path = wt.fetch( :path )
+					branch = wt.fetch( :branch, nil )
+					next if path == main_root
+					next unless branch
+					next if cwd_inside_worktree?( worktree_path: path )
+
+					# Dead check: absorbed into main, or merged PR evidence.
+					dead = branch_absorbed_into_main?( branch: branch )
+					unless dead
+						tip_sha = git_capture!( "rev-parse", "--verify", branch ).strip rescue nil
+						if tip_sha
+							merged_pr, = merged_pr_for_branch( branch: branch, branch_tip_sha: tip_sha )
+							dead = !merged_pr.nil?
+						end
+					end
+					next unless dead
+
+					# Remove the worktree (no --force: refuses if dirty working tree).
+					_, _, rm_success, = git_run( "worktree", "remove", path )
+					next unless rm_success
+
+					puts_verbose "reaped dead worktree: #{File.basename( path )} (branch: #{branch})"
+
+					# Delete the local branch now that no worktree holds it.
+					if !config.protected_branches.include?( branch )
+						git_run( "branch", "-D", branch )
+						puts_verbose "deleted branch: #{branch}"
+					end
+				end
+			end
+
 		private
 
 			# Runs sync + prune on one repo and returns the exit code directly.
@@ -64,7 +109,10 @@ module Carson
 				rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: buf, err: err_buf, verbose: verbose? )
 
 				sync_status = rt.sync!
-				prune_status = rt.prune! if sync_status == EXIT_OK
+				if sync_status == EXIT_OK
+					rt.reap_dead_worktrees!
+					prune_status = rt.prune!
+				end
 
 				ok = sync_status == EXIT_OK && prune_status == EXIT_OK
 				unless verbose? || silent
