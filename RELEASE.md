@@ -5,6 +5,12 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.13.1
+
+### What changed
+
+- **Content-aware unpushed-commits guard** — `carson worktree remove` no longer falsely blocks after squash or rebase merges. Previously it compared commit SHAs, which differ after squash merge even though the content is on main. Now it compares tree content via `git diff --quiet`: if the branch's content matches main, the work is already merged and removal proceeds without `--force`.
+
 ## 3.13.0
 
 ### What changed

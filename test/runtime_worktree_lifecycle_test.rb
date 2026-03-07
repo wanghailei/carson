@@ -195,6 +195,58 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+
+	# --- content-aware squash merge detection ---
+
+	def test_worktree_remove_allows_squash_merged_branch
+		runtime, repo_root = build_runtime( verbose: true )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "squash-test" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "squash-test" )
+
+		# Make a change on the feature branch.
+		File.write( File.join( wt_path, "feature.txt" ), "new feature" )
+		system( "git", "-C", wt_path, "add", "feature.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", wt_path, "commit", "-m", "add feature", out: File::NULL, err: File::NULL )
+
+		# Simulate squash merge: apply the same content to main as a new commit.
+		File.write( File.join( repo_root, "feature.txt" ), "new feature" )
+		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "squash: add feature", out: File::NULL, err: File::NULL )
+
+		# Remove should succeed without --force — content matches main.
+		reset_output( runtime )
+		result = runtime.worktree_remove!( worktree_path: "squash-test" )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "content matches main"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_remove_blocks_unmerged_unique_commits
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "unmerged" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "unmerged" )
+
+		# Make a change on the feature branch that is NOT on main.
+		File.write( File.join( wt_path, "unique.txt" ), "unique work" )
+		system( "git", "-C", wt_path, "add", "unique.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", wt_path, "commit", "-m", "unique work", out: File::NULL, err: File::NULL )
+
+		# Remove should block — content differs from main.
+		reset_output( runtime )
+		result = runtime.worktree_remove!( worktree_path: "unmerged" )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		output = output_string( runtime )
+		assert_includes output, "has not been pushed"
+
+		cleanup_worktree( repo_root, wt_path, force: true )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
 private
 
 	def init_git_repo( repo_root )
