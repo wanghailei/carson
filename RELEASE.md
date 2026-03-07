@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.16.0
+
+### What changed
+
+- **`sweep_stale_worktrees!` shared method** — scans `.claude/worktrees/` and `.codex/worktrees/` for agent-owned worktrees whose branch content is already on main, and removes them safely. Skips dirty working trees, CWD-inside-worktree, and worktrees outside agent directories.
+- `AGENT_WORKTREE_DIRS` constant (`%w[ .claude .codex ]`) — single place to extend when new coding agents appear.
+- `reap_dead_worktrees!` now delegates content-absorbed detection to `sweep_stale_worktrees!`, keeping merged-PR evidence as a second pass.
+
+### UX improvement
+
+- Content-absorbed worktrees are now cleaned during `housekeep` even without `gh` CLI available. Previously the entire reap step was gated on `gh`.
+
 ## 3.15.2
 
 ### What changed
