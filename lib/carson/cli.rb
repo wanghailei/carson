@@ -12,7 +12,7 @@ module Carson
 				return Runtime::EXIT_OK
 			end
 
-			if %w[refresh:all prune:all].include?( command )
+			if %w[repos refresh:all prune:all].include?( command )
 				verbose = parsed.fetch( :verbose, false )
 				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, out: out, err: err, verbose: verbose )
 				return dispatch( parsed: parsed, runtime: runtime )
@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|repos [--json]|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -86,6 +86,8 @@ module Carson
 				parse_prune_command( argv: argv, parser: parser, err: err )
 			when "worktree"
 				parse_worktree_subcommand( argv: argv, parser: parser, err: err )
+			when "repos"
+				parse_repos_command( argv: argv, err: err )
 			when "review"
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
 			when "audit"
@@ -299,6 +301,15 @@ module Carson
 			{ command: :invalid }
 		end
 
+		def self.parse_repos_command( argv:, err: )
+			json_flag = argv.delete( "--json" ) ? true : false
+			unless argv.empty?
+				err.puts "#{BADGE} Unexpected arguments for repos: #{argv.join( ' ' )}"
+				return { command: :invalid }
+			end
+			{ command: "repos", json: json_flag }
+		end
+
 		def self.parse_govern_subcommand( argv:, err: )
 			options = {
 				dry_run: false,
@@ -376,6 +387,8 @@ module Carson
 				runtime.review_gate!
 			when "review:sweep"
 				runtime.review_sweep!
+			when "repos"
+				runtime.repos!( json_output: parsed.fetch( :json, false ) )
 			when "govern"
 				runtime.govern!(
 					dry_run: parsed.fetch( :dry_run, false ),

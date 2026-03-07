@@ -85,6 +85,11 @@ class CLITest < Minitest::Test
 		end
 
 
+		def repos!( json_output: false )
+			@calls << [ :repos, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -568,6 +573,46 @@ class CLITest < Minitest::Test
 		err = StringIO.new
 		parsed = Carson::CLI.parse_args( argv: [], out: out, err: err )
 		assert_equal "audit", parsed.fetch( :command )
+	end
+
+	# --- repos CLI tests ---
+
+	def test_parse_args_repos_defaults
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "repos" ], out: out, err: err )
+		assert_equal "repos", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_repos_with_json_flag
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "repos", "--json" ], out: out, err: err )
+		assert_equal "repos", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_repos_rejects_unexpected_arguments
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "repos", "extra" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Unexpected arguments for repos"
+	end
+
+	def test_dispatch_routes_repos_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "repos", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :repos, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_repos_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "repos", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :repos, { json_output: true } ] ], runtime.calls
 	end
 
 	# --- sync CLI tests ---

@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.14.0
+
+### What changed
+
+- **`carson repos` command** — lists all governed repositories from Carson's global config. Shows which repos Carson is serving at a glance. Supports `--json` for machine-readable output. Portfolio-level command — works from any directory.
+
+### UX improvement
+
+- Bots and humans can now verify which repos Carson oversees with a single command instead of reading raw config JSON.
+
 ## 3.13.2
 
 ### What changed

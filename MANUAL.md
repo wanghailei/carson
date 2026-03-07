@@ -200,6 +200,13 @@ carson template apply
 carson review gate
 ```
 
+**Portfolio overview:**
+
+```bash
+carson repos           # list all governed repositories
+carson repos --json    # machine-readable output
+```
+
 **Periodic maintenance:**
 
 ```bash
