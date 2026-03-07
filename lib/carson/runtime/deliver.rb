@@ -77,6 +77,9 @@ module Carson
 				# Step 6: sync main in the main worktree.
 				sync_after_merge!( remote: remote, main: main, result: result )
 
+				# Step 7: compute next-step guidance for the agent.
+				compute_post_merge_next_step!( result: result )
+
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
 
@@ -128,6 +131,7 @@ module Carson
 
 				if result[ :merged ]
 					puts_line "Merged PR ##{result[ :pr_number ]} via #{result[ :merge_method ]}."
+					puts_line "  Next: #{result[ :next_step ]}" if result[ :next_step ]
 				end
 			end
 
@@ -289,6 +293,24 @@ module Carson
 					result[ :sync_error ] = pull_stderr.to_s.strip
 					puts_verbose "sync failed: #{pull_stderr.to_s.strip}"
 				end
+			end
+
+			# Builds next-step guidance after a successful merge.
+			# Detects whether the agent is inside a worktree and suggests cleanup.
+			def compute_post_merge_next_step!( result: )
+				main_root = main_worktree_root
+				cwd = realpath_safe( Dir.pwd )
+				current_wt = worktree_list.select { |wt| wt.fetch( :path ) != realpath_safe( main_root ) }
+					.find { |wt| cwd == wt.fetch( :path ) || cwd.start_with?( File.join( wt.fetch( :path ), "" ) ) }
+
+				if current_wt
+					wt_name = File.basename( current_wt.fetch( :path ) )
+					result[ :next_step ] = "cd #{main_root} && carson worktree remove #{wt_name}"
+				else
+					result[ :next_step ] = "carson prune"
+				end
+			rescue StandardError
+				# Best-effort — do not fail deliver because of next-step detection.
 			end
 		end
 

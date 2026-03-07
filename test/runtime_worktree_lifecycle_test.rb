@@ -50,6 +50,20 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_worktree_create_succeeds_without_remote
+		# Sync is best-effort — creation must succeed even without a remote.
+		runtime, repo_root = build_runtime( verbose: true )
+		init_git_repo( repo_root )
+		result = runtime.worktree_create!( name: "no-remote" )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "sync skipped"
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "no-remote" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- JSON output tests ---
 
 	def test_worktree_create_json_success

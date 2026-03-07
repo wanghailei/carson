@@ -63,6 +63,31 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_merge_prints_next_step
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/next-step" )
+
+		result = runtime.deliver!( merge: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "Next:"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_merge_json_includes_next_step
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/json-next" )
+
+		result = runtime.deliver!( merge: true, json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		json = JSON.parse( output_string( runtime ).strip )
+		assert json.key?( "next_step" ), "JSON should include next_step field"
+		assert_kind_of String, json[ "next_step" ]
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_deliver_merge_blocks_when_ci_fails
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_fail" )
 		init_git_repo_with_remote( repo_root )
