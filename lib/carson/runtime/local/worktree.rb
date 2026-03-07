@@ -220,6 +220,7 @@ module Carson
 			end
 
 			# Checks whether a branch has unpushed commits that would be lost on removal.
+			# Content-aware: after squash/rebase merge, SHAs differ but tree content may match main. Compares content, not SHAs.
 			# Returns nil if safe, or { error:, recovery: } hash if unpushed work exists.
 			def check_unpushed_commits( branch:, worktree_path: )
 				return nil unless branch
@@ -231,8 +232,16 @@ module Carson
 					# Remote ref does not exist. Only block if the branch has unique commits vs main.
 					unique, _, unique_status, = Open3.capture3( "git", "rev-list", "--count", "#{config.main_branch}..#{branch}", chdir: worktree_path )
 					if unique_status.success? && unique.strip.to_i > 0
-						return { error: "branch has not been pushed to #{remote}",
-							recovery: "git -C #{worktree_path} push -u #{remote} #{branch}, or use --force to override" }
+						# Content-aware check: after squash/rebase merge, commit SHAs differ
+						# but the tree content may be identical to main. Compare content,
+						# not SHAs — if the diff is empty, the work is already on main.
+						diff_out, _, diff_ok, = Open3.capture3( "git", "diff", "--quiet", config.main_branch, branch, chdir: worktree_path )
+						unless diff_ok.success?
+							return { error: "branch has not been pushed to #{remote}",
+								recovery: "git -C #{worktree_path} push -u #{remote} #{branch}, or use --force to override" }
+						end
+						# Diff is empty — content is on main (squash/rebase merged). Safe.
+						puts_verbose "branch #{branch} content matches main — squash/rebase merged, safe to remove"
 					end
 				elsif ahead.strip.to_i > 0
 					return { error: "worktree has unpushed commits",
