@@ -368,24 +368,16 @@ module Carson
 				!path.empty? && File.file?( path )
 			end
 
-			# After onboard succeeds, offer to register the repo for portfolio governance.
-			def prompt_govern_registration!
+			# Automatically registers the repo for portfolio governance during onboard.
+			def auto_register_govern!
 				expanded = File.expand_path( repo_root )
 				if config.govern_repos.include?( expanded )
 					puts_verbose "govern_registration: already registered #{expanded}"
 					return
 				end
 
-				puts_line ""
-				puts_line "Portfolio governance"
-				puts_line "  Register this repo so carson refresh --all and carson govern include it?"
-				accepted = prompt_yes_no( default: true )
-				if accepted
-					append_govern_repo!( repo_path: expanded )
-					puts_line "Registered. Run carson refresh --all to keep all repos in sync."
-				else
-					puts_line "Skipped. Run carson onboard here again to register later."
-				end
+				append_govern_repo!( repo_path: expanded )
+				puts_line "Registered for portfolio governance."
 			end
 
 			# Reusable Y/n prompt following existing prompt_choice conventions.

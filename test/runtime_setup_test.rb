@@ -215,14 +215,14 @@ class RuntimeSetupTest < Minitest::Test
 
 	# --- Governance registration tests ---
 
-	def test_onboard_interactive_registers_repo_on_yes
+	def test_onboard_auto_registers_repo
 		remote_dir = File.join( @tmp_dir, "remote.git" )
 		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 5 setup prompts (enter defaults) + "y" for governance registration
-		tty_input = build_tty_input( "\n\n\n\n\ny\n" )
+		# 5 setup prompts (enter defaults); governance registration is automatic
+		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
@@ -234,34 +234,11 @@ class RuntimeSetupTest < Minitest::Test
 			saved = JSON.parse( File.read( config_path ) )
 			repos = saved.dig( "govern", "repos" ) || []
 			assert_includes repos, File.expand_path( @repo_root )
-			assert_includes out.string, "Registered. Run carson refresh --all"
+			assert_includes out.string, "Registered for portfolio governance."
 		end
 	end
 
-	def test_onboard_interactive_skips_registration_on_no
-		remote_dir = File.join( @tmp_dir, "remote.git" )
-		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
-
-		# 5 setup prompts (enter defaults) + "n" for governance registration
-		tty_input = build_tty_input( "\n\n\n\n\nn\n" )
-
-		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
-			status = runtime.onboard!
-
-			assert_equal Carson::Runtime::EXIT_OK, status
-			config_path = File.join( @tmp_dir, ".carson", "config.json" )
-			saved = JSON.parse( File.read( config_path ) )
-			repos = saved.dig( "govern", "repos" ) || []
-			assert_empty repos
-			assert_includes out.string, "Skipped"
-		end
-	end
-
-	def test_onboard_skips_prompt_when_already_registered
+	def test_onboard_skips_registration_when_already_registered
 		remote_dir = File.join( @tmp_dir, "remote.git" )
 		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
@@ -273,7 +250,7 @@ class RuntimeSetupTest < Minitest::Test
 		config_path = File.join( config_dir, "config.json" )
 		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ File.expand_path( @repo_root ) ] } } ) )
 
-		# No setup prompts needed (config exists), no governance prompt expected
+		# No setup prompts needed (config exists), no registration message expected
 		tty_input = build_tty_input( "" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
@@ -281,22 +258,26 @@ class RuntimeSetupTest < Minitest::Test
 			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
 			runtime.onboard!
 
-			refute_includes out.string, "Portfolio governance"
+			refute_includes out.string, "Registered for portfolio governance."
 		end
 	end
 
-	def test_onboard_non_interactive_skips_govern_prompt
+	def test_onboard_non_interactive_auto_registers
 		remote_dir = File.join( @tmp_dir, "remote.git" )
 		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 
-		# Non-TTY input — should not prompt for governance
+		# Non-TTY input — registration should still happen automatically
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new
 			runtime = build_onboard_runtime( input: StringIO.new, out_stream: out )
 			runtime.onboard!
 
-			refute_includes out.string, "Portfolio governance"
+			assert_includes out.string, "Registered for portfolio governance."
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" ) || []
+			assert_includes repos, File.expand_path( @repo_root )
 		end
 	end
 
@@ -312,8 +293,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# Setup will prompt (5 prompts: remote, branch, workflow, merge, canonical) + governance registration
-		tty_input = build_tty_input( "\n\n\n\n\nn\n" )
+		# Setup will prompt (5 prompts: remote, branch, workflow, merge, canonical); governance auto-registers
+		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			out = StringIO.new

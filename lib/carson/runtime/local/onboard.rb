@@ -229,11 +229,7 @@ module Carson
 				puts_line ""
 				puts_line "Carson at your service."
 
-				if self.in.respond_to?( :tty? ) && self.in.tty?
-					prompt_govern_registration!
-				else
-					puts_line "To register for portfolio governance: carson onboard (in a TTY)"
-				end
+				auto_register_govern!
 
 				puts_line ""
 				puts_line "Your repository is set up. Carson has placed files in your"
