@@ -29,6 +29,8 @@ Carson is an autonomous governance runtime that lives on your workstation and in
 
 This separation is Carson's defining trait — the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a governed repository.
 
+**Agent workspace management** — `carson worktree create` and `carson worktree remove` give coding agents safe, isolated workspaces. Unlike Claude Code's built-in `EnterWorktree`, Carson auto-syncs main before branching, guards against removing worktrees with unpushed work or an active shell inside, detects squash/rebase merges so removal doesn't falsely block, and cleans up the local and remote branch in one step. The two tools are complementary — see `MANUAL.md § Carson vs Claude Code EnterWorktree` for the full comparison.
+
 ### The Governance Loop
 
 Carson orchestrates a closed governance loop across two layers:
