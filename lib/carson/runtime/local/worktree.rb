@@ -7,6 +7,9 @@ module Carson
 	class Runtime
 		module Local
 
+			# Agent directory names whose worktrees Carson may sweep.
+			AGENT_WORKTREE_DIRS = %w[ .claude .codex ].freeze
+
 			# Creates a new worktree under .claude/worktrees/<name> with a fresh branch.
 			# Uses main_worktree_root so this works even when called from inside a worktree.
 			def worktree_create!( name:, json_output: false )
@@ -164,6 +167,42 @@ module Carson
 						branch: branch, branch_deleted: branch_deleted, remote_deleted: remote_deleted },
 					exit_code: EXIT_OK, json_output: json_output
 				)
+			end
+
+			# Removes agent-owned worktrees whose branch content is already on main.
+			# Scans AGENT_WORKTREE_DIRS (e.g. .claude/worktrees/, .codex/worktrees/)
+			# under the main repo root. Safe: skips detached HEADs, the caller's CWD,
+			# and dirty working trees (git worktree remove refuses without --force).
+			def sweep_stale_worktrees!
+				main_root = main_worktree_root
+				worktrees = worktree_list
+
+				agent_prefixes = AGENT_WORKTREE_DIRS.filter_map do |dir|
+					full = File.join( main_root, dir, "worktrees" )
+					File.join( realpath_safe( full ), "" ) if Dir.exist?( full )
+				end
+				return if agent_prefixes.empty?
+
+				worktrees.each do |wt|
+					path = wt.fetch( :path )
+					branch = wt.fetch( :branch, nil )
+					next unless branch
+					next unless agent_prefixes.any? { |prefix| path.start_with?( prefix ) }
+					next if cwd_inside_worktree?( worktree_path: path )
+					next unless branch_absorbed_into_main?( branch: branch )
+
+					# Remove the worktree (no --force: refuses if dirty working tree).
+					_, _, rm_success, = git_run( "worktree", "remove", path )
+					next unless rm_success
+
+					puts_verbose "swept stale worktree: #{File.basename( path )} (branch: #{branch})"
+
+					# Delete the local branch now that no worktree holds it.
+					if !config.protected_branches.include?( branch )
+						git_run( "branch", "-D", branch )
+						puts_verbose "deleted branch: #{branch}"
+					end
+				end
 			end
 
 		private

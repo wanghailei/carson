@@ -170,6 +170,94 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	# --- sweep_stale_worktrees! ---
+
+	def test_sweep_stale_worktrees_removes_absorbed
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "stale-sweep" )
+			branch = wt.fetch( :branch )
+
+			# Merge the worktree branch into main so its content is absorbed.
+			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
+
+			assert Dir.exist?( wt.fetch( :path ) ), "worktree directory should exist before sweep"
+			runtime.sweep_stale_worktrees!
+			refute Dir.exist?( wt.fetch( :path ) ), "absorbed worktree should be swept"
+
+			# Branch should be deleted.
+			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
+				"branch should be deleted after sweep"
+
+			assert_includes out.string, "swept stale worktree: stale-sweep"
+			assert_includes out.string, "deleted branch: #{branch}"
+		end
+	end
+
+	def test_sweep_stale_worktrees_skips_non_absorbed
+		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "active-work" )
+
+			# Do NOT merge — content is still unique to the branch.
+			assert Dir.exist?( wt.fetch( :path ) ), "worktree directory should exist"
+			runtime.sweep_stale_worktrees!
+			assert Dir.exist?( wt.fetch( :path ) ), "non-absorbed worktree must be preserved"
+		end
+	end
+
+	def test_sweep_stale_worktrees_scans_codex_directory
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			# Create a worktree under .codex/worktrees/ manually.
+			codex_dir = File.join( repo_root, ".codex", "worktrees" )
+			worktree_path = File.join( codex_dir, "codex-task" )
+			branch_name = "codex-task"
+			FileUtils.mkdir_p( codex_dir )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_path, out: File::NULL, err: File::NULL )
+			File.write( File.join( worktree_path, "codex-file.txt" ), "codex work\n" )
+			system( "git", "-C", worktree_path, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", worktree_path, "commit", "-m", "codex work", out: File::NULL, err: File::NULL )
+
+			# Merge into main so content is absorbed.
+			system( "git", "-C", repo_root, "merge", branch_name, "--no-edit", out: File::NULL, err: File::NULL )
+
+			assert Dir.exist?( worktree_path ), "codex worktree should exist before sweep"
+			runtime.sweep_stale_worktrees!
+			refute Dir.exist?( worktree_path ), "absorbed codex worktree should be swept"
+
+			assert_includes out.string, "swept stale worktree: codex-task"
+		end
+	end
+
+	def test_sweep_stale_worktrees_skips_worktrees_outside_agent_dirs
+		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
+			# Create a worktree outside .claude/ and .codex/.
+			external_path = File.join( repo_root, "custom-worktrees", "external" )
+			branch_name = "external-branch"
+			FileUtils.mkdir_p( File.dirname( external_path ) )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, external_path, out: File::NULL, err: File::NULL )
+
+			# Even if content is on main (no changes), sweep should not touch it.
+			assert Dir.exist?( external_path ), "external worktree should exist"
+			runtime.sweep_stale_worktrees!
+			assert Dir.exist?( external_path ), "worktree outside agent dirs must be preserved"
+		end
+	end
+
+	def test_sweep_stale_worktrees_skips_dirty_worktree
+		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-sweep" )
+			branch = wt.fetch( :branch )
+
+			# Merge into main so content is absorbed.
+			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
+
+			# Add uncommitted changes — git worktree remove will refuse.
+			File.write( File.join( wt.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+
+			runtime.sweep_stale_worktrees!
+			assert Dir.exist?( wt.fetch( :path ) ), "dirty worktree must be preserved even if absorbed"
+		end
+	end
+
 	def test_worktree_remove_concise_output
 		Dir.mktmpdir( "carson-worktree-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
