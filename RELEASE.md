@@ -5,6 +5,19 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.15.2
+
+### What changed
+
+- **Stale worktree handling** — `worktree remove` and `prune` now handle missing worktree directories gracefully. When a worktree directory is destroyed externally (e.g. by `gh pr merge --delete-branch`), Carson prunes the stale git entry and cleans up the branch without error. Fixes #189, #190.
+- `resolve_worktree_path` always resolves bare names under `.claude/worktrees/`, even when the directory no longer exists.
+- `prune!` runs `git worktree prune` early to clear stale entries before listing branches — unblocks deletion for branches held by dead worktrees.
+- `reap_dead_worktrees!` detects and prunes worktrees whose directories are already gone.
+
+### UX improvement
+
+- Added safety note to MANUAL.md: use `carson deliver --merge` instead of raw `gh pr merge --delete-branch` from inside worktrees.
+
 ## 3.15.1
 
 ### What changed

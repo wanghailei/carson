@@ -19,6 +19,11 @@ module Carson
 				end
 
 				prune_git!( "fetch", config.git_remote, "--prune", json_output: json_output )
+
+				# Clean stale worktree entries whose directories no longer exist.
+				# Unblocks branch deletion for branches held by dead worktrees.
+				git_run( "worktree", "prune" )
+
 				active_branch = current_branch
 				cwd_branch = cwd_worktree_branch
 				counters = { deleted: 0, skipped: 0 }
