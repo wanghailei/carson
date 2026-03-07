@@ -110,4 +110,8 @@ echo "Installed Carson ${version} from ${source_label}"
 echo "Launcher linked: $carson_link"
 echo "If \`carson\` is not found, add \`$home_bin\` to PATH."
 
+# Onboard Carson itself so it is registered in govern.repos like any other repo.
+# Idempotent — skips registration if already present.
+( cd "$source_dir" && "$carson_link" onboard ) || true
+
 "$carson_link" refresh --all || echo "Warning: one or more governed repos reported issues. Run 'carson refresh --all' to review."
