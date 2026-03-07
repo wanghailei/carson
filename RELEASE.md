@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.13.2
+
+### What changed
+
+- **Fix CI detection in `deliver --merge`** — `check_pr_ci` queried `gh pr checks --json name,state,conclusion` but `conclusion` is not a valid field in current `gh` CLI versions. Every `deliver --merge` silently fell back to "CI: none" and skipped the merge step. Now uses `--json name,bucket` which returns `pass`/`fail`/`pending` directly.
+- **Document agent worktree workflow** — added "Agent Worktree Workflow" section to MANUAL.md covering the full create → work → deliver → clean up lifecycle with 3.13.x improvements.
+
+### UX improvement
+
+- `deliver --merge` now actually detects CI status and merges when green. Previously it always said "CI: none" due to the broken field query.
+
 ## 3.13.1
 
 ### What changed

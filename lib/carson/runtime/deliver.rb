@@ -214,25 +214,23 @@ module Carson
 			end
 
 			# Checks CI status on a PR. Returns :pass, :fail, :pending, or :none.
-			def check_pr_ci( number: )
-				stdout, _, success, = gh_run(
-					"pr", "checks", number.to_s,
-					"--json", "name,state,conclusion"
-				)
-				return :none unless success
+# Uses the `bucket` field (pass/fail/pending) from `gh pr checks --json`.
+def check_pr_ci( number: )
+	stdout, _, success, = gh_run(
+		"pr", "checks", number.to_s,
+		"--json", "name,bucket"
+	)
+	return :none unless success
 
-				checks = JSON.parse( stdout ) rescue []
-				return :none if checks.empty?
+	checks = JSON.parse( stdout ) rescue []
+	return :none if checks.empty?
 
-				conclusions = checks.map { |c| c[ "conclusion" ].to_s.upcase }
-				states = checks.map { |c| c[ "state" ].to_s.upcase }
+	buckets = checks.map { |c| c[ "bucket" ].to_s.downcase }
+	return :fail if buckets.include?( "fail" )
+	return :pending if buckets.include?( "pending" )
 
-				return :fail if conclusions.any? { |c| c == "FAILURE" || c == "CANCELLED" || c == "TIMED_OUT" }
-				return :pending if states.any? { |s| s == "PENDING" || s == "QUEUED" || s == "IN_PROGRESS" } ||
-					conclusions.any? { |c| c == "" || c == "PENDING" }
-
-				:pass
-			end
+	:pass
+end
 
 			# Checks review decision on a PR. Returns :approved, :changes_requested, :review_required, or :none.
 			def check_pr_review( number: )
