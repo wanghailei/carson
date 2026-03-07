@@ -42,35 +42,32 @@ module Carson
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
 
-			# Removes dead worktrees — those with a merged PR and a clean working tree.
+			# Removes dead worktrees — those whose content is on main or with merged PR evidence.
 			# Unblocks prune for the branches they hold.
 			# Two-layer dead check:
-			#   1. Fast: branch content is fully absorbed into main (covers simple cases).
-			#   2. Definitive: a merged PR exists for this branch (covers rebase/squash where
-			#      main has since evolved the same files).
+			#   1. Content-absorbed: delegates to sweep_stale_worktrees! (shared, no gh needed).
+			#   2. Merged PR evidence: covers rebase/squash where main has since evolved
+			#      the same files (requires gh).
 			def reap_dead_worktrees!
+				# Layer 1: sweep agent-owned worktrees whose content is on main.
+				sweep_stale_worktrees!
+
+				# Layer 2: merged PR evidence for remaining worktrees.
 				return unless gh_available?
 
 				main_root = main_worktree_root
-				worktrees = worktree_list
-
-				worktrees.each do |wt|
+				worktree_list.each do |wt|
 					path = wt.fetch( :path )
 					branch = wt.fetch( :branch, nil )
 					next if path == main_root
 					next unless branch
 					next if cwd_inside_worktree?( worktree_path: path )
 
-					# Dead check: absorbed into main, or merged PR evidence.
-					dead = branch_absorbed_into_main?( branch: branch )
-					unless dead
-						tip_sha = git_capture!( "rev-parse", "--verify", branch ).strip rescue nil
-						if tip_sha
-							merged_pr, = merged_pr_for_branch( branch: branch, branch_tip_sha: tip_sha )
-							dead = !merged_pr.nil?
-						end
-					end
-					next unless dead
+					tip_sha = git_capture!( "rev-parse", "--verify", branch ).strip rescue nil
+					next unless tip_sha
+
+					merged_pr, = merged_pr_for_branch( branch: branch, branch_tip_sha: tip_sha )
+					next if merged_pr.nil?
 
 					# Remove the worktree (no --force: refuses if dirty working tree).
 					_, _, rm_success, = git_run( "worktree", "remove", path )
