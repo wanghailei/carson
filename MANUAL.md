@@ -142,6 +142,36 @@ carson prune
 
 After squash or rebase merge, the content matches main — removal proceeds without `--force`.
 
+### Carson vs Claude Code EnterWorktree
+
+Claude Code has a built-in `EnterWorktree` tool. Both create a git worktree under `.claude/worktrees/` with a new branch — but they solve different problems and have different trade-offs.
+
+**What Carson adds over EnterWorktree:**
+
+| Concern | EnterWorktree | Carson |
+|---|---|---|
+| Auto-sync main before branching | No — branches from current HEAD, which may be stale | Yes — `git pull --ff-only` before branch creation |
+| CWD guard on removal | No | Yes — blocks if shell is inside the worktree |
+| Unpushed-commits guard | No | Yes — blocks if work hasn't been pushed |
+| Content-aware squash/rebase detection | No | Yes — compares tree content, not SHAs |
+| Branch cleanup (local + remote) | No | Yes — one command removes worktree, local branch, and remote branch |
+| `.git/info/exclude` management | No | Yes — prevents `.claude/` appearing as untracked |
+| Recovery-aware errors | No | Yes — every error includes a concrete recovery command |
+| `--json` output | No | Yes — machine-readable for agent consumption |
+
+**What EnterWorktree does that Carson does not:**
+
+- **Automatic session CWD switch.** After creating the worktree, Claude Code moves the agent's working directory into it — no manual `cd` required. This is genuine friction that Carson should learn from.
+
+**What EnterWorktree gets wrong:**
+
+- **Session-exit cleanup prompt.** On session exit, Claude Code asks the user whether to keep or remove each worktree. In an agent workflow this is pure friction — the user cannot verify the state of bot-created worktrees and is forced to choose "keep" every time. Carson's approach is better: deferred deletion by default, with safety guards when you do choose to clean up.
+- **Random names.** Without a name argument, EnterWorktree generates a random string. `git branch` output becomes unreadable. Carson requires a meaningful name that doubles as the branch name.
+
+**Relationship — complementary, not competing:**
+
+The two tools serve different layers. EnterWorktree owns the session (CWD switch); Carson owns the git lifecycle (sync, safety, cleanup). The ideal integration is Claude Code's `WorktreeCreate`/`WorktreeRemove` hook mechanism — Carson registers as the hook handler, so `EnterWorktree` delegates creation to `carson worktree create` and gets both Carson's safety and Claude Code's automatic CWD switch.
+
 ## Daily Operations
 
 **Start of work:**
