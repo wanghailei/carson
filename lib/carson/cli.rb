@@ -12,7 +12,7 @@ module Carson
 				return Runtime::EXIT_OK
 			end
 
-			if %w[repos refresh:all prune:all].include?( command )
+			if %w[repos refresh:all prune:all housekeep:all housekeep:target].include?( command )
 				verbose = parsed.fetch( :verbose, false )
 				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, out: out, err: err, verbose: verbose )
 				return dispatch( parsed: parsed, runtime: runtime )
@@ -53,7 +53,7 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|repos [--json]|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|housekeep [repo] [--json]|repos [--json]|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
 			end
 		end
 
@@ -88,6 +88,8 @@ module Carson
 				parse_worktree_subcommand( argv: argv, parser: parser, err: err )
 			when "repos"
 				parse_repos_command( argv: argv, err: err )
+			when "housekeep"
+				parse_housekeep_command( argv: argv, err: err )
 			when "review"
 				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
 			when "audit"
@@ -310,6 +312,28 @@ module Carson
 			{ command: "repos", json: json_flag }
 		end
 
+		def self.parse_housekeep_command( argv:, err: )
+			all_flag = argv.delete( "--all" ) ? true : false
+			json_flag = argv.delete( "--json" ) ? true : false
+
+			if all_flag && !argv.empty?
+				err.puts "#{BADGE} --all and repo target are mutually exclusive. Use: carson housekeep --all OR carson housekeep [repo]"
+				return { command: :invalid }
+			end
+
+			return { command: "housekeep:all", json: json_flag } if all_flag
+
+			if argv.length > 1
+				err.puts "#{BADGE} Too many arguments for housekeep. Use: carson housekeep [repo]"
+				return { command: :invalid }
+			end
+
+			target = argv.shift
+			return { command: "housekeep:target", target: target, json: json_flag } if target
+
+			{ command: "housekeep", json: json_flag }
+		end
+
 		def self.parse_govern_subcommand( argv:, err: )
 			options = {
 				dry_run: false,
@@ -389,6 +413,12 @@ module Carson
 				runtime.review_sweep!
 			when "repos"
 				runtime.repos!( json_output: parsed.fetch( :json, false ) )
+			when "housekeep"
+				runtime.housekeep!( json_output: parsed.fetch( :json, false ) )
+			when "housekeep:target"
+				runtime.housekeep_target!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ) )
+			when "housekeep:all"
+				runtime.housekeep_all!( json_output: parsed.fetch( :json, false ) )
 			when "govern"
 				runtime.govern!(
 					dry_run: parsed.fetch( :dry_run, false ),
