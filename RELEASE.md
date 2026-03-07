@@ -10,10 +10,11 @@ Release-note scope rule:
 ### What changed
 
 - **`carson repos` command** — lists all governed repositories from Carson's global config. Shows which repos Carson is serving at a glance. Supports `--json` for machine-readable output. Portfolio-level command — works from any directory.
+- **Auto-register on onboard** — `carson onboard` now automatically registers the repository for portfolio governance. No more TTY-only Y/n prompt — onboard means govern.
 
 ### UX improvement
 
-- Bots and humans can now verify which repos Carson oversees with a single command instead of reading raw config JSON.
+- Onboarding is now one step: `carson onboard` sets up hooks, templates, and portfolio registration in a single pass. Works identically in TTY and non-TTY (agent) sessions.
 
 ## 3.13.2
 
