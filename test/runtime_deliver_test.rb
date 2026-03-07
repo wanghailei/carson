@@ -326,17 +326,17 @@ private
 			if [[ "${1:-}" == "pr" && "${2:-}" == "checks" ]]; then
 				if [[ "$scenario" == "ci_pass" || "$scenario" == "ci_pass_changes_requested" ]]; then
 					cat <<'JSON'
-			[{"name":"CI","state":"SUCCESS","conclusion":"SUCCESS"}]
+			[{"name":"CI","bucket":"pass"}]
 			JSON
 					exit 0
 				elif [[ "$scenario" == "ci_fail" ]]; then
 					cat <<'JSON'
-			[{"name":"CI","state":"FAILURE","conclusion":"FAILURE"}]
+			[{"name":"CI","bucket":"fail"}]
 			JSON
 					exit 0
 				elif [[ "$scenario" == "ci_pending" ]]; then
 					cat <<'JSON'
-			[{"name":"CI","state":"PENDING","conclusion":""}]
+			[{"name":"CI","bucket":"pending"}]
 			JSON
 					exit 0
 				fi
