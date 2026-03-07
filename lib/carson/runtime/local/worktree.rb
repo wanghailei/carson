@@ -77,7 +77,13 @@ module Carson
 
 				resolved_path = resolve_worktree_path( worktree_path: worktree_path )
 
-				unless worktree_registered?( path: resolved_path )
+				# Missing directory: worktree was destroyed externally (e.g. gh pr merge
+			# --delete-branch). Clean up the stale git registration and delete the branch.
+			if !Dir.exist?( resolved_path ) && worktree_registered?( path: resolved_path )
+				return worktree_remove_missing!( resolved_path: resolved_path, json_output: json_output )
+			end
+
+			unless worktree_registered?( path: resolved_path )
 					return worktree_finish(
 						result: { command: "worktree remove", status: "error", name: File.basename( resolved_path ),
 							error: "#{resolved_path} is not a registered worktree",
@@ -206,6 +212,44 @@ module Carson
 			end
 
 		private
+
+			# Handles removal when the worktree directory is already gone (destroyed
+			# externally by gh pr merge --delete-branch or manual deletion).
+			# Prunes the stale git worktree entry and cleans up the branch.
+			def worktree_remove_missing!( resolved_path:, json_output: )
+				branch = worktree_branch( path: resolved_path )
+				puts_verbose "worktree_remove_missing: path=#{resolved_path} branch=#{branch}"
+
+				# Prune the stale worktree entry from git's registry.
+				git_run( "worktree", "prune" )
+				puts_verbose "pruned stale worktree entry: #{resolved_path}"
+
+				# Delete the local branch.
+				branch_deleted = false
+				if branch && !config.protected_branches.include?( branch )
+					_, _, del_success, = git_run( "branch", "-D", branch )
+					if del_success
+						puts_verbose "branch_deleted: #{branch}"
+						branch_deleted = true
+					end
+				end
+
+				# Delete the remote branch (best-effort).
+				remote_deleted = false
+				if branch && !config.protected_branches.include?( branch )
+					_, _, rd_success, = git_run( "push", config.git_remote, "--delete", branch )
+					if rd_success
+						puts_verbose "remote_branch_deleted: #{config.git_remote}/#{branch}"
+						remote_deleted = true
+					end
+				end
+
+				worktree_finish(
+					result: { command: "worktree remove", status: "ok", name: File.basename( resolved_path ),
+						branch: branch, branch_deleted: branch_deleted, remote_deleted: remote_deleted },
+					exit_code: EXIT_OK, json_output: json_output
+				)
+			end
 
 			# Unified output for worktree results — JSON or human-readable.
 			def worktree_finish( result:, exit_code:, json_output: )
@@ -344,9 +388,11 @@ module Carson
 				# Best-effort — do not block worktree creation if exclude fails.
 			end
 
-			# Resolves a worktree path: if it's a bare name, look under .claude/worktrees/.
-			# Returns the canonical (realpath) form so comparisons against git worktree list succeed,
-			# even when the OS resolves symlinks differently (e.g. /tmp → /private/tmp on macOS).
+			# Resolves a worktree path: if it's a bare name, always resolve under
+			# .claude/worktrees/ — even when the directory no longer exists (e.g. after
+			# gh pr merge --delete-branch deleted it externally).
+			# Returns the canonical (realpath) form so comparisons against git worktree list
+			# succeed, even when the OS resolves symlinks differently (e.g. /tmp → /private/tmp).
 			# Uses main_worktree_root (not repo_root) so resolution works from inside worktrees.
 			def resolve_worktree_path( worktree_path: )
 				if worktree_path.include?( "/" )
@@ -355,9 +401,7 @@ module Carson
 
 				root = main_worktree_root
 				candidate = File.join( root, ".claude", "worktrees", worktree_path )
-				return realpath_safe( candidate ) if Dir.exist?( candidate )
-
-				realpath_safe( worktree_path )
+				realpath_safe( candidate )
 			end
 
 			# Returns true if the path is a registered git worktree.

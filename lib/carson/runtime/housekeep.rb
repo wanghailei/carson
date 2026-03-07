@@ -63,6 +63,18 @@ module Carson
 					next unless branch
 					next if cwd_inside_worktree?( worktree_path: path )
 
+					# Missing directory: worktree was destroyed externally.
+					# Prune the stale entry and delete the branch immediately.
+					unless Dir.exist?( path )
+						git_run( "worktree", "prune" )
+						puts_verbose "reaped stale worktree entry: #{File.basename( path )} (branch: #{branch})"
+						if !config.protected_branches.include?( branch )
+							git_run( "branch", "-D", branch )
+							puts_verbose "deleted branch: #{branch}"
+						end
+						next
+					end
+
 					tip_sha = git_capture!( "rev-parse", "--verify", branch ).strip rescue nil
 					next unless tip_sha
 

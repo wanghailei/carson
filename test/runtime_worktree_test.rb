@@ -258,6 +258,91 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	# --- missing directory tests (gh pr merge --delete-branch aftermath) ---
+
+	def test_worktree_remove_missing_directory_by_name
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "gone-name" )
+			branch = wt.fetch( :branch )
+
+			# Simulate gh pr merge --delete-branch: delete the directory externally.
+			FileUtils.rm_rf( wt.fetch( :path ) )
+			refute Dir.exist?( wt.fetch( :path ) ), "directory should be gone"
+
+			# Branch should still exist before cleanup.
+			assert system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
+				"branch should still exist before worktree remove"
+
+			status = runtime.worktree_remove!( worktree_path: "gone-name" )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert_includes out.string, "pruned stale worktree entry"
+			assert_includes out.string, "branch_deleted: #{branch}"
+
+			# Branch should be deleted after cleanup.
+			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
+				"branch should be deleted after worktree remove"
+		end
+	end
+
+	def test_worktree_remove_missing_directory_by_path
+		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "gone-path" )
+
+			# Simulate external deletion.
+			FileUtils.rm_rf( wt.fetch( :path ) )
+
+			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert_includes out.string, "pruned stale worktree entry"
+		end
+	end
+
+	def test_worktree_remove_missing_directory_json_output
+		Dir.mktmpdir( "carson-worktree-test", carson_tmp_root ) do |tmp_dir|
+			bare_root = File.join( tmp_dir, "bare" )
+			repo_root = File.join( tmp_dir, "repo" )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "init\n" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+				out = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					out: out,
+					err: StringIO.new,
+					verbose: false
+				)
+
+				wt = create_worktree( repo_root: repo_root, worktree_name: "gone-json" )
+				FileUtils.rm_rf( wt.fetch( :path ) )
+
+				status = runtime.worktree_remove!( worktree_path: "gone-json", json_output: true )
+				assert_equal Carson::Runtime::EXIT_OK, status
+
+				json = JSON.parse( out.string.strip )
+				assert_equal "ok", json[ "status" ]
+				assert_equal "gone-json", json[ "name" ]
+				assert_equal true, json[ "branch_deleted" ]
+			end
+		end
+	end
+
+	def test_worktree_remove_missing_and_unregistered_fails
+		with_worktree_repo do |runtime, _repo_root, _bare_root, out|
+			# A name that was never a worktree — directory doesn't exist and not registered.
+			status = runtime.worktree_remove!( worktree_path: "never-existed" )
+			assert_equal Carson::Runtime::EXIT_ERROR, status
+			assert_includes out.string, "not a registered worktree"
+		end
+	end
+
 	def test_worktree_remove_concise_output
 		Dir.mktmpdir( "carson-worktree-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )

@@ -142,6 +142,8 @@ carson prune
 
 After squash or rebase merge, the content matches main — removal proceeds without `--force`.
 
+**Stale worktree recovery** — if a worktree directory is destroyed externally (e.g. by running `gh pr merge --delete-branch` from inside it), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use `carson deliver --merge` instead of raw `gh pr merge --delete-branch` to avoid this situation — `deliver` deliberately omits `--delete-branch` so the worktree directory stays intact for orderly cleanup.
+
 ### Carson vs Claude Code EnterWorktree
 
 Claude Code has a built-in `EnterWorktree` tool. Both create a git worktree under `.claude/worktrees/` with a new branch — but they solve different problems and have different trade-offs.

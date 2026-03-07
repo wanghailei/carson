@@ -748,6 +748,67 @@ class RuntimePruneTest < Minitest::Test
 		end
 	end
 
+	# --- Stale worktree entry tests (gh pr merge --delete-branch aftermath) ---
+
+	# When a worktree directory is destroyed externally, git worktree prune at the
+	# start of prune! cleans the stale entry, unblocking branch deletion.
+	def test_prune_cleans_stale_worktree_entry_then_deletes_branch
+		branch_name = "feature-stale-wt"
+
+		Dir.mktmpdir( "carson-prune-test", carson_tmp_root ) do |tmp_dir|
+			bare_root = File.join( tmp_dir, "bare" )
+			repo_root = File.join( tmp_dir, "repo" )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "init\n" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			# Create worktree with a branch, push, then delete remote to make it [gone].
+			worktree_dir = File.join( repo_root, ".claude", "worktrees", branch_name )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_dir, out: File::NULL, err: File::NULL )
+			File.write( File.join( worktree_dir, "#{branch_name}.txt" ), "work\n" )
+			system( "git", "-C", worktree_dir, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", worktree_dir, "commit", "-m", "work", out: File::NULL, err: File::NULL )
+			tip_sha = `git -C #{worktree_dir} rev-parse HEAD`.strip
+			system( "git", "-C", worktree_dir, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+			system( "git", "-C", bare_root, "branch", "-D", branch_name, out: File::NULL, err: File::NULL )
+
+			# Simulate gh pr merge --delete-branch: delete the directory externally.
+			FileUtils.rm_rf( worktree_dir )
+			refute Dir.exist?( worktree_dir ), "worktree directory should be gone"
+
+			mock_script = mock_gh_with_merged_pr( branch_shas: { branch_name => { sha: tip_sha, number: 42 } } )
+			mock_bin = File.join( tmp_dir, "mock-bin" )
+			FileUtils.mkdir_p( mock_bin )
+			File.write( File.join( mock_bin, "gh" ), mock_script )
+			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => "",
+				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
+			) do
+				out = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					out: out,
+					err: StringIO.new,
+					verbose: true
+				)
+
+				assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should exist before prune"
+				status = runtime.prune!
+				assert_equal Carson::Runtime::EXIT_OK, status
+				refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should be deleted after prune cleans stale worktree"
+			end
+		end
+	end
+
 	# --- CWD worktree guard tests ---
 
 	# When CWD is inside a worktree, prune must proactively skip that worktree's
