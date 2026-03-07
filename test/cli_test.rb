@@ -90,6 +90,21 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def housekeep!( json_output: false )
+			@calls << [ :housekeep, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def housekeep_target!( target:, json_output: false )
+			@calls << [ :housekeep_target, { target: target, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def housekeep_all!( json_output: false )
+			@calls << [ :housekeep_all, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -707,6 +722,86 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "prune:all" }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ :prune_all ], runtime.calls
+	end
+
+	# --- housekeep CLI tests ---
+
+	def test_parse_args_housekeep_no_args
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep" ], out: out, err: err )
+		assert_equal "housekeep", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_housekeep_with_target
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "AI" ], out: out, err: err )
+		assert_equal "housekeep:target", parsed.fetch( :command )
+		assert_equal "AI", parsed.fetch( :target )
+	end
+
+	def test_parse_args_housekeep_with_all
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--all" ], out: out, err: err )
+		assert_equal "housekeep:all", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_housekeep_with_json
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--json" ], out: out, err: err )
+		assert_equal "housekeep", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_housekeep_with_target_and_json
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--json", "AI" ], out: out, err: err )
+		assert_equal "housekeep:target", parsed.fetch( :command )
+		assert_equal "AI", parsed.fetch( :target )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_housekeep_all_with_target_is_invalid
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--all", "AI" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "mutually exclusive"
+	end
+
+	def test_parse_args_housekeep_too_many_args
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "a", "b" ], out: out, err: err )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes err.string, "Too many arguments for housekeep"
+	end
+
+	def test_dispatch_routes_housekeep_current_repo
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "housekeep", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :housekeep, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_housekeep_targeted
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "housekeep:target", target: "AI", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :housekeep_target, { target: "AI", json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_housekeep_all
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :housekeep_all, { json_output: false } ] ], runtime.calls
 	end
 
 end
