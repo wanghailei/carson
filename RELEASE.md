@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.13.0
+
+### What changed
+
+- **Worktree create auto-syncs main** — `carson worktree create` now pulls the main branch from remote (`--ff-only`) before branching. Prevents stale-base merge conflicts that waste agent context resolving later. Best-effort: if pull fails (offline, non-fast-forward), creation continues from the local main.
+- **Deliver prints next steps after merge** — `carson deliver --merge` now tells the agent exactly what to do after a successful merge. If running inside a worktree, prints `cd <main_root> && carson worktree remove <name>`. If not, suggests `carson prune`. Available in both human and JSON output (`next_step` field).
+
+### UX improvement
+
+- Agents no longer need to remember post-merge cleanup steps — Carson tells them.
+- Agents no longer hit merge conflicts from stale main — Carson syncs before branching.
+
 ## 3.12.0
 
 ### What changed

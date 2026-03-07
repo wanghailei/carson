@@ -24,6 +24,13 @@ module Carson
 				# Determine the base branch (main branch from config).
 				base = config.main_branch
 
+				# Sync main from remote before branching so the worktree starts
+				# from the latest code. Prevents stale-base merge conflicts later.
+				# Best-effort — if pull fails (non-ff, offline), continue anyway.
+				main_root = main_worktree_root
+				_, _, pull_ok, = Open3.capture3( "git", "-C", main_root, "pull", "--ff-only", config.git_remote, base )
+				puts_verbose pull_ok.success? ? "synced #{base} before branching" : "sync skipped — continuing from local #{base}"
+
 				# Ensure .claude/ is excluded from git status in the host repository.
 				# Uses .git/info/exclude (local-only, never committed) to respect the outsider boundary.
 				ensure_claude_dir_excluded!
