@@ -82,7 +82,7 @@ module Carson
 
 			# Re-applies hooks, templates, and audit across all governed repositories.
 			# Checks each repo for safety (active worktrees, uncommitted changes) and
-			# skips unsafe repos to avoid disrupting active work.
+			# marks unsafe repos as pending to avoid disrupting active work.
 			def refresh_all!
 				repos = config.govern_repos
 				if repos.empty?
@@ -91,24 +91,32 @@ module Carson
 					return EXIT_ERROR
 				end
 
+				pending_before = pending_repos_for( command: "refresh" )
+				if pending_before.any?
+					puts_line "#{pending_before.length} repo#{plural_suffix( count: pending_before.length )} pending from previous run"
+				end
+
 				puts_line ""
 				puts_line "Refresh all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
 				refreshed = 0
-				skipped = 0
+				pending = 0
 				failed = 0
 
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
 						puts_line "#{repo_name}: FAIL (path not found)"
+						record_batch_skip( command: "refresh", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
 					end
 
 					safety = portfolio_repo_safety( repo_path: repo_path )
 					unless safety.fetch( :safe )
-						puts_line "#{repo_name}: SKIP (#{safety.fetch( :reasons ).join( ', ' )})"
-						skipped += 1
+						reason = safety.fetch( :reasons ).join( ", " )
+						puts_line "#{repo_name}: PENDING (#{reason})"
+						record_batch_skip( command: "refresh", repo_path: repo_path, reason: reason )
+						pending += 1
 						next
 					end
 
@@ -116,16 +124,17 @@ module Carson
 					if status == EXIT_ERROR
 						failed += 1
 					else
+						clear_batch_success( command: "refresh", repo_path: repo_path )
 						refreshed += 1
 					end
 				end
 
 				puts_line ""
 				parts = [ "#{refreshed} refreshed" ]
-				parts << "#{skipped} skipped" if skipped.positive?
+				parts << "#{pending} still pending (will retry on next run)" if pending.positive?
 				parts << "#{failed} failed" if failed.positive?
 				puts_line "Refresh all complete: #{parts.join( ', ' )}."
-				failed.zero? && skipped.zero? ? EXIT_OK : EXIT_ERROR
+				failed.zero? && pending.zero? ? EXIT_OK : EXIT_ERROR
 			end
 
 			def prune_all!
@@ -145,6 +154,7 @@ module Carson
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
 						puts_line "#{repo_name}: FAIL (path not found)"
+						record_batch_skip( command: "prune", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
 					end
@@ -158,9 +168,16 @@ module Carson
 							summary = buf.string.lines.last.to_s.strip
 							puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"
 						end
-						status == EXIT_ERROR ? ( failed += 1 ) : ( succeeded += 1 )
+						if status == EXIT_ERROR
+							record_batch_skip( command: "prune", repo_path: repo_path, reason: "prune failed" )
+							failed += 1
+						else
+							clear_batch_success( command: "prune", repo_path: repo_path )
+							succeeded += 1
+						end
 					rescue StandardError => e
 						puts_line "#{repo_name}: FAIL (#{e.message})"
+						record_batch_skip( command: "prune", repo_path: repo_path, reason: e.message )
 						failed += 1
 					end
 				end

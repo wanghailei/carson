@@ -34,7 +34,15 @@ module Carson
 				end
 
 				results = []
-				repos.each { |repo_path| results << housekeep_one_entry( repo_path: repo_path, silent: json_output ) }
+				repos.each do |repo_path|
+					entry = housekeep_one_entry( repo_path: repo_path, silent: json_output )
+					if entry[ :status ] == "ok"
+						clear_batch_success( command: "housekeep", repo_path: repo_path )
+					else
+						record_batch_skip( command: "housekeep", repo_path: repo_path, reason: entry[ :error ] || "housekeep failed" )
+					end
+					results << entry
+				end
 
 				succeeded = results.count { |r| r[ :status ] == "ok" }
 				failed = results.count { |r| r[ :status ] != "ok" }

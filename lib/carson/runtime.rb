@@ -213,6 +213,70 @@ module Carson
 			github_adapter.run( *args )
 		end
 
+		# --- Batch pending tracking (shared by all --all commands) ---
+
+		# Path to the persistent pending log for batch operations.
+		def batch_pending_path
+			File.join( report_dir_path, "batch_pending.json" )
+		end
+
+		# Reads and parses the pending log. Returns empty hash if missing or corrupt.
+		def load_batch_pending
+			path = batch_pending_path
+			return {} unless File.file?( path )
+
+			JSON.parse( File.read( path ) )
+		rescue StandardError
+			{}
+		end
+
+		# Writes the pending log atomically.
+		def save_batch_pending( data )
+			path = batch_pending_path
+			FileUtils.mkdir_p( File.dirname( path ) )
+			tmp = "#{path}.tmp"
+			File.write( tmp, JSON.pretty_generate( data ) )
+			File.rename( tmp, path )
+		end
+
+		# Adds or updates an entry in the pending log, incrementing attempts.
+		def record_batch_skip( command:, repo_path:, reason: )
+			data = load_batch_pending
+			data[ command ] ||= {}
+			existing = data[ command ][ repo_path ]
+			attempts = existing ? existing.fetch( "attempts", 0 ) + 1 : 1
+			data[ command ][ repo_path ] = {
+				"skipped_at" => Time.now.utc.iso8601,
+				"reason" => reason,
+				"attempts" => attempts
+			}
+			save_batch_pending( data )
+		end
+
+		# Removes an entry from the pending log after successful completion.
+		def clear_batch_success( command:, repo_path: )
+			data = load_batch_pending
+			return unless data.key?( command )
+
+			data[ command ].delete( repo_path )
+			data.delete( command ) if data[ command ].empty?
+			save_batch_pending( data )
+		end
+
+		# Returns array of pending repo info hashes for a command.
+		def pending_repos_for( command: )
+			data = load_batch_pending
+			entries = data.fetch( command, {} )
+			entries.map do |path, info|
+				{
+					path: path,
+					reason: info.fetch( "reason", "unknown" ),
+					skipped_at: info.fetch( "skipped_at", nil ),
+					attempts: info.fetch( "attempts", 0 )
+				}
+			end
+		end
+
 		# --- Portfolio helpers (shared by all --all commands) ---
 
 		# Checks whether a governed repo is safe for batch operations.
