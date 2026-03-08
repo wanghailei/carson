@@ -78,12 +78,12 @@ module Carson
 				resolved_path = resolve_worktree_path( worktree_path: worktree_path )
 
 				# Missing directory: worktree was destroyed externally (e.g. gh pr merge
-			# --delete-branch). Clean up the stale git registration and delete the branch.
-			if !Dir.exist?( resolved_path ) && worktree_registered?( path: resolved_path )
-				return worktree_remove_missing!( resolved_path: resolved_path, json_output: json_output )
-			end
+				# --delete-branch). Clean up the stale git registration and delete the branch.
+				if !Dir.exist?( resolved_path ) && worktree_registered?( path: resolved_path )
+					return worktree_remove_missing!( resolved_path: resolved_path, json_output: json_output )
+				end
 
-			unless worktree_registered?( path: resolved_path )
+				unless worktree_registered?( path: resolved_path )
 					return worktree_finish(
 						result: { command: "worktree remove", status: "error", name: File.basename( resolved_path ),
 							error: "#{resolved_path} is not a registered worktree",

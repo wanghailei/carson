@@ -212,20 +212,20 @@ module Carson
 		private
 			def pr_and_check_report
 				report = {
-				generated_at: Time.now.utc.iso8601,
-				branch: current_branch,
-				status: "ok",
-				skip_reason: nil,
-				pr: nil,
-				checks: {
-				status: "unknown",
-				skip_reason: nil,
-				required_total: 0,
-				failing_count: 0,
-				pending_count: 0,
-				failing: [],
-				pending: []
-				}
+					generated_at: Time.now.utc.iso8601,
+					branch: current_branch,
+					status: "ok",
+					skip_reason: nil,
+					pr: nil,
+					checks: {
+						status: "unknown",
+						skip_reason: nil,
+						required_total: 0,
+						failing_count: 0,
+						pending_count: 0,
+						failing: [],
+						pending: []
+					}
 				}
 				unless gh_available?
 					report[ :status ] = "skipped"
@@ -243,11 +243,11 @@ module Carson
 				end
 				pr_data = JSON.parse( pr_stdout )
 				report[ :pr ] = {
-				number: pr_data[ "number" ],
-				title: pr_data[ "title" ].to_s,
-				url: pr_data[ "url" ].to_s,
-				state: pr_data[ "state" ].to_s,
-				review_decision: blank_to( value: pr_data[ "reviewDecision" ], default: "NONE" )
+					number: pr_data[ "number" ],
+					title: pr_data[ "title" ].to_s,
+					url: pr_data[ "url" ].to_s,
+					state: pr_data[ "state" ].to_s,
+					review_decision: blank_to( value: pr_data[ "reviewDecision" ], default: "NONE" )
 				}
 				puts_verbose "pr: ##{report.dig( :pr, :number )} #{report.dig( :pr, :title )}"
 				puts_verbose "url: #{report.dig( :pr, :url )}"
@@ -287,22 +287,22 @@ module Carson
 			# Evaluates default-branch CI health so stale workflow drift blocks before merge.
 			def default_branch_ci_baseline_report
 				report = {
-				status: "ok",
-				skip_reason: nil,
-				repository: nil,
-				default_branch: nil,
-				head_sha: nil,
-				workflows_total: 0,
-				check_runs_total: 0,
-				failing_count: 0,
-				pending_count: 0,
-				advisory_failing_count: 0,
-				advisory_pending_count: 0,
-				no_check_evidence: false,
-				failing: [],
-				pending: [],
-				advisory_failing: [],
-				advisory_pending: []
+					status: "ok",
+					skip_reason: nil,
+					repository: nil,
+					default_branch: nil,
+					head_sha: nil,
+					workflows_total: 0,
+					check_runs_total: 0,
+					failing_count: 0,
+					pending_count: 0,
+					advisory_failing_count: 0,
+					advisory_pending_count: 0,
+					no_check_evidence: false,
+					failing: [],
+					pending: [],
+					advisory_failing: [],
+					advisory_pending: []
 				}
 				unless gh_available?
 					report[ :status ] = "skipped"
@@ -313,30 +313,30 @@ module Carson
 				owner, repo = repository_coordinates
 				report[ :repository ] = "#{owner}/#{repo}"
 				repository_data = gh_json_payload!(
-				"api", "repos/#{owner}/#{repo}",
-				"--method", "GET",
-				fallback: "unable to read repository metadata for #{owner}/#{repo}"
+					"api", "repos/#{owner}/#{repo}",
+					"--method", "GET",
+					fallback: "unable to read repository metadata for #{owner}/#{repo}"
 				)
 				default_branch = blank_to( value: repository_data[ "default_branch" ], default: config.main_branch )
 				report[ :default_branch ] = default_branch
 				branch_data = gh_json_payload!(
-				"api", "repos/#{owner}/#{repo}/branches/#{CGI.escape( default_branch )}",
-				"--method", "GET",
-				fallback: "unable to read default branch #{default_branch}"
+					"api", "repos/#{owner}/#{repo}/branches/#{CGI.escape( default_branch )}",
+					"--method", "GET",
+					fallback: "unable to read default branch #{default_branch}"
 				)
 				head_sha = branch_data.dig( "commit", "sha" ).to_s.strip
 				raise "default branch #{default_branch} has no commit SHA" if head_sha.empty?
 				report[ :head_sha ] = head_sha
 				workflow_entries = default_branch_workflow_entries(
-				owner: owner,
-				repo: repo,
-				default_branch: default_branch
+					owner: owner,
+					repo: repo,
+					default_branch: default_branch
 				)
 				report[ :workflows_total ] = workflow_entries.count
 				check_runs_payload = gh_json_payload!(
-				"api", "repos/#{owner}/#{repo}/commits/#{head_sha}/check-runs",
-				"--method", "GET",
-				fallback: "unable to read check-runs for #{default_branch}@#{head_sha}"
+					"api", "repos/#{owner}/#{repo}/commits/#{head_sha}/check-runs",
+					"--method", "GET",
+					fallback: "unable to read check-runs for #{default_branch}@#{head_sha}"
 				)
 				check_runs = Array( check_runs_payload[ "check_runs" ] )
 				failing, pending = partition_default_branch_check_runs( check_runs: check_runs )
@@ -399,15 +399,15 @@ module Carson
 			# Reads workflow files from default branch; missing workflow directory is valid and returns none.
 			def default_branch_workflow_entries( owner:, repo:, default_branch: )
 				stdout_text, stderr_text, success, = gh_run(
-				"api", "repos/#{owner}/#{repo}/contents/.github/workflows",
-				"--method", "GET",
-				"-f", "ref=#{default_branch}"
+					"api", "repos/#{owner}/#{repo}/contents/.github/workflows",
+					"--method", "GET",
+					"-f", "ref=#{default_branch}"
 				)
 				unless success
 					error_text = gh_error_text(
-					stdout_text: stdout_text,
-					stderr_text: stderr_text,
-					fallback: "unable to read workflow files for #{default_branch}"
+						stdout_text: stdout_text,
+						stderr_text: stderr_text,
+						fallback: "unable to read workflow files for #{default_branch}"
 					)
 					return [] if error_text.match?( /\b404\b/ )
 					raise error_text
@@ -474,10 +474,10 @@ module Carson
 						blank_to( value: entry[ "status" ], default: "UNKNOWN" )
 					end
 					{
-					workflow: blank_to( value: entry.dig( "app", "name" ), default: "workflow" ),
-					name: blank_to( value: entry[ "name" ], default: "check" ),
-					state: state.upcase,
-					link: entry[ "html_url" ].to_s
+						workflow: blank_to( value: entry.dig( "app", "name" ), default: "workflow" ),
+						name: blank_to( value: entry[ "name" ], default: "check" ),
+						state: state.upcase,
+						link: entry[ "html_url" ].to_s
 					}
 				end
 			end
