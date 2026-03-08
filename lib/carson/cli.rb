@@ -112,11 +112,22 @@ module Carson
 			options = {}
 			setup_parser = OptionParser.new do |opts|
 				opts.banner = "Usage: carson setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]"
+				opts.separator ""
+				opts.separator "Initialise Carson configuration for the current repository."
+				opts.separator "Detects git remote, main branch, and workflow style, then writes .carson.yml."
+				opts.separator "Pass flags to override detected values."
+				opts.separator ""
+				opts.separator "Options:"
 				opts.on( "--remote NAME", "Git remote name" ) { |v| options[ "git.remote" ] = v }
 				opts.on( "--main-branch NAME", "Main branch name" ) { |v| options[ "git.main_branch" ] = v }
 				opts.on( "--workflow STYLE", "Workflow style (branch or trunk)" ) { |v| options[ "workflow.style" ] = v }
 				opts.on( "--merge METHOD", "Merge method (squash, rebase, or merge)" ) { |v| options[ "govern.merge.method" ] = v }
 				opts.on( "--canonical PATH", "Canonical template directory path" ) { |v| options[ "template.canonical" ] = v }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson setup                            Auto-detect and write config"
+				opts.separator "    carson setup --remote github            Use 'github' as the git remote"
+				opts.separator "    carson setup --merge squash             Set squash as the merge method"
 			end
 			setup_parser.parse!( argv )
 			unless argv.empty?
@@ -233,6 +244,11 @@ module Carson
 			options = { push_prep: false }
 			apply_parser = OptionParser.new do |opts|
 				opts.banner = "Usage: carson template apply [--push-prep]"
+				opts.separator ""
+				opts.separator "Sync canonical template files (CI workflows, lint configs) into the repository."
+				opts.separator "Copies managed files from the configured canonical directory."
+				opts.separator ""
+				opts.separator "Options:"
 				opts.on( "--push-prep", "Apply templates and auto-commit any managed file changes (used by pre-push hook)" ) do
 					options[ :push_prep ] = true
 				end
@@ -280,10 +296,19 @@ module Carson
 			options = { merge: false, json: false, title: nil, body_file: nil }
 			deliver_parser = OptionParser.new do |opts|
 				opts.banner = "Usage: carson deliver [--merge] [--json] [--title TITLE] [--body-file PATH]"
+				opts.separator ""
+				opts.separator "Push the current branch, create a pull request, and optionally merge."
+				opts.separator "Collapses the manual push → PR → merge flow into a single command."
+				opts.separator ""
+				opts.separator "Options:"
 				opts.on( "--merge", "Also merge the PR if CI passes" ) { options[ :merge ] = true }
 				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				opts.on( "--title TITLE", "PR title (defaults to branch name)" ) { |v| options[ :title ] = v }
 				opts.on( "--body-file PATH", "File containing PR body text" ) { |v| options[ :body_file ] = v }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson deliver               Push and open a PR"
+				opts.separator "    carson deliver --merge       Push, open a PR, and merge if CI passes"
 			end
 			deliver_parser.parse!( argv )
 			unless argv.empty?
@@ -342,12 +367,23 @@ module Carson
 			}
 			govern_parser = OptionParser.new do |opts|
 				opts.banner = "Usage: carson govern [--dry-run] [--json] [--loop SECONDS]"
+				opts.separator ""
+				opts.separator "Portfolio-level PR triage loop."
+				opts.separator "Scans governed repositories, classifies open PRs, and takes action"
+				opts.separator "(merge, request review, or report). Runs once by default."
+				opts.separator ""
+				opts.separator "Options:"
 				opts.on( "--dry-run", "Run all checks but do not merge or dispatch" ) { options[ :dry_run ] = true }
 				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				opts.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles" ) do |s|
 					err.puts( "#{BADGE} Error: --loop must be a positive integer" ) || ( return { command: :invalid } ) if s < 1
 					options[ :loop_seconds ] = s
 				end
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson govern                  Triage all governed repos once"
+				opts.separator "    carson govern --dry-run        Preview actions without applying them"
+				opts.separator "    carson govern --loop 300       Run continuously every 5 minutes"
 			end
 			govern_parser.parse!( argv )
 			unless argv.empty?
