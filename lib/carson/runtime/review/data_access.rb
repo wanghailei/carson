@@ -1,3 +1,4 @@
+# GraphQL data access: PR details, pagination, and normalisation for review gate and sweep.
 module Carson
 	class Runtime
 		module Review

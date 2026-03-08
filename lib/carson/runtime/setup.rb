@@ -137,7 +137,7 @@ module Carson
 					{ label: "branch — enforce PR-only merges (default)", value: "branch" },
 					{ label: "trunk — commit directly to main", value: "trunk" }
 				]
-				default_index = options.index { |o| o.fetch( :value ) == current } || 0
+				default_index = options.index { it.fetch( :value ) == current } || 0
 				prompt_choice( options: options, default: default_index )
 			end
 
@@ -151,7 +151,7 @@ module Carson
 					{ label: "rebase — linear history, individual commits", value: "rebase" },
 					{ label: "merge — merge commits", value: "merge" }
 				]
-				default_index = options.index { |o| o.fetch( :value ) == current } || 0
+				default_index = options.index { it.fetch( :value ) == current } || 0
 				prompt_choice( options: options, default: default_index )
 			end
 
@@ -219,7 +219,7 @@ module Carson
 						others << entry
 					end
 				end
-				well_known.sort_by { |e| WELL_KNOWN_REMOTES.index( e.fetch( :name ) ) || 999 } + others.sort_by { |e| e.fetch( :name ) }
+				well_known.sort_by { WELL_KNOWN_REMOTES.index( it.fetch( :name ) ) || 999 } + others.sort_by { it.fetch( :name ) }
 			end
 
 			# Normalises a remote URL so SSH and HTTPS variants of the same host/path compare equal.
@@ -295,7 +295,7 @@ module Carson
 
 			def detect_git_remote
 				remotes = list_git_remotes
-				remote_names = remotes.map { |entry| entry.fetch( :name ) }
+				remote_names = remotes.map { it.fetch( :name ) }
 				return nil if remote_names.empty?
 
 				return config.git_remote if remote_names.include?( config.git_remote )
