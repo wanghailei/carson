@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.19.0
+
+### What changed
+
+- **Persistent pending tracking for batch operations** — repos skipped during `--all` operations (due to active worktrees, uncommitted changes, or path errors) are now recorded in `~/.carson/cache/batch_pending.json`. On the next run, pending repos are reported and automatically retried. `carson status --all` shows pending operations per repo with attempt count and timestamp.
+- **Ruby 3.4+ `it` implicit parameter** — single-parameter blocks where the parameter is the receiver now use `it` instead of named block variables (e.g. `.map { it.fetch( :name ) }` instead of `.map { |e| e.fetch( :name ) }`). Guard clause early returns replace `elsif` chains in `remote_sync_status`.
+
+### UX improvement
+
+- Batch operations are now self-healing: repos that can't be reached on one run aren't silently forgotten. They're logged with reasons and retried on the next invocation. `carson status --all` makes pending operations visible so the user always knows what needs attention.
+
 ## 3.18.0
 
 ### What changed
