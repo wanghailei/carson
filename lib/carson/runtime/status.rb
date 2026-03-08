@@ -149,15 +149,10 @@ module Carson
 				ahead = parts[ 0 ].to_i
 				behind = parts[ 1 ].to_i
 
-				if ahead.zero? && behind.zero?
-					:in_sync
-				elsif ahead.positive? && behind.zero?
-					:ahead
-				elsif ahead.zero? && behind.positive?
-					:behind
-				else
-					:diverged
-				end
+				return :in_sync if ahead.zero? && behind.zero?
+				return :ahead if behind.zero?
+				return :behind if ahead.zero?
+				:diverged
 			end
 
 			# Lists all worktrees with branch name.
@@ -167,7 +162,7 @@ module Carson
 				# Filter out the main worktree (the repository root itself).
 				# Use realpath for comparison — git returns canonical paths that may differ from repo_root.
 				canonical_root = realpath_safe( repo_root )
-				entries.reject { |wt| wt.fetch( :path ) == canonical_root }.map do |wt|
+				entries.reject { it.fetch( :path ) == canonical_root }.map do |wt|
 					{
 						path: wt.fetch( :path ),
 						name: File.basename( wt.fetch( :path ) ),
@@ -205,9 +200,9 @@ module Carson
 				entries = Array( rollup )
 				return :none if entries.empty?
 
-				states = entries.map { |c| c[ "conclusion" ].to_s.upcase }
-				return :fail if states.any? { |s| s == "FAILURE" || s == "CANCELLED" || s == "TIMED_OUT" }
-				return :pending if states.any? { |s| s == "" || s == "PENDING" || s == "QUEUED" || s == "IN_PROGRESS" }
+				states = entries.map { it[ "conclusion" ].to_s.upcase }
+				return :fail if states.any? { it == "FAILURE" || it == "CANCELLED" || it == "TIMED_OUT" }
+				return :pending if states.any? { it == "" || it == "PENDING" || it == "QUEUED" || it == "IN_PROGRESS" }
 
 				:pass
 			end

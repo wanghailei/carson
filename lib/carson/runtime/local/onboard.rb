@@ -1,3 +1,7 @@
+# Repository onboarding and refresh lifecycle.
+# Onboard: detect remote, install hooks, apply templates, run initial audit.
+# Refresh: re-apply hooks and templates after Carson upgrade.
+# Refresh all: batch refresh across governed portfolio with safety checks.
 module Carson
 	class Runtime
 		module Local
@@ -44,7 +48,7 @@ module Carson
 					hook_status = prepare!
 					return hook_status unless hook_status == EXIT_OK
 
-					drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
+					drift_count = template_results.count { it.fetch( :status ) != "ok" }
 					template_status = template_apply!
 					return template_status unless template_status == EXIT_OK
 
@@ -64,7 +68,7 @@ module Carson
 				return hook_status unless hook_status == EXIT_OK
 				puts_line "Hooks installed (#{config.managed_hooks.count} hooks)."
 
-				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
+				template_drift_count = template_results.count { it.fetch( :status ) != "ok" }
 				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
 				if template_drift_count.positive?
@@ -244,7 +248,7 @@ module Carson
 				return hook_status unless hook_status == EXIT_OK
 				puts_line "Hooks installed (#{config.managed_hooks.count} hooks)."
 
-				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
+				template_drift_count = template_results.count { it.fetch( :status ) != "ok" }
 				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
 				if template_drift_count.positive?

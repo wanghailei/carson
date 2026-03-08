@@ -44,8 +44,8 @@ module Carson
 					results << entry
 				end
 
-				succeeded = results.count { |r| r[ :status ] == "ok" }
-				failed = results.count { |r| r[ :status ] != "ok" }
+				succeeded = results.count { it[ :status ] == "ok" }
+				failed = results.count { it[ :status ] != "ok" }
 				result = { command: "housekeep", status: failed.zero? ? "ok" : "partial", repos: results, succeeded: succeeded, failed: failed }
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
