@@ -18,8 +18,8 @@ module Carson
 				puts_verbose "[Template Sync Check]"
 				results = template_results
 				stale = template_superseded_present
-				drift_count = results.count { |entry| entry.fetch( :status ) == "drift" }
-				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+				drift_count = results.count { it.fetch( :status ) == "drift" }
+				error_count = results.count { it.fetch( :status ) == "error" }
 				stale_count = stale.count
 				results.each do |entry|
 					puts_verbose "template_file: #{entry.fetch( :file )} status=#{entry.fetch( :status )} reason=#{entry.fetch( :reason )}"
@@ -32,7 +32,7 @@ module Carson
 						summary_parts << "#{drift_count} of #{results.count} drifted" if drift_count.positive?
 						summary_parts << "#{stale_count} stale" if stale_count.positive?
 						puts_line "Templates: #{summary_parts.join( ", " )}"
-						results.select { |entry| entry.fetch( :status ) == "drift" }.each { |entry| puts_line "  #{entry.fetch( :file )}" }
+						results.select { it.fetch( :status ) == "drift" }.each { |entry| puts_line "  #{entry.fetch( :file )}" }
 						stale.each { |file| puts_line "  #{file} — superseded" }
 					else
 						puts_line "Templates: #{results.count} files in sync"
@@ -127,7 +127,7 @@ module Carson
 					removed += 1
 				end
 
-				error_count = results.count { |entry| entry.fetch( :status ) == "error" }
+				error_count = results.count { it.fetch( :status ) == "error" }
 				puts_verbose "template_apply_summary: updated=#{applied} removed=#{removed} error=#{error_count}"
 				unless verbose?
 					if applied.positive? || removed.positive?
