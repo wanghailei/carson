@@ -17,6 +17,65 @@ module Carson
 				EXIT_OK
 			end
 
+			# Portfolio-wide status overview across all governed repositories.
+			def status_all!( json_output: false )
+				repos = config.govern_repos
+				if repos.empty?
+					puts_line "No governed repositories configured."
+					puts_line "  Run carson onboard in each repo to register."
+					return EXIT_ERROR
+				end
+
+				if json_output
+					results = []
+					repos.each do |repo_path|
+						repo_name = File.basename( repo_path )
+						unless Dir.exist?( repo_path )
+							results << { name: repo_name, status: "error", error: "path not found" }
+							next
+						end
+						begin
+							rt = build_scoped_runtime( repo_path: repo_path )
+							data = rt.send( :gather_status )
+							results << { name: repo_name, status: "ok" }.merge( data )
+						rescue StandardError => e
+							results << { name: repo_name, status: "error", error: e.message }
+						end
+					end
+					out.puts JSON.pretty_generate( { command: "status", repos: results } )
+					return EXIT_OK
+				end
+
+				puts_line "Carson #{Carson::VERSION} — Portfolio (#{repos.length} repo#{plural_suffix( count: repos.length )})"
+				puts_line ""
+
+				repos.each do |repo_path|
+					repo_name = File.basename( repo_path )
+					unless Dir.exist?( repo_path )
+						puts_line "#{repo_name}: MISSING"
+						next
+					end
+
+					begin
+						rt = build_scoped_runtime( repo_path: repo_path )
+						data = rt.send( :gather_status )
+						branch = data.fetch( :branch )
+						dirty = branch.fetch( :dirty ) ? " (dirty)" : ""
+						worktrees = data.fetch( :worktrees )
+						gov = data.fetch( :governance )
+						parts = []
+						parts << branch.fetch( :name ) + dirty
+						parts << "#{worktrees.count} worktree#{plural_suffix( count: worktrees.count )}" if worktrees.any?
+						parts << "templates #{gov.fetch( :templates )}" unless gov.fetch( :templates ) == :in_sync
+						puts_line "#{repo_name}: #{parts.join( '  ' )}"
+					rescue StandardError => e
+						puts_line "#{repo_name}: FAIL (#{e.message})"
+					end
+				end
+
+				EXIT_OK
+			end
+
 		private
 
 			# Collects all status facets into a structured hash.

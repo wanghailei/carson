@@ -43,6 +43,50 @@ module Carson
 				( drift_count + stale_count ).positive? ? EXIT_BLOCK : EXIT_OK
 			end
 
+			# Read-only template drift check across all governed repositories.
+			def template_check_all!
+				repos = config.govern_repos
+				if repos.empty?
+					puts_line "No governed repositories configured."
+					puts_line "  Run carson onboard in each repo to register."
+					return EXIT_ERROR
+				end
+
+				puts_line ""
+				puts_line "Template check all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
+				in_sync = 0
+				drifted = 0
+				failed = 0
+
+				repos.each do |repo_path|
+					repo_name = File.basename( repo_path )
+					unless Dir.exist?( repo_path )
+						puts_line "#{repo_name}: FAIL (path not found)"
+						failed += 1
+						next
+					end
+
+					begin
+						rt = build_scoped_runtime( repo_path: repo_path )
+						status = rt.template_check!
+						if status == EXIT_OK
+							puts_line "#{repo_name}: in sync" unless verbose?
+							in_sync += 1
+						else
+							puts_line "#{repo_name}: DRIFT" unless verbose?
+							drifted += 1
+						end
+					rescue StandardError => e
+						puts_line "#{repo_name}: FAIL (#{e.message})"
+						failed += 1
+					end
+				end
+
+				puts_line ""
+				puts_line "Template check complete: #{in_sync} in sync, #{drifted} drifted, #{failed} failed."
+				drifted.zero? && failed.zero? ? EXIT_OK : EXIT_BLOCK
+			end
+
 			# Applies managed template files as full-file writes from Carson sources.
 			# Also removes superseded files that are no longer part of the managed set.
 			def template_apply!( push_prep: false )

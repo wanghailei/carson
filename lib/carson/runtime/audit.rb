@@ -157,6 +157,54 @@ module Carson
 				exit_code
 			end
 
+			# Runs audit across all governed repositories.
+			def audit_all!
+				repos = config.govern_repos
+				if repos.empty?
+					puts_line "No governed repositories configured."
+					puts_line "  Run carson onboard in each repo to register."
+					return EXIT_ERROR
+				end
+
+				puts_line ""
+				puts_line "Audit all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
+				passed = 0
+				blocked = 0
+				failed = 0
+
+				repos.each do |repo_path|
+					repo_name = File.basename( repo_path )
+					unless Dir.exist?( repo_path )
+						puts_line "#{repo_name}: FAIL (path not found)"
+						failed += 1
+						next
+					end
+
+					begin
+						rt = build_scoped_runtime( repo_path: repo_path )
+						status = rt.audit!
+						case status
+						when EXIT_OK
+							puts_line "#{repo_name}: ok" unless verbose?
+							passed += 1
+						when EXIT_BLOCK
+							puts_line "#{repo_name}: BLOCK" unless verbose?
+							blocked += 1
+						else
+							puts_line "#{repo_name}: FAIL" unless verbose?
+							failed += 1
+						end
+					rescue StandardError => e
+						puts_line "#{repo_name}: FAIL (#{e.message})"
+						failed += 1
+					end
+				end
+
+				puts_line ""
+				puts_line "Audit all complete: #{passed} ok, #{blocked} blocked, #{failed} failed."
+				blocked.zero? && failed.zero? ? EXIT_OK : EXIT_BLOCK
+			end
+
 		private
 			def pr_and_check_report
 				report = {

@@ -60,7 +60,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 				assert_includes output, "Refresh all (2 repos)"
 				assert_includes output, "repo-a: OK"
 				assert_includes output, "repo-b: OK"
-				assert_includes output, "2 refreshed, 0 failed"
+				assert_includes output, "2 refreshed."
 				assert_equal Carson::Runtime::EXIT_OK, status
 			end
 		end

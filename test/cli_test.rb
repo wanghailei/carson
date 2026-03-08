@@ -105,6 +105,31 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def template_check_all!
+			@calls << :template_check_all
+			Carson::Runtime::EXIT_OK
+		end
+
+		def audit_all!
+			@calls << :audit_all
+			Carson::Runtime::EXIT_OK
+		end
+
+		def sync_all!
+			@calls << :sync_all
+			Carson::Runtime::EXIT_OK
+		end
+
+		def status_all!( json_output: false )
+			@calls << [ :status_all, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def govern!( dry_run: false, json_output: false, loop_seconds: nil )
+			@calls << [ :govern, { dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def puts_line( message )
 			@messages << message
 		end
@@ -802,6 +827,86 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: false }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :housekeep_all, { json_output: false } ] ], runtime.calls
+	end
+
+	# --- audit --all CLI tests ---
+
+	def test_parse_args_audit_all
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "audit", "--all" ], out: out, err: err )
+		assert_equal "audit:all", parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_audit_all_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "audit:all" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ :audit_all ], runtime.calls
+	end
+
+	# --- sync --all CLI tests ---
+
+	def test_parse_args_sync_all
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "sync", "--all" ], out: out, err: err )
+		assert_equal "sync:all", parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_sync_all_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "sync:all" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ :sync_all ], runtime.calls
+	end
+
+	# --- status --all CLI tests ---
+
+	def test_parse_args_status_all
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "status", "--all" ], out: out, err: err )
+		assert_equal "status:all", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_status_all_with_json
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "status", "--all", "--json" ], out: out, err: err )
+		assert_equal "status:all", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_dispatch_routes_status_all_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "status:all", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :status_all, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_status_all_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "status:all", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :status_all, { json_output: true } ] ], runtime.calls
+	end
+
+	# --- template check --all CLI tests ---
+
+	def test_parse_args_template_check_all
+		out = StringIO.new
+		err = StringIO.new
+		parsed = Carson::CLI.parse_args( argv: [ "template", "check", "--all" ], out: out, err: err )
+		assert_equal "template:check:all", parsed.fetch( :command )
+	end
+
+	def test_dispatch_routes_template_check_all_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "template:check:all" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ :template_check_all ], runtime.calls
 	end
 
 end
