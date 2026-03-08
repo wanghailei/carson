@@ -62,6 +62,7 @@ module Carson
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
 						puts_line "#{repo_name}: FAIL (path not found)"
+						record_batch_skip( command: "template_check", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
 					end
@@ -71,6 +72,7 @@ module Carson
 						status = rt.template_check!
 						if status == EXIT_OK
 							puts_line "#{repo_name}: in sync" unless verbose?
+							clear_batch_success( command: "template_check", repo_path: repo_path )
 							in_sync += 1
 						else
 							puts_line "#{repo_name}: DRIFT" unless verbose?
@@ -78,6 +80,7 @@ module Carson
 						end
 					rescue StandardError => e
 						puts_line "#{repo_name}: FAIL (#{e.message})"
+						record_batch_skip( command: "template_check", repo_path: repo_path, reason: e.message )
 						failed += 1
 					end
 				end

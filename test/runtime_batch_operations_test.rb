@@ -330,8 +330,169 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				status = runtime.refresh_all!
 				output = out.string
 				assert_includes output, "clean: OK"
-				assert_includes output, "dirty: SKIP (uncommitted changes)"
+				assert_includes output, "dirty: PENDING (uncommitted changes)"
 				assert_equal Carson::Runtime::EXIT_ERROR, status
+			end
+		end
+	end
+
+	# --- batch_pending_path ---
+
+	def test_batch_pending_path_returns_expected_location
+		Dir.mktmpdir( "carson-batch-test", carson_tmp_root ) do |tmp_dir|
+			with_env( "HOME" => tmp_dir ) do
+				runtime, repo_root = build_runtime
+				path = runtime.send( :batch_pending_path )
+				expected = File.join( tmp_dir, ".carson", "cache", "batch_pending.json" )
+				assert_equal expected, path
+				destroy_runtime_repo( repo_root: repo_root )
+			end
+		end
+	end
+
+	# --- record / load / clear batch pending ---
+
+	def test_record_and_load_batch_pending
+		Dir.mktmpdir( "carson-batch-test", carson_tmp_root ) do |tmp_dir|
+			with_env( "HOME" => tmp_dir ) do
+				runtime, repo_root = build_runtime
+				runtime.send( :record_batch_skip, command: "refresh", repo_path: "/tmp/repo-a", reason: "uncommitted changes" )
+				data = runtime.send( :load_batch_pending )
+				assert_equal 1, data[ "refresh" ][ "/tmp/repo-a" ][ "attempts" ]
+				assert_equal "uncommitted changes", data[ "refresh" ][ "/tmp/repo-a" ][ "reason" ]
+				refute_nil data[ "refresh" ][ "/tmp/repo-a" ][ "skipped_at" ]
+
+				# Second record increments attempts.
+				runtime.send( :record_batch_skip, command: "refresh", repo_path: "/tmp/repo-a", reason: "still dirty" )
+				data = runtime.send( :load_batch_pending )
+				assert_equal 2, data[ "refresh" ][ "/tmp/repo-a" ][ "attempts" ]
+				assert_equal "still dirty", data[ "refresh" ][ "/tmp/repo-a" ][ "reason" ]
+				destroy_runtime_repo( repo_root: repo_root )
+			end
+		end
+	end
+
+	def test_clear_batch_success_removes_entry
+		Dir.mktmpdir( "carson-batch-test", carson_tmp_root ) do |tmp_dir|
+			with_env( "HOME" => tmp_dir ) do
+				runtime, repo_root = build_runtime
+				runtime.send( :record_batch_skip, command: "refresh", repo_path: "/tmp/repo-a", reason: "dirty" )
+				runtime.send( :record_batch_skip, command: "refresh", repo_path: "/tmp/repo-b", reason: "worktrees" )
+				runtime.send( :clear_batch_success, command: "refresh", repo_path: "/tmp/repo-a" )
+
+				data = runtime.send( :load_batch_pending )
+				assert_nil data.dig( "refresh", "/tmp/repo-a" )
+				refute_nil data.dig( "refresh", "/tmp/repo-b" )
+
+				# Clearing the last entry removes the command key entirely.
+				runtime.send( :clear_batch_success, command: "refresh", repo_path: "/tmp/repo-b" )
+				data = runtime.send( :load_batch_pending )
+				assert_nil data[ "refresh" ]
+				destroy_runtime_repo( repo_root: repo_root )
+			end
+		end
+	end
+
+	# --- refresh_all! pending integration ---
+
+	def test_refresh_all_records_pending_for_skipped_repos
+		Dir.mktmpdir( "carson-batch-test", carson_tmp_root ) do |tmp_dir|
+			tool_root = File.expand_path( "..", __dir__ )
+			hooks_base = File.join( tmp_dir, "hooks" )
+			clean_repo = create_git_repo( parent: tmp_dir, name: "clean" )
+			dirty_repo = create_git_repo( parent: tmp_dir, name: "dirty" )
+			File.write( File.join( dirty_repo, "uncommitted.txt" ), "dirty" )
+			config_path = File.join( tmp_dir, "config.json" )
+			write_config( path: config_path, repos: [ clean_repo, dirty_repo ] )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => hooks_base
+			) do
+				out = StringIO.new
+				err = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: clean_repo,
+					tool_root: tool_root,
+					out: out,
+					err: err
+				)
+				runtime.refresh_all!
+
+				# Verify the pending log was written.
+				pending = runtime.send( :pending_repos_for, command: "refresh" )
+				pending_paths = pending.map { |p| p[ :path ] }
+				assert_includes pending_paths, dirty_repo
+				refute_includes pending_paths, clean_repo
+
+				output = out.string
+				assert_includes output, "still pending (will retry on next run)"
+			end
+		end
+	end
+
+	def test_refresh_all_clears_pending_on_success
+		Dir.mktmpdir( "carson-batch-test", carson_tmp_root ) do |tmp_dir|
+			tool_root = File.expand_path( "..", __dir__ )
+			hooks_base = File.join( tmp_dir, "hooks" )
+			repo = create_git_repo( parent: tmp_dir, name: "repo-a" )
+			config_path = File.join( tmp_dir, "config.json" )
+			write_config( path: config_path, repos: [ repo ] )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => hooks_base
+			) do
+				out = StringIO.new
+				err = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo,
+					tool_root: tool_root,
+					out: out,
+					err: err
+				)
+
+				# Seed a pending entry, then run refresh which should succeed and clear it.
+				runtime.send( :record_batch_skip, command: "refresh", repo_path: repo, reason: "was dirty" )
+				runtime.refresh_all!
+
+				pending = runtime.send( :pending_repos_for, command: "refresh" )
+				pending_paths = pending.map { |p| p[ :path ] }
+				refute_includes pending_paths, repo
+			end
+		end
+	end
+
+	def test_refresh_all_reports_pending_from_previous_run
+		Dir.mktmpdir( "carson-batch-test", carson_tmp_root ) do |tmp_dir|
+			tool_root = File.expand_path( "..", __dir__ )
+			hooks_base = File.join( tmp_dir, "hooks" )
+			repo = create_git_repo( parent: tmp_dir, name: "repo-a" )
+			config_path = File.join( tmp_dir, "config.json" )
+			write_config( path: config_path, repos: [ repo ] )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => hooks_base
+			) do
+				out = StringIO.new
+				err = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo,
+					tool_root: tool_root,
+					out: out,
+					err: err
+				)
+
+				# Seed a pending entry from a previous run.
+				runtime.send( :record_batch_skip, command: "refresh", repo_path: "/tmp/old-repo", reason: "was dirty" )
+
+				runtime.refresh_all!
+				output = out.string
+				assert_includes output, "1 repo pending from previous run"
 			end
 		end
 	end

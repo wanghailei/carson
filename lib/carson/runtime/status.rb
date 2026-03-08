@@ -49,6 +49,7 @@ module Carson
 				puts_line "Carson #{Carson::VERSION} — Portfolio (#{repos.length} repo#{plural_suffix( count: repos.length )})"
 				puts_line ""
 
+				all_pending = load_batch_pending
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
@@ -68,6 +69,10 @@ module Carson
 						parts << "#{worktrees.count} worktree#{plural_suffix( count: worktrees.count )}" if worktrees.any?
 						parts << "templates #{gov.fetch( :templates )}" unless gov.fetch( :templates ) == :in_sync
 						puts_line "#{repo_name}: #{parts.join( '  ' )}"
+
+						# Show pending operations for this repo.
+						repo_pending = status_pending_for_repo( all_pending: all_pending, repo_path: repo_path )
+						repo_pending.each { |desc| puts_line "  pending: #{desc}" }
 					rescue StandardError => e
 						puts_line "#{repo_name}: FAIL (#{e.message})"
 					end
@@ -77,6 +82,21 @@ module Carson
 			end
 
 		private
+
+			# Returns an array of human-readable pending descriptions for a repo.
+			def status_pending_for_repo( all_pending:, repo_path: )
+				descriptions = []
+				all_pending.each do |command, repos|
+					next unless repos.is_a?( Hash ) && repos.key?( repo_path )
+
+					info = repos[ repo_path ]
+					attempts = info.fetch( "attempts", 0 )
+					skipped_at = info.fetch( "skipped_at", nil )
+					time_part = skipped_at ? ", since #{skipped_at[ 11..15 ]}" : ""
+					descriptions << "#{command} (#{attempts} attempt#{attempts == 1 ? '' : 's'}#{time_part})"
+				end
+				descriptions
+			end
 
 			# Collects all status facets into a structured hash.
 			def gather_status

@@ -176,6 +176,7 @@ module Carson
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
 						puts_line "#{repo_name}: FAIL (path not found)"
+						record_batch_skip( command: "audit", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
 					end
@@ -186,16 +187,19 @@ module Carson
 						case status
 						when EXIT_OK
 							puts_line "#{repo_name}: ok" unless verbose?
+							clear_batch_success( command: "audit", repo_path: repo_path )
 							passed += 1
 						when EXIT_BLOCK
 							puts_line "#{repo_name}: BLOCK" unless verbose?
 							blocked += 1
 						else
 							puts_line "#{repo_name}: FAIL" unless verbose?
+							record_batch_skip( command: "audit", repo_path: repo_path, reason: "audit failed" )
 							failed += 1
 						end
 					rescue StandardError => e
 						puts_line "#{repo_name}: FAIL (#{e.message})"
+						record_batch_skip( command: "audit", repo_path: repo_path, reason: e.message )
 						failed += 1
 					end
 				end
