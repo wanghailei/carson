@@ -210,27 +210,27 @@ module Carson
 
 			# Generates a default PR title from the branch name.
 			def default_pr_title( branch: )
-				branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { |c| c.upcase }
+				branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { it.upcase }
 			end
 
 			# Checks CI status on a PR. Returns :pass, :fail, :pending, or :none.
-# Uses the `bucket` field (pass/fail/pending) from `gh pr checks --json`.
-def check_pr_ci( number: )
-	stdout, _, success, = gh_run(
-		"pr", "checks", number.to_s,
-		"--json", "name,bucket"
-	)
-	return :none unless success
+			# Uses the `bucket` field (pass/fail/pending) from `gh pr checks --json`.
+			def check_pr_ci( number: )
+				stdout, _, success, = gh_run(
+					"pr", "checks", number.to_s,
+					"--json", "name,bucket"
+				)
+				return :none unless success
 
-	checks = JSON.parse( stdout ) rescue []
-	return :none if checks.empty?
+				checks = JSON.parse( stdout ) rescue []
+				return :none if checks.empty?
 
-	buckets = checks.map { |c| c[ "bucket" ].to_s.downcase }
-	return :fail if buckets.include?( "fail" )
-	return :pending if buckets.include?( "pending" )
+				buckets = checks.map { it[ "bucket" ].to_s.downcase }
+				return :fail if buckets.include?( "fail" )
+				return :pending if buckets.include?( "pending" )
 
-	:pass
-end
+				:pass
+			end
 
 			# Checks review decision on a PR. Returns :approved, :changes_requested, :review_required, or :none.
 			def check_pr_review( number: )
@@ -298,8 +298,8 @@ end
 			def compute_post_merge_next_step!( result: )
 				main_root = main_worktree_root
 				cwd = realpath_safe( Dir.pwd )
-				current_wt = worktree_list.select { |wt| wt.fetch( :path ) != realpath_safe( main_root ) }
-					.find { |wt| cwd == wt.fetch( :path ) || cwd.start_with?( File.join( wt.fetch( :path ), "" ) ) }
+				current_wt = worktree_list.select { it.fetch( :path ) != realpath_safe( main_root ) }
+					.find { cwd == it.fetch( :path ) || cwd.start_with?( File.join( it.fetch( :path ), "" ) ) }
 
 				if current_wt
 					wt_name = File.basename( current_wt.fetch( :path ) )

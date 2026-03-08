@@ -1,3 +1,4 @@
+# Review utilities: risk keyword matching, disposition parsing, URL extraction, and deduplication.
 module Carson
 	class Runtime
 		module Review
@@ -24,7 +25,7 @@ module Carson
 
 				# GitHub URL extraction for mapping disposition acknowledgements to finding URLs.
 				def extract_github_urls( text: )
-					text.to_s.scan( %r{https://github\.com/[^\s\)\]]+} ).map { |value| value.sub( /[.,;:]+$/, "" ) }.uniq
+					text.to_s.scan( %r{https://github\.com/[^\s\)\]]+} ).map { it.sub( /[.,;:]+$/, "" ) }.uniq
 				end
 
 				# Parse RFC3339 timestamps and return nil on blank/invalid values.

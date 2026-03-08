@@ -208,10 +208,10 @@ module Carson
 				checks = Array( pr[ "statusCheckRollup" ] )
 				return :green if checks.empty?
 
-				has_failure = checks.any? { |c| check_state_failing?( state: c[ "state" ].to_s ) || check_conclusion_failing?( conclusion: c[ "conclusion" ].to_s ) }
+				has_failure = checks.any? { check_state_failing?( state: it[ "state" ].to_s ) || check_conclusion_failing?( conclusion: it[ "conclusion" ].to_s ) }
 				return :red if has_failure
 
-				has_pending = checks.any? { |c| check_state_pending?( state: c[ "state" ].to_s ) }
+				has_pending = checks.any? { check_state_pending?( state: it[ "state" ].to_s ) }
 				return :pending if has_pending
 
 				:green

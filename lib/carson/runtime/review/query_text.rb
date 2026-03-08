@@ -1,3 +1,4 @@
+# GraphQL query templates for pull request review data retrieval.
 module Carson
 	class Runtime
 		module Review
