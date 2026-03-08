@@ -196,6 +196,67 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 	end
 
 
+	# --- cross-process CWD safety ---
+
+	def test_worktree_remove_blocks_when_other_process_holds_cwd
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "held-by-other" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "held-by-other" )
+
+		# Fork a child that holds its CWD inside the worktree.
+		# Pipe synchronisation: child signals ready, parent signals done.
+		child_ready_r, child_ready_w = IO.pipe
+		parent_done_r, parent_done_w = IO.pipe
+
+		pid = fork do
+			child_ready_r.close
+			parent_done_w.close
+			Dir.chdir( wt_path )
+			child_ready_w.write( "ready" )
+			child_ready_w.close
+			parent_done_r.read
+			parent_done_r.close
+		end
+
+		child_ready_w.close
+		parent_done_r.close
+		child_ready_r.read
+		child_ready_r.close
+
+		reset_output( runtime )
+		result = runtime.worktree_remove!( worktree_path: "held-by-other", json_output: true )
+
+		parent_done_w.close
+		Process.wait( pid )
+
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "block", json[ "status" ]
+		assert_includes json[ "error" ], "another process"
+		assert json[ "recovery" ], "should include recovery advice"
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		assert Dir.exist?( wt_path ), "Worktree should NOT be removed"
+
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_remove_succeeds_when_no_other_process_holds_cwd
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "not-held" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "not-held" )
+
+		reset_output( runtime )
+		result = runtime.worktree_remove!( worktree_path: "not-held" )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		refute Dir.exist?( wt_path ), "Worktree should be removed"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- content-aware squash merge detection ---
 
 	def test_worktree_remove_allows_squash_merged_branch

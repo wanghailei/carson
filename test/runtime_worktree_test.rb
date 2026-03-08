@@ -242,6 +242,42 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	def test_sweep_stale_worktrees_skips_worktree_held_by_other_process
+		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
+			wt = create_worktree( repo_root: repo_root, worktree_name: "held-sweep" )
+			branch = wt.fetch( :branch )
+
+			# Merge into main so content is absorbed.
+			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
+
+			# Fork a child that holds its CWD inside the worktree.
+			child_ready_r, child_ready_w = IO.pipe
+			parent_done_r, parent_done_w = IO.pipe
+
+			pid = fork do
+				child_ready_r.close
+				parent_done_w.close
+				Dir.chdir( wt.fetch( :path ) )
+				child_ready_w.write( "ready" )
+				child_ready_w.close
+				parent_done_r.read
+				parent_done_r.close
+			end
+
+			child_ready_w.close
+			parent_done_r.close
+			child_ready_r.read
+			child_ready_r.close
+
+			runtime.sweep_stale_worktrees!
+
+			parent_done_w.close
+			Process.wait( pid )
+
+			assert Dir.exist?( wt.fetch( :path ) ), "worktree held by another process must be preserved"
+		end
+	end
+
 	def test_sweep_stale_worktrees_skips_dirty_worktree
 		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
 			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-sweep" )
