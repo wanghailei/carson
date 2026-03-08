@@ -1,7 +1,8 @@
 # Safe worktree lifecycle management for coding agents.
 # Two operations: create and remove. Create auto-syncs main before branching.
-# Remove is safe by default — guards against CWD-inside-worktree and unpushed
-# commits. Content-aware: allows removal after squash/rebase merge without --force.
+# Remove is safe by default — guards against CWD-inside-worktree, cross-process
+# CWD holds, and unpushed commits. Content-aware: allows removal after
+# squash/rebase merge without --force.
 # Supports --json for machine-readable structured output with recovery commands.
 module Carson
 	class Runtime
@@ -104,6 +105,18 @@ module Carson
 					)
 				end
 
+				# Safety: refuse if another process has its CWD inside the worktree.
+				# Protects against cross-process CWD crashes (e.g. an agent session
+				# removed by a separate cleanup process while the agent's shell is inside).
+				if worktree_held_by_other_process?( worktree_path: resolved_path )
+					return worktree_finish(
+						result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
+							error: "another process has its working directory inside this worktree",
+							recovery: "wait for the other session to finish, then retry" },
+						exit_code: EXIT_BLOCK, json_output: json_output
+					)
+				end
+
 				branch = worktree_branch( path: resolved_path )
 				puts_verbose "worktree_remove: path=#{resolved_path} branch=#{branch} force=#{force}"
 
@@ -195,6 +208,7 @@ module Carson
 					next unless branch
 					next unless agent_prefixes.any? { |prefix| path.start_with?( prefix ) }
 					next if cwd_inside_worktree?( worktree_path: path )
+					next if worktree_held_by_other_process?( worktree_path: path )
 					next unless branch_absorbed_into_main?( branch: branch )
 
 					# Remove the worktree (no --force: refuses if dirty working tree).
@@ -299,6 +313,35 @@ module Carson
 				wt = realpath_safe( worktree_path )
 				normalised_wt = File.join( wt, "" )
 				cwd == wt || cwd.start_with?( normalised_wt )
+			rescue StandardError
+				false
+			end
+
+			# Checks whether any other process has its working directory inside the worktree.
+			# Uses lsof to query CWD file descriptors system-wide, then matches against
+			# the worktree path. Catches the cross-process CWD crash scenario: a cleanup
+			# process removing a worktree while another session's shell is still inside it.
+			# Fails safe: returns false if lsof is unavailable or any error occurs.
+			def worktree_held_by_other_process?( worktree_path: )
+				canonical = realpath_safe( worktree_path )
+				return false if canonical.nil? || canonical.empty?
+				return false unless Dir.exist?( canonical )
+
+				stdout, _, status = Open3.capture3( "lsof", "-d", "cwd" )
+				return false unless status.success?
+
+				normalised = File.join( canonical, "" )
+				my_pid = Process.pid
+				stdout.lines.drop( 1 ).any? do |line|
+					fields = line.strip.split( /\s+/ )
+					next false unless fields.length >= 9
+					next false if fields[ 1 ].to_i == my_pid
+					name = fields[ 8.. ].join( " " )
+					name == canonical || name.start_with?( normalised )
+				end
+			rescue Errno::ENOENT
+				# lsof not installed.
+				false
 			rescue StandardError
 				false
 			end
