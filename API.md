@@ -132,7 +132,7 @@ Environment overrides:
 ```json
 {
   "template": {
-    "canonical": "~/AI/LINT"
+    "canonical": "~/AI/CODING/LINT"
   }
 }
 ```

@@ -89,7 +89,7 @@ Set `template.canonical` in `~/.carson/config.json`:
 ```json
 {
   "template": {
-    "canonical": "~/AI/LINT"
+    "canonical": "~/AI/CODING/LINT"
   }
 }
 ```
@@ -97,7 +97,7 @@ Set `template.canonical` in `~/.carson/config.json`:
 That directory mirrors the `.github/` structure:
 
 ```
-~/AI/LINT/
+~/AI/CODING/LINT/
 ├── workflows/
 │   └── lint.yml          → deployed to .github/workflows/lint.yml
 ├── .mega-linter.yml      → deployed to .github/.mega-linter.yml
