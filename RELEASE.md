@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.20.0
+
+### What changed
+
+- **Cross-process CWD guard for worktree removal** — `worktree_remove!` and `sweep_stale_worktrees!` now detect when another process (e.g. an agent session) has its working directory inside a worktree before attempting removal. Uses `lsof -d cwd` to scan for cross-process CWD holds. Blocks removal with a clear recovery message instead of silently destroying the directory and crashing the other session's shell.
+- **Code quality sweep** — fixed indentation errors in `deliver.rb` (`check_pr_ci` method). Converted single-parameter blocks to Ruby 3.4 `it` implicit parameter across `deliver.rb`, `govern.rb`, `setup.rb`, and all review submodules (`gate_support.rb`, `sweep_support.rb`, `utility.rb`). Added file-level purpose comments to review submodules (`gate_support.rb`, `sweep_support.rb`, `utility.rb`, `data_access.rb`, `query_text.rb`).
+
+### UX improvement
+
+- Worktree removal is now safe across process boundaries. Previously, Carson only checked if the *current* process's CWD was inside the worktree. A separate cleanup process (hook, batch sweep, or another agent) could still remove a worktree while another session's shell was inside it, permanently crashing that shell. The new guard detects this scenario and refuses removal with actionable recovery advice. Fails safe: if `lsof` is unavailable, removal proceeds as before.
+
 ## 3.19.0
 
 ### What changed
