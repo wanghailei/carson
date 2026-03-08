@@ -43,7 +43,7 @@ module Carson
 			return preset.merge( verbose: verbose ) unless preset.nil?
 
 			command = argv.shift
-			result = parse_command( command: command, argv: argv, parser: parser, err: err )
+			result = parse_command( command: command, argv: argv, err: err )
 			result.merge( verbose: verbose )
 		rescue OptionParser::ParseError => e
 			err.puts "#{BADGE} #{e.message}"
@@ -53,7 +53,29 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |opts|
-				opts.banner = "Usage: carson [status [--json]|setup|audit [--json]|sync [--json]|deliver [--merge] [--json] [--title T] [--body-file F]|prune [--all] [--json]|worktree [--json] create|remove <name>|housekeep [repo] [--json]|repos [--json]|onboard|refresh [--all]|offboard|template check|apply|review gate|sweep|govern [--dry-run] [--json] [--loop SECONDS]|version]"
+				opts.banner = "Usage: carson <command> [options]"
+				opts.separator ""
+				opts.separator "Repository governance and workflow automation for coding agents."
+				opts.separator ""
+				opts.separator "Commands:"
+				opts.separator "    status       Show repository state (branch, PRs, worktrees)"
+				opts.separator "    setup        Initialise Carson configuration"
+				opts.separator "    audit        Run pre-commit health checks"
+				opts.separator "    sync         Sync local main with remote"
+				opts.separator "    deliver      Push, create PR, and optionally merge"
+				opts.separator "    prune        Remove stale local branches"
+				opts.separator "    worktree     Manage isolated coding worktrees"
+				opts.separator "    housekeep    Sync, reap worktrees, and prune branches"
+				opts.separator "    repos        List governed repositories"
+				opts.separator "    onboard      Register a repository for governance"
+				opts.separator "    offboard     Remove a repository from governance"
+				opts.separator "    refresh      Re-install hooks and configuration"
+				opts.separator "    template     Manage canonical template files"
+				opts.separator "    review       Manage PR review workflow"
+				opts.separator "    govern       Portfolio-level PR triage loop"
+				opts.separator "    version      Show Carson version"
+				opts.separator ""
+				opts.separator "Run `carson <command> --help` for details on a specific command."
 			end
 		end
 
@@ -69,29 +91,30 @@ module Carson
 			nil
 		end
 
-		def self.parse_command( command:, argv:, parser:, err: )
+		def self.parse_command( command:, argv:, err: )
 			case command
 			when "version"
-				parser.parse!( argv )
 				{ command: "version" }
 			when "setup"
-				parse_setup_command( argv: argv, parser: parser, err: err )
-			when "onboard", "offboard"
-				parse_repo_path_command( command: command, argv: argv, parser: parser, err: err )
+				parse_setup_command( argv: argv, err: err )
+			when "onboard"
+				parse_onboard_command( argv: argv, err: err )
+			when "offboard"
+				parse_offboard_command( argv: argv, err: err )
 			when "refresh"
-				parse_refresh_command( argv: argv, parser: parser, err: err )
+				parse_refresh_command( argv: argv, err: err )
 			when "template"
-				parse_template_subcommand( argv: argv, parser: parser, err: err )
+				parse_template_subcommand( argv: argv, err: err )
 			when "prune"
-				parse_prune_command( argv: argv, parser: parser, err: err )
+				parse_prune_command( argv: argv, err: err )
 			when "worktree"
-				parse_worktree_subcommand( argv: argv, parser: parser, err: err )
+				parse_worktree_subcommand( argv: argv, err: err )
 			when "repos"
 				parse_repos_command( argv: argv, err: err )
 			when "housekeep"
 				parse_housekeep_command( argv: argv, err: err )
 			when "review"
-				parse_named_subcommand( command: command, usage: "gate|sweep", argv: argv, parser: parser, err: err )
+				parse_review_subcommand( argv: argv, err: err )
 			when "audit"
 				parse_audit_command( argv: argv, err: err )
 			when "sync"
@@ -103,12 +126,13 @@ module Carson
 			when "govern"
 				parse_govern_subcommand( argv: argv, err: err )
 			else
-				parser.parse!( argv )
 				{ command: command }
 			end
 		end
 
-		def self.parse_setup_command( argv:, parser:, err: )
+		# --- setup ---
+
+		def self.parse_setup_command( argv:, err: )
 			options = {}
 			setup_parser = OptionParser.new do |opts|
 				opts.banner = "Usage: carson setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]"
@@ -141,36 +165,93 @@ module Carson
 			{ command: :invalid }
 		end
 
-		def self.parse_repo_path_command( command:, argv:, parser:, err: )
-			parser.parse!( argv )
+		# --- onboard / offboard ---
+
+		def self.parse_onboard_command( argv:, err: )
+			onboard_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson onboard [REPO_PATH]"
+				opts.separator ""
+				opts.separator "Register a repository for Carson governance."
+				opts.separator "Detects the remote, installs hooks, applies templates, and runs initial audit."
+				opts.separator "Defaults to the current directory if no path is given."
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson onboard             Onboard the current repository"
+				opts.separator "    carson onboard ~/Dev/app   Onboard a specific repository"
+			end
+			onboard_parser.parse!( argv )
 			if argv.length > 1
-				err.puts "#{BADGE} Too many arguments for #{command}. Use: carson #{command} [repo_path]"
-				err.puts parser
+				err.puts "#{BADGE} Too many arguments for onboard. Use: carson onboard [repo_path]"
+				err.puts onboard_parser
 				return { command: :invalid }
 			end
-
 			repo_path = argv.first
 			{
-				command: command,
+				command: "onboard",
 				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
 			}
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
-		def self.parse_refresh_command( argv:, parser:, err: )
-			all_flag = argv.delete( "--all" ) ? true : false
-			parser.parse!( argv )
+		def self.parse_offboard_command( argv:, err: )
+			offboard_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson offboard [REPO_PATH]"
+				opts.separator ""
+				opts.separator "Remove a repository from Carson governance."
+				opts.separator "Unregisters the repo from Carson's portfolio and removes hooks."
+				opts.separator "Defaults to the current directory if no path is given."
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson offboard            Offboard the current repository"
+			end
+			offboard_parser.parse!( argv )
+			if argv.length > 1
+				err.puts "#{BADGE} Too many arguments for offboard. Use: carson offboard [repo_path]"
+				err.puts offboard_parser
+				return { command: :invalid }
+			end
+			repo_path = argv.first
+			{
+				command: "offboard",
+				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+			}
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
+		end
 
-			if all_flag && !argv.empty?
+		# --- refresh ---
+
+		def self.parse_refresh_command( argv:, err: )
+			options = { all: false }
+			refresh_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson refresh [--all] [REPO_PATH]"
+				opts.separator ""
+				opts.separator "Re-install Carson hooks and configuration for a repository."
+				opts.separator "Defaults to the current directory. Use --all to refresh all governed repos."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--all", "Refresh all governed repositories" ) { options[ :all ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson refresh             Refresh the current repository"
+				opts.separator "    carson refresh --all       Refresh all governed repos"
+			end
+			refresh_parser.parse!( argv )
+
+			if options[ :all ] && !argv.empty?
 				err.puts "#{BADGE} --all and repo_path are mutually exclusive. Use: carson refresh --all OR carson refresh [repo_path]"
-				err.puts parser
+				err.puts refresh_parser
 				return { command: :invalid }
 			end
 
-			return { command: "refresh:all" } if all_flag
+			return { command: "refresh:all" } if options[ :all ]
 
 			if argv.length > 1
 				err.puts "#{BADGE} Too many arguments for refresh. Use: carson refresh [repo_path]"
-				err.puts parser
+				err.puts refresh_parser
 				return { command: :invalid }
 			end
 
@@ -179,22 +260,67 @@ module Carson
 				command: "refresh",
 				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
 			}
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
-		def self.parse_prune_command( argv:, parser:, err: )
-			all_flag = argv.delete( "--all" ) ? true : false
-			json_flag = argv.delete( "--json" ) ? true : false
-			parser.parse!( argv )
-			return { command: "prune:all", json: json_flag } if all_flag
-			{ command: "prune", json: json_flag }
+		# --- prune ---
+
+		def self.parse_prune_command( argv:, err: )
+			options = { all: false, json: false }
+			prune_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson prune [--all] [--json]"
+				opts.separator ""
+				opts.separator "Remove stale local branches."
+				opts.separator "Cleans up branches gone from the remote, orphan branches with merged PRs,"
+				opts.separator "and absorbed branches whose content is already on main."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--all", "Prune all governed repositories" ) { options[ :all ] = true }
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson prune           Clean up stale branches in this repo"
+				opts.separator "    carson prune --all     Clean up across all governed repos"
+			end
+			prune_parser.parse!( argv )
+			return { command: "prune:all", json: options[ :json ] } if options[ :all ]
+			{ command: "prune", json: options[ :json ] }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
-		def self.parse_worktree_subcommand( argv:, parser:, err: )
-			json_flag = argv.delete( "--json" ) ? true : false
+		# --- worktree ---
+
+		def self.parse_worktree_subcommand( argv:, err: )
+			options = { json: false, force: false }
+			worktree_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson worktree <create|remove> <name> [options]"
+				opts.separator ""
+				opts.separator "Manage isolated worktrees for coding agents."
+				opts.separator "Create auto-syncs main before branching. Remove guards against"
+				opts.separator "unpushed commits and CWD-inside-worktree by default."
+				opts.separator ""
+				opts.separator "Subcommands:"
+				opts.separator "    create <name>              Create a new worktree with a fresh branch"
+				opts.separator "    remove <name> [--force]    Remove a worktree (--force skips safety checks)"
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.on( "--force", "Skip safety checks on remove" ) { options[ :force ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson worktree create feature-x    Create an isolated worktree"
+				opts.separator "    carson worktree remove feature-x    Remove after work is pushed"
+			end
+			worktree_parser.parse!( argv )
+
 			action = argv.shift
 			if action.to_s.strip.empty?
 				err.puts "#{BADGE} Missing subcommand for worktree. Use: carson worktree create|remove <name>"
-				err.puts parser
+				err.puts worktree_parser
 				return { command: :invalid }
 			end
 
@@ -205,40 +331,84 @@ module Carson
 					err.puts "#{BADGE} Missing name for worktree create. Use: carson worktree create <name>"
 					return { command: :invalid }
 				end
-				{ command: "worktree:create", worktree_name: name, json: json_flag }
+				{ command: "worktree:create", worktree_name: name, json: options[ :json ] }
 			when "remove"
-				force = argv.delete( "--force" ) ? true : false
 				worktree_path = argv.shift
 				if worktree_path.to_s.strip.empty?
 					err.puts "#{BADGE} Missing path for worktree remove. Use: carson worktree remove <name-or-path>"
 					return { command: :invalid }
 				end
-				{ command: "worktree:remove", worktree_path: worktree_path, force: force, json: json_flag }
+				{ command: "worktree:remove", worktree_path: worktree_path, force: options[ :force ], json: options[ :json ] }
 			else
 				err.puts "#{BADGE} Unknown worktree subcommand: #{action}. Use: carson worktree create|remove <name>"
 				{ command: :invalid }
 			end
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
-		def self.parse_named_subcommand( command:, usage:, argv:, parser:, err: )
+		# --- review ---
+
+		def self.parse_review_subcommand( argv:, err: )
+			review_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson review <gate|sweep>"
+				opts.separator ""
+				opts.separator "Manage PR review workflow."
+				opts.separator ""
+				opts.separator "Subcommands:"
+				opts.separator "    gate     Check if review requirements are met for merge"
+				opts.separator "    sweep    Scan and resolve pending review threads"
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson review gate     Check merge readiness"
+				opts.separator "    carson review sweep    Resolve pending review threads"
+			end
+			review_parser.parse!( argv )
+
 			action = argv.shift
-			parser.parse!( argv )
 			if action.to_s.strip.empty?
-				err.puts "#{BADGE} Missing subcommand for #{command}. Use: carson #{command} #{usage}"
-				err.puts parser
+				err.puts "#{BADGE} Missing subcommand for review. Use: carson review gate|sweep"
+				err.puts review_parser
 				return { command: :invalid }
 			end
-			{ command: "#{command}:#{action}" }
+			{ command: "review:#{action}" }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
-		def self.parse_template_subcommand( argv:, parser:, err: )
-			action = argv.shift
-			if action.to_s.strip.empty?
-				err.puts "#{BADGE} Missing subcommand for template. Use: carson template check|apply"
-				err.puts parser
-				return { command: :invalid }
+		# --- template ---
+
+		def self.parse_template_subcommand( argv:, err: )
+			# Handle parent-level help or missing subcommand.
+			if argv.empty? || [ "--help", "-h" ].include?( argv.first )
+				template_parser = OptionParser.new do |opts|
+					opts.banner = "Usage: carson template <check|apply> [options]"
+					opts.separator ""
+					opts.separator "Manage canonical template files (CI workflows, lint configs)."
+					opts.separator ""
+					opts.separator "Subcommands:"
+					opts.separator "    check                  Show template drift without making changes"
+					opts.separator "    apply [--push-prep]    Sync templates into the repository"
+					opts.separator ""
+					opts.separator "Examples:"
+					opts.separator "    carson template check    Check for template drift"
+					opts.separator "    carson template apply    Apply canonical templates"
+				end
+
+				if argv.empty?
+					err.puts "#{BADGE} Missing subcommand for template. Use: carson template check|apply"
+					err.puts template_parser
+					return { command: :invalid }
+				end
+
+				# Let OptionParser handle --help (prints and exits).
+				template_parser.parse!( argv )
+				return { command: :help }
 			end
 
+			action = argv.shift
 			return { command: "template:#{action}" } unless action == "apply"
 
 			options = { push_prep: false }
@@ -265,32 +435,92 @@ module Carson
 			{ command: :invalid }
 		end
 
+		# --- audit ---
+
 		def self.parse_audit_command( argv:, err: )
-			json_flag = argv.delete( "--json" ) ? true : false
+			options = { json: false }
+			audit_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson audit [--json]"
+				opts.separator ""
+				opts.separator "Run pre-commit health checks on the repository."
+				opts.separator "Validates hooks, main-branch sync, PR status, and CI baseline."
+				opts.separator "Exits with a non-zero status when policy violations are found."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson audit           Check repository health (also the default command)"
+				opts.separator "    carson audit --json    Structured output for agent consumption"
+			end
+			audit_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for audit: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
-			{ command: "audit", json: json_flag }
+			{ command: "audit", json: options[ :json ] }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
+		# --- sync ---
+
 		def self.parse_sync_command( argv:, err: )
-			json_flag = argv.delete( "--json" ) ? true : false
+			options = { json: false }
+			sync_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson sync [--json]"
+				opts.separator ""
+				opts.separator "Sync the local main branch with the remote."
+				opts.separator "Fetches and fast-forwards main without switching branches."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson sync            Pull latest changes from remote main"
+				opts.separator "    carson sync --json     Structured output for agent consumption"
+			end
+			sync_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for sync: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
-			{ command: "sync", json: json_flag }
+			{ command: "sync", json: options[ :json ] }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
+		# --- status ---
+
 		def self.parse_status_command( argv:, err: )
-			json_flag = argv.delete( "--json" ) ? true : false
+			options = { json: false }
+			status_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson status [--json]"
+				opts.separator ""
+				opts.separator "Show the current state of the repository."
+				opts.separator "Reports branch, worktrees, open PRs, stale branches, and version."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson status           Quick overview of repository state"
+				opts.separator "    carson status --json    Structured output for agent consumption"
+			end
+			status_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for status: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
-			{ command: "status", json: json_flag }
+			{ command: "status", json: options[ :json ] }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
+
+		# --- deliver ---
 
 		def self.parse_deliver_command( argv:, err: )
 			options = { merge: false, json: false, title: nil, body_file: nil }
@@ -328,25 +558,61 @@ module Carson
 			{ command: :invalid }
 		end
 
+		# --- repos ---
+
 		def self.parse_repos_command( argv:, err: )
-			json_flag = argv.delete( "--json" ) ? true : false
+			options = { json: false }
+			repos_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson repos [--json]"
+				opts.separator ""
+				opts.separator "List all repositories governed by Carson."
+				opts.separator "Shows the portfolio of repos registered via carson onboard."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson repos           List governed repositories"
+				opts.separator "    carson repos --json    Structured output for agent consumption"
+			end
+			repos_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for repos: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
-			{ command: "repos", json: json_flag }
+			{ command: "repos", json: options[ :json ] }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
 
-		def self.parse_housekeep_command( argv:, err: )
-			all_flag = argv.delete( "--all" ) ? true : false
-			json_flag = argv.delete( "--json" ) ? true : false
+		# --- housekeep ---
 
-			if all_flag && !argv.empty?
+		def self.parse_housekeep_command( argv:, err: )
+			options = { all: false, json: false }
+			housekeep_parser = OptionParser.new do |opts|
+				opts.banner = "Usage: carson housekeep [REPO] [--all] [--json]"
+				opts.separator ""
+				opts.separator "Run housekeeping: sync main, reap dead worktrees, and prune stale branches."
+				opts.separator "Defaults to the current repository."
+				opts.separator ""
+				opts.separator "Options:"
+				opts.on( "--all", "Housekeep all governed repositories" ) { options[ :all ] = true }
+				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				opts.separator ""
+				opts.separator "Examples:"
+				opts.separator "    carson housekeep           Housekeep the current repository"
+				opts.separator "    carson housekeep nexus     Housekeep a named governed repo"
+				opts.separator "    carson housekeep --all     Housekeep all governed repos"
+			end
+			housekeep_parser.parse!( argv )
+
+			if options[ :all ] && !argv.empty?
 				err.puts "#{BADGE} --all and repo target are mutually exclusive. Use: carson housekeep --all OR carson housekeep [repo]"
 				return { command: :invalid }
 			end
 
-			return { command: "housekeep:all", json: json_flag } if all_flag
+			return { command: "housekeep:all", json: options[ :json ] } if options[ :all ]
 
 			if argv.length > 1
 				err.puts "#{BADGE} Too many arguments for housekeep. Use: carson housekeep [repo]"
@@ -354,10 +620,15 @@ module Carson
 			end
 
 			target = argv.shift
-			return { command: "housekeep:target", target: target, json: json_flag } if target
+			return { command: "housekeep:target", target: target, json: options[ :json ] } if target
 
-			{ command: "housekeep", json: json_flag }
+			{ command: "housekeep", json: options[ :json ] }
+		rescue OptionParser::ParseError => e
+			err.puts "#{BADGE} #{e.message}"
+			{ command: :invalid }
 		end
+
+		# --- govern ---
 
 		def self.parse_govern_subcommand( argv:, err: )
 			options = {
@@ -402,6 +673,8 @@ module Carson
 			err.puts govern_parser
 			{ command: :invalid }
 		end
+
+		# --- dispatch ---
 
 		def self.dispatch( parsed:, runtime: )
 			command = parsed.fetch( :command )
