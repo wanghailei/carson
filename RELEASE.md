@@ -5,6 +5,25 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.18.0
+
+### What changed
+
+- **Layer 2 batch operations** — every command that operates on a single repo now has an `--all` variant that runs across the entire governed portfolio:
+  - `carson refresh --all` — refresh hooks, templates, and audit across all repos. Checks each repo for safety (active worktrees, uncommitted changes) and skips unsafe repos.
+  - `carson prune --all` — prune stale branches across all repos.
+  - `carson audit --all` — run governance audit across all repos. Reports pass/block/fail per repo.
+  - `carson sync --all` — sync main branch across all repos.
+  - `carson status --all` — portfolio-wide status overview with branch, worktrees, and governance state per repo. Supports `--json`.
+  - `carson template check --all` — read-only template drift detection across all repos.
+- **Portfolio safety checks** — before batch `refresh`, Carson checks each repo for active worktrees and uncommitted changes. Unsafe repos are skipped with reasons, not failed.
+- **Shared `portfolio_repo_safety` helper** — centralised safety check in `Runtime` for all batch operations. Non-git directories pass through (the command reports the real error).
+- **CLI `--all` flag registration** — `audit`, `sync`, and `status` parsers now correctly register the `--all` flag with OptionParser (previously the flag was checked but never registered).
+
+### UX improvement
+
+- A user or agent managing multiple repositories can now run a single command to maintain the entire portfolio. `carson status --all` gives a quick overview; `carson refresh --all` keeps everything in sync; `carson housekeep --all` runs the full maintenance cycle. Unsafe repos are clearly reported with skip reasons instead of cryptic failures.
+
 ## 3.17.0
 
 ### What changed

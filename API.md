@@ -29,6 +29,21 @@ carson <command> [subcommand] [arguments]
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
+| `carson status` | Show repository state (branch, worktrees, PRs, governance). |
+
+### Batch commands (Layer 2)
+
+All batch commands operate across every governed repository registered in `govern.repos`.
+
+| Command | Purpose |
+|---|---|
+| `carson refresh --all` | Re-apply hooks, templates, and audit across all governed repos. Skips repos with active worktrees or uncommitted changes. |
+| `carson audit --all` | Run governance audit across all governed repos. Reports pass/block/fail per repo. |
+| `carson sync --all` | Sync main branch across all governed repos. |
+| `carson prune --all` | Remove stale branches across all governed repos. |
+| `carson status --all [--json]` | Portfolio-wide status overview with branch, worktrees, and governance state per repo. |
+| `carson template check --all` | Read-only template drift detection across all governed repos. |
+| `carson housekeep --all` | Sync, reap dead worktrees, and prune across all governed repos. |
 
 ### Govern commands
 

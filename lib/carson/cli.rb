@@ -12,7 +12,7 @@ module Carson
 				return Runtime::EXIT_OK
 			end
 
-			if %w[repos refresh:all prune:all housekeep:all housekeep:target].include?( command )
+			if %w[repos refresh:all prune:all housekeep:all housekeep:target template:check:all audit:all sync:all status:all].include?( command )
 				verbose = parsed.fetch( :verbose, false )
 				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, out: out, err: err, verbose: verbose )
 				return dispatch( parsed: parsed, runtime: runtime )
@@ -409,6 +409,7 @@ module Carson
 			end
 
 			action = argv.shift
+			return { command: "template:check:all" } if action == "check" && argv.include?( "--all" )
 			return { command: "template:#{action}" } unless action == "apply"
 
 			options = { push_prep: false }
@@ -438,26 +439,29 @@ module Carson
 		# --- audit ---
 
 		def self.parse_audit_command( argv:, err: )
-			options = { json: false }
+			options = { json: false, all: false }
 			audit_parser = OptionParser.new do |opts|
-				opts.banner = "Usage: carson audit [--json]"
+				opts.banner = "Usage: carson audit [--all] [--json]"
 				opts.separator ""
 				opts.separator "Run pre-commit health checks on the repository."
 				opts.separator "Validates hooks, main-branch sync, PR status, and CI baseline."
 				opts.separator "Exits with a non-zero status when policy violations are found."
 				opts.separator ""
 				opts.separator "Options:"
+				opts.on( "--all", "Audit all governed repositories" ) { options[ :all ] = true }
 				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				opts.separator ""
 				opts.separator "Examples:"
 				opts.separator "    carson audit           Check repository health (also the default command)"
 				opts.separator "    carson audit --json    Structured output for agent consumption"
+				opts.separator "    carson audit --all     Audit all governed repos"
 			end
 			audit_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for audit: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
+			return { command: "audit:all" } if options[ :all ]
 			{ command: "audit", json: options[ :json ] }
 		rescue OptionParser::ParseError => e
 			err.puts "#{BADGE} #{e.message}"
@@ -467,25 +471,28 @@ module Carson
 		# --- sync ---
 
 		def self.parse_sync_command( argv:, err: )
-			options = { json: false }
+			options = { json: false, all: false }
 			sync_parser = OptionParser.new do |opts|
-				opts.banner = "Usage: carson sync [--json]"
+				opts.banner = "Usage: carson sync [--all] [--json]"
 				opts.separator ""
 				opts.separator "Sync the local main branch with the remote."
 				opts.separator "Fetches and fast-forwards main without switching branches."
 				opts.separator ""
 				opts.separator "Options:"
+				opts.on( "--all", "Sync all governed repositories" ) { options[ :all ] = true }
 				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				opts.separator ""
 				opts.separator "Examples:"
 				opts.separator "    carson sync            Pull latest changes from remote main"
 				opts.separator "    carson sync --json     Structured output for agent consumption"
+				opts.separator "    carson sync --all      Sync all governed repos"
 			end
 			sync_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for sync: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
+			return { command: "sync:all" } if options[ :all ]
 			{ command: "sync", json: options[ :json ] }
 		rescue OptionParser::ParseError => e
 			err.puts "#{BADGE} #{e.message}"
@@ -495,25 +502,28 @@ module Carson
 		# --- status ---
 
 		def self.parse_status_command( argv:, err: )
-			options = { json: false }
+			options = { json: false, all: false }
 			status_parser = OptionParser.new do |opts|
-				opts.banner = "Usage: carson status [--json]"
+				opts.banner = "Usage: carson status [--all] [--json]"
 				opts.separator ""
 				opts.separator "Show the current state of the repository."
 				opts.separator "Reports branch, worktrees, open PRs, stale branches, and version."
 				opts.separator ""
 				opts.separator "Options:"
+				opts.on( "--all", "Show status for all governed repositories" ) { options[ :all ] = true }
 				opts.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				opts.separator ""
 				opts.separator "Examples:"
 				opts.separator "    carson status           Quick overview of repository state"
 				opts.separator "    carson status --json    Structured output for agent consumption"
+				opts.separator "    carson status --all     Portfolio-wide status overview"
 			end
 			status_parser.parse!( argv )
 			unless argv.empty?
 				err.puts "#{BADGE} Unexpected arguments for status: #{argv.join( ' ' )}"
 				return { command: :invalid }
 			end
+			return { command: "status:all", json: options[ :json ] } if options[ :all ]
 			{ command: "status", json: options[ :json ] }
 		rescue OptionParser::ParseError => e
 			err.puts "#{BADGE} #{e.message}"
@@ -734,6 +744,14 @@ module Carson
 					json_output: parsed.fetch( :json, false ),
 					loop_seconds: parsed.fetch( :loop_seconds, nil )
 				)
+			when "template:check:all"
+				runtime.template_check_all!
+			when "audit:all"
+				runtime.audit_all!
+			when "sync:all"
+				runtime.sync_all!
+			when "status:all"
+				runtime.status_all!( json_output: parsed.fetch( :json, false ) )
 			else
 				runtime.send( :puts_line, "Unknown command: #{command}" )
 				Runtime::EXIT_ERROR

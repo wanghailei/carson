@@ -207,7 +207,23 @@ carson review gate
 ```bash
 carson repos           # list all governed repositories
 carson repos --json    # machine-readable output
+carson status --all    # branch, worktrees, governance per repo
 ```
+
+**Portfolio maintenance (Layer 2):**
+
+All `--all` commands run across every governed repository registered via `carson onboard`.
+
+```bash
+carson refresh --all           # re-apply hooks, templates, audit across all repos
+carson sync --all              # fast-forward main across all repos
+carson audit --all             # governance audit across all repos
+carson prune --all             # remove stale branches across all repos
+carson template check --all    # detect template drift across all repos
+carson housekeep --all         # full maintenance cycle across all repos
+```
+
+`refresh --all` checks each repo for safety before operating: repos with active worktrees or uncommitted changes are skipped with clear reasons. Other batch commands attempt each repo and report failures without stopping.
 
 **Periodic maintenance:**
 

@@ -81,6 +81,8 @@ module Carson
 			end
 
 			# Re-applies hooks, templates, and audit across all governed repositories.
+			# Checks each repo for safety (active worktrees, uncommitted changes) and
+			# skips unsafe repos to avoid disrupting active work.
 			def refresh_all!
 				repos = config.govern_repos
 				if repos.empty?
@@ -92,6 +94,7 @@ module Carson
 				puts_line ""
 				puts_line "Refresh all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
 				refreshed = 0
+				skipped = 0
 				failed = 0
 
 				repos.each do |repo_path|
@@ -99,6 +102,13 @@ module Carson
 					unless Dir.exist?( repo_path )
 						puts_line "#{repo_name}: FAIL (path not found)"
 						failed += 1
+						next
+					end
+
+					safety = portfolio_repo_safety( repo_path: repo_path )
+					unless safety.fetch( :safe )
+						puts_line "#{repo_name}: SKIP (#{safety.fetch( :reasons ).join( ', ' )})"
+						skipped += 1
 						next
 					end
 
@@ -111,8 +121,11 @@ module Carson
 				end
 
 				puts_line ""
-				puts_line "Refresh all complete: #{refreshed} refreshed, #{failed} failed."
-				failed.zero? ? EXIT_OK : EXIT_ERROR
+				parts = [ "#{refreshed} refreshed" ]
+				parts << "#{skipped} skipped" if skipped.positive?
+				parts << "#{failed} failed" if failed.positive?
+				puts_line "Refresh all complete: #{parts.join( ', ' )}."
+				failed.zero? && skipped.zero? ? EXIT_OK : EXIT_ERROR
 			end
 
 			def prune_all!

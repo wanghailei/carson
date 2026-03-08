@@ -15,7 +15,8 @@ Repository controls degrade when local workflows diverge, review handling is inc
 - Predictable onboarding and daily operation for repository maintainers.
 
 ## In-scope capabilities
-- Local governance commands (`onboard`, `audit`, `sync`, `prune`, `template`, `review`, `offboard`, `refresh`, `refresh --all`).
+- Layer 1 commands (`onboard`, `audit`, `sync`, `prune`, `template`, `review`, `offboard`, `refresh`, `status`, `deliver`, `housekeep`, `worktree`).
+- Layer 2 batch commands (`refresh --all`, `audit --all`, `sync --all`, `prune --all`, `status --all`, `template check --all`, `housekeep --all`).
 - Portfolio governance commands (`govern`).
 - Review governance via `review gate` and `review sweep`.
 - Whole-file management of selected GitHub-native policy files under `.github/*`.
@@ -119,6 +120,18 @@ The safe teardown order is an iron rule:
 If any step is skipped or reordered, the agent's shell CWD can land inside a deleted directory. Once that happens, the shell tool becomes permanently unusable for the rest of the session — every command fails with "path does not exist" before it even runs. The only escape hatch is recreating the directory with a file-write tool, which is fragile and error-prone.
 
 Carson must enforce this order so agents never have to remember it. The goal: worktree teardown is one command, always safe, never leaves debris.
+
+### Three-layer command model
+
+| Layer | Scope | Trigger | Examples |
+|-------|-------|---------|----------|
+| **1. Granular** | Single repo | Explicit command | `refresh`, `housekeep`, `template check`, `deliver`, `prune`, `audit`, `sync`, `status` |
+| **2. Batch** | All governed repos | `--all` flag | `refresh --all`, `housekeep --all`, `prune --all`, `audit --all`, `sync --all`, `status --all`, `template check --all` |
+| **3. Automation** | All governed repos | Event-driven | Canonical config change triggers propagation, post-upgrade refresh, scheduled hygiene |
+
+Layer 1 is the foundation — every command works perfectly on one repo. Layer 2 extends the same operation across the portfolio with `--all`. Layer 3 (future) removes the need for even the `--all` flag by triggering operations automatically on events.
+
+Layer 2 is complete as of 3.18.0: every Layer 1 command that makes sense across repos has an `--all` variant.
 
 ## Carson 3.0 — Theme
 

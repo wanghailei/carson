@@ -212,6 +212,48 @@ module Carson
 		def gh_run( *args )
 			github_adapter.run( *args )
 		end
+
+		# --- Portfolio helpers (shared by all --all commands) ---
+
+		# Checks whether a governed repo is safe for batch operations.
+		# Returns { safe: true/false, reasons: [...] }.
+		# Safe means: no active worktrees beyond main, no uncommitted changes.
+		# Non-git directories pass through as safe — let the command handle the error.
+		def portfolio_repo_safety( repo_path: )
+			git = Adapters::Git.new( repo_root: repo_path )
+
+			# Non-git directories pass through — the calling command reports the real error.
+			stdout, _, git_ok, = git.run( "rev-parse", "--is-inside-work-tree" )
+			return { safe: true, reasons: [] } unless git_ok && stdout.to_s.strip == "true"
+
+			reasons = []
+
+			# Active worktrees beyond the main working tree.
+			rt = build_scoped_runtime( repo_path: repo_path )
+			worktrees = rt.send( :worktree_list )
+			main_root = rt.send( :realpath_safe, repo_path )
+			active = worktrees.reject { |wt| wt.fetch( :path ) == main_root }
+			if active.any?
+				reasons << "#{active.count} active worktree#{active.count == 1 ? '' : 's'}"
+			end
+
+			# Uncommitted changes in the main working tree.
+			stdout, _, success, = git.run( "status", "--porcelain" )
+			if success && !stdout.strip.empty?
+				reasons << "uncommitted changes"
+			end
+
+			{ safe: reasons.empty?, reasons: reasons }
+		rescue StandardError => e
+			{ safe: false, reasons: [ e.message ] }
+		end
+
+		# Creates a scoped Runtime for a governed repo with captured output.
+		def build_scoped_runtime( repo_path: )
+			buf = verbose? ? out : StringIO.new
+			err_buf = verbose? ? err : StringIO.new
+			Runtime.new( repo_root: repo_path, tool_root: tool_root, out: buf, err: err_buf, verbose: verbose? )
+		end
 	end
 end
 
