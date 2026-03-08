@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.17.0
+
+### What changed
+
+- **Descriptive help text for all CLI commands** — every command now shows purpose, description, and usage examples when invoked with `--help`. Commands that previously used manual flag parsing (`audit`, `sync`, `status`, `repos`, `prune`, `housekeep`, `worktree`, `onboard`, `offboard`, `refresh`, `review`, `template`) now use `OptionParser` so `--help` is handled consistently.
+- **Structured top-level help** — `carson --help` shows a command catalogue with one-line descriptions and a footer guiding to per-command help, replacing the previous single-line usage banner.
+
+### UX improvement
+
+- A user encountering Carson for the first time can now understand what each command does without reading external documentation. Every `--help` surface answers: what does this do, what options are available, and how do I use it.
+
 ## 3.16.0
 
 ### What changed
