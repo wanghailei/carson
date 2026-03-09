@@ -307,6 +307,69 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
+	def test_command_guard_allows_gh_pr_mention_in_commit_message
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+
+		normalised = File.realpath( repo_root )
+		carson_dir = File.join( repo_root, ".carson" )
+		FileUtils.mkdir_p( carson_dir )
+		File.write(
+			File.join( carson_dir, "config.json" ),
+			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+		)
+
+		guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+		# The command contains "gh pr create" inside a commit message string — not an actual command.
+		input = JSON.generate( {
+			tool_name: "Bash",
+			tool_input: { command: "git commit -m 'Document gh pr create hook'" }
+		} )
+
+		stdout, stderr, status = Open3.capture3(
+			{ "HOME" => repo_root },
+			"bash", guard_path,
+			stdin_data: input,
+			chdir: repo_root
+		)
+
+		assert status.success?, "command-guard should not block gh pr mentions inside commit messages"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_gh_pr_create_after_chain_operator
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+
+		normalised = File.realpath( repo_root )
+		carson_dir = File.join( repo_root, ".carson" )
+		FileUtils.mkdir_p( carson_dir )
+		File.write(
+			File.join( carson_dir, "config.json" ),
+			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+		)
+
+		guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+		# gh pr create after && is an actual command invocation.
+		input = JSON.generate( {
+			tool_name: "Bash",
+			tool_input: { command: "git push github feature && gh pr create --title 'test'" }
+		} )
+
+		stdout, stderr, status = Open3.capture3(
+			{ "HOME" => repo_root },
+			"bash", guard_path,
+			stdin_data: input,
+			chdir: repo_root
+		)
+
+		refute status.success?, "command-guard should block gh pr create after &&"
+		assert_includes stderr, "BLOCKED"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
 private
 
 	def tool_root_path

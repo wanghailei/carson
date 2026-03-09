@@ -33,7 +33,9 @@ command_text="$(echo "$input" | jq -r '.tool_input.command // empty' 2>/dev/null
 [ -n "$command_text" ] || exit 0
 
 # Check for gh pr commands that Carson replaces.
-guarded_pattern='gh\s+pr\s+(create|merge)'
+# Match only at command position: start of line, or after a shell operator (&&, ||, ;, |).
+# This avoids false positives from gh pr references inside commit messages or string arguments.
+guarded_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(create|merge)'
 if ! echo "$command_text" | grep -qE "$guarded_pattern"; then
 	exit 0
 fi
