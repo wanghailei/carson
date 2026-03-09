@@ -55,8 +55,8 @@ module Carson
 				end
 
 				EXIT_OK
-			rescue StandardError => e
-				puts_line "ERROR: govern failed — #{e.message}"
+			rescue StandardError => exception
+				puts_line "ERROR: govern failed — #{exception.message}"
 				EXIT_ERROR
 			end
 
@@ -69,8 +69,8 @@ module Carson
 					puts_line "── cycle #{cycle_count} at #{Time.now.utc.strftime( "%Y-%m-%d %H:%M:%S UTC" )} ──"
 					begin
 						govern_cycle!( dry_run: dry_run, json_output: json_output )
-					rescue StandardError => e
-						puts_line "ERROR: cycle #{cycle_count} failed — #{e.message}"
+					rescue StandardError => exception
+						puts_line "ERROR: cycle #{cycle_count} failed — #{exception.message}"
 					end
 					puts_line "sleeping #{loop_seconds}s until next cycle…"
 					sleep loop_seconds
@@ -145,8 +145,8 @@ module Carson
 					return nil
 				end
 				JSON.parse( stdout_text )
-			rescue JSON::ParserError => e
-				puts_line "gh pr list returned invalid JSON: #{e.message}"
+			rescue JSON::ParserError => exception
+				puts_line "gh pr list returned invalid JSON: #{exception.message}"
 				nil
 			end
 
@@ -345,13 +345,13 @@ module Carson
 
 			# Runs sync + prune in the given repo after a successful merge.
 			def housekeep_repo!( repo_path: )
-				rt = if repo_path == self.repo_root
+				scoped_runtime = if repo_path == self.repo_root
 					self
 				else
-					Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
+					Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error )
 				end
-				sync_status = rt.sync!
-				rt.prune! if sync_status == EXIT_OK
+				sync_status = scoped_runtime.sync!
+				scoped_runtime.prune! if sync_status == EXIT_OK
 			end
 
 			# Selects which agent provider to use based on config and availability.
@@ -410,18 +410,18 @@ module Carson
 
 			# Evidence gathering — builds structured context Hash for agent work orders.
 			def evidence( pr:, repo_path:, objective: )
-				ctx = { title: pr.fetch( "title", "" ) }
+				context = { title: pr.fetch( "title", "" ) }
 				case objective
 				when "fix_ci"
-					ctx.merge!( ci_evidence( pr: pr, repo_path: repo_path ) )
+					context.merge!( ci_evidence( pr: pr, repo_path: repo_path ) )
 				when "address_review"
-					ctx.merge!( review_evidence( pr: pr, repo_path: repo_path ) )
+					context.merge!( review_evidence( pr: pr, repo_path: repo_path ) )
 				end
 				prior = prior_attempt( pr: pr, repo_path: repo_path )
-				ctx[ :prior_attempt ] = prior if prior
-				ctx
-			rescue StandardError => e
-				puts_line "    evidence gathering failed: #{e.message}"
+				context[ :prior_attempt ] = prior if prior
+				context
+			rescue StandardError => exception
+				puts_line "    evidence gathering failed: #{exception.message}"
 				{ title: pr.fetch( "title", "" ) }
 			end
 
@@ -452,8 +452,8 @@ module Carson
 				return { ci_run_url: run_url } unless log_status.success?
 
 				{ ci_logs: truncate_log( text: log_stdout ), ci_run_url: run_url }
-			rescue StandardError => e
-				puts_line "    ci_evidence failed: #{e.message}"
+			rescue StandardError => exception
+				puts_line "    ci_evidence failed: #{exception.message}"
 				{}
 			end
 
@@ -464,13 +464,13 @@ module Carson
 			end
 
 			def review_evidence( pr:, repo_path: )
-				rt = scoped_runtime( repo_path: repo_path )
-				owner, repo = rt.send( :repository_coordinates )
+				scoped_runtime = scoped_runtime( repo_path: repo_path )
+				owner, repo = scoped_runtime.send( :repository_coordinates )
 				pr_number = pr[ "number" ]
-				details = rt.send( :pull_request_details, owner: owner, repo: repo, pr_number: pr_number )
+				details = scoped_runtime.send( :pull_request_details, owner: owner, repo: repo, pr_number: pr_number )
 				pr_author = details.dig( :author, :login ).to_s
-				threads = rt.send( :unresolved_thread_entries, details: details )
-				top_level = rt.send( :actionable_top_level_items, details: details, pr_author: pr_author )
+				threads = scoped_runtime.send( :unresolved_thread_entries, details: details )
+				top_level = scoped_runtime.send( :actionable_top_level_items, details: details, pr_author: pr_author )
 
 				findings = []
 				threads.each do |entry|
@@ -483,14 +483,14 @@ module Carson
 				end
 
 				{ review_findings: findings }
-			rescue StandardError => e
-				puts_line "    review_evidence failed: #{e.message}"
+			rescue StandardError => exception
+				puts_line "    review_evidence failed: #{exception.message}"
 				{}
 			end
 
 			def scoped_runtime( repo_path: )
 				return self if repo_path == self.repo_root
-				Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err )
+				Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error )
 			end
 
 			def prior_attempt( pr:, repo_path: )

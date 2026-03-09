@@ -31,16 +31,16 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: verbose
 				)
-				yield runtime, repo_root, bare_root, out, mock_bin
+				yield runtime, repo_root, bare_root, output, mock_bin
 			end
 		end
 	end
@@ -243,12 +243,12 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: true
 				)
 
@@ -256,8 +256,8 @@ class RuntimePruneTest < Minitest::Test
 				status = runtime.prune!
 				assert_equal Carson::Runtime::EXIT_OK, status
 				refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should be deleted after prune"
-				assert_includes out.string, "deleted_orphan_branch: #{branch_name}"
-				assert_includes out.string, "merged_pr=https://github.com/test/repo/pull/10"
+				assert_includes output.string, "deleted_orphan_branch: #{branch_name}"
+				assert_includes output.string, "merged_pr=https://github.com/test/repo/pull/10"
 			end
 		end
 	end
@@ -265,21 +265,21 @@ class RuntimePruneTest < Minitest::Test
 	def test_orphan_skipped_without_merged_pr_evidence
 		branch_name = "feature-no-evidence"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_orphan_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should exist before prune"
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should be preserved without evidence"
-			assert_includes out.string, "skip_orphan_branch: #{branch_name}"
+			assert_includes output.string, "skip_orphan_branch: #{branch_name}"
 		end
 	end
 
 	def test_orphan_skipped_when_gh_unavailable
 		branch_name = "feature-no-gh"
 
-		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_orphan_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should exist before prune"
@@ -287,8 +287,8 @@ class RuntimePruneTest < Minitest::Test
 			assert_equal Carson::Runtime::EXIT_OK, status
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should be preserved when gh unavailable"
 			# No orphan-specific log lines when gh is unavailable — silent skip.
-			refute_includes out.string, "deleted_orphan_branch"
-			refute_includes out.string, "skip_orphan_branch"
+			refute_includes output.string, "deleted_orphan_branch"
+			refute_includes output.string, "skip_orphan_branch"
 		end
 	end
 
@@ -320,19 +320,19 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: false
 				)
 
 				status = runtime.prune!
 				assert_equal Carson::Runtime::EXIT_OK, status
 				refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should be deleted"
-				assert_includes out.string, "Pruned 1 stale branch."
+				assert_includes output.string, "Pruned 1 stale branch."
 			end
 		end
 	end
@@ -371,12 +371,12 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: true
 				)
 
@@ -389,7 +389,7 @@ class RuntimePruneTest < Minitest::Test
 				refute branch_exists?( repo_root: repo_root, branch_name: gone_branch ), "gone branch should be deleted"
 				refute branch_exists?( repo_root: repo_root, branch_name: orphan_branch ), "orphan branch should be deleted"
 
-				output = out.string
+				output = output.string
 				assert_includes output, "deleted_orphan_branch: #{orphan_branch}"
 				assert_includes output, "deleted_local_branch_force: #{gone_branch}"
 				assert_includes output, "prune_summary: deleted=2"
@@ -402,21 +402,21 @@ class RuntimePruneTest < Minitest::Test
 	def test_absorbed_branch_deleted_when_content_on_main
 		branch_name = "feature-absorbed"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should exist before prune"
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should be deleted"
-			assert_includes out.string, "deleted_absorbed_branch: #{branch_name}"
+			assert_includes output.string, "deleted_absorbed_branch: #{branch_name}"
 		end
 	end
 
 	def test_absorbed_branch_deletes_remote_too
 		branch_name = "feature-absorbed-remote"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
 
 			# Fetch so we can verify remote ref exists.
@@ -436,49 +436,49 @@ class RuntimePruneTest < Minitest::Test
 	def test_absorbed_branch_preserved_when_unique_content
 		branch_name = "feature-active"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_active_tracked_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "active branch should exist before prune"
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "active branch with unique content should be preserved"
-			refute_includes out.string, "deleted_absorbed_branch"
+			refute_includes output.string, "deleted_absorbed_branch"
 		end
 	end
 
 	def test_absorbed_branch_skipped_when_open_pr_exists
 		branch_name = "feature-with-pr"
 
-		with_prune_repo( mock_gh_script: mock_gh_with_open_pr( branch_name: branch_name ) ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_with_open_pr( branch_name: branch_name ) ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should exist before prune"
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch with open PR should be preserved"
-			assert_includes out.string, "skip_absorbed_branch: #{branch_name} reason=open PR exists"
+			assert_includes output.string, "skip_absorbed_branch: #{branch_name} reason=open PR exists"
 		end
 	end
 
 	def test_absorbed_branch_skipped_when_gh_unavailable
 		branch_name = "feature-no-gh-absorbed"
 
-		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_unavailable ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
 
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should exist before prune"
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should be preserved when gh unavailable"
-			refute_includes out.string, "deleted_absorbed_branch"
+			refute_includes output.string, "deleted_absorbed_branch"
 		end
 	end
 
 	def test_absorbed_ancestor_branch_deleted
 		branch_name = "feature-ancestor"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			# Create branch at current main, then advance main. Branch becomes strict ancestor.
 			system( "git", "-C", repo_root, "branch", branch_name, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
@@ -491,7 +491,7 @@ class RuntimePruneTest < Minitest::Test
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "ancestor branch should be deleted"
-			assert_includes out.string, "deleted_absorbed_branch: #{branch_name}"
+			assert_includes output.string, "deleted_absorbed_branch: #{branch_name}"
 		end
 	end
 
@@ -542,12 +542,12 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: true
 				)
 
@@ -555,8 +555,8 @@ class RuntimePruneTest < Minitest::Test
 				status = runtime.prune!
 				assert_equal Carson::Runtime::EXIT_OK, status
 				refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "stale branch should be deleted via absorbed fallback"
-				assert_includes out.string, "deleted_local_branch_force: #{branch_name}"
-				assert_includes out.string, "absorbed into main"
+				assert_includes output.string, "deleted_local_branch_force: #{branch_name}"
+				assert_includes output.string, "absorbed into main"
 			end
 		end
 	end
@@ -564,20 +564,20 @@ class RuntimePruneTest < Minitest::Test
 	def test_absorbed_branch_concise_output
 		branch_name = "feature-absorbed-concise"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: branch_name )
 
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should be deleted"
-			assert_includes out.string, "Pruned 1 stale branch."
-			refute_includes out.string, "deleted_absorbed_branch"
+			assert_includes output.string, "Pruned 1 stale branch."
+			refute_includes output.string, "deleted_absorbed_branch"
 		end
 	end
 
 	# --- Worktree-aware pruning tests ---
 
-	# Creates an absorbed branch checked out in a worktree.
+	# Creates an absorbed branch checked output in a worktree.
 	def create_absorbed_branch_in_worktree( repo_root:, branch_name: )
 		worktree_dir = File.join( repo_root, ".claude", "worktrees", branch_name )
 		system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_dir, out: File::NULL, err: File::NULL )
@@ -599,40 +599,40 @@ class RuntimePruneTest < Minitest::Test
 	def test_absorbed_branch_in_worktree_skipped_with_diagnostic
 		branch_name = "feature-wt-clean"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, out, _mock_bin|
-			wt_dir = create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: branch_name )
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
+			worktree_directory = create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: branch_name )
 
-			assert Dir.exist?( wt_dir ), "worktree directory should exist before prune"
+			assert Dir.exist?( worktree_directory ), "worktree directory should exist before prune"
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should exist before prune"
 
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch in worktree must be preserved"
-			assert Dir.exist?( wt_dir ), "worktree must not be removed by prune"
-			assert_includes out.string, "skip_worktree_blocked: #{branch_name}"
-			assert_includes out.string, "carson worktree remove"
+			assert Dir.exist?( worktree_directory ), "worktree must not be removed by prune"
+			assert_includes output.string, "skip_worktree_blocked: #{branch_name}"
+			assert_includes output.string, "carson worktree remove"
 		end
 	end
 
 	def test_concise_output_shows_skipped_count
 		branch_name = "feature-wt-skipped-concise"
 
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: branch_name )
 
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert_includes out.string, "Skipped 1 branch (--verbose for details)."
-			refute_includes out.string, "No stale branches."
+			assert_includes output.string, "Skipped 1 branch (--verbose for details)."
+			refute_includes output.string, "No stale branches."
 		end
 	end
 
 	# --- JSON output tests ---
 
 	def test_json_output_no_stale_branches
-		with_prune_repo( verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			result = runtime.prune!( json_output: true )
-			json = JSON.parse( out.string.strip )
+			json = JSON.parse( output.string.strip )
 			assert_equal "prune", json[ "command" ]
 			assert_equal "ok", json[ "status" ]
 			assert_equal 0, json[ "deleted" ]
@@ -669,20 +669,20 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: false
 				)
 
 				result = runtime.prune!( json_output: true )
-				json = JSON.parse( out.string.strip )
+				json = JSON.parse( output.string.strip )
 				assert_equal "ok", json[ "status" ]
 				assert_equal 1, json[ "deleted" ]
-				branch_entry = json[ "branches" ].find { |b| b[ "branch" ] == "feat-json" }
+				branch_entry = json[ "branches" ].find { |branch| branch[ "branch" ] == "feat-json" }
 				assert branch_entry, "branches array should contain feat-json"
 				assert_equal "stale", branch_entry[ "type" ]
 				assert_equal "deleted", branch_entry[ "action" ]
@@ -693,13 +693,13 @@ class RuntimePruneTest < Minitest::Test
 	end
 
 	def test_json_output_absorbed_branch_deleted
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: "feat-absorbed-json" )
 
 			result = runtime.prune!( json_output: true )
-			json = JSON.parse( out.string.strip )
+			json = JSON.parse( output.string.strip )
 			assert_equal 1, json[ "deleted" ]
-			branch_entry = json[ "branches" ].find { |b| b[ "branch" ] == "feat-absorbed-json" }
+			branch_entry = json[ "branches" ].find { |branch| branch[ "branch" ] == "feat-absorbed-json" }
 			assert branch_entry, "branches array should contain feat-absorbed-json"
 			assert_equal "absorbed", branch_entry[ "type" ]
 			assert_equal "deleted", branch_entry[ "action" ]
@@ -708,14 +708,14 @@ class RuntimePruneTest < Minitest::Test
 	end
 
 	def test_json_output_worktree_blocked_branch_skipped
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch_in_worktree( repo_root: repo_root, branch_name: "feat-wt-json" )
 
 			result = runtime.prune!( json_output: true )
-			json = JSON.parse( out.string.strip )
+			json = JSON.parse( output.string.strip )
 			assert_equal 0, json[ "deleted" ]
 			assert_equal 1, json[ "skipped" ]
-			branch_entry = json[ "branches" ].find { |b| b[ "branch" ] == "feat-wt-json" }
+			branch_entry = json[ "branches" ].find { |branch| branch[ "branch" ] == "feat-wt-json" }
 			assert branch_entry, "branches array should contain feat-wt-json"
 			assert_equal "skipped", branch_entry[ "action" ]
 			assert_equal Carson::Runtime::EXIT_OK, result
@@ -723,11 +723,11 @@ class RuntimePruneTest < Minitest::Test
 	end
 
 	def test_json_output_branch_entry_structure
-		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence, verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			create_absorbed_branch( repo_root: repo_root, branch_name: "feat-struct" )
 
 			runtime.prune!( json_output: true )
-			json = JSON.parse( out.string.strip )
+			json = JSON.parse( output.string.strip )
 			entry = json[ "branches" ].first
 			assert entry, "branches array should have at least one entry"
 			assert entry.key?( "branch" ), "must have branch key"
@@ -739,9 +739,9 @@ class RuntimePruneTest < Minitest::Test
 	end
 
 	def test_json_output_suppresses_git_fetch_stdout
-		with_prune_repo( verbose: false ) do |runtime, repo_root, _bare_root, out, _mock_bin|
+		with_prune_repo( verbose: false ) do |runtime, repo_root, _bare_root, output, _mock_bin|
 			runtime.prune!( json_output: true )
-			raw = out.string.strip
+			raw = output.string.strip
 			# Output should be valid JSON with no preceding text.
 			json = JSON.parse( raw )
 			assert_equal "prune", json[ "command" ]
@@ -792,12 +792,12 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: true
 				)
 
@@ -845,12 +845,12 @@ class RuntimePruneTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: true
 				)
 
@@ -860,7 +860,7 @@ class RuntimePruneTest < Minitest::Test
 					assert_equal Carson::Runtime::EXIT_OK, status
 					assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch in CWD worktree must be preserved"
 					# Must hit the CWD guard, not the downstream git "used by worktree" error.
-					assert_includes out.string, "skip_cwd_worktree_branch: #{branch_name}"
+					assert_includes output.string, "skip_cwd_worktree_branch: #{branch_name}"
 				end
 			end
 		end

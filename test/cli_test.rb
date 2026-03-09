@@ -136,33 +136,33 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_defaults_to_audit_with_no_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 	end
 
 	def test_parse_args_help_returns_help_command_and_prints_usage
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "--help" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "--help" ], output: output, error: error )
 		assert_equal :help, parsed.fetch( :command )
-		assert_includes out.string, "Usage: carson"
+		assert_includes output.string, "Usage: carson"
 	end
 
 	def test_parse_args_version_returns_version_command
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "--version" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "--version" ], output: output, error: error )
 		assert_equal "version", parsed.fetch( :command )
 	end
 
 	def test_parse_args_template_and_review_subcommands
-		out = StringIO.new
-		err = StringIO.new
+		output = StringIO.new
+		error = StringIO.new
 
-		template = Carson::CLI.parse_args( argv: [ "template", "check" ], out: out, err: err )
-		review = Carson::CLI.parse_args( argv: [ "review", "gate" ], out: out, err: err )
+		template = Carson::CLI.parse_args( arguments: [ "template", "check" ], output: output, error: error )
+		review = Carson::CLI.parse_args( arguments: [ "review", "gate" ], output: output, error: error )
 
 		assert_equal "template:check", template.fetch( :command )
 		assert_equal "review:gate", review.fetch( :command )
@@ -176,25 +176,25 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_refresh_without_path
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "refresh" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "refresh" ], output: output, error: error )
 		assert_equal "refresh", parsed.fetch( :command )
 		assert_nil parsed.fetch( :repo_root )
 	end
 
 	def test_parse_args_refresh_with_path
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "refresh", "/some/path" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "/some/path" ], output: output, error: error )
 		assert_equal "refresh", parsed.fetch( :command )
 		assert_equal "/some/path", parsed.fetch( :repo_root )
 	end
 
 	def test_parse_args_refresh_too_many_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "refresh", "/a", "/b" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "/a", "/b" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
 	end
 
@@ -213,64 +213,64 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_verbose_flag_defaults_to_false
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "audit" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "audit" ], output: output, error: error )
 		assert_equal false, parsed.fetch( :verbose )
 	end
 
 	def test_parse_args_verbose_flag_with_command
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "--verbose", "audit" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "--verbose", "audit" ], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
 
 	def test_parse_args_verbose_flag_after_command
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "audit", "--verbose" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "audit", "--verbose" ], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
 
 	def test_parse_args_verbose_flag_with_no_args_defaults_to_audit
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "--verbose" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "--verbose" ], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
 
 	def test_parse_args_v_flag_remains_version
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "-v" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "-v" ], output: output, error: error )
 		assert_equal "version", parsed.fetch( :command )
 	end
 
 	# --- refresh --all tests ---
 
 	def test_parse_args_refresh_all_parses_to_refresh_all_command
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "refresh", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "--all" ], output: output, error: error )
 		assert_equal "refresh:all", parsed.fetch( :command )
 	end
 
 	def test_parse_args_refresh_all_with_path_is_invalid
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "refresh", "--all", "/some/path" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "--all", "/some/path" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "mutually exclusive"
+		assert_includes error.string, "mutually exclusive"
 	end
 
 	def test_parse_args_refresh_all_with_verbose_preserves_both_flags
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "--verbose", "refresh", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "--verbose", "refresh", "--all" ], output: output, error: error )
 		assert_equal "refresh:all", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
@@ -285,64 +285,64 @@ class CLITest < Minitest::Test
 	# --- setup CLI flag tests ---
 
 	def test_parse_args_setup_with_no_flags_returns_empty_cli_choices
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal( {}, parsed.fetch( :cli_choices ) )
 	end
 
 	def test_parse_args_setup_with_remote_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "--remote", "github" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--remote", "github" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "github", parsed.fetch( :cli_choices )[ "git.remote" ]
 	end
 
 	def test_parse_args_setup_with_main_branch_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "--main-branch", "develop" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--main-branch", "develop" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "develop", parsed.fetch( :cli_choices )[ "git.main_branch" ]
 	end
 
 	def test_parse_args_setup_with_workflow_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "--workflow", "trunk" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--workflow", "trunk" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "trunk", parsed.fetch( :cli_choices )[ "workflow.style" ]
 	end
 
 	def test_parse_args_setup_with_merge_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "--merge", "squash" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--merge", "squash" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "squash", parsed.fetch( :cli_choices )[ "govern.merge.method" ]
 	end
 
 	def test_parse_args_setup_with_canonical_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "--canonical", "/tmp/my-templates" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--canonical", "/tmp/my-templates" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "/tmp/my-templates", parsed.fetch( :cli_choices )[ "template.canonical" ]
 	end
 
 	def test_parse_args_setup_with_all_flags
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [
 			"setup",
 			"--remote", "github",
 			"--main-branch", "main",
 			"--workflow", "branch",
 			"--merge", "squash",
 			"--canonical", "/tmp/templates"
-		], out: out, err: err )
+		], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
 		choices = parsed.fetch( :cli_choices )
 		assert_equal "github", choices[ "git.remote" ]
@@ -353,17 +353,17 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_setup_with_unexpected_positional_args
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "extra-arg" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "extra-arg" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Unexpected arguments for setup"
+		assert_includes error.string, "Unexpected arguments for setup"
 	end
 
 	def test_parse_args_setup_with_unknown_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "setup", "--unknown-flag" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--unknown-flag" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
 	end
 
@@ -385,27 +385,27 @@ class CLITest < Minitest::Test
 	# --- status CLI tests ---
 
 	def test_parse_args_status_returns_status_command
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "status" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "status" ], output: output, error: error )
 		assert_equal "status", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_status_with_json_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "status", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "status", "--json" ], output: output, error: error )
 		assert_equal "status", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_status_rejects_unexpected_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "status", "extra" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "status", "extra" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Unexpected arguments for status"
+		assert_includes error.string, "Unexpected arguments for status"
 	end
 
 	def test_dispatch_routes_status_to_runtime
@@ -425,19 +425,19 @@ class CLITest < Minitest::Test
 	# --- worktree create CLI tests ---
 
 	def test_parse_args_worktree_create
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "worktree", "create", "my-feature" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "create", "my-feature" ], output: output, error: error )
 		assert_equal "worktree:create", parsed.fetch( :command )
 		assert_equal "my-feature", parsed.fetch( :worktree_name )
 	end
 
 	def test_parse_args_worktree_create_missing_name
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "worktree", "create" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "create" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Missing name"
+		assert_includes error.string, "Missing name"
 	end
 
 	def test_dispatch_routes_worktree_create
@@ -455,9 +455,9 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_worktree_create_with_json
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "worktree", "--json", "create", "my-feature" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "--json", "create", "my-feature" ], output: output, error: error )
 		assert_equal "worktree:create", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
@@ -479,9 +479,9 @@ class CLITest < Minitest::Test
 	# --- deliver CLI tests ---
 
 	def test_parse_args_deliver_defaults
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "deliver" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :merge )
 		assert_equal false, parsed.fetch( :json )
@@ -490,35 +490,35 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_deliver_with_merge_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--merge" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--merge" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :merge )
 	end
 
 	def test_parse_args_deliver_with_title
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--title", "My PR" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--title", "My PR" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "My PR", parsed.fetch( :title )
 	end
 
 	def test_parse_args_deliver_with_body_file
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--body-file", "/tmp/body.md" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--body-file", "/tmp/body.md" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "/tmp/body.md", parsed.fetch( :body_file )
 	end
 
 	def test_parse_args_deliver_with_all_flags
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [
 			"deliver", "--merge", "--title", "Fix bug", "--body-file", "/tmp/b.md"
-		], out: out, err: err )
+		], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :merge )
 		assert_equal "Fix bug", parsed.fetch( :title )
@@ -526,17 +526,17 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_deliver_rejects_unexpected_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "deliver", "extra" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "extra" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Unexpected arguments for deliver"
+		assert_includes error.string, "Unexpected arguments for deliver"
 	end
 
 	def test_parse_args_deliver_with_json_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "deliver", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--json" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
@@ -571,27 +571,27 @@ class CLITest < Minitest::Test
 	# --- audit CLI tests ---
 
 	def test_parse_args_audit_defaults
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "audit" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "audit" ], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_audit_with_json_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "audit", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "audit", "--json" ], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_audit_rejects_unexpected_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "audit", "extra" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "audit", "extra" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Unexpected arguments for audit"
+		assert_includes error.string, "Unexpected arguments for audit"
 	end
 
 	def test_dispatch_routes_audit_to_runtime
@@ -609,36 +609,36 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_no_args_defaults_to_audit_with_json_false
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [], output: output, error: error )
 		assert_equal "audit", parsed.fetch( :command )
 	end
 
 	# --- repos CLI tests ---
 
 	def test_parse_args_repos_defaults
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "repos" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "repos" ], output: output, error: error )
 		assert_equal "repos", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_repos_with_json_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "repos", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "repos", "--json" ], output: output, error: error )
 		assert_equal "repos", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_repos_rejects_unexpected_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "repos", "extra" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "repos", "extra" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Unexpected arguments for repos"
+		assert_includes error.string, "Unexpected arguments for repos"
 	end
 
 	def test_dispatch_routes_repos_to_runtime
@@ -658,27 +658,27 @@ class CLITest < Minitest::Test
 	# --- sync CLI tests ---
 
 	def test_parse_args_sync_defaults
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "sync" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "sync" ], output: output, error: error )
 		assert_equal "sync", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_sync_with_json_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "sync", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "sync", "--json" ], output: output, error: error )
 		assert_equal "sync", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_sync_rejects_unexpected_arguments
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "sync", "extra" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "sync", "extra" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Unexpected arguments for sync"
+		assert_includes error.string, "Unexpected arguments for sync"
 	end
 
 	def test_dispatch_routes_sync_to_runtime
@@ -698,32 +698,32 @@ class CLITest < Minitest::Test
 	# --- prune CLI tests ---
 
 	def test_parse_args_prune_defaults
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "prune" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "prune" ], output: output, error: error )
 		assert_equal "prune", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_prune_with_json_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "prune", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "prune", "--json" ], output: output, error: error )
 		assert_equal "prune", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_prune_with_all_flag
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "prune", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "prune", "--all" ], output: output, error: error )
 		assert_equal "prune:all", parsed.fetch( :command )
 	end
 
 	def test_parse_args_prune_with_all_and_json_flags
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "prune", "--all", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "prune", "--all", "--json" ], output: output, error: error )
 		assert_equal "prune:all", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
@@ -752,60 +752,60 @@ class CLITest < Minitest::Test
 	# --- housekeep CLI tests ---
 
 	def test_parse_args_housekeep_no_args
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep" ], output: output, error: error )
 		assert_equal "housekeep", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_housekeep_with_target
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "AI" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "AI" ], output: output, error: error )
 		assert_equal "housekeep:target", parsed.fetch( :command )
 		assert_equal "AI", parsed.fetch( :target )
 	end
 
 	def test_parse_args_housekeep_with_all
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all" ], output: output, error: error )
 		assert_equal "housekeep:all", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_housekeep_with_json
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--json" ], output: output, error: error )
 		assert_equal "housekeep", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_housekeep_with_target_and_json
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--json", "AI" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--json", "AI" ], output: output, error: error )
 		assert_equal "housekeep:target", parsed.fetch( :command )
 		assert_equal "AI", parsed.fetch( :target )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_housekeep_all_with_target_is_invalid
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "--all", "AI" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "AI" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "mutually exclusive"
+		assert_includes error.string, "mutually exclusive"
 	end
 
 	def test_parse_args_housekeep_too_many_args
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep", "a", "b" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "a", "b" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "Too many arguments for housekeep"
+		assert_includes error.string, "Too many arguments for housekeep"
 	end
 
 	def test_dispatch_routes_housekeep_current_repo
@@ -832,9 +832,9 @@ class CLITest < Minitest::Test
 	# --- audit --all CLI tests ---
 
 	def test_parse_args_audit_all
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "audit", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "audit", "--all" ], output: output, error: error )
 		assert_equal "audit:all", parsed.fetch( :command )
 	end
 
@@ -848,9 +848,9 @@ class CLITest < Minitest::Test
 	# --- sync --all CLI tests ---
 
 	def test_parse_args_sync_all
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "sync", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "sync", "--all" ], output: output, error: error )
 		assert_equal "sync:all", parsed.fetch( :command )
 	end
 
@@ -864,17 +864,17 @@ class CLITest < Minitest::Test
 	# --- status --all CLI tests ---
 
 	def test_parse_args_status_all
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "status", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "status", "--all" ], output: output, error: error )
 		assert_equal "status:all", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_status_all_with_json
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "status", "--all", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "status", "--all", "--json" ], output: output, error: error )
 		assert_equal "status:all", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
@@ -896,9 +896,9 @@ class CLITest < Minitest::Test
 	# --- template check --all CLI tests ---
 
 	def test_parse_args_template_check_all
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "template", "check", "--all" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "template", "check", "--all" ], output: output, error: error )
 		assert_equal "template:check:all", parsed.fetch( :command )
 	end
 

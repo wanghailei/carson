@@ -66,8 +66,8 @@ module Carson
 					end
 
 					begin
-						rt = build_scoped_runtime( repo_path: repo_path )
-						status = rt.sync!
+						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+						status = scoped_runtime.sync!
 						if status == EXIT_OK
 							puts_line "#{repo_name}: ok" unless verbose?
 							clear_batch_success( command: "sync", repo_path: repo_path )
@@ -77,9 +77,9 @@ module Carson
 							record_batch_skip( command: "sync", repo_path: repo_path, reason: "sync failed" )
 							failed += 1
 						end
-					rescue StandardError => e
-						puts_line "#{repo_name}: FAIL (#{e.message})"
-						record_batch_skip( command: "sync", repo_path: repo_path, reason: e.message )
+					rescue StandardError => exception
+						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						record_batch_skip( command: "sync", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end
 				end
@@ -106,7 +106,7 @@ module Carson
 				result[ :exit_code ] = exit_code
 
 				if json_output
-					out.puts JSON.pretty_generate( result )
+					output.puts JSON.pretty_generate( result )
 				else
 					print_sync_human( result: result )
 				end

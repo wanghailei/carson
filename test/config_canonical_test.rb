@@ -44,7 +44,7 @@ class ConfigCanonicalTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				config = Carson::Config.load( repo_root: dir )
 				# .github/carson.md should appear exactly once.
-				count = config.template_managed_files.count { |f| f == ".github/carson.md" }
+				count = config.template_managed_files.count { |file| file == ".github/carson.md" }
 				assert_equal 1, count
 			end
 		end

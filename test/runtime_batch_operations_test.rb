@@ -47,7 +47,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.template_check_all!
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -61,7 +61,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				runtime, repo_root = build_runtime
 				result = runtime.template_check_all!
 				assert_equal Carson::Runtime::EXIT_BLOCK, result
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "FAIL (path not found)"
 				destroy_runtime_repo( repo_root: repo_root )
 			end
@@ -78,7 +78,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.template_check_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "Template check all (2 repos)"
 				assert_includes output, "Template check complete:"
 				destroy_runtime_repo( repo_root: repo_root )
@@ -92,7 +92,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.audit_all!
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -105,7 +105,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.audit_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "FAIL (path not found)"
 				assert_includes output, "0 ok"
 				assert_includes output, "1 failed"
@@ -124,7 +124,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.audit_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "Audit all (2 repos)"
 				assert_includes output, "Audit all complete:"
 				destroy_runtime_repo( repo_root: repo_root )
@@ -138,7 +138,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.sync_all!
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -151,7 +151,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.sync_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "FAIL (path not found)"
 				assert_includes output, "Sync all complete:"
 				assert_includes output, "1 failed"
@@ -170,7 +170,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.sync_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "Sync all (2 repos)"
 				assert_includes output, "Sync all complete:"
 				destroy_runtime_repo( repo_root: repo_root )
@@ -184,7 +184,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.status_all!
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -199,7 +199,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.status_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "repo-a:"
 				assert_includes output, "gone-repo: MISSING"
 				assert_equal Carson::Runtime::EXIT_OK, result
@@ -218,7 +218,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.status_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "Portfolio (2 repos)"
 				assert_includes output, "repo-a:"
 				assert_includes output, "repo-b:"
@@ -244,7 +244,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.status_all!( json_output: true )
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				data = JSON.parse( output )
 				assert_equal "status", data[ "command" ]
 				assert_kind_of Array, data[ "repos" ]
@@ -262,7 +262,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.prune_all!
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -275,7 +275,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.prune_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "FAIL (path not found)"
 				assert_includes output, "Prune all complete:"
 				assert_includes output, "1 failed"
@@ -294,7 +294,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path ) do
 				runtime, repo_root = build_runtime
 				result = runtime.prune_all!
-				output = runtime.instance_variable_get( :@out ).string
+				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "Prune all (2 repos)"
 				assert_includes output, "Prune all complete:"
 				destroy_runtime_repo( repo_root: repo_root )
@@ -319,16 +319,16 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: clean_repo,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				status = runtime.refresh_all!
-				output = out.string
+				output = output.string
 				assert_includes output, "clean: OK"
 				assert_includes output, "dirty: PENDING (uncommitted changes)"
 				assert_equal Carson::Runtime::EXIT_ERROR, status
@@ -410,23 +410,23 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: clean_repo,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				runtime.refresh_all!
 
 				# Verify the pending log was written.
 				pending = runtime.send( :pending_repos_for, command: "refresh" )
-				pending_paths = pending.map { |p| p[ :path ] }
+				pending_paths = pending.map { |entry| entry[ :path ] }
 				assert_includes pending_paths, dirty_repo
 				refute_includes pending_paths, clean_repo
 
-				output = out.string
+				output = output.string
 				assert_includes output, "still pending (will retry on next run)"
 			end
 		end
@@ -445,13 +445,13 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 
 				# Seed a pending entry, then run refresh which should succeed and clear it.
@@ -459,7 +459,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				runtime.refresh_all!
 
 				pending = runtime.send( :pending_repos_for, command: "refresh" )
-				pending_paths = pending.map { |p| p[ :path ] }
+				pending_paths = pending.map { |entry| entry[ :path ] }
 				refute_includes pending_paths, repo
 			end
 		end
@@ -478,20 +478,20 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 
 				# Seed a pending entry from a previous run.
 				runtime.send( :record_batch_skip, command: "refresh", repo_path: "/tmp/old-repo", reason: "was dirty" )
 
 				runtime.refresh_all!
-				output = out.string
+				output = output.string
 				assert_includes output, "1 repo pending from previous run"
 			end
 		end

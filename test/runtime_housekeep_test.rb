@@ -10,7 +10,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.housekeep_all!
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -19,7 +19,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.housekeep_all!( json_output: true )
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		data = JSON.parse( output )
 		assert_equal "housekeep", data[ "command" ]
 		assert_equal "error", data[ "status" ]
@@ -35,7 +35,7 @@ class RuntimeHousekeepTest < Minitest::Test
 			runtime, repo_root = build_runtime
 			result = runtime.housekeep_all!
 			assert_equal Carson::Runtime::EXIT_ERROR, result
-			output = runtime.instance_variable_get( :@out ).string
+			output = runtime.instance_variable_get( :@output ).string
 			assert_includes output, "SKIP (path not found)"
 			destroy_runtime_repo( repo_root: repo_root )
 		end
@@ -49,7 +49,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.housekeep_target!( target: "/nonexistent/repo" )
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "Not a governed repository"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -58,7 +58,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		result = runtime.housekeep_target!( target: "/nonexistent/repo", json_output: true )
 		assert_equal Carson::Runtime::EXIT_ERROR, result
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		data = JSON.parse( output )
 		assert_equal "housekeep", data[ "command" ]
 		assert_equal "error", data[ "status" ]

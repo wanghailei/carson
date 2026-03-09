@@ -90,7 +90,7 @@ module Carson
 				result[ :exit_code ] = exit_code
 
 				if json_output
-					out.puts JSON.pretty_generate( result )
+					output.puts JSON.pretty_generate( result )
 				else
 					print_deliver_human( result: result )
 				end
@@ -253,7 +253,7 @@ module Carson
 			# Merges the PR using the configured merge method.
 			# Deliberately omits --delete-branch: gh tries to switch the local
 			# checkout to main afterwards, which fails inside a worktree where
-			# main is already checked out. Branch cleanup deferred to `carson prune`.
+			# main is already checked output. Branch cleanup deferred to `carson prune`.
 			def merge_pr!( number:, result: )
 				method = config.govern_merge_method
 				result[ :merge_method ] = method
@@ -277,7 +277,7 @@ module Carson
 			# Syncs main after a successful merge.
 			# Pulls into the main worktree directly — does not attempt checkout,
 			# because checkout would fail when running inside a feature worktree
-			# (main is already checked out in the main tree).
+			# (main is already checked output in the main tree).
 			def sync_after_merge!( remote:, main:, result: )
 				main_root = main_worktree_root
 				_, pull_stderr, pull_success, = Open3.capture3(

@@ -123,11 +123,11 @@ module Carson
 				end
 				block_reasons.each { |reason| puts_line "BLOCK: #{reason}" }
 				EXIT_BLOCK
-			rescue JSON::ParserError => e
-				puts_line "ERROR: invalid gh JSON response (#{e.message})."
+			rescue JSON::ParserError => exception
+				puts_line "ERROR: invalid gh JSON response (#{exception.message})."
 				EXIT_ERROR
-			rescue StandardError => e
-				puts_line "ERROR: #{e.message}"
+			rescue StandardError => exception
+				puts_line "ERROR: #{exception.message}"
 				EXIT_ERROR
 			end
 
@@ -176,11 +176,11 @@ module Carson
 				end
 				puts_line "BLOCK: actionable late review activity detected."
 				EXIT_BLOCK
-			rescue JSON::ParserError => e
-				puts_line "ERROR: invalid gh JSON response (#{e.message})."
+			rescue JSON::ParserError => exception
+				puts_line "ERROR: invalid gh JSON response (#{exception.message})."
 				EXIT_ERROR
-			rescue StandardError => e
-				puts_line "ERROR: #{e.message}"
+			rescue StandardError => exception
+				puts_line "ERROR: #{exception.message}"
 				EXIT_ERROR
 			end
 		end

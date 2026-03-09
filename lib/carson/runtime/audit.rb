@@ -11,7 +11,7 @@ module Carson
 				return fingerprint_status unless fingerprint_status.nil?
 				unless head_exists?
 					if json_output
-						out.puts JSON.pretty_generate( { command: "audit", status: "skipped", reason: "no commits yet", exit_code: EXIT_OK } )
+						output.puts JSON.pretty_generate( { command: "audit", status: "skipped", reason: "no commits yet", exit_code: EXIT_OK } )
 					else
 						puts_line "No commits yet — audit skipped for initial commit."
 					end
@@ -69,24 +69,24 @@ module Carson
 				audit_state = "attention" if audit_state == "ok" && !%w[ok skipped].include?( monitor_report.fetch( :status ) )
 				if monitor_report.fetch( :status ) == "attention"
 					checks = monitor_report.fetch( :checks )
-					fail_n = checks.fetch( :failing_count )
-					pend_n = checks.fetch( :pending_count )
+					failing_count = checks.fetch( :failing_count )
+					pending_count = checks.fetch( :pending_count )
 					total = checks.fetch( :required_total )
 					fail_names = checks.fetch( :failing ).map { it.fetch( :name ) }.join( ", " )
-					if fail_n.positive? && pend_n.positive?
-						audit_concise_problems << "Checks: #{fail_n} failing (#{fail_names}), #{pend_n} pending of #{total} required."
-					elsif fail_n.positive?
-						audit_concise_problems << "Checks: #{fail_n} of #{total} failing (#{fail_names})."
-					elsif pend_n.positive?
-						audit_concise_problems << "Checks: pending (#{total - pend_n} of #{total} complete)."
+					if failing_count.positive? && pending_count.positive?
+						audit_concise_problems << "Checks: #{failing_count} failing (#{fail_names}), #{pending_count} pending of #{total} required."
+					elsif failing_count.positive?
+						audit_concise_problems << "Checks: #{failing_count} of #{total} failing (#{fail_names})."
+					elsif pending_count.positive?
+						audit_concise_problems << "Checks: pending (#{total - pending_count} of #{total} complete)."
 					end
 				end
 				puts_verbose ""
 				puts_verbose "[Default Branch CI Baseline (gh)]"
 				default_branch_baseline = default_branch_ci_baseline_report
 				audit_state = "attention" if audit_state == "ok" && !%w[ok skipped].include?( default_branch_baseline.fetch( :status ) )
-				baseline_st = default_branch_baseline.fetch( :status )
-				if baseline_st == "block"
+				baseline_status = default_branch_baseline.fetch( :status )
+				if baseline_status == "block"
 					parts = []
 					if default_branch_baseline.fetch( :failing_count ).positive?
 						names = default_branch_baseline.fetch( :failing ).map { it.fetch( :name ) }.join( ", " )
@@ -98,7 +98,7 @@ module Carson
 					end
 					parts << "no check-runs for active workflows" if default_branch_baseline.fetch( :no_check_evidence )
 					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )} — fix before merge."
-				elsif baseline_st == "attention"
+				elsif baseline_status == "attention"
 					parts = []
 					if default_branch_baseline.fetch( :advisory_failing_count ).positive?
 						names = default_branch_baseline.fetch( :advisory_failing ).map { it.fetch( :name ) }.join( ", " )
@@ -143,7 +143,7 @@ module Carson
 						problems: audit_concise_problems,
 						exit_code: exit_code
 					}
-					out.puts JSON.pretty_generate( result )
+					output.puts JSON.pretty_generate( result )
 				else
 					puts_verbose ""
 					puts_verbose "[Audit Result]"
@@ -182,8 +182,8 @@ module Carson
 					end
 
 					begin
-						rt = build_scoped_runtime( repo_path: repo_path )
-						status = rt.audit!
+						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+						status = scoped_runtime.audit!
 						case status
 						when EXIT_OK
 							puts_line "#{repo_name}: ok" unless verbose?
@@ -197,9 +197,9 @@ module Carson
 							record_batch_skip( command: "audit", repo_path: repo_path, reason: "audit failed" )
 							failed += 1
 						end
-					rescue StandardError => e
-						puts_line "#{repo_name}: FAIL (#{e.message})"
-						record_batch_skip( command: "audit", repo_path: repo_path, reason: e.message )
+					rescue StandardError => exception
+						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						record_batch_skip( command: "audit", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end
 				end
@@ -277,9 +277,9 @@ module Carson
 				report.dig( :checks, :pending ).each { |entry| puts_verbose "check_pending: #{entry.fetch( :workflow )} / #{entry.fetch( :name )} #{entry.fetch( :link )}".strip }
 				report[ :status ] = "attention" if report.dig( :checks, :failing_count ).positive? || report.dig( :checks, :pending_count ).positive?
 				report
-				rescue JSON::ParserError => e
+				rescue JSON::ParserError => exception
 					report[ :status ] = "skipped"
-					report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
+					report[ :skip_reason ] = "invalid gh JSON response (#{exception.message})"
 					puts_verbose "SKIP: #{report.fetch( :skip_reason )}"
 					report
 				end
@@ -374,14 +374,14 @@ module Carson
 					puts_verbose "ACTION: default branch has workflow files but no check-runs; align workflow triggers and branch protection check names."
 				end
 				report
-			rescue JSON::ParserError => e
+			rescue JSON::ParserError => exception
 				report[ :status ] = "skipped"
-				report[ :skip_reason ] = "invalid gh JSON response (#{e.message})"
+				report[ :skip_reason ] = "invalid gh JSON response (#{exception.message})"
 				puts_verbose "baseline: SKIP (#{report.fetch( :skip_reason )})"
 				report
-			rescue StandardError => e
+			rescue StandardError => exception
 				report[ :status ] = "skipped"
-				report[ :skip_reason ] = e.message
+				report[ :skip_reason ] = exception.message
 				puts_verbose "baseline: SKIP (#{report.fetch( :skip_reason )})"
 				report
 			end
@@ -443,7 +443,7 @@ module Carson
 			end
 
 			# Returns true when a required-check entry is in a non-passing, non-pending state.
-			# Cancelled, errored, timed-out, and any unknown bucket all count as failing.
+			# Cancelled, errored, timed-output, and any unknown bucket all count as failing.
 			def check_entry_failing?( entry: )
 				!%w[pass pending].include?( entry[ "bucket" ].to_s )
 			end
@@ -487,8 +487,8 @@ module Carson
 				markdown_path, json_path = write_pr_monitor_report( report: report )
 				puts_verbose "report_markdown: #{markdown_path}"
 				puts_verbose "report_json: #{json_path}"
-			rescue StandardError => e
-				puts_verbose "report_write: SKIP (#{e.message})"
+			rescue StandardError => exception
+				puts_verbose "report_write: SKIP (#{exception.message})"
 			end
 
 			# Persists report in both machine-readable JSON and human-readable Markdown.

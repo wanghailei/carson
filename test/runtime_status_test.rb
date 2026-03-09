@@ -112,18 +112,18 @@ class RuntimeStatusTest < Minitest::Test
 			system( "git", "-C", real_repo, "commit", "-m", "init", out: File::NULL, err: File::NULL )
 
 			# Build runtime pointing at the symlink path.
-			out = StringIO.new
+			output = StringIO.new
 			runtime = Carson::Runtime.new(
 				repo_root: symlink_repo,
 				tool_root: symlink_repo,
-				out: out,
-				err: StringIO.new,
+				output: output,
+				error: StringIO.new,
 				verbose: false
 			)
 
 			runtime.status!( json_output: true )
-			data = JSON.parse( out.string )
-			# Main worktree should be filtered out — worktrees array should be empty.
+			data = JSON.parse( output.string )
+			# Main worktree should be filtered output — worktrees array should be empty.
 			assert_equal 0, data[ "worktrees" ].size, "main worktree should be filtered even with symlink"
 		end
 	end
@@ -152,6 +152,6 @@ private
 
 	# Extracts captured stdout text from the runtime.
 	def output_string( runtime )
-		runtime.instance_variable_get( :@out ).string
+		runtime.instance_variable_get( :@output ).string
 	end
 end

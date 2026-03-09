@@ -85,8 +85,8 @@ module Carson
 			parsed = JSON.parse( raw )
 			raise ConfigError, "global config must be a JSON object at #{path}" unless parsed.is_a?( Hash )
 			parsed
-		rescue JSON::ParserError => e
-			raise ConfigError, "invalid global config JSON at #{path} (#{e.message})"
+		rescue JSON::ParserError => exception
+			raise ConfigError, "invalid global config JSON at #{path} (#{exception.message})"
 		end
 
 		def self.global_config_path( repo_root: )
@@ -212,7 +212,7 @@ module Carson
 			@audit_advisory_check_names = fetch_optional_string_array( hash: audit_hash, key: "advisory_check_names" )
 
 			govern_hash = fetch_hash( hash: data, key: "govern" )
-			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |p| safe_expand_path( p ) }
+			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |path| safe_expand_path( path ) }
 			@govern_auto_merge = fetch_optional_boolean( hash: govern_hash, key: "auto_merge", default: true, key_path: "govern.auto_merge" )
 			@govern_merge_method = fetch_string( hash: govern_hash, key: "merge_method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )

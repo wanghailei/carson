@@ -9,7 +9,7 @@ module Carson
 				data = gather_status
 
 				if json_output
-					out.puts JSON.pretty_generate( data )
+					output.puts JSON.pretty_generate( data )
 				else
 					print_status( data: data )
 				end
@@ -35,14 +35,14 @@ module Carson
 							next
 						end
 						begin
-							rt = build_scoped_runtime( repo_path: repo_path )
-							data = rt.send( :gather_status )
+							scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+							data = scoped_runtime.send( :gather_status )
 							results << { name: repo_name, status: "ok" }.merge( data )
-						rescue StandardError => e
-							results << { name: repo_name, status: "error", error: e.message }
+						rescue StandardError => exception
+							results << { name: repo_name, status: "error", error: exception.message }
 						end
 					end
-					out.puts JSON.pretty_generate( { command: "status", repos: results } )
+					output.puts JSON.pretty_generate( { command: "status", repos: results } )
 					return EXIT_OK
 				end
 
@@ -58,8 +58,8 @@ module Carson
 					end
 
 					begin
-						rt = build_scoped_runtime( repo_path: repo_path )
-						data = rt.send( :gather_status )
+						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+						data = scoped_runtime.send( :gather_status )
 						branch = data.fetch( :branch )
 						dirty = branch.fetch( :dirty ) ? " (dirty)" : ""
 						worktrees = data.fetch( :worktrees )
@@ -72,9 +72,9 @@ module Carson
 
 						# Show pending operations for this repo.
 						repo_pending = status_pending_for_repo( all_pending: all_pending, repo_path: repo_path )
-						repo_pending.each { |desc| puts_line "  pending: #{desc}" }
-					rescue StandardError => e
-						puts_line "#{repo_name}: FAIL (#{e.message})"
+						repo_pending.each { |description| puts_line "  pending: #{description}" }
+					rescue StandardError => exception
+						puts_line "#{repo_name}: FAIL (#{exception.message})"
 					end
 				end
 
@@ -159,14 +159,14 @@ module Carson
 			def gather_worktree_info
 				entries = worktree_list
 
-				# Filter out the main worktree (the repository root itself).
+				# Filter output the main worktree (the repository root itself).
 				# Use realpath for comparison — git returns canonical paths that may differ from repo_root.
 				canonical_root = realpath_safe( repo_root )
-				entries.reject { it.fetch( :path ) == canonical_root }.map do |wt|
+				entries.reject { it.fetch( :path ) == canonical_root }.map do |worktree|
 					{
-						path: wt.fetch( :path ),
-						name: File.basename( wt.fetch( :path ) ),
-						branch: wt.fetch( :branch, nil )
+						path: worktree.fetch( :path ),
+						name: File.basename( worktree.fetch( :path ) ),
+						branch: worktree.fetch( :branch, nil )
 					}
 				end
 			end
@@ -222,7 +222,7 @@ module Carson
 				stdout, _, success, = git_run( "branch", "-vv" )
 				return { count: 0 } unless success
 
-				gone_branches = stdout.lines.select { |l| l.include?( ": gone]" ) }
+				gone_branches = stdout.lines.select { |line| line.include?( ": gone]" ) }
 				{ count: gone_branches.size }
 			end
 
@@ -252,9 +252,9 @@ module Carson
 				if worktrees.any?
 					puts_line ""
 					puts_line "Worktrees:"
-					worktrees.each do |wt|
-						branch_label = wt.fetch( :branch ) || "(detached)"
-						puts_line "  #{wt.fetch( :name )}  #{branch_label}"
+					worktrees.each do |worktree|
+						branch_label = worktree.fetch( :branch ) || "(detached)"
+						puts_line "  #{worktree.fetch( :name )}  #{branch_label}"
 					end
 				end
 

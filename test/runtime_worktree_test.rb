@@ -17,15 +17,15 @@ class RuntimeWorktreeTest < Minitest::Test
 			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: true
 				)
-				yield runtime, repo_root, bare_root, out
+				yield runtime, repo_root, bare_root, output
 			end
 		end
 	end
@@ -44,40 +44,40 @@ class RuntimeWorktreeTest < Minitest::Test
 	end
 
 	def test_worktree_remove_by_path
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "test-remove" )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "test-remove" )
 
-			assert Dir.exist?( wt.fetch( :path ) ), "worktree directory should exist"
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree directory should exist"
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			refute Dir.exist?( wt.fetch( :path ) ), "worktree directory should be removed"
-			assert_includes out.string, "worktree_removed:"
-			assert_includes out.string, "branch_deleted: #{wt.fetch( :branch )}"
+			refute Dir.exist?( worktree.fetch( :path ) ), "worktree directory should be removed"
+			assert_includes output.string, "worktree_removed:"
+			assert_includes output.string, "branch_deleted: #{worktree.fetch( :branch )}"
 		end
 	end
 
 	def test_worktree_remove_by_name
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "by-name" )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "by-name" )
 
-			assert Dir.exist?( wt.fetch( :path ) ), "worktree directory should exist"
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree directory should exist"
 			# Pass just the name, not full path.
 			status = runtime.worktree_remove!( worktree_path: "by-name" )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			refute Dir.exist?( wt.fetch( :path ) ), "worktree directory should be removed"
+			refute Dir.exist?( worktree.fetch( :path ) ), "worktree directory should be removed"
 		end
 	end
 
 	def test_worktree_remove_branch_deleted
 		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "branch-del" )
-			branch = wt.fetch( :branch )
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "branch-del" )
+			branch = worktree.fetch( :branch )
 
 			# Verify branch exists before removal.
 			assert system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
 				"branch should exist before worktree remove"
 
-			runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 
 			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
 				"branch should be deleted after worktree remove"
@@ -85,7 +85,7 @@ class RuntimeWorktreeTest < Minitest::Test
 	end
 
 	def test_worktree_remove_protected_branch_preserved
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
 			# Create a worktree on main — should not delete the main branch.
 			worktree_dir = File.join( repo_root, ".claude", "worktrees", "on-main" )
 			system( "git", "-C", repo_root, "worktree", "add", "--detach", worktree_dir, out: File::NULL, err: File::NULL )
@@ -100,112 +100,112 @@ class RuntimeWorktreeTest < Minitest::Test
 	end
 
 	def test_worktree_remove_unregistered_path_fails
-		with_worktree_repo do |runtime, _repo_root, _bare_root, out|
+		with_worktree_repo do |runtime, _repo_root, _bare_root, output|
 			status = runtime.worktree_remove!( worktree_path: "/nonexistent/path" )
 			assert_equal Carson::Runtime::EXIT_ERROR, status
-			assert_includes out.string, "not a registered worktree"
+			assert_includes output.string, "not a registered worktree"
 		end
 	end
 
 	def test_worktree_remove_dirty_refused_without_force
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-refuse" )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "dirty-refuse" )
 
 			# Add uncommitted changes to the worktree.
-			File.write( File.join( wt.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+			File.write( File.join( worktree.fetch( :path ), "unsaved.txt" ), "precious work\n" )
 
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_ERROR, status
-			assert Dir.exist?( wt.fetch( :path ) ), "dirty worktree must be preserved without --force"
-			assert_includes out.string, "uncommitted changes"
-			assert_includes out.string, "--force"
+			assert Dir.exist?( worktree.fetch( :path ) ), "dirty worktree must be preserved without --force"
+			assert_includes output.string, "uncommitted changes"
+			assert_includes output.string, "--force"
 		end
 	end
 
 	def test_worktree_remove_dirty_accepted_with_force
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-force" )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "dirty-force" )
 
 			# Add uncommitted changes to the worktree.
-			File.write( File.join( wt.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+			File.write( File.join( worktree.fetch( :path ), "unsaved.txt" ), "precious work\n" )
 
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ), force: true )
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ), force: true )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			refute Dir.exist?( wt.fetch( :path ) ), "dirty worktree should be removed with --force"
+			refute Dir.exist?( worktree.fetch( :path ) ), "dirty worktree should be removed with --force"
 		end
 	end
 
 	def test_worktree_remove_blocks_unpushed_commits
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "unpushed-rm", push: false )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "unpushed-rm", push: false )
 
 			# Branch has a commit that was never pushed — remove should block.
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_BLOCK, status
-			assert Dir.exist?( wt.fetch( :path ) ), "worktree must be preserved when unpushed"
-			assert_includes out.string, "not been pushed"
-			assert_includes out.string, "--force"
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree must be preserved when unpushed"
+			assert_includes output.string, "not been pushed"
+			assert_includes output.string, "--force"
 		end
 	end
 
 	def test_worktree_remove_allows_pushed_branch
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
 			# Helper pushes by default — branch is safe to remove.
-			wt = create_worktree( repo_root: repo_root, worktree_name: "pushed-rm" )
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "pushed-rm" )
 
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			refute Dir.exist?( wt.fetch( :path ) ), "pushed worktree should be removed"
+			refute Dir.exist?( worktree.fetch( :path ) ), "pushed worktree should be removed"
 		end
 	end
 
 	def test_worktree_remove_force_overrides_unpushed_guard
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "force-unpushed", push: false )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "force-unpushed", push: false )
 
 			# Branch has unpushed commits but --force should override.
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ), force: true )
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ), force: true )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			refute Dir.exist?( wt.fetch( :path ) ), "force should remove even with unpushed commits"
+			refute Dir.exist?( worktree.fetch( :path ) ), "force should remove even with unpushed commits"
 		end
 	end
 
 	# --- sweep_stale_worktrees! ---
 
 	def test_sweep_stale_worktrees_removes_absorbed
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "stale-sweep" )
-			branch = wt.fetch( :branch )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "stale-sweep" )
+			branch = worktree.fetch( :branch )
 
 			# Merge the worktree branch into main so its content is absorbed.
 			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
 
-			assert Dir.exist?( wt.fetch( :path ) ), "worktree directory should exist before sweep"
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree directory should exist before sweep"
 			runtime.sweep_stale_worktrees!
-			refute Dir.exist?( wt.fetch( :path ) ), "absorbed worktree should be swept"
+			refute Dir.exist?( worktree.fetch( :path ) ), "absorbed worktree should be swept"
 
 			# Branch should be deleted.
 			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
 				"branch should be deleted after sweep"
 
-			assert_includes out.string, "swept stale worktree: stale-sweep"
-			assert_includes out.string, "deleted branch: #{branch}"
+			assert_includes output.string, "swept stale worktree: stale-sweep"
+			assert_includes output.string, "deleted branch: #{branch}"
 		end
 	end
 
 	def test_sweep_stale_worktrees_skips_non_absorbed
 		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "active-work" )
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "active-work" )
 
 			# Do NOT merge — content is still unique to the branch.
-			assert Dir.exist?( wt.fetch( :path ) ), "worktree directory should exist"
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree directory should exist"
 			runtime.sweep_stale_worktrees!
-			assert Dir.exist?( wt.fetch( :path ) ), "non-absorbed worktree must be preserved"
+			assert Dir.exist?( worktree.fetch( :path ) ), "non-absorbed worktree must be preserved"
 		end
 	end
 
 	def test_sweep_stale_worktrees_scans_codex_directory
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
 			# Create a worktree under .codex/worktrees/ manually.
 			codex_dir = File.join( repo_root, ".codex", "worktrees" )
 			worktree_path = File.join( codex_dir, "codex-task" )
@@ -223,7 +223,7 @@ class RuntimeWorktreeTest < Minitest::Test
 			runtime.sweep_stale_worktrees!
 			refute Dir.exist?( worktree_path ), "absorbed codex worktree should be swept"
 
-			assert_includes out.string, "swept stale worktree: codex-task"
+			assert_includes output.string, "swept stale worktree: codex-task"
 		end
 	end
 
@@ -244,8 +244,8 @@ class RuntimeWorktreeTest < Minitest::Test
 
 	def test_sweep_stale_worktrees_skips_worktree_held_by_other_process
 		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "held-sweep" )
-			branch = wt.fetch( :branch )
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "held-sweep" )
+			branch = worktree.fetch( :branch )
 
 			# Merge into main so content is absorbed.
 			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
@@ -257,7 +257,7 @@ class RuntimeWorktreeTest < Minitest::Test
 			pid = fork do
 				child_ready_r.close
 				parent_done_w.close
-				Dir.chdir( wt.fetch( :path ) )
+				Dir.chdir( worktree.fetch( :path ) )
 				child_ready_w.write( "ready" )
 				child_ready_w.close
 				parent_done_r.read
@@ -274,36 +274,36 @@ class RuntimeWorktreeTest < Minitest::Test
 			parent_done_w.close
 			Process.wait( pid )
 
-			assert Dir.exist?( wt.fetch( :path ) ), "worktree held by another process must be preserved"
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree held by another process must be preserved"
 		end
 	end
 
 	def test_sweep_stale_worktrees_skips_dirty_worktree
 		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "dirty-sweep" )
-			branch = wt.fetch( :branch )
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "dirty-sweep" )
+			branch = worktree.fetch( :branch )
 
 			# Merge into main so content is absorbed.
 			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
 
 			# Add uncommitted changes — git worktree remove will refuse.
-			File.write( File.join( wt.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+			File.write( File.join( worktree.fetch( :path ), "unsaved.txt" ), "precious work\n" )
 
 			runtime.sweep_stale_worktrees!
-			assert Dir.exist?( wt.fetch( :path ) ), "dirty worktree must be preserved even if absorbed"
+			assert Dir.exist?( worktree.fetch( :path ) ), "dirty worktree must be preserved even if absorbed"
 		end
 	end
 
 	# --- missing directory tests (gh pr merge --delete-branch aftermath) ---
 
 	def test_worktree_remove_missing_directory_by_name
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "gone-name" )
-			branch = wt.fetch( :branch )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "gone-name" )
+			branch = worktree.fetch( :branch )
 
 			# Simulate gh pr merge --delete-branch: delete the directory externally.
-			FileUtils.rm_rf( wt.fetch( :path ) )
-			refute Dir.exist?( wt.fetch( :path ) ), "directory should be gone"
+			FileUtils.rm_rf( worktree.fetch( :path ) )
+			refute Dir.exist?( worktree.fetch( :path ) ), "directory should be gone"
 
 			# Branch should still exist before cleanup.
 			assert system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
@@ -311,8 +311,8 @@ class RuntimeWorktreeTest < Minitest::Test
 
 			status = runtime.worktree_remove!( worktree_path: "gone-name" )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert_includes out.string, "pruned stale worktree entry"
-			assert_includes out.string, "branch_deleted: #{branch}"
+			assert_includes output.string, "pruned stale worktree entry"
+			assert_includes output.string, "branch_deleted: #{branch}"
 
 			# Branch should be deleted after cleanup.
 			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
@@ -321,15 +321,15 @@ class RuntimeWorktreeTest < Minitest::Test
 	end
 
 	def test_worktree_remove_missing_directory_by_path
-		with_worktree_repo do |runtime, repo_root, _bare_root, out|
-			wt = create_worktree( repo_root: repo_root, worktree_name: "gone-path" )
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "gone-path" )
 
 			# Simulate external deletion.
-			FileUtils.rm_rf( wt.fetch( :path ) )
+			FileUtils.rm_rf( worktree.fetch( :path ) )
 
-			status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert_includes out.string, "pruned stale worktree entry"
+			assert_includes output.string, "pruned stale worktree entry"
 		end
 	end
 
@@ -347,22 +347,22 @@ class RuntimeWorktreeTest < Minitest::Test
 			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: false
 				)
 
-				wt = create_worktree( repo_root: repo_root, worktree_name: "gone-json" )
-				FileUtils.rm_rf( wt.fetch( :path ) )
+				worktree = create_worktree( repo_root: repo_root, worktree_name: "gone-json" )
+				FileUtils.rm_rf( worktree.fetch( :path ) )
 
 				status = runtime.worktree_remove!( worktree_path: "gone-json", json_output: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
 
-				json = JSON.parse( out.string.strip )
+				json = JSON.parse( output.string.strip )
 				assert_equal "ok", json[ "status" ]
 				assert_equal "gone-json", json[ "name" ]
 				assert_equal true, json[ "branch_deleted" ]
@@ -371,11 +371,11 @@ class RuntimeWorktreeTest < Minitest::Test
 	end
 
 	def test_worktree_remove_missing_and_unregistered_fails
-		with_worktree_repo do |runtime, _repo_root, _bare_root, out|
+		with_worktree_repo do |runtime, _repo_root, _bare_root, output|
 			# A name that was never a worktree — directory doesn't exist and not registered.
 			status = runtime.worktree_remove!( worktree_path: "never-existed" )
 			assert_equal Carson::Runtime::EXIT_ERROR, status
-			assert_includes out.string, "not a registered worktree"
+			assert_includes output.string, "not a registered worktree"
 		end
 	end
 
@@ -393,20 +393,20 @@ class RuntimeWorktreeTest < Minitest::Test
 			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				out = StringIO.new
+				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: StringIO.new,
+					output: output,
+					error: StringIO.new,
 					verbose: false
 				)
 
-				wt = create_worktree( repo_root: repo_root, worktree_name: "concise-test" )
-				status = runtime.worktree_remove!( worktree_path: wt.fetch( :path ) )
+				worktree = create_worktree( repo_root: repo_root, worktree_name: "concise-test" )
+				status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				assert_includes out.string, "Worktree removed: concise-test"
-				refute_includes out.string, "worktree_removed:"
+				assert_includes output.string, "Worktree removed: concise-test"
+				refute_includes output.string, "worktree_removed:"
 			end
 		end
 	end

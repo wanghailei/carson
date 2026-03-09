@@ -16,13 +16,13 @@ class RuntimeLocalHelpersTest < Minitest::Test
 			File.write( readme, "init\n" )
 			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
-			out = StringIO.new
-			err = StringIO.new
+			output = StringIO.new
+			error = StringIO.new
 			runtime = Carson::Runtime.new(
 				repo_root: repo_root,
 				tool_root: File.expand_path( "..", __dir__ ),
-				out: out,
-				err: err
+				output: output,
+				error: error
 			)
 			yield runtime, repo_root
 		end

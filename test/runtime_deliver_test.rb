@@ -260,8 +260,8 @@ private
 
 	def build_runtime_with_mock_gh( verbose: false, scenario: "default" )
 		repo_root = Dir.mktmpdir( "carson-deliver-test", carson_tmp_root )
-		out = StringIO.new
-		err = StringIO.new
+		output = StringIO.new
+		error = StringIO.new
 
 		# Create a mock gh script.
 		mock_bin = File.join( repo_root, ".mock-bin" )
@@ -274,9 +274,9 @@ private
 		original_path = ENV[ "PATH" ]
 		ENV[ "PATH" ] = "#{mock_bin}:#{original_path}"
 
-		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: repo_root, out: out, err: err, verbose: verbose )
+		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: repo_root, output: output, error: error, verbose: verbose )
 
-		# Restore PATH after runtime creation (the adapter shells out at call time, not at init).
+		# Restore PATH after runtime creation (the adapter shells output at call time, not at init).
 		# We keep mock_bin in PATH for the duration of the test.
 		# Cleanup will restore it via destroy_runtime_repo.
 
@@ -363,14 +363,14 @@ private
 	end
 
 	def output_string( runtime )
-		runtime.instance_variable_get( :@out ).string
+		runtime.instance_variable_get( :@output ).string
 	end
 
 	def destroy_runtime_repo( repo_root: )
 		# Clean up mock bin PATH entry.
 		mock_bin = File.join( repo_root, ".mock-bin" )
 		if ENV[ "PATH" ]&.include?( mock_bin )
-			ENV[ "PATH" ] = ENV[ "PATH" ].split( ":" ).reject { |p| p == mock_bin }.join( ":" )
+			ENV[ "PATH" ] = ENV[ "PATH" ].split( ":" ).reject { |path| path == mock_bin }.join( ":" )
 		end
 
 		# Clean up remote repo if it exists.

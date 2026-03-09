@@ -14,18 +14,18 @@ class RuntimeRefreshAllTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				status = runtime.refresh_all!
 				assert_equal Carson::Runtime::EXIT_ERROR, status
-				assert_includes out.string, "No governed repositories configured"
-				assert_includes out.string, "carson onboard"
+				assert_includes output.string, "No governed repositories configured"
+				assert_includes output.string, "carson onboard"
 			end
 		end
 	end
@@ -46,16 +46,16 @@ class RuntimeRefreshAllTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_a,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				status = runtime.refresh_all!
-				output = out.string
+				output = output.string
 
 				assert_includes output, "Refresh all (2 repos)"
 				assert_includes output, "repo-a: OK"
@@ -82,16 +82,16 @@ class RuntimeRefreshAllTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_a,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				status = runtime.refresh_all!
-				output = out.string
+				output = output.string
 
 				assert_includes output, "repo-a: OK"
 				assert_includes output, "nonexistent-repo: FAIL (path not found)"
@@ -120,16 +120,16 @@ class RuntimeRefreshAllTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_a,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				status = runtime.refresh_all!
-				output = out.string
+				output = output.string
 
 				assert_includes output, "repo-a: OK"
 				assert_includes output, "not-a-repo: FAIL"
