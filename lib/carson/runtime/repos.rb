@@ -9,7 +9,7 @@ module Carson
 				repos = config.govern_repos
 
 				if json_output
-					out.puts JSON.pretty_generate( { command: "repos", repos: repos } )
+					output.puts JSON.pretty_generate( { command: "repos", repos: repos } )
 				else
 					if repos.empty?
 						puts_line "No governed repositories."

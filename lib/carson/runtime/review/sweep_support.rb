@@ -208,8 +208,8 @@ module Carson
 					)
 					puts_verbose "review_sweep_report_markdown: #{markdown_path}"
 					puts_verbose "review_sweep_report_json: #{json_path}"
-				rescue StandardError => e
-					puts_verbose "review_sweep_report_write: SKIP (#{e.message})"
+				rescue StandardError => exception
+					puts_verbose "review_sweep_report_write: SKIP (#{exception.message})"
 				end
 
 				# Human-readable scheduled sweep report.

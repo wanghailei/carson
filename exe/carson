@@ -5,9 +5,9 @@ $LOAD_PATH.unshift( File.expand_path( "../lib", __dir__ ) )
 require "carson"
 
 exit Carson::CLI.start(
-	argv: ARGV.dup,
+	arguments: ARGV.dup,
 	repo_root: Dir.pwd,
 	tool_root: File.expand_path( "..", __dir__ ),
-	out: $stdout,
-	err: $stderr
+	output: $stdout,
+	error: $stderr
 )

@@ -164,12 +164,12 @@ module Carson
 					end
 
 					begin
-						buf = verbose? ? out : StringIO.new
-						err_buf = verbose? ? err : StringIO.new
-						rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: buf, err: err_buf, verbose: verbose? )
-						status = rt.prune!
+						buffer = verbose? ? output : StringIO.new
+						error_buffer = verbose? ? error : StringIO.new
+						scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
+						status = scoped_runtime.prune!
 						unless verbose?
-							summary = buf.string.lines.last.to_s.strip
+							summary = buffer.string.lines.last.to_s.strip
 							puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"
 						end
 						if status == EXIT_ERROR
@@ -179,9 +179,9 @@ module Carson
 							clear_batch_success( command: "prune", repo_path: repo_path )
 							succeeded += 1
 						end
-					rescue StandardError => e
-						puts_line "#{repo_name}: FAIL (#{e.message})"
-						record_batch_skip( command: "prune", repo_path: repo_path, reason: e.message )
+					rescue StandardError => exception
+						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						record_batch_skip( command: "prune", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end
 				end
@@ -294,7 +294,7 @@ module Carson
 			def onboard_run_audit!
 				audit_error = nil
 				audit_status = with_captured_output { audit! }
-			rescue StandardError => e
+			rescue StandardError => exception
 				audit_error = e
 				audit_status = EXIT_OK
 			ensure
@@ -339,17 +339,17 @@ module Carson
 			# Refreshes a single governed repository using a scoped Runtime.
 			def refresh_single_repo( repo_path:, repo_name: )
 				if verbose?
-					rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: out, err: err, verbose: true )
+					scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error, verbose: true )
 				else
-					rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: StringIO.new, err: StringIO.new )
+					scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: StringIO.new, error: StringIO.new )
 				end
-				status = rt.refresh!
+				status = scoped_runtime.refresh!
 				label = refresh_status_label( status: status )
-				sync_suffix = refresh_sync_suffix( result: rt.template_sync_result )
+				sync_suffix = refresh_sync_suffix( result: scoped_runtime.template_sync_result )
 				puts_line "#{repo_name}: #{label}#{sync_suffix}"
 				status
-			rescue StandardError => e
-				puts_line "#{repo_name}: FAIL (#{e.message})"
+			rescue StandardError => exception
+				puts_line "#{repo_name}: FAIL (#{exception.message})"
 				EXIT_ERROR
 			end
 
@@ -376,8 +376,8 @@ module Carson
 				git_system!( "config", "--unset", "core.hooksPath" )
 				puts_verbose "hooks_path_unset: core.hooksPath"
 				EXIT_OK
-			rescue StandardError => e
-				puts_line "ERROR: unable to update core.hooksPath (#{e.message})"
+			rescue StandardError => exception
+				puts_line "ERROR: unable to update core.hooksPath (#{exception.message})"
 				EXIT_ERROR
 			end
 

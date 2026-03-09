@@ -33,18 +33,18 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "no open PRs"
 			end
 		end
@@ -82,18 +82,18 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "ready"
 				assert_includes output, "would_merge"
 			end
@@ -132,18 +132,18 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "ci_failing"
 				assert_includes output, "would_dispatch_ci_fix"
 			end
@@ -182,18 +182,18 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				status = runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "review_blocked"
 				assert_includes output, "would_dispatch_review_fix"
 			end
@@ -230,18 +230,18 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				status = runtime.govern!( dry_run: true, json_output: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "\"cycle_at\""
 				assert_includes output, "\"dry_run\": true"
 			end
@@ -266,70 +266,70 @@ class RuntimeGovernTest < Minitest::Test
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => ""
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: work_repo,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				runtime.send( :housekeep_repo!, repo_path: work_repo )
-				output = out.string
+				output = output.string
 				assert_includes output, "in sync"
 			end
 		end
 	end
 
 	def test_cli_parses_govern_dry_run
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "govern", "--dry-run" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "govern", "--dry-run" ], output: output, error: error )
 		assert_equal "govern", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :dry_run )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_cli_parses_govern_json
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "govern", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "govern", "--json" ], output: output, error: error )
 		assert_equal "govern", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :dry_run )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_cli_parses_govern_combined_flags
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "govern", "--dry-run", "--json" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "govern", "--dry-run", "--json" ], output: output, error: error )
 		assert_equal "govern", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :dry_run )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_cli_parses_govern_loop_seconds
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "govern", "--loop", "300" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "govern", "--loop", "300" ], output: output, error: error )
 		assert_equal "govern", parsed.fetch( :command )
 		assert_equal 300, parsed[ :loop_seconds ]
 		assert_equal false, parsed.fetch( :dry_run )
 	end
 
 	def test_cli_parses_govern_loop_zero_rejected
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "govern", "--loop", "0" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "govern", "--loop", "0" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes err.string, "positive integer"
+		assert_includes error.string, "positive integer"
 	end
 
 	def test_cli_parses_govern_loop_non_integer_rejected
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "govern", "--loop", "abc" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "govern", "--loop", "abc" ], output: output, error: error )
 		assert_equal :invalid, parsed.fetch( :command )
 	end
 
@@ -352,9 +352,9 @@ class RuntimeGovernTest < Minitest::Test
 	end
 
 	def test_cli_parses_housekeep
-		out = StringIO.new
-		err = StringIO.new
-		parsed = Carson::CLI.parse_args( argv: [ "housekeep" ], out: out, err: err )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep" ], output: output, error: error )
 		assert_equal "housekeep", parsed.fetch( :command )
 	end
 
@@ -431,13 +431,13 @@ class RuntimeGovernTest < Minitest::Test
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => ""
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 
@@ -572,12 +572,12 @@ class RuntimeGovernTest < Minitest::Test
 			FileUtils.mkdir_p( repo_root )
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
-				result = rt.send( :truncate_log, text: "short" )
+				result = scoped_runtime.send( :truncate_log, text: "short" )
 				assert_equal "short", result
 			end
 		end
@@ -589,13 +589,13 @@ class RuntimeGovernTest < Minitest::Test
 			FileUtils.mkdir_p( repo_root )
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				long_text = "x" * 10_000 + "TAIL_MARKER"
-				result = rt.send( :truncate_log, text: long_text )
+				result = scoped_runtime.send( :truncate_log, text: long_text )
 				assert_equal 8_000, result.length
 				assert_includes result, "TAIL_MARKER"
 			end
@@ -628,13 +628,13 @@ class RuntimeGovernTest < Minitest::Test
 			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				pr = { "headRefName" => "fix/ci", "number" => 1 }
-				result = rt.send( :ci_evidence, pr: pr, repo_path: repo_root )
+				result = scoped_runtime.send( :ci_evidence, pr: pr, repo_path: repo_root )
 				assert_equal "https://github.com/test/repo/actions/runs/999", result[ :ci_run_url ]
 				assert_includes result[ :ci_logs ], "test_something failed"
 			end
@@ -661,13 +661,13 @@ class RuntimeGovernTest < Minitest::Test
 			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				pr = { "headRefName" => "fix/ci", "number" => 1 }
-				result = rt.send( :ci_evidence, pr: pr, repo_path: repo_root )
+				result = scoped_runtime.send( :ci_evidence, pr: pr, repo_path: repo_root )
 				assert_equal( {}, result )
 			end
 		end
@@ -682,15 +682,15 @@ class RuntimeGovernTest < Minitest::Test
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				state = { "repo#1" => { "status" => "failed", "summary" => "codex crashed", "dispatched_at" => "2025-01-01T00:00:00Z" } }
-				rt.send( :save_dispatch_state, state: state )
+				scoped_runtime.send( :save_dispatch_state, state: state )
 				pr = { "number" => 1 }
-				result = rt.send( :prior_attempt, pr: pr, repo_path: repo_root )
+				result = scoped_runtime.send( :prior_attempt, pr: pr, repo_path: repo_root )
 				assert_equal "codex crashed", result[ :summary ]
 				assert_equal "2025-01-01T00:00:00Z", result[ :dispatched_at ]
 			end
@@ -704,15 +704,15 @@ class RuntimeGovernTest < Minitest::Test
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				state = { "repo#1" => { "status" => "done", "summary" => "fixed", "dispatched_at" => "2025-01-01T00:00:00Z" } }
-				rt.send( :save_dispatch_state, state: state )
+				scoped_runtime.send( :save_dispatch_state, state: state )
 				pr = { "number" => 1 }
-				result = rt.send( :prior_attempt, pr: pr, repo_path: repo_root )
+				result = scoped_runtime.send( :prior_attempt, pr: pr, repo_path: repo_root )
 				assert_nil result
 			end
 		end
@@ -759,15 +759,15 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_GOVERN_CHECK_WAIT" => "300",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				rt = Carson::Runtime.new(
+				output = StringIO.new
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: out, err: StringIO.new,
+					output: output, error: StringIO.new,
 					verbose: true
 				)
-				status = rt.govern!( dry_run: true )
+				status = scoped_runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "pending"
 				assert_includes output, "skip"
 			end
@@ -813,15 +813,15 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_GOVERN_CHECK_WAIT" => "30",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
-				out = StringIO.new
-				rt = Carson::Runtime.new(
+				output = StringIO.new
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: out, err: StringIO.new,
+					output: output, error: StringIO.new,
 					verbose: true
 				)
-				status = rt.govern!( dry_run: true )
+				status = scoped_runtime.govern!( dry_run: true )
 				assert_equal Carson::Runtime::EXIT_OK, status
-				output = out.string
+				output = output.string
 				assert_includes output, "ci_failing"
 				assert_includes output, "would_dispatch_ci_fix"
 			end
@@ -870,17 +870,17 @@ class RuntimeGovernTest < Minitest::Test
 			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				pr = { "title" => "Fix the thing", "headRefName" => "fix/thing", "number" => 42 }
-				ctx = rt.send( :evidence, pr: pr, repo_path: repo_root, objective: "fix_ci" )
-				assert_kind_of Hash, ctx
-				assert_equal "Fix the thing", ctx[ :title ]
-				assert_includes ctx[ :ci_logs ], "undefined method foo"
-				assert_equal "https://github.com/test/repo/actions/runs/100", ctx[ :ci_run_url ]
+				context = scoped_runtime.send( :evidence, pr: pr, repo_path: repo_root, objective: "fix_ci" )
+				assert_kind_of Hash, context
+				assert_equal "Fix the thing", context[ :title ]
+				assert_includes context[ :ci_logs ], "undefined method foo"
+				assert_equal "https://github.com/test/repo/actions/runs/100", context[ :ci_run_url ]
 			end
 		end
 	end
@@ -901,15 +901,15 @@ class RuntimeGovernTest < Minitest::Test
 			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
 
 			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
-				rt = Carson::Runtime.new(
+				scoped_runtime = Carson::Runtime.new(
 					repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
-					out: StringIO.new, err: StringIO.new,
+					output: StringIO.new, error: StringIO.new,
 					verbose: true
 				)
 				pr = { "title" => "My PR", "headRefName" => "fix/x", "number" => 1 }
-				ctx = rt.send( :evidence, pr: pr, repo_path: repo_root, objective: "fix_ci" )
-				assert_kind_of Hash, ctx
-				assert_equal "My PR", ctx[ :title ]
+				context = scoped_runtime.send( :evidence, pr: pr, repo_path: repo_root, objective: "fix_ci" )
+				assert_kind_of Hash, context
+				assert_equal "My PR", context[ :title ]
 			end
 		end
 	end
@@ -979,13 +979,13 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				status = runtime.send( :prepare! )
@@ -1018,17 +1018,17 @@ class RuntimeGovernTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"CARSON_HOOKS_PATH" => hooks_base
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				runtime.onboard!
-				output = out.string
+				output = output.string
 				assert_includes output, "Carson at your service."
 				assert_includes output, "To adjust any setting: carson setup"
 			end

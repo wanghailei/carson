@@ -13,13 +13,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 0 )
@@ -39,13 +39,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 3 )
@@ -67,13 +67,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "branch"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 2 )
@@ -114,13 +114,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 1 )
@@ -152,13 +152,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 1 )
@@ -186,13 +186,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 1 )
@@ -212,13 +212,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => "",
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err
+					output: output,
+					error: error
 				)
 				runtime.refresh!
 				result = runtime.template_sync_result

@@ -23,17 +23,17 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				runtime.template_check!
-				output = out.string
+				output = output.string
 
 				# The canonical file should appear as drifted (missing from repo).
 				assert_includes output, ".github/workflows/lint.yml"
@@ -59,13 +59,13 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				runtime.template_apply!
@@ -96,13 +96,13 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				runtime.template_apply!
@@ -134,13 +134,13 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
-				out = StringIO.new
-				err = StringIO.new
+				output = StringIO.new
+				error = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
 					tool_root: tool_root,
-					out: out,
-					err: err,
+					output: output,
+					error: error,
 					verbose: true
 				)
 				result = runtime.send( :template_propagate!, drift_count: 1 )

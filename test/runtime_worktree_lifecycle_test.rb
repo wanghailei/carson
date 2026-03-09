@@ -90,8 +90,8 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		runtime.worktree_create!( name: "json-dupe" )
 
 		# Reset output buffer for second call.
-		runtime.instance_variable_get( :@out ).truncate( 0 )
-		runtime.instance_variable_get( :@out ).rewind
+		runtime.instance_variable_get( :@output ).truncate( 0 )
+		runtime.instance_variable_get( :@output ).rewind
 
 		result = runtime.worktree_create!( name: "json-dupe", json_output: true )
 		json = JSON.parse( output_string( runtime ).strip )
@@ -131,16 +131,16 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		init_git_repo( repo_root )
 
 		# Create two worktrees — .claude/ should appear in exclude only once.
-		runtime.worktree_create!( name: "first-wt" )
-		runtime.worktree_create!( name: "second-wt" )
+		runtime.worktree_create!( name: "first-worktree" )
+		runtime.worktree_create!( name: "second-worktree" )
 
 		exclude_path = File.join( repo_root, ".git", "info", "exclude" )
 		exclude_content = File.read( exclude_path )
 		matches = exclude_content.lines.count { |line| line.strip == ".claude/" }
 		assert_equal 1, matches, ".claude/ should appear exactly once in exclude"
 
-		wt1 = File.join( repo_root, ".claude", "worktrees", "first-wt" )
-		wt2 = File.join( repo_root, ".claude", "worktrees", "second-wt" )
+		wt1 = File.join( repo_root, ".claude", "worktrees", "first-worktree" )
+		wt2 = File.join( repo_root, ".claude", "worktrees", "second-worktree" )
 		cleanup_worktree( repo_root, wt1 )
 		cleanup_worktree( repo_root, wt2 )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -321,8 +321,8 @@ private
 	end
 
 	def reset_output( runtime )
-		runtime.instance_variable_get( :@out ).truncate( 0 )
-		runtime.instance_variable_get( :@out ).rewind
+		runtime.instance_variable_get( :@output ).truncate( 0 )
+		runtime.instance_variable_get( :@output ).rewind
 	end
 
 	def cleanup_worktree( repo_root, wt_path, force: false )
@@ -333,6 +333,6 @@ private
 	end
 
 	def output_string( runtime )
-		runtime.instance_variable_get( :@out ).string
+		runtime.instance_variable_get( :@output ).string
 	end
 end

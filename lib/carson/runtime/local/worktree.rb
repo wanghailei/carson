@@ -15,11 +15,11 @@ module Carson
 			# Uses main_worktree_root so this works even when called from inside a worktree.
 			def worktree_create!( name:, json_output: false )
 				worktrees_dir = File.join( main_worktree_root, ".claude", "worktrees" )
-				wt_path = File.join( worktrees_dir, name )
+				worktree_path = File.join( worktrees_dir, name )
 
-				if Dir.exist?( wt_path )
+				if Dir.exist?( worktree_path )
 					return worktree_finish(
-						result: { command: "worktree create", status: "error", name: name, path: wt_path,
+						result: { command: "worktree create", status: "error", name: name, path: worktree_path,
 							error: "worktree already exists: #{name}",
 							recovery: "carson worktree remove #{name}, then retry" },
 						exit_code: EXIT_ERROR, json_output: json_output
@@ -42,9 +42,9 @@ module Carson
 
 				# Create the worktree with a new branch based on the main branch.
 				FileUtils.mkdir_p( worktrees_dir )
-				_, wt_stderr, wt_success, = git_run( "worktree", "add", wt_path, "-b", name, base )
-				unless wt_success
-					error_text = wt_stderr.to_s.strip
+				_, worktree_stderr, worktree_success, = git_run( "worktree", "add", worktree_path, "-b", name, base )
+				unless worktree_success
+					error_text = worktree_stderr.to_s.strip
 					error_text = "unable to create worktree" if error_text.empty?
 					return worktree_finish(
 						result: { command: "worktree create", status: "error", name: name,
@@ -54,7 +54,7 @@ module Carson
 				end
 
 				worktree_finish(
-					result: { command: "worktree create", status: "ok", name: name, path: wt_path, branch: name },
+					result: { command: "worktree create", status: "ok", name: name, path: worktree_path, branch: name },
 					exit_code: EXIT_OK, json_output: json_output
 				)
 			end
@@ -66,7 +66,7 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				unless fingerprint_status.nil?
 					if json_output
-						out.puts JSON.pretty_generate( {
+						output.puts JSON.pretty_generate( {
 							command: "worktree remove", status: "block",
 							error: "Carson-owned artefacts detected in host repository",
 							recovery: "remove Carson-owned files (.carson.yml, bin/carson, .tools/carson) then retry",
@@ -202,9 +202,9 @@ module Carson
 				end
 				return if agent_prefixes.empty?
 
-				worktrees.each do |wt|
-					path = wt.fetch( :path )
-					branch = wt.fetch( :branch, nil )
+				worktrees.each do |worktree|
+					path = worktree.fetch( :path )
+					branch = worktree.fetch( :branch, nil )
 					next unless branch
 					next unless agent_prefixes.any? { |prefix| path.start_with?( prefix ) }
 					next if cwd_inside_worktree?( worktree_path: path )
@@ -270,7 +270,7 @@ module Carson
 				result[ :exit_code ] = exit_code
 
 				if json_output
-					out.puts JSON.pretty_generate( result )
+					output.puts JSON.pretty_generate( result )
 				else
 					print_worktree_human( result: result )
 				end
@@ -310,9 +310,9 @@ module Carson
 			# Uses realpath on both sides to handle symlink differences (e.g. /tmp vs /private/tmp).
 			def cwd_inside_worktree?( worktree_path: )
 				cwd = realpath_safe( Dir.pwd )
-				wt = realpath_safe( worktree_path )
-				normalised_wt = File.join( wt, "" )
-				cwd == wt || cwd.start_with?( normalised_wt )
+				worktree = realpath_safe( worktree_path )
+				normalised_wt = File.join( worktree, "" )
+				cwd == worktree || cwd.start_with?( normalised_wt )
 			rescue StandardError
 				false
 			end
@@ -378,7 +378,7 @@ module Carson
 				nil
 			end
 
-			# Returns the branch checked out in the worktree that contains the process CWD,
+			# Returns the branch checked output in the worktree that contains the process CWD,
 			# or nil if CWD is not inside any worktree. Used by prune to proactively
 			# protect the CWD worktree's branch from deletion.
 			# Matches the longest (most specific) path because worktree directories
@@ -387,12 +387,12 @@ module Carson
 				cwd = realpath_safe( Dir.pwd )
 				best_branch = nil
 				best_length = -1
-				worktree_list.each do |wt|
-					wt_path = wt.fetch( :path )
-					normalised = File.join( wt_path, "" )
-					if ( cwd == wt_path || cwd.start_with?( normalised ) ) && wt_path.length > best_length
-						best_branch = wt.fetch( :branch, nil )
-						best_length = wt_path.length
+				worktree_list.each do |worktree|
+					worktree_path = worktree.fetch( :path )
+					normalised = File.join( worktree_path, "" )
+					if ( cwd == worktree_path || cwd.start_with?( normalised ) ) && worktree_path.length > best_length
+						best_branch = worktree.fetch( :branch, nil )
+						best_length = worktree_path.length
 					end
 				end
 				best_branch
@@ -426,7 +426,7 @@ module Carson
 				existing = File.exist?( exclude_path ) ? File.read( exclude_path ) : ""
 				return if existing.lines.any? { |line| line.strip == ".claude/" }
 
-				File.open( exclude_path, "a" ) { |f| f.puts ".claude/" }
+				File.open( exclude_path, "a" ) { |file| file.puts ".claude/" }
 			rescue StandardError
 				# Best-effort — do not block worktree creation if exclude fails.
 			end
@@ -451,14 +451,14 @@ module Carson
 			# Compares using realpath to handle symlink differences.
 			def worktree_registered?( path: )
 				canonical = realpath_safe( path )
-				worktree_list.any? { |wt| wt.fetch( :path ) == canonical }
+				worktree_list.any? { |worktree| worktree.fetch( :path ) == canonical }
 			end
 
-			# Returns the branch name checked out in a worktree, or nil.
+			# Returns the branch name checked output in a worktree, or nil.
 			# Compares using realpath to handle symlink differences.
 			def worktree_branch( path: )
 				canonical = realpath_safe( path )
-				entry = worktree_list.find { |wt| wt.fetch( :path ) == canonical }
+				entry = worktree_list.find { |worktree| worktree.fetch( :path ) == canonical }
 				entry&.fetch( :branch, nil )
 			end
 

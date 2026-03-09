@@ -8,7 +8,7 @@ module Carson
 				fingerprint_status = block_if_outsider_fingerprints!
 				unless fingerprint_status.nil?
 					if json_output
-						out.puts JSON.pretty_generate( {
+						output.puts JSON.pretty_generate( {
 							command: "prune", status: "block",
 							error: "Carson-owned artefacts detected in host repository",
 							recovery: "remove Carson-owned files (.carson.yml, bin/carson, .tools/carson) then retry",
@@ -51,7 +51,7 @@ module Carson
 				result[ :exit_code ] = exit_code
 
 				if json_output
-					out.puts JSON.pretty_generate( result )
+					output.puts JSON.pretty_generate( result )
 				else
 					print_prune_human( counters: counters )
 				end
@@ -116,7 +116,7 @@ module Carson
 			end
 
 			def prune_skip_stale_branch( type:, branch:, upstream: )
-				reason = { protected: "protected branch", current: "current branch", cwd_worktree: "checked out in CWD worktree" }.fetch( type, type.to_s )
+				reason = { protected: "protected branch", current: "current branch", cwd_worktree: "checked output in CWD worktree" }.fetch( type, type.to_s )
 				status = { protected: "skip_protected_branch", current: "skip_current_branch", cwd_worktree: "skip_cwd_worktree_branch" }.fetch( type, "skip_#{type}" )
 				puts_verbose "#{status}: #{branch} (upstream=#{upstream})"
 				{ action: :skipped, branch: branch, upstream: upstream, type: "stale", reason: reason }
@@ -135,7 +135,7 @@ module Carson
 			end
 
 			def prune_safe_delete_success( branch:, upstream:, stdout_text: )
-				out.print stdout_text if verbose? && !stdout_text.empty?
+				output.print stdout_text if verbose? && !stdout_text.empty?
 				puts_verbose "deleted_local_branch: #{branch} (upstream=#{upstream})"
 				{ action: :deleted, branch: branch, upstream: upstream, type: "stale", reason: "upstream gone" }
 			end
@@ -154,7 +154,7 @@ module Carson
 			end
 
 			def prune_force_delete_success( branch:, upstream:, merged_pr:, force_stdout: )
-				out.print force_stdout if verbose? && !force_stdout.empty?
+				output.print force_stdout if verbose? && !force_stdout.empty?
 				puts_verbose "deleted_local_branch_force: #{branch} (upstream=#{upstream}) merged_pr=#{merged_pr.fetch( :url )}"
 				{ action: :deleted, branch: branch, upstream: upstream, type: "stale", reason: "force deleted with PR evidence" }
 			end
@@ -195,9 +195,9 @@ module Carson
 				error_text.to_s.downcase.include?( "used by worktree" )
 			end
 
-			# Returns the worktree path for a branch, or nil if not checked out in any worktree.
+			# Returns the worktree path for a branch, or nil if not checked output in any worktree.
 			def worktree_path_for_branch( branch: )
-				entry = worktree_list.find { |wt| wt.fetch( :branch, nil ) == branch }
+				entry = worktree_list.find { |worktree| worktree.fetch( :branch, nil ) == branch }
 				entry&.fetch( :path, nil )
 			end
 
@@ -307,7 +307,7 @@ module Carson
 					return { action: :skipped, branch: branch, upstream: upstream, type: "absorbed", reason: error_text }
 				end
 
-				out.print force_stdout if verbose? && !force_stdout.empty?
+				output.print force_stdout if verbose? && !force_stdout.empty?
 
 				remote_branch = upstream.sub( "#{config.git_remote}/", "" )
 				git_run( "push", config.git_remote, "--delete", remote_branch )
@@ -372,7 +372,7 @@ module Carson
 
 				force_stdout, force_stderr, force_success = force_delete_local_branch( branch: branch )
 				if force_success
-					out.print force_stdout if verbose? && !force_stdout.empty?
+					output.print force_stdout if verbose? && !force_stdout.empty?
 					puts_verbose "deleted_orphan_branch: #{branch} merged_pr=#{merged_pr.fetch( :url )}"
 					return { action: :deleted, branch: branch, upstream: "", type: "orphan", reason: "merged PR evidence found" }
 				end
@@ -486,10 +486,10 @@ module Carson
 				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
 
 				[ latest, nil ]
-			rescue JSON::ParserError => e
-				[ nil, "invalid gh JSON response (#{e.message})" ]
-			rescue StandardError => e
-				[ nil, e.message ]
+			rescue JSON::ParserError => exception
+				[ nil, "invalid gh JSON response (#{exception.message})" ]
+			rescue StandardError => exception
+				[ nil, exception.message ]
 			end
 		end
 	end

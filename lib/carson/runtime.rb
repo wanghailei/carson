@@ -23,11 +23,11 @@ module Carson
 		DISPOSITION_TOKENS = %w[accepted rejected deferred].freeze
 
 		# Runtime wiring for repository context, tool paths, and output streams.
-		def initialize( repo_root:, tool_root:, out:, err:, in_stream: $stdin, verbose: false )
+		def initialize( repo_root:, tool_root:, output:, error:, in_stream: $stdin, verbose: false )
 			@repo_root = repo_root
 			@tool_root = tool_root
-			@out = out
-			@err = err
+			@output = output
+			@error = error
 			@in = in_stream
 			@verbose = verbose
 			@config = Config.load( repo_root: repo_root )
@@ -40,7 +40,7 @@ module Carson
 
 	private
 
-		attr_reader :repo_root, :tool_root, :out, :err, :in, :config, :git_adapter, :github_adapter
+		attr_reader :repo_root, :tool_root, :output, :error, :in, :config, :git_adapter, :github_adapter
 
 		# Returns true when full diagnostic output is enabled via --verbose.
 		def verbose?
@@ -55,12 +55,12 @@ module Carson
 		# Runs a block with all output captured (suppressed from the user).
 		# Returns the block's return value; output is silently discarded.
 		def with_captured_output
-			saved_out, saved_err = @out, @err
-			@out = StringIO.new
-			@err = StringIO.new
+			saved_output, saved_error = @output, @error
+			@output = StringIO.new
+			@error = StringIO.new
 			yield
 		ensure
-			@out, @err = saved_out, saved_err
+			@output, @error = saved_output, saved_error
 		end
 
 		# Returns true when the repository has at least one commit (HEAD exists).
@@ -95,9 +95,9 @@ module Carson
 		# Prefixes non-empty lines with the Carson badge (⧓).
 		def puts_line( message )
 			if message.to_s.strip.empty?
-				out.puts ""
+				output.puts ""
 			else
-				out.puts "#{BADGE} #{message}"
+				output.puts "#{BADGE} #{message}"
 			end
 		end
 
@@ -182,8 +182,8 @@ module Carson
 		# Runs git command, streams outputs, and raises on non-zero exit.
 		def git_system!( *args )
 			stdout_text, stderr_text, success, = git_run( *args )
-			out.print stdout_text unless stdout_text.empty?
-			err.print stderr_text unless stderr_text.empty?
+			output.print stdout_text unless stdout_text.empty?
+			error.print stderr_text unless stderr_text.empty?
 			raise "git #{args.join( ' ' )} failed" unless success
 		end
 
@@ -191,7 +191,7 @@ module Carson
 		def git_capture!( *args )
 			stdout_text, stderr_text, success, = git_run( *args )
 			unless success
-				err.print stderr_text unless stderr_text.empty?
+				error.print stderr_text unless stderr_text.empty?
 				raise "git #{args.join( ' ' )} failed"
 			end
 			stdout_text
@@ -234,9 +234,9 @@ module Carson
 		def save_batch_pending( data )
 			path = batch_pending_path
 			FileUtils.mkdir_p( File.dirname( path ) )
-			tmp = "#{path}.tmp"
-			File.write( tmp, JSON.pretty_generate( data ) )
-			File.rename( tmp, path )
+			temporary_path = "#{path}.tmp"
+			File.write( temporary_path, JSON.pretty_generate( data ) )
+			File.rename( temporary_path, path )
 		end
 
 		# Adds or updates an entry in the pending log, incrementing attempts.
@@ -293,10 +293,10 @@ module Carson
 			reasons = []
 
 			# Active worktrees beyond the main working tree.
-			rt = build_scoped_runtime( repo_path: repo_path )
-			worktrees = rt.send( :worktree_list )
-			main_root = rt.send( :realpath_safe, repo_path )
-			active = worktrees.reject { |wt| wt.fetch( :path ) == main_root }
+			scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+			worktrees = scoped_runtime.send( :worktree_list )
+			main_root = scoped_runtime.send( :realpath_safe, repo_path )
+			active = worktrees.reject { |worktree| worktree.fetch( :path ) == main_root }
 			if active.any?
 				reasons << "#{active.count} active worktree#{active.count == 1 ? '' : 's'}"
 			end
@@ -308,15 +308,15 @@ module Carson
 			end
 
 			{ safe: reasons.empty?, reasons: reasons }
-		rescue StandardError => e
-			{ safe: false, reasons: [ e.message ] }
+		rescue StandardError => exception
+			{ safe: false, reasons: [ exception.message ] }
 		end
 
 		# Creates a scoped Runtime for a governed repo with captured output.
 		def build_scoped_runtime( repo_path: )
-			buf = verbose? ? out : StringIO.new
-			err_buf = verbose? ? err : StringIO.new
-			Runtime.new( repo_root: repo_path, tool_root: tool_root, out: buf, err: err_buf, verbose: verbose? )
+			buffer = verbose? ? output : StringIO.new
+			error_buffer = verbose? ? error : StringIO.new
+			Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
 		end
 	end
 end

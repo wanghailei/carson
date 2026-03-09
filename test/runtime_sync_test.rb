@@ -86,7 +86,7 @@ private
 	end
 
 	def output_string( runtime )
-		runtime.instance_variable_get( :@out ).string
+		runtime.instance_variable_get( :@output ).string
 	end
 
 	def destroy_runtime_repo( repo_root: )

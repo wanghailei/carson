@@ -37,11 +37,11 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, output_stream: output )
 			runtime.setup!
 
-			output = out.string
+			output = output.string
 			assert_match( /detected_remote: origin/, output )
 		end
 	end
@@ -53,22 +53,22 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, output_stream: output )
 			runtime.setup!
 
-			output = out.string
+			output = output.string
 			assert_match( /detected_remote: origin/, output )
 		end
 	end
 
 	def test_setup_handles_no_remotes
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, output_stream: output )
 			runtime.setup!
 
-			output = out.string
+			output = output.string
 			assert_match( /detected_remote: none/, output )
 		end
 	end
@@ -103,12 +103,12 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, output_stream: output )
 			status = runtime.setup!
 
 			assert_equal Carson::Runtime::EXIT_OK, status
-			output = out.string
+			output = output.string
 			assert_match( /Config saved/, output )
 		end
 	end
@@ -204,11 +204,11 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "github", remote_dir, out: File::NULL, err: File::NULL )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, output_stream: output )
 			runtime.setup!
 
-			output = out.string
+			output = output.string
 			assert_match( /duplicate_remotes:.*share the same URL/, output )
 		end
 	end
@@ -225,8 +225,8 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, output_stream: output )
 			status = runtime.onboard!
 
 			assert_equal Carson::Runtime::EXIT_OK, status
@@ -234,7 +234,7 @@ class RuntimeSetupTest < Minitest::Test
 			saved = JSON.parse( File.read( config_path ) )
 			repos = saved.dig( "govern", "repos" ) || []
 			assert_includes repos, File.expand_path( @repo_root )
-			assert_includes out.string, "Registered for portfolio governance."
+			assert_includes output.string, "Registered for portfolio governance."
 		end
 	end
 
@@ -254,11 +254,11 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, output_stream: output )
 			runtime.onboard!
 
-			refute_includes out.string, "Registered for portfolio governance."
+			refute_includes output.string, "Registered for portfolio governance."
 		end
 	end
 
@@ -269,11 +269,11 @@ class RuntimeSetupTest < Minitest::Test
 
 		# Non-TTY input — registration should still happen automatically
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_onboard_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_onboard_runtime( input: StringIO.new, output_stream: output )
 			runtime.onboard!
 
-			assert_includes out.string, "Registered for portfolio governance."
+			assert_includes output.string, "Registered for portfolio governance."
 			config_path = File.join( @tmp_dir, ".carson", "config.json" )
 			saved = JSON.parse( File.read( config_path ) )
 			repos = saved.dig( "govern", "repos" ) || []
@@ -297,8 +297,8 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_onboard_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, output_stream: output )
 			status = runtime.onboard!
 
 			assert_equal Carson::Runtime::EXIT_OK, status
@@ -413,8 +413,8 @@ class RuntimeSetupTest < Minitest::Test
 			assert_includes pre_config.dig( "govern", "repos" ), expanded_repo
 
 			# Offboard
-			out = StringIO.new
-			runtime = build_onboard_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_onboard_runtime( input: StringIO.new, output_stream: output )
 			status = runtime.offboard!
 			assert_equal Carson::Runtime::EXIT_OK, status
 
@@ -437,8 +437,8 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "\n\n\n\n/tmp/my-templates\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, output_stream: output )
 			runtime.setup!
 
 			config_path = File.join( @tmp_dir, ".carson", "config.json" )
@@ -481,11 +481,11 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "\n\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, output_stream: output )
 			runtime.setup!
 
-			assert_match( /Currently set to: \/existing\/path/, out.string )
+			assert_match( /Currently set to: \/existing\/path/, output.string )
 		end
 	end
 
@@ -550,27 +550,27 @@ class RuntimeSetupTest < Minitest::Test
 		tty_input = build_tty_input( "" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: tty_input, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: tty_input, output_stream: output )
 			status = runtime.setup!( cli_choices: { "git.remote" => "origin" } )
 
 			assert_equal Carson::Runtime::EXIT_OK, status
 			# Should not contain interactive prompt text
-			refute_includes out.string, "Git remote"
-			refute_includes out.string, "Main branch"
-			refute_includes out.string, "Workflow style"
+			refute_includes output.string, "Git remote"
+			refute_includes output.string, "Main branch"
+			refute_includes output.string, "Workflow style"
 		end
 	end
 
 	def test_setup_empty_cli_choices_falls_through_to_normal_behaviour
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			runtime = build_setup_runtime( input: StringIO.new, out_stream: out )
+			output = StringIO.new
+			runtime = build_setup_runtime( input: StringIO.new, output_stream: output )
 			status = runtime.setup!( cli_choices: {} )
 
 			assert_equal Carson::Runtime::EXIT_OK, status
 			# Non-TTY input with empty cli_choices should run silent_setup
-			assert_match( /detected_remote:/, out.string )
+			assert_match( /detected_remote:/, output.string )
 		end
 	end
 
@@ -579,13 +579,13 @@ class RuntimeSetupTest < Minitest::Test
 		FileUtils.mkdir_p( non_git_dir )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
-			out = StringIO.new
-			err = StringIO.new
+			output = StringIO.new
+			error = StringIO.new
 			runtime = Carson::Runtime.new(
 				repo_root: non_git_dir,
 				tool_root: File.expand_path( "..", __dir__ ),
-				out: out,
-				err: err,
+				output: output,
+				error: error,
 				in_stream: StringIO.new,
 				verbose: true
 			)
@@ -600,14 +600,14 @@ class RuntimeSetupTest < Minitest::Test
 
 private
 
-	def build_setup_runtime( input:, out_stream: nil )
-		out = out_stream || StringIO.new
-		err = StringIO.new
+	def build_setup_runtime( input:, output_stream: nil )
+		output = output_stream || StringIO.new
+		error = StringIO.new
 		Carson::Runtime.new(
 			repo_root: @repo_root,
 			tool_root: File.expand_path( "..", __dir__ ),
-			out: out,
-			err: err,
+			output: output,
+			error: error,
 			in_stream: input,
 			verbose: true
 		)
@@ -620,14 +620,14 @@ private
 		io
 	end
 
-	def build_onboard_runtime( input:, out_stream: nil )
-		out = out_stream || StringIO.new
-		err = StringIO.new
+	def build_onboard_runtime( input:, output_stream: nil )
+		output = output_stream || StringIO.new
+		error = StringIO.new
 		Carson::Runtime.new(
 			repo_root: @repo_root,
 			tool_root: File.expand_path( "..", __dir__ ),
-			out: out,
-			err: err,
+			output: output,
+			error: error,
 			in_stream: input,
 			verbose: false
 		)

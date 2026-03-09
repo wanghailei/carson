@@ -9,7 +9,7 @@ module Carson
 				".github/.mega-linter.yml"
 			].freeze
 
-			# Read-only template drift check; returns block when managed files are out of sync.
+			# Read-only template drift check; returns block when managed files are output of sync.
 			def template_check!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -68,8 +68,8 @@ module Carson
 					end
 
 					begin
-						rt = build_scoped_runtime( repo_path: repo_path )
-						status = rt.template_check!
+						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+						status = scoped_runtime.template_check!
 						if status == EXIT_OK
 							puts_line "#{repo_name}: in sync" unless verbose?
 							clear_batch_success( command: "template_check", repo_path: repo_path )
@@ -78,9 +78,9 @@ module Carson
 							puts_line "#{repo_name}: DRIFT" unless verbose?
 							drifted += 1
 						end
-					rescue StandardError => e
-						puts_line "#{repo_name}: FAIL (#{e.message})"
-						record_batch_skip( command: "template_check", repo_path: repo_path, reason: e.message )
+					rescue StandardError => exception
+						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						record_batch_skip( command: "template_check", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end
 				end
@@ -171,9 +171,9 @@ module Carson
 					result = template_propagate_deliver!( worktree_dir: worktree_dir )
 					template_propagate_report!( result: result )
 					result
-				rescue StandardError => e
-					puts_verbose "template_propagate: error (#{e.message})"
-					{ status: :error, reason: e.message }
+				rescue StandardError => exception
+					puts_verbose "template_propagate: error (#{exception.message})"
+					{ status: :error, reason: exception.message }
 				ensure
 					template_propagate_cleanup!( worktree_dir: worktree_dir ) if worktree_dir
 				end
@@ -181,12 +181,12 @@ module Carson
 
 			def template_propagate_create_worktree!
 				worktree_dir = File.join( Dir.tmpdir, "carson-template-sync-#{Process.pid}-#{Time.now.to_i}" )
-				wt_git = Adapters::Git.new( repo_root: worktree_dir )
+				worktree_git = Adapters::Git.new( repo_root: worktree_dir )
 
 				git_system!( "fetch", config.git_remote, config.main_branch )
 				git_system!( "worktree", "add", "--detach", worktree_dir, "#{config.git_remote}/#{config.main_branch}" )
-				wt_git.run( "checkout", "-B", TEMPLATE_SYNC_BRANCH )
-				wt_git.run( "config", "core.hooksPath", "/dev/null" )
+				worktree_git.run( "checkout", "-B", TEMPLATE_SYNC_BRANCH )
+				worktree_git.run( "config", "core.hooksPath", "/dev/null" )
 				puts_verbose "template_propagate: worktree created at #{worktree_dir}"
 				worktree_dir
 			end
@@ -211,13 +211,13 @@ module Carson
 			end
 
 			def template_propagate_commit!( worktree_dir: )
-				wt_git = Adapters::Git.new( repo_root: worktree_dir )
-				wt_git.run( "add", "--all" )
+				worktree_git = Adapters::Git.new( repo_root: worktree_dir )
+				worktree_git.run( "add", "--all" )
 
-				_, _, no_diff, = wt_git.run( "diff", "--cached", "--quiet" )
+				_, _, no_diff, = worktree_git.run( "diff", "--cached", "--quiet" )
 				return false if no_diff
 
-				wt_git.run( "commit", "-m", "chore: sync Carson #{Carson::VERSION} managed templates" )
+				worktree_git.run( "commit", "-m", "chore: sync Carson #{Carson::VERSION} managed templates" )
 				puts_verbose "template_propagate: committed"
 				true
 			end
@@ -231,8 +231,8 @@ module Carson
 			end
 
 			def template_propagate_deliver_trunk!( worktree_dir: )
-				wt_git = Adapters::Git.new( repo_root: worktree_dir )
-				stdout_text, stderr_text, success, = wt_git.run( "push", config.git_remote, "HEAD:refs/heads/#{config.main_branch}" )
+				worktree_git = Adapters::Git.new( repo_root: worktree_dir )
+				stdout_text, stderr_text, success, = worktree_git.run( "push", config.git_remote, "HEAD:refs/heads/#{config.main_branch}" )
 				unless success
 					error_text = stderr_text.to_s.strip
 					error_text = "push to #{config.main_branch} failed" if error_text.empty?
@@ -243,8 +243,8 @@ module Carson
 			end
 
 			def template_propagate_deliver_branch!( worktree_dir: )
-				wt_git = Adapters::Git.new( repo_root: worktree_dir )
-				stdout_text, stderr_text, success, = wt_git.run( "push", "--force-with-lease", config.git_remote, "#{TEMPLATE_SYNC_BRANCH}:#{TEMPLATE_SYNC_BRANCH}" )
+				worktree_git = Adapters::Git.new( repo_root: worktree_dir )
+				stdout_text, stderr_text, success, = worktree_git.run( "push", "--force-with-lease", config.git_remote, "#{TEMPLATE_SYNC_BRANCH}:#{TEMPLATE_SYNC_BRANCH}" )
 				unless success
 					error_text = stderr_text.to_s.strip
 					error_text = "push #{TEMPLATE_SYNC_BRANCH} failed" if error_text.empty?
@@ -296,8 +296,8 @@ module Carson
 				git_run( "worktree", "remove", "--force", worktree_dir ) unless safe_success
 				git_run( "branch", "-D", TEMPLATE_SYNC_BRANCH )
 				puts_verbose "template_propagate: worktree and local branch cleaned up"
-			rescue StandardError => e
-				puts_verbose "template_propagate: cleanup warning (#{e.message})"
+			rescue StandardError => exception
+				puts_verbose "template_propagate: cleanup warning (#{exception.message})"
 			end
 
 			def template_propagate_report!( result: )
@@ -381,14 +381,14 @@ module Carson
 			def managed_dirty_paths
 				template_paths = config.template_managed_files + SUPERSEDED
 				linters_glob   = Dir.glob( File.join( repo_root, ".github/linters/**/*" ) )
-					.select { |p| File.file?( p ) }
-					.map { |p| p.delete_prefix( "#{repo_root}/" ) }
+					.select { |path| File.file?( path ) }
+					.map { |path| path.delete_prefix( "#{repo_root}/" ) }
 				candidates = ( template_paths + linters_glob ).uniq
 				return [] if candidates.empty?
 
 				stdout_text, = git_capture_soft( "status", "--porcelain", "--", *candidates )
 				stdout_text.to_s.lines
-					.map { |l| l[ 3.. ].strip }
+					.map { |line| line[ 3.. ].strip }
 					.reject( &:empty? )
 			end
 		end

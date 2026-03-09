@@ -13,7 +13,7 @@ class RuntimeReposTest < Minitest::Test
 	def test_repos_shows_no_repos_message_when_empty
 		runtime, repo_root = build_runtime
 		runtime.repos!
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -25,7 +25,7 @@ class RuntimeReposTest < Minitest::Test
 		with_env( "CARSON_CONFIG_FILE" => config_path ) do
 			runtime, repo_root = build_runtime
 			runtime.repos!
-			output = runtime.instance_variable_get( :@out ).string
+			output = runtime.instance_variable_get( :@output ).string
 			assert_includes output, "Governed repositories (2)"
 			assert_includes output, "/tmp/repo-a"
 			assert_includes output, "/tmp/repo-b"
@@ -42,7 +42,7 @@ class RuntimeReposTest < Minitest::Test
 		with_env( "CARSON_CONFIG_FILE" => config_path ) do
 			runtime, repo_root = build_runtime
 			runtime.repos!( json_output: true )
-			output = runtime.instance_variable_get( :@out ).string
+			output = runtime.instance_variable_get( :@output ).string
 			data = JSON.parse( output )
 			assert_equal "repos", data[ "command" ]
 			assert_equal [ "/tmp/repo-x" ], data[ "repos" ]
@@ -55,7 +55,7 @@ class RuntimeReposTest < Minitest::Test
 	def test_repos_json_output_empty
 		runtime, repo_root = build_runtime
 		runtime.repos!( json_output: true )
-		output = runtime.instance_variable_get( :@out ).string
+		output = runtime.instance_variable_get( :@output ).string
 		data = JSON.parse( output )
 		assert_equal "repos", data[ "command" ]
 		assert_equal [], data[ "repos" ]

@@ -64,9 +64,9 @@ module Carson
 				return unless gh_available?
 
 				main_root = main_worktree_root
-				worktree_list.each do |wt|
-					path = wt.fetch( :path )
-					branch = wt.fetch( :branch, nil )
+				worktree_list.each do |worktree|
+					path = worktree.fetch( :path )
+					branch = worktree.fetch( :branch, nil )
 					next if path == main_root
 					next unless branch
 					next if cwd_inside_worktree?( worktree_path: path )
@@ -121,26 +121,26 @@ module Carson
 					return { name: repo_name, path: repo_path, status: "error", error: "path not found" }
 				end
 
-				buf = verbose? ? out : StringIO.new
-				err_buf = verbose? ? err : StringIO.new
-				rt = Runtime.new( repo_root: repo_path, tool_root: tool_root, out: buf, err: err_buf, verbose: verbose? )
+				buffer = verbose? ? output : StringIO.new
+				error_buffer = verbose? ? error : StringIO.new
+				scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
 
-				sync_status = rt.sync!
+				sync_status = scoped_runtime.sync!
 				if sync_status == EXIT_OK
-					rt.reap_dead_worktrees!
-					prune_status = rt.prune!
+					scoped_runtime.reap_dead_worktrees!
+					prune_status = scoped_runtime.prune!
 				end
 
 				ok = sync_status == EXIT_OK && prune_status == EXIT_OK
 				unless verbose? || silent
-					summary = strip_badge( buf.string.lines.last.to_s.strip )
+					summary = strip_badge( buffer.string.lines.last.to_s.strip )
 					puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"
 				end
 
 				{ name: repo_name, path: repo_path, status: ok ? "ok" : "error" }
-			rescue StandardError => e
-				puts_line "#{repo_name}: FAIL (#{e.message})" unless silent
-				{ name: repo_name, path: repo_path, status: "error", error: e.message }
+			rescue StandardError => exception
+				puts_line "#{repo_name}: FAIL (#{exception.message})" unless silent
+				{ name: repo_name, path: repo_path, status: "error", error: exception.message }
 			end
 
 			# Strips the Carson badge prefix from a message to avoid double-badging.
@@ -156,7 +156,7 @@ module Carson
 				return expanded if repos.include?( expanded )
 
 				downcased = File.basename( target ).downcase
-				repos.find { |r| File.basename( r ).downcase == downcased }
+				repos.find { |repo_path| File.basename( repo_path ).downcase == downcased }
 			end
 
 			# Unified output — JSON or human-readable.
@@ -164,7 +164,7 @@ module Carson
 				result[ :exit_code ] = exit_code
 
 				if json_output
-					out.puts JSON.pretty_generate( result )
+					output.puts JSON.pretty_generate( result )
 				else
 					if results && ( succeeded || failed )
 						total = ( succeeded || 0 ) + ( failed || 0 )

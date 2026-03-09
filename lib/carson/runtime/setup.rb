@@ -173,8 +173,8 @@ module Carson
 				options.each_with_index do |option, index|
 					puts_line "  #{index + 1}) #{option.fetch( :label )}"
 				end
-				out.print "#{BADGE} Choice [#{default + 1}]: "
-				out.flush
+				output.print "#{BADGE} Choice [#{default + 1}]: "
+				output.flush
 				raw = self.in.gets
 				return options[ default ].fetch( :value ) if raw.nil?
 
@@ -190,8 +190,8 @@ module Carson
 			end
 
 			def prompt_custom_value( label: )
-				out.print "#{BADGE} #{label}: "
-				out.flush
+				output.print "#{BADGE} #{label}: "
+				output.flush
 				raw = self.in.gets
 				return nil if raw.nil?
 
@@ -383,8 +383,8 @@ module Carson
 			# Reusable Y/n prompt following existing prompt_choice conventions.
 			def prompt_yes_no( default: true )
 				hint = default ? "Y/n" : "y/N"
-				out.print "#{BADGE} [#{hint}]: "
-				out.flush
+				output.print "#{BADGE} [#{hint}]: "
+				output.flush
 				raw = self.in.gets
 				return default if raw.nil?
 
