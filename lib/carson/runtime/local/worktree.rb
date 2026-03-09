@@ -362,7 +362,7 @@ module Carson
 						# Content-aware check: after squash/rebase merge, commit SHAs differ
 						# but the tree content may be identical to main. Compare content,
 						# not SHAs — if the diff is empty, the work is already on main.
-						diff_out, _, diff_ok, = Open3.capture3( "git", "diff", "--quiet", config.main_branch, branch, chdir: worktree_path )
+						_, _, diff_ok, = Open3.capture3( "git", "diff", "--quiet", config.main_branch, branch, chdir: worktree_path )
 						unless diff_ok.success?
 							return { error: "branch has not been pushed to #{remote}",
 								recovery: "git -C #{worktree_path} push -u #{remote} #{branch}, or use --force to override" }
