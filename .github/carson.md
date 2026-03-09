@@ -2,13 +2,11 @@
 
 This repository is governed by [Carson](https://github.com/wanghailei/carson), an autonomous governance runtime. Carson lives on the maintainer's workstation, not inside this repository.
 
-## Commands
+## What Carson Does Not Do
 
-**Delivery:**
-```bash
-carson deliver         # push branch, create PR
-carson deliver --merge # push, create PR, merge if CI green and review clear
-```
+Carson has no `commit`, `push`, or `pr` commands. Use `git` and `gh` for those. Carson audits and governs; you execute.
+
+## Commands
 
 **Before committing:**
 ```bash
@@ -26,7 +24,6 @@ carson review gate     # block until actionable review findings are resolved
 ```bash
 carson sync            # fast-forward local main from remote
 carson prune           # remove stale branches (safer than git branch -d on squash repos)
-carson housekeep       # sync + prune + sweep stale worktrees
 ```
 
 ## Exit Codes
