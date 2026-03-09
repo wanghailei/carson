@@ -197,8 +197,8 @@ module Carson
 
 			# Returns the worktree path for a branch, or nil if not checked output in any worktree.
 			def worktree_path_for_branch( branch: )
-				entry = worktree_list.find { |worktree| worktree.fetch( :branch, nil ) == branch }
-				entry&.fetch( :path, nil )
+				entry = worktree_list.find { |worktree| worktree.branch == branch }
+				entry&.path
 			end
 
 			# Detects local branches whose upstream tracking is marked [gone] after fetch --prune.

@@ -65,40 +65,38 @@ module Carson
 
 				main_root = main_worktree_root
 				worktree_list.each do |worktree|
-					path = worktree.fetch( :path )
-					branch = worktree.fetch( :branch, nil )
-					next if path == main_root
-					next unless branch
-					next if cwd_inside_worktree?( worktree_path: path )
+					next if worktree.path == main_root
+					next unless worktree.branch
+					next if worktree.holds_cwd?
 
 					# Missing directory: worktree was destroyed externally.
 					# Prune the stale entry and delete the branch immediately.
-					unless Dir.exist?( path )
+					unless Dir.exist?( worktree.path )
 						git_run( "worktree", "prune" )
-						puts_verbose "reaped stale worktree entry: #{File.basename( path )} (branch: #{branch})"
-						if !config.protected_branches.include?( branch )
-							git_run( "branch", "-D", branch )
-							puts_verbose "deleted branch: #{branch}"
+						puts_verbose "reaped stale worktree entry: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
+						if !config.protected_branches.include?( worktree.branch )
+							git_run( "branch", "-D", worktree.branch )
+							puts_verbose "deleted branch: #{worktree.branch}"
 						end
 						next
 					end
 
-					tip_sha = git_capture!( "rev-parse", "--verify", branch ).strip rescue nil
+					tip_sha = git_capture!( "rev-parse", "--verify", worktree.branch ).strip rescue nil
 					next unless tip_sha
 
-					merged_pr, = merged_pr_for_branch( branch: branch, branch_tip_sha: tip_sha )
+					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
 					next if merged_pr.nil?
 
 					# Remove the worktree (no --force: refuses if dirty working tree).
-					_, _, rm_success, = git_run( "worktree", "remove", path )
+					_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
 					next unless rm_success
 
-					puts_verbose "reaped dead worktree: #{File.basename( path )} (branch: #{branch})"
+					puts_verbose "reaped dead worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
 
 					# Delete the local branch now that no worktree holds it.
-					if !config.protected_branches.include?( branch )
-						git_run( "branch", "-D", branch )
-						puts_verbose "deleted branch: #{branch}"
+					if !config.protected_branches.include?( worktree.branch )
+						git_run( "branch", "-D", worktree.branch )
+						puts_verbose "deleted branch: #{worktree.branch}"
 					end
 				end
 			end
