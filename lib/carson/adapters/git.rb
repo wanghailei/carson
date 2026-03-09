@@ -1,7 +1,9 @@
+# Executes git commands via Open3 and returns structured output.
 require "open3"
 
 module Carson
 	module Adapters
+		# Thin wrapper around the git CLI. Runs commands via Open3.
 		class Git
 			def initialize( repo_root: )
 				@repo_root = repo_root

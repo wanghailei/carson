@@ -1,3 +1,4 @@
+# Tests for the repos command and portfolio listing.
 require_relative "test_helper"
 
 class RuntimeReposTest < Minitest::Test

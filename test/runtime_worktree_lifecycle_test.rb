@@ -1,3 +1,4 @@
+# Tests for worktree create and remove lifecycle.
 require_relative "test_helper"
 require "open3"
 

@@ -1,8 +1,10 @@
+# Dispatches coding work to the OpenAI Codex CLI and parses its output.
 require "open3"
 require "json"
 
 module Carson
 	module Adapters
+		# Adapter for dispatching work to OpenAI Codex.
 		class Codex
 			include Prompt
 

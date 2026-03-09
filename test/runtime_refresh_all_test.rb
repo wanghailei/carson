@@ -1,3 +1,4 @@
+# Tests for the refresh --all batch operation.
 require_relative "test_helper"
 
 class RuntimeRefreshAllTest < Minitest::Test

@@ -1,3 +1,4 @@
+# Tests for gemspec metadata and file manifest.
 require_relative "test_helper"
 
 class GemspecTest < Minitest::Test

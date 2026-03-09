@@ -1,8 +1,10 @@
+# Handles first-time setup, onboard, offboard, refresh, and config persistence.
 require "set"
 require "uri"
 
 module Carson
 	class Runtime
+		# First-time setup, onboard, offboard, and refresh operations.
 		module Setup
 			WELL_KNOWN_REMOTES = %w[origin github upstream].freeze
 

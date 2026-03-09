@@ -1,3 +1,4 @@
+# Tests for review gate and sweep helper methods.
 require_relative "test_helper"
 
 class RuntimeReviewHelpersTest < Minitest::Test

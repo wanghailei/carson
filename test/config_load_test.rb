@@ -1,3 +1,4 @@
+# Tests for Carson configuration loading and validation.
 require_relative "test_helper"
 
 class ConfigLoadTest < Minitest::Test

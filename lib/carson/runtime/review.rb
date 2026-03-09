@@ -1,3 +1,4 @@
+# Implements the review gate (merge readiness) and sweep (late activity scan) workflows.
 require_relative "review/query_text"
 require_relative "review/data_access"
 require_relative "review/gate_support"
@@ -6,6 +7,7 @@ require_relative "review/utility"
 
 module Carson
 	class Runtime
+		# PR review gate and sweep workflow.
 		module Review
 			include QueryText
 			include DataAccess

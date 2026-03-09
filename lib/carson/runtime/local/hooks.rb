@@ -1,3 +1,4 @@
+# Installs, validates, and reports on managed git hooks for governed repositories.
 module Carson
 	class Runtime
 		module Local

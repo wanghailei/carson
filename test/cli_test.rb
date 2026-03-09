@@ -1,3 +1,4 @@
+# Tests for CLI argument parsing and command dispatch.
 require_relative "test_helper"
 
 class CLITest < Minitest::Test

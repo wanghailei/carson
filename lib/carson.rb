@@ -1,3 +1,4 @@
+# Loads all Carson modules and defines the top-level namespace.
 require_relative "carson/version"
 
 module Carson

@@ -1,3 +1,4 @@
+# Tests for template apply and push-prep workflow.
 require_relative "test_helper"
 
 class RuntimeTemplatePropagateTest < Minitest::Test
