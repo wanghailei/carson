@@ -66,7 +66,9 @@ module Carson
 				"govern" => {
 					"repos" => [],
 					"auto_merge" => true,
-					"merge_method" => "squash",
+					"merge" => {
+						"method" => "squash"
+					},
 					"agent" => {
 						"provider" => "auto",
 						"codex" => {},
@@ -154,7 +156,10 @@ module Carson
 			govern_auto_merge = ENV.fetch( "CARSON_GOVERN_AUTO_MERGE", "" ).to_s.strip
 			govern[ "auto_merge" ] = ( govern_auto_merge == "true" ) unless govern_auto_merge.empty?
 			govern_method = ENV.fetch( "CARSON_GOVERN_MERGE_METHOD", "" ).to_s.strip
-			govern[ "merge_method" ] = govern_method unless govern_method.empty?
+			unless govern_method.empty?
+				govern[ "merge" ] ||= {}
+				govern[ "merge" ][ "method" ] = govern_method
+			end
 			agent = fetch_hash_section( data: govern, key: "agent" )
 			govern_provider = ENV.fetch( "CARSON_GOVERN_AGENT_PROVIDER", "" ).to_s.strip
 			agent[ "provider" ] = govern_provider unless govern_provider.empty?
@@ -215,7 +220,8 @@ module Carson
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |path| safe_expand_path( path ) }
 			@govern_auto_merge = fetch_optional_boolean( hash: govern_hash, key: "auto_merge", default: true, key_path: "govern.auto_merge" )
-			@govern_merge_method = fetch_string( hash: govern_hash, key: "merge_method" ).downcase
+			govern_merge_hash = fetch_hash( hash: govern_hash, key: "merge" )
+			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
 			dispatch_path = govern_hash.fetch( "dispatch_state_path" ).to_s
