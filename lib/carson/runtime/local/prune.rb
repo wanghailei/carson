@@ -347,7 +347,7 @@ module Carson
 				counters
 			end
 
-			# Checks a single orphan branch for merged PR evidence and force-deletes if confirmed.
+			# Checks a single orphan branch for merged PR evidence or absorbed content, then force-deletes if confirmed.
 			def prune_orphan_branch_entry( branch: )
 				tip_sha_text, tip_sha_error, tip_sha_success, = git_run( "rev-parse", "--verify", branch.to_s )
 				unless tip_sha_success
@@ -363,6 +363,17 @@ module Carson
 				end
 
 				merged_pr, error = merged_pr_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+
+				# Fallback: branch content is already on main (rebase merges rewrite SHAs).
+				if merged_pr.nil? && branch_absorbed_into_main?( branch: branch )
+					merged_pr = {
+						number: nil,
+						url: "absorbed into #{config.main_branch}",
+						merged_at: Time.now.utc.iso8601,
+						head_sha: branch_tip_sha
+					}
+				end
+
 				if merged_pr.nil?
 					reason = error.to_s.strip
 					reason = "no merged PR evidence for branch tip into #{config.main_branch}" if reason.empty?
@@ -374,7 +385,7 @@ module Carson
 				if force_success
 					output.print force_stdout if verbose? && !force_stdout.empty?
 					puts_verbose "deleted_orphan_branch: #{branch} merged_pr=#{merged_pr.fetch( :url )}"
-					return { action: :deleted, branch: branch, upstream: "", type: "orphan", reason: "merged PR evidence found" }
+					return { action: :deleted, branch: branch, upstream: "", type: "orphan", reason: "content absorbed into #{config.main_branch}" }
 				end
 
 				force_error_text = normalise_branch_delete_error( error_text: force_stderr )
