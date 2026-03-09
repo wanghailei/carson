@@ -6,13 +6,13 @@
 
 Named after the head of household in Downton Abbey, Carson is your repositories' autonomous governance runtime — you write the code, Carson manages everything else. From commit-time checks through PR triage, agent dispatch, merge, and cleanup, Carson runs the household with discipline and professional standards. Carson itself has no intelligence — it follows a deterministic decision tree. The intelligence comes from the coding agents it dispatches (Codex, Claude) to fix problems.
 
-## The Problem to Solve
+## The Problem
 
 Managing a growing portfolio of repositories is rewarding work — but the operational overhead scales faster than the code itself. PR templates go stale, reviewer feedback gets quietly buried, and what passes on a developer's laptop fails in CI. When coding agents start producing PRs across multiple projects, the coordination load multiplies: checking results, dispatching fixes, clicking merge, cleaning up branches.
 
 Carson exists so you can focus on what matters — building — while governance runs itself.
 
-## How Carson Works
+## What Carson Does
 
 Carson is an autonomous governance runtime that lives on your workstation and in CI, never inside the repositories it governs. It operates at two levels:
 
@@ -40,7 +40,7 @@ Carson orchestrates a closed governance loop across two layers:
 
 Carson's role is governance orchestration — gating on results and dispatching action. The actual CI runs and code fixes are delegated to specialised tools: GitHub Actions for CI and coding agents for remediation.
 
-## Opinions
+### Principles
 
 Carson is opinionated about governance. These are non-negotiable principles, not configurable defaults:
 
@@ -50,6 +50,14 @@ Carson is opinionated about governance. These are non-negotiable principles, not
 - **Transparent governance** — Carson prepares everything for merge but never oversteps. It does not make decisions for you without telling you.
 
 Everything else bends to your preference. Which branch is main, how PRs are merged, which repositories to govern, which coding agent to dispatch — Carson asks during setup and remembers. Sensible defaults are provided; you only change what matters to you. See `MANUAL.md` for the full list.
+
+## When to Use Carson
+
+- **You run coding agents across multiple repositories** and need a single command that triages every open PR, merges what's ready, dispatches agents to fix what's broken, and reports what needs your attention.
+- **Your PR feedback gets buried.** Carson blocks merge until every reviewer comment is explicitly acknowledged — accepted, rejected, or deferred — so nothing is silently ignored.
+- **CI breaks and nobody notices.** `carson audit` runs on every commit via managed hooks, and `carson govern` watches CI status across your portfolio continuously.
+- **You onboard new repositories often** and want consistent hooks, templates, and governance from the first commit without manual setup.
+- **You want agent-safe worktree management.** `carson worktree create` auto-syncs, branches, and isolates; `carson worktree remove` guards against unpushed work and active shells before cleanup.
 
 ## Quickstart
 
