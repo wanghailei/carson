@@ -122,7 +122,10 @@ Style/BlockDelimiters:
   Enabled: false # Allow `do...end` for map/select by project preference.
 
 Style/Documentation:
-  Enabled: false # Do not require class/module doc comments.
+  Enabled: true # Require class/module doc comments per CODING.md § Comments as Institutional Memory.
+  Exclude:
+    - "test/**/*" # Test classes focus on behaviour, not documentation.
+    - "**/db/**/*" # Schema and seed files are not domain classes.
 
 Style/FrozenStringLiteralComment:
   Enabled: false # Do not require magic frozen-string comment headers.
