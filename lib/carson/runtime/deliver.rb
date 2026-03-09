@@ -296,12 +296,12 @@ module Carson
 			# Detects whether the agent is inside a worktree and suggests cleanup.
 			def compute_post_merge_next_step!( result: )
 				main_root = main_worktree_root
-				cwd = realpath_safe( Dir.pwd )
-				current_wt = worktree_list.select { it.fetch( :path ) != realpath_safe( main_root ) }
-					.find { cwd == it.fetch( :path ) || cwd.start_with?( File.join( it.fetch( :path ), "" ) ) }
+				current_wt = worktree_list
+					.reject { it.path == realpath_safe( main_root ) }
+					.find { it.holds_cwd? }
 
 				if current_wt
-					wt_name = File.basename( current_wt.fetch( :path ) )
+					wt_name = File.basename( current_wt.path )
 					result[ :next_step ] = "cd #{main_root} && carson worktree remove #{wt_name}"
 				else
 					result[ :next_step ] = "carson prune"

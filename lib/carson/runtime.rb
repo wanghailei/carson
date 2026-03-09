@@ -310,9 +310,9 @@ module Carson
 			# so only genuinely active worktrees block the operation.
 			scoped_runtime = build_scoped_runtime( repo_path: repo_path )
 			scoped_runtime.sweep_stale_worktrees!
-			worktrees = scoped_runtime.send( :worktree_list )
-			main_root = scoped_runtime.send( :realpath_safe, repo_path )
-			active = worktrees.reject { |worktree| worktree.fetch( :path ) == main_root }
+			worktrees = scoped_runtime.worktree_list
+			main_root = scoped_runtime.realpath_safe( repo_path )
+			active = worktrees.reject { |worktree| worktree.path == main_root }
 			if active.any?
 				reasons << "#{active.count} active worktree#{active.count == 1 ? '' : 's'}"
 			end
@@ -346,3 +346,15 @@ require_relative "runtime/govern"
 require_relative "runtime/setup"
 require_relative "runtime/status"
 require_relative "runtime/deliver"
+
+# Infrastructure interface for domain objects.
+# Carson::Worktree and future domain objects call these methods
+# on a runtime reference — the way ActiveRecord models use a connection.
+# Defined private for internal use, exposed here for domain object access.
+module Carson
+	class Runtime
+		public :config, :output, :verbose?, :puts_verbose, :puts_line,
+			:git_run, :git_capture!, :main_worktree_root, :realpath_safe,
+			:block_if_outsider_fingerprints!, :branch_absorbed_into_main?
+	end
+end

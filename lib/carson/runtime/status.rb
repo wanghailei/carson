@@ -162,11 +162,11 @@ module Carson
 				# Filter output the main worktree (the repository root itself).
 				# Use realpath for comparison — git returns canonical paths that may differ from repo_root.
 				canonical_root = realpath_safe( repo_root )
-				entries.reject { it.fetch( :path ) == canonical_root }.map do |worktree|
+				entries.reject { it.path == canonical_root }.map do |worktree|
 					{
-						path: worktree.fetch( :path ),
-						name: File.basename( worktree.fetch( :path ) ),
-						branch: worktree.fetch( :branch, nil )
+						path: worktree.path,
+						name: File.basename( worktree.path ),
+						branch: worktree.branch
 					}
 				end
 			end
