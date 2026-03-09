@@ -115,12 +115,12 @@ module Carson
 					puts_verbose "[Canonical Templates]"
 					puts_verbose "HINT: canonical templates not configured — run carson setup to enable."
 				end
-					write_and_print_pr_monitor_report(
-						report: monitor_report.merge(
-							default_branch_baseline: default_branch_baseline,
-							audit_status: audit_state
-						)
+				write_and_print_pr_monitor_report(
+					report: monitor_report.merge(
+						default_branch_baseline: default_branch_baseline,
+						audit_status: audit_state
 					)
+				)
 				exit_code = audit_state == "block" ? EXIT_BLOCK : EXIT_OK
 
 				if json_output
@@ -581,7 +581,6 @@ module Carson
 				lines.join( "\n" )
 			end
 
-			# True when there are no staged/unstaged/untracked file changes.
 		end
 
 		include Audit
