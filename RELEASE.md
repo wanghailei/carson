@@ -5,6 +5,12 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.21.1
+
+### What changed
+
+- **Command guard false-positive fix** — the `command-guard` regex now matches `gh pr create/merge` only at command position (start of line or after `&&`, `||`, `;`, `|`). Previously it matched inside string arguments, blocking legitimate commands like `git commit -m 'Document gh pr create hook'`.
+
 ## 3.21.0
 
 ### What changed
