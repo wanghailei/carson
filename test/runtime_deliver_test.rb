@@ -238,6 +238,48 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- non-fast-forward handling ---
+
+	def test_deliver_clears_stale_remote_ref_on_non_fast_forward_no_open_pr
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/rebased" )
+
+		# Push the branch so the remote has it.
+		system( "git", "-C", repo_root, "push", "-u", "origin", "feature/rebased", out: File::NULL, err: File::NULL )
+
+		# Simulate rebase by amending the commit (creates a new SHA, diverging from remote).
+		system( "git", "-C", repo_root, "commit", "--amend", "-m", "amended feature", out: File::NULL, err: File::NULL )
+
+		# deliver should detect non-fast-forward, find no open PR, delete stale ref, re-push.
+		result = runtime.deliver!
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "PR: #"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_advises_fresh_branch_on_non_fast_forward_with_open_pr
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "existing_pr" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/rebased-with-pr" )
+
+		# Push the branch so the remote has it.
+		system( "git", "-C", repo_root, "push", "-u", "origin", "feature/rebased-with-pr", out: File::NULL, err: File::NULL )
+
+		# Simulate rebase by amending the commit.
+		system( "git", "-C", repo_root, "commit", "--amend", "-m", "amended feature", out: File::NULL, err: File::NULL )
+
+		# deliver should detect non-fast-forward, find open PR #42, advise fresh branch.
+		result = runtime.deliver!
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		output = output_string( runtime )
+		assert_includes output, "non-fast-forward"
+		assert_includes output, "PR #42"
+		assert_includes output, "git checkout -b"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- default_pr_title ---
 
 	def test_default_pr_title_from_branch_name
