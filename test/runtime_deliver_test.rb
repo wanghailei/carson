@@ -101,6 +101,19 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_merge_succeeds_when_no_ci_checks
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_none" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/no-ci" )
+
+		result = runtime.deliver!( merge: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "CI: none"
+		assert_includes output, "Merged PR"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_deliver_merge_reports_pending_ci
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pending" )
 		init_git_repo_with_remote( repo_root )
@@ -307,7 +320,7 @@ private
 					echo '{"reviewDecision":"APPROVED"}'
 					exit 0
 				fi
-				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" || "$scenario" == "ci_pass_changes_requested" ]]; then
+				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" || "$scenario" == "ci_pass_changes_requested" || "$scenario" == "ci_none" ]]; then
 					cat <<'JSON'
 			{"number":42,"url":"https://github.com/mock/repo/pull/42"}
 			JSON

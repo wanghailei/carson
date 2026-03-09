@@ -1,7 +1,7 @@
 # PR delivery lifecycle — push, create PR, and optionally merge.
 # Collapses the 8-step manual PR flow into one or two commands.
 # `carson deliver` pushes and creates the PR.
-# `carson deliver --merge` also merges if CI is green.
+# `carson deliver --merge` also merges if CI passes or no checks are configured.
 # `carson deliver --json` outputs structured result for agent consumption.
 module Carson
 	class Runtime
@@ -46,17 +46,14 @@ module Carson
 				result[ :ci ] = ci_status.to_s
 
 				case ci_status
-				when :pass
-					# Continue to review gate.
+				when :pass, :none
+					# Continue to review gate. :none means no checks configured — nothing to wait for.
 				when :pending
 					result[ :recovery ] = "gh pr checks #{pr_number} --watch && carson deliver --merge"
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				when :fail
 					result[ :recovery ] = "gh pr checks #{pr_number} — fix failures, push, then `carson deliver --merge`"
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				else
-					result[ :recovery ] = "gh pr checks #{pr_number}"
-					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				end
 
 				# Step 4: check review gate — block if changes are requested.
@@ -117,14 +114,13 @@ module Carson
 					case ci
 					when "pass"
 						puts_line "CI: pass"
+					when "none"
+						puts_line "CI: none — no checks configured, proceeding."
 					when "pending"
 						puts_line "CI: pending — merge when checks complete."
 						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
 					when "fail"
 						puts_line "CI: failing — fix before merging."
-						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
-					else
-						puts_line "CI: #{ci} — check manually."
 						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
 					end
 				end
