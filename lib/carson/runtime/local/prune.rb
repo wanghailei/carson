@@ -78,9 +78,9 @@ module Carson
 					message = if deleted_count > 0 && skipped_count > 0
 						"Pruned #{deleted_count}, skipped #{skipped_count} (--verbose for details)."
 					elsif deleted_count > 0
-						"Pruned #{deleted_count} stale branch#{plural_suffix( count: deleted_count )}."
+						"Pruned #{deleted_count} stale #{ deleted_count == 1 ? 'branch' : 'branches' }."
 					else
-						"Skipped #{skipped_count} branch#{plural_suffix( count: skipped_count )} (--verbose for details)."
+						"Skipped #{skipped_count} #{ skipped_count == 1 ? 'branch' : 'branches' } (--verbose for details)."
 					end
 					puts_line message
 				end

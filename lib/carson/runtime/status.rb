@@ -276,7 +276,7 @@ module Carson
 				if stale && stale.fetch( :count ) > 0
 					count = stale.fetch( :count )
 					puts_line ""
-					puts_line "#{count} stale branch#{plural_suffix( count: count )} ready for pruning."
+					puts_line "#{count} stale #{ count == 1 ? 'branch' : 'branches' } ready for pruning."
 				end
 
 				# Governance
