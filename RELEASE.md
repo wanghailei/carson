@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.22.0
+
+### What changed
+
+- **Command-guard auto-install at CLI startup** — Carson now installs the command-guard hook automatically when any CLI command runs, removing the need for a manual `carson refresh` after install. The guard is installed once and skipped on subsequent invocations.
+- **Stale worktree sweep before portfolio safety check** — `refresh --all` now sweeps stale worktrees before checking repo safety, preventing false "active worktree" skips for worktrees whose branches have already been merged.
+- **Nested config path fix for merge method** — `govern.merge.method` is now read from the correct nested config path instead of the top-level key, fixing repos where the merge method setting was silently ignored.
+- **Deliver proceeds when no CI checks configured** — `deliver --merge` no longer blocks on repos with no CI checks. Previously it waited indefinitely for checks that would never arrive.
+- **Rebase-merge orphan branch pruning** — `prune` now detects branches absorbed into main via rebase merge (tip commit reachable from main) and cleans them up, not just squash-merged branches.
+- **Pluralisation fix** — corrected "branchs" → "branches" in prune and status output.
+
+### UX improvement
+
+- Carson is now fully self-configuring: installing the gem and running any command sets up all safety guards automatically. Batch operations on portfolios no longer false-skip repos with stale worktrees. Repos using rebase merge keep their branch list clean without manual intervention.
+
 ## 3.21.1
 
 ### What changed
