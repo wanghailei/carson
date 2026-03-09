@@ -160,6 +160,20 @@ module Carson
 			text.empty? ? default : text
 		end
 
+		# Temporarily sets an environment variable for the duration of the block.
+		# Restores the previous value (or deletes the key) when the block completes.
+		def with_env_var( key, value )
+			previous = ENV.key?( key ) ? ENV.fetch( key ) : nil
+			ENV[ key ] = value
+			yield
+		ensure
+			if previous.nil?
+				ENV.delete( key )
+			else
+				ENV[ key ] = previous
+			end
+		end
+
 		# Chooses best available error text from gh stderr/stdout.
 		def gh_error_text( stdout_text:, stderr_text:, fallback: )
 			combined = [ stderr_text.to_s.strip, stdout_text.to_s.strip ].reject( &:empty? ).join( " | " )

@@ -5,6 +5,20 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.21.0
+
+### What changed
+
+- **Command guard for governed repositories** — Carson now detects and blocks raw `git push` and `gh pr create/merge` commands in governed repos, redirecting agents to `carson deliver` instead. Three enforcement layers:
+  - **Pre-push hook** — blocks raw `git push` in governed repos. Carson sets `CARSON_PUSH=1` internally so its own pushes pass through.
+  - **Command guard script** — a Claude Code `PreToolUse` hook that intercepts `gh pr create` and `gh pr merge` Bash commands in governed repos.
+  - **Existing pre-push guard** — the main/master branch push block now uses the same `BLOCKED` message format with explicit recovery guidance.
+- **`with_env_var` helper** — new Runtime utility for temporarily setting environment variables with guaranteed cleanup.
+
+### UX improvement
+
+- Agents that forget to use `carson deliver` are caught at push time or tool-call time with a clear message: what happened, why, and what to use instead. Born from scar: a preflight agent used raw `git push github main` and `gh pr create` in a governed repo, wasting work and requiring manual recovery (2026-03-09).
+
 ## 3.20.0
 
 ### What changed
