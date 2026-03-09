@@ -133,18 +133,59 @@ module Carson
 
 			# Pushes the branch to the remote with tracking.
 			# Sets CARSON_PUSH=1 so the pre-push hook knows this is a Carson-managed push.
+			# On non-fast-forward rejection (typically after rebase):
+			#   - No open PR: deletes the stale remote ref and re-pushes cleanly.
+			#   - Open PR exists: advises creating a fresh branch (avoids force-push).
 			def push_branch!( branch:, remote:, result: )
 				_, push_stderr, push_success, = with_env_var( "CARSON_PUSH", "1" ) do
 					git_run( "push", "-u", remote, branch )
 				end
+
+				if !push_success && push_stderr.to_s.include?( "non-fast-forward" )
+					return handle_non_fast_forward!( branch: branch, remote: remote, result: result )
+				end
+
 				unless push_success
 					error_text = push_stderr.to_s.strip
 					error_text = "push failed" if error_text.empty?
 					result[ :error ] = error_text
-					result[ :recovery ] = "git pull #{remote} #{branch} --rebase && git push -u #{remote} #{branch}"
 					return EXIT_ERROR
 				end
 				puts_verbose "pushed #{branch} to #{remote}"
+				EXIT_OK
+			end
+
+			# Handles non-fast-forward push rejection.
+			# The remote branch has diverged — usually because the branch was rebased
+			# after a previous PR merged some of its commits.
+			def handle_non_fast_forward!( branch:, remote:, result: )
+				open_pr, = find_existing_pr( branch: branch )
+
+				if open_pr
+					# An open PR exists — cannot delete the remote branch without closing it.
+					# The agent should create a fresh branch for the remaining work.
+					result[ :error ] = "push rejected (non-fast-forward) and PR ##{open_pr} is open on this branch"
+					result[ :recovery ] = "git checkout -b <new-branch-name> && carson deliver"
+					return EXIT_ERROR
+				end
+
+				# No open PR — the remote ref is stale. Delete it and re-push cleanly.
+				puts_verbose "push rejected (non-fast-forward), clearing stale remote ref"
+				with_env_var( "CARSON_PUSH", "1" ) do
+					git_run( "push", remote, "--delete", branch )
+				end
+
+				_, push_stderr, push_success, = with_env_var( "CARSON_PUSH", "1" ) do
+					git_run( "push", "-u", remote, branch )
+				end
+
+				unless push_success
+					error_text = push_stderr.to_s.strip
+					error_text = "push failed after clearing stale remote ref" if error_text.empty?
+					result[ :error ] = error_text
+					return EXIT_ERROR
+				end
+				puts_verbose "pushed #{branch} to #{remote} (after clearing stale ref)"
 				EXIT_OK
 			end
 
