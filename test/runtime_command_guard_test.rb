@@ -80,29 +80,17 @@ class RuntimeCommandGuardTest < Minitest::Test
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/guard-test" )
 
-		# Set up a config file listing this repo as governed.
+		# Set up config directly — matching the pattern of other passing tests.
 		normalised = File.realpath( repo_root )
-		config_dir = File.join( repo_root, ".mock-carson" )
-		FileUtils.mkdir_p( config_dir )
-		config_path = File.join( config_dir, "config.json" )
-		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ normalised ] } } ) )
-
-		# Run the pre-push hook script with a simulated ref line (non-main branch).
-		hook_path = File.join( tool_root_path, "hooks", "pre-push" )
-		ref_input = "refs/heads/feature/guard-test abc123 refs/heads/feature/guard-test 000000\n"
-
-		stdout, stderr, status = Open3.capture3(
-			{ "HOME" => repo_root, "CARSON_PUSH" => "" },
-			"bash", hook_path, "origin", "git@github.com:mock/repo.git",
-			stdin_data: ref_input,
-			chdir: repo_root
+		carson_dir = File.join( repo_root, ".carson" )
+		FileUtils.mkdir_p( carson_dir )
+		File.write(
+			File.join( carson_dir, "config.json" ),
+			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
 		)
 
-		# Rename .mock-carson to .carson for the hook to find it.
-		# Actually, the hook reads $HOME/.carson/config.json — override HOME.
-		# We set HOME to repo_root and put config at repo_root/.carson/config.json.
-		carson_dir = File.join( repo_root, ".carson" )
-		FileUtils.mv( config_dir, carson_dir )
+		hook_path = File.join( tool_root_path, "hooks", "pre-push" )
+		ref_input = "refs/heads/feature/guard-test abc123 refs/heads/feature/guard-test 000000\n"
 
 		stdout, stderr, status = Open3.capture3(
 			{ "HOME" => repo_root, "CARSON_PUSH" => "" },
