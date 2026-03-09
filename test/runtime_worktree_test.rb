@@ -1,3 +1,4 @@
+# Tests for worktree management and safety guards.
 require_relative "test_helper"
 
 class RuntimeWorktreeTest < Minitest::Test

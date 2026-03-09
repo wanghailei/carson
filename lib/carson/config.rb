@@ -1,3 +1,4 @@
+# Loads and validates Carson configuration from global config and environment overrides.
 require "json"
 
 module Carson

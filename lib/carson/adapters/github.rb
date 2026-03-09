@@ -1,7 +1,9 @@
+# Executes gh CLI commands via Open3 for GitHub API access.
 require "open3"
 
 module Carson
 	module Adapters
+		# Thin wrapper around the gh CLI for GitHub API access.
 		class GitHub
 			def initialize( repo_root: )
 				@repo_root = repo_root

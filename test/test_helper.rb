@@ -1,3 +1,4 @@
+# Shared test infrastructure and helpers for the Carson test suite.
 require "fileutils"
 require "minitest/autorun"
 require "stringio"

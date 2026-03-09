@@ -1,3 +1,4 @@
+# Tests for setup, onboard, and offboard commands.
 require_relative "test_helper"
 
 class RuntimeSetupTest < Minitest::Test

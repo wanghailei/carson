@@ -1,8 +1,10 @@
+# Dispatches coding work to the Claude Code CLI and parses its output.
 require "open3"
 require "json"
 
 module Carson
 	module Adapters
+		# Adapter for dispatching work to Claude Code.
 		class Claude
 			include Prompt
 

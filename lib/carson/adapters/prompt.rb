@@ -1,5 +1,7 @@
+# Builds structured prompts for dispatching work orders to coding agents.
 module Carson
 	module Adapters
+		# Builds structured prompts for coding agent dispatch.
 		module Prompt
 		private
 

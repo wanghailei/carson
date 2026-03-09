@@ -1,3 +1,4 @@
+# Parses command-line arguments and dispatches to Runtime operations.
 require "optparse"
 
 module Carson

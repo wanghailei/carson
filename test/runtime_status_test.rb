@@ -1,3 +1,4 @@
+# Tests for the status command and repository state reporting.
 require_relative "test_helper"
 
 class RuntimeStatusTest < Minitest::Test

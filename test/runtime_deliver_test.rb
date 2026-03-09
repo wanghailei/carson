@@ -1,3 +1,4 @@
+# Tests for the deliver command (push, PR, merge).
 require_relative "test_helper"
 require "open3"
 

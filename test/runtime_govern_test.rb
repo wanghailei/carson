@@ -1,3 +1,4 @@
+# Tests for the govern command and PR triage loop.
 require_relative "test_helper"
 
 class RuntimeGovernTest < Minitest::Test

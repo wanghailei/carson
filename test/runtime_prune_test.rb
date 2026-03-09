@@ -1,3 +1,4 @@
+# Tests for the prune command and stale branch cleanup.
 require_relative "test_helper"
 
 class RuntimePruneTest < Minitest::Test

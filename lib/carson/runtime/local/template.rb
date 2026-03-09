@@ -1,3 +1,4 @@
+# Detects template drift, applies canonical files, and propagates changes via PR.
 module Carson
 	class Runtime
 		module Local

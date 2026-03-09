@@ -1,3 +1,4 @@
+# Defines the WorkOrder and Result data structures for agent dispatch.
 module Carson
 	module Adapters
 		module Agent
