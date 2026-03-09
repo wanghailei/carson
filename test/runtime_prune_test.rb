@@ -263,6 +263,32 @@ class RuntimePruneTest < Minitest::Test
 		end
 	end
 
+	def test_orphan_deleted_when_absorbed_into_main
+		branch_name = "feature-orphan-absorbed"
+
+		with_prune_repo( mock_gh_script: mock_gh_no_evidence ) do |runtime, repo_root, _bare_root, output, _mock_bin|
+			# Create orphan branch with a file change.
+			system( "git", "-C", repo_root, "checkout", "-b", branch_name, out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature content\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "work on #{branch_name}", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+
+			# Land identical content on main independently (simulates rebase merge).
+			File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature content\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "land #{branch_name} via rebase", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should exist before prune"
+			status = runtime.prune!
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed orphan branch should be deleted"
+			assert_includes output.string, "deleted_orphan_branch: #{branch_name}"
+			assert_includes output.string, "absorbed into main"
+		end
+	end
+
 	def test_orphan_skipped_without_merged_pr_evidence
 		branch_name = "feature-no-evidence"
 
