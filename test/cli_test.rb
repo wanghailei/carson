@@ -894,6 +894,100 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :status_all, { json_output: true } ] ], runtime.calls
 	end
 
+	# --- ensure_global_artefacts! tests ---
+
+	def test_ensure_global_artefacts_installs_command_guard_when_missing
+		tool_root = Dir.mktmpdir( "carson-cli-test" )
+		hooks_dir = File.join( tool_root, "hooks" )
+		FileUtils.mkdir_p( hooks_dir )
+		File.write( File.join( hooks_dir, "command-guard" ), "#!/usr/bin/env bash\nexit 0\n" )
+
+		stable_dir = File.join( Dir.home, ".carson", "hooks" )
+		target = File.join( stable_dir, "command-guard" )
+		backup = File.read( target ) if File.file?( target )
+		FileUtils.rm_f( target )
+
+		Carson::CLI.ensure_global_artefacts!( tool_root: tool_root )
+
+		assert File.file?( target ), "command-guard should be installed"
+		assert File.executable?( target ), "command-guard should be executable"
+	ensure
+		FileUtils.remove_entry( tool_root ) if tool_root
+		if backup
+			File.write( target, backup )
+			FileUtils.chmod( 0o755, target )
+		end
+	end
+
+	def test_ensure_global_artefacts_skips_when_template_missing
+		tool_root = Dir.mktmpdir( "carson-cli-test" )
+		# No hooks/command-guard in tool_root — should silently skip.
+		Carson::CLI.ensure_global_artefacts!( tool_root: tool_root )
+		# No assertion needed — just confirm it does not raise.
+	ensure
+		FileUtils.remove_entry( tool_root ) if tool_root
+	end
+
+	def test_ensure_global_artefacts_skips_when_target_is_identical
+		tool_root = Dir.mktmpdir( "carson-cli-test" )
+		hooks_dir = File.join( tool_root, "hooks" )
+		FileUtils.mkdir_p( hooks_dir )
+		source_content = "#!/usr/bin/env bash\nexit 0\n"
+		source = File.join( hooks_dir, "command-guard" )
+		File.write( source, source_content )
+
+		# Pre-install an identical file at the stable path.
+		stable_dir = File.join( Dir.home, ".carson", "hooks" )
+		target = File.join( stable_dir, "command-guard" )
+		original_mtime = nil
+		if File.file?( target )
+			# Back up existing file and restore after test.
+			backup = File.read( target )
+		end
+		FileUtils.mkdir_p( stable_dir )
+		FileUtils.cp( source, target )
+		FileUtils.chmod( 0o755, target )
+		original_mtime = File.mtime( target )
+
+		sleep 0.05
+		Carson::CLI.ensure_global_artefacts!( tool_root: tool_root )
+
+		assert_equal original_mtime, File.mtime( target ), "identical file should not be overwritten"
+	ensure
+		FileUtils.remove_entry( tool_root ) if tool_root
+		if backup
+			File.write( target, backup )
+		elsif target && File.file?( target )
+			FileUtils.rm_f( target )
+		end
+	end
+
+	def test_ensure_global_artefacts_updates_when_content_differs
+		tool_root = Dir.mktmpdir( "carson-cli-test" )
+		hooks_dir = File.join( tool_root, "hooks" )
+		FileUtils.mkdir_p( hooks_dir )
+		File.write( File.join( hooks_dir, "command-guard" ), "#!/usr/bin/env bash\n# v2\nexit 0\n" )
+
+		stable_dir = File.join( Dir.home, ".carson", "hooks" )
+		target = File.join( stable_dir, "command-guard" )
+		if File.file?( target )
+			backup = File.read( target )
+		end
+		FileUtils.mkdir_p( stable_dir )
+		File.write( target, "#!/usr/bin/env bash\n# v1\nexit 0\n" )
+
+		Carson::CLI.ensure_global_artefacts!( tool_root: tool_root )
+
+		assert_includes File.read( target ), "# v2", "stale command-guard should be updated"
+	ensure
+		FileUtils.remove_entry( tool_root ) if tool_root
+		if backup
+			File.write( target, backup )
+		elsif target && File.file?( target )
+			FileUtils.rm_f( target )
+		end
+	end
+
 	# --- template check --all CLI tests ---
 
 	def test_parse_args_template_check_all

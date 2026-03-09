@@ -4,6 +4,8 @@ require "optparse"
 module Carson
 	class CLI
 		def self.start( arguments:, repo_root:, tool_root:, output:, error: )
+			ensure_global_artefacts!( tool_root: tool_root )
+
 			parsed = parse_args( arguments: arguments, output: output, error: error )
 			command = parsed.fetch( :command )
 			return Runtime::EXIT_OK if command == :help
@@ -683,6 +685,27 @@ module Carson
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts govern_parser
 			{ command: :invalid }
+		end
+
+		# --- global artefacts ---
+
+		# Ensures global (non-repo) artefacts are installed at CLI startup.
+		# The command-guard lives at a stable path (~/.carson/hooks/command-guard)
+		# referenced by Claude Code's PreToolUse hook. It must exist regardless of
+		# whether `carson refresh` has been run in any governed repo.
+		def self.ensure_global_artefacts!( tool_root: )
+			source = File.join( tool_root, "hooks", "command-guard" )
+			return unless File.file?( source )
+
+			hooks_base = File.expand_path( "~/.carson/hooks" )
+			target = File.join( hooks_base, "command-guard" )
+			return if File.file?( target ) && FileUtils.identical?( source, target )
+
+			FileUtils.mkdir_p( hooks_base )
+			FileUtils.cp( source, target )
+			FileUtils.chmod( 0o755, target )
+		rescue StandardError
+			# Best-effort — do not block any command if this fails.
 		end
 
 		# --- dispatch ---
