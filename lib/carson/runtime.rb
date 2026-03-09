@@ -306,8 +306,10 @@ module Carson
 
 			reasons = []
 
-			# Active worktrees beyond the main working tree.
+			# Sweep stale worktrees (merged branches) before counting active ones
+			# so only genuinely active worktrees block the operation.
 			scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+			scoped_runtime.sweep_stale_worktrees!
 			worktrees = scoped_runtime.send( :worktree_list )
 			main_root = scoped_runtime.send( :realpath_safe, repo_path )
 			active = worktrees.reject { |worktree| worktree.fetch( :path ) == main_root }
