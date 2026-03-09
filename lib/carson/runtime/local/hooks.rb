@@ -31,9 +31,28 @@ module Carson
 				end
 				git_system!( "config", "core.hooksPath", hooks_dir )
 				File.write( File.join( hooks_dir, "workflow_style" ), config.workflow_style )
+				install_command_guard!
 				puts_verbose "configured_hooks_path: #{hooks_dir}"
 				puts_line "Hooks installed (#{config.managed_hooks.count} hooks)."
 				EXIT_OK
+			end
+
+			# Installs the command guard hook to a stable (non-versioned) path.
+			# Claude Code's PreToolUse hook references this path — it must not change across upgrades.
+			def install_command_guard!
+				source = hook_template_path( hook_name: "command-guard" )
+				return unless File.file?( source )
+
+				target = command_guard_path
+				FileUtils.mkdir_p( File.dirname( target ) )
+				FileUtils.cp( source, target )
+				FileUtils.chmod( 0o755, target )
+				puts_verbose "command_guard: #{target}"
+			end
+
+			# Stable path for the command guard script — not versioned so external references survive upgrades.
+			def command_guard_path
+				File.expand_path( File.join( config.hooks_path, "command-guard" ) )
 			end
 
 			# Canonical hook template location inside Carson repository.

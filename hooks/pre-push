@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
+# Carson pre-push hook — enforces push policy in governed repositories.
+#
+# Guards:
+#   1. Blocks direct push to main/master refs.
+#   2. Blocks raw git push in governed repos — agents must use `carson deliver`.
+#      Carson sets CARSON_PUSH=1 internally so its own pushes pass through.
+#
+# Bypass (emergency only): git push --no-verify
 set -euo pipefail
 
 hooks_dir="$(cd "$(dirname "$0")" && pwd)"
 style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "branch")"
 [ "$style" = "trunk" ] && exit 0
+
+# --- Guard 1: block pushes to main/master refs ---
 
 remote_name="${1:-unknown}"
 remote_url="${2:-unknown}"
@@ -11,12 +21,38 @@ has_commit_push=false
 while read -r local_ref local_sha remote_ref remote_sha; do
 	case "$remote_ref" in
 		refs/heads/main|refs/heads/master)
-			echo "Carson policy: direct push to ${remote_ref#refs/heads/} is blocked on remote ${remote_name} (${remote_url}). Use a pull request." >&2
+			echo "BLOCKED: direct push to ${remote_ref#refs/heads/} is not allowed." >&2
+			echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
+			echo "Bypass (emergency only): git push --no-verify" >&2
 			exit 1
 			;;
 	esac
 	[[ "$local_sha" != "0000000000000000000000000000000000000000" ]] && has_commit_push=true
 done
+
+# --- Guard 2: block raw git push in governed repos ---
+# Carson sets CARSON_PUSH=1 when pushing internally via `deliver`.
+# If the variable is absent, this is a raw git push from an agent or human.
+
+if [[ -z "${CARSON_PUSH:-}" ]]; then
+	config_file="${HOME}/.carson/config.json"
+	if [[ -f "$config_file" ]]; then
+		repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+		if [[ -n "$repo_root" ]]; then
+			# Check if this repo appears in govern.repos.
+			# Uses a simple grep against the JSON — no jq dependency required.
+			normalised="$(cd "$repo_root" && pwd -P)"
+			if grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
+				echo "BLOCKED: raw \`git push\` in a Carson-governed repository." >&2
+				echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
+				echo "Bypass (emergency only): git push --no-verify" >&2
+				exit 1
+			fi
+		fi
+	fi
+fi
+
+# --- Template sync on push ---
 
 if $has_commit_push; then
 	if [[ -n "${CARSON_BIN:-}" ]]; then

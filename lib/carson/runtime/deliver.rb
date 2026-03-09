@@ -136,8 +136,11 @@ module Carson
 			end
 
 			# Pushes the branch to the remote with tracking.
+			# Sets CARSON_PUSH=1 so the pre-push hook knows this is a Carson-managed push.
 			def push_branch!( branch:, remote:, result: )
-				_, push_stderr, push_success, = git_run( "push", "-u", remote, branch )
+				_, push_stderr, push_success, = with_env_var( "CARSON_PUSH", "1" ) do
+					git_run( "push", "-u", remote, branch )
+				end
 				unless push_success
 					error_text = push_stderr.to_s.strip
 					error_text = "push failed" if error_text.empty?

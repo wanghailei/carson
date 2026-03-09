@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Carson command guard — Claude Code PreToolUse hook.
+#
+# Blocks raw `gh pr create` and `gh pr merge` in Carson-governed repositories.
+# Agents should use `carson deliver` instead.
+#
+# Claude Code sends JSON on stdin: {"tool_name": "Bash", "tool_input": {"command": "..."}}
+# To block: print reason to stderr, exit 2.
+# To allow: exit 0.
+#
+# Registration in ~/.claude/settings.json:
+#   "PreToolUse": [
+#     {
+#       "matcher": "Bash",
+#       "hooks": [
+#         {
+#           "type": "command",
+#           "command": "~/.carson/hooks/command-guard"
+#         }
+#       ]
+#     }
+#   ]
+set -euo pipefail
+
+# Read the tool call JSON from stdin.
+input="$(cat)"
+
+# Only inspect Bash tool calls.
+tool_name="$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
+[ "$tool_name" = "Bash" ] || exit 0
+
+command_text="$(echo "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)"
+[ -n "$command_text" ] || exit 0
+
+# Check for gh pr commands that Carson replaces.
+guarded_pattern='gh\s+pr\s+(create|merge)'
+if ! echo "$command_text" | grep -qE "$guarded_pattern"; then
+	exit 0
+fi
+
+# Check if the current directory is inside a governed repository.
+config_file="${HOME}/.carson/config.json"
+[ -f "$config_file" ] || exit 0
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+[ -n "$repo_root" ] || exit 0
+
+normalised="$(cd "$repo_root" && pwd -P)"
+if ! grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
+	exit 0
+fi
+
+# This is a raw gh pr command in a governed repo — block it.
+echo "BLOCKED: raw \`gh pr create/merge\` in a Carson-governed repository." >&2
+echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
+exit 2
