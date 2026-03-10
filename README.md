@@ -4,7 +4,7 @@
 
 *Carson at your service.*
 
-Named after the head of household in Downton Abbey, Carson is your repositories' autonomous governance runtime — you write the code, Carson manages everything else. From commit-time checks through PR triage, agent dispatch, merge, and cleanup, Carson runs the household with discipline and professional standards. Carson itself has no intelligence — it follows a deterministic decision tree. The intelligence comes from the coding agents it dispatches (Codex, Claude) to fix problems.
+Named after the head of household in Downton Abbey, Carson is your autonomous git strategist and repositories governor — you write the code, Carson manages everything else. From commit-time checks through PR triage, agent dispatch, merge, and cleanup, Carson runs the household with discipline and professional standards. Carson itself has no intelligence — it follows a deterministic decision tree. The intelligence comes from the coding agents it dispatches (Codex, Claude) to fix problems.
 
 ## The Problem
 
@@ -14,11 +14,11 @@ Carson exists so you can focus on what matters — building — while governance
 
 ## What Carson Does
 
-Carson is an autonomous governance runtime that lives on your workstation and in CI, never inside the repositories it governs. It operates at two levels:
+Carson is an autonomous git strategist and repositories governor that lives on your workstation and in CI, never inside the repositories it governs. Two roles, one tool:
 
-**Per-commit governance** — Carson gates merges on unresolved review comments, synchronises templates, and keeps your local branches clean. Every commit triggers `carson audit` through managed hooks; the same checks run in GitHub Actions.
+**Git strategist** — Carson knows *when* to branch, *how* to isolate concurrent work, *what order* to merge, and *how* to recover from failures. Every git decision encodes a strategy learned from real agent workflow failures.
 
-**Portfolio-level autonomy** — `carson govern` is a triage loop that scans your registered repositories, classifies every open PR, and acts: merge what's ready, dispatch coding agents (Codex or Claude) to fix what's failing, and escalate what needs human judgement. One command, all your projects, unmanned.
+**Repositories governor** — Carson enforces rules, gates merges, manages templates, and coordinates coding agents across your portfolio. `carson govern` triages every open PR: merge what's ready, dispatch agents to fix what's failing, escalate what needs human judgement. One command, all your projects, unmanned.
 
 ```
   ~/.carson/                     ← Carson lives here, never inside your repos
@@ -29,16 +29,43 @@ Carson is an autonomous governance runtime that lives on your workstation and in
 
 This separation is Carson's defining trait — the **outsider boundary**: no Carson scripts, config files, or governance payloads are ever placed inside a governed repository.
 
-**Agent workspace management** — `carson worktree create` and `carson worktree remove` give coding agents safe, isolated workspaces. Unlike Claude Code's built-in `EnterWorktree`, Carson auto-syncs main before branching, guards against removing worktrees with unpushed work or an active shell inside, detects squash/rebase merges so removal doesn't falsely block, and cleans up the local and remote branch in one step. The two tools are complementary — see `MANUAL.md § Carson vs Claude Code EnterWorktree` for the full comparison.
+### Strategies
 
-### The Governance Loop
+Carson's git decisions are not arbitrary — each encodes a strategy learned from real failures.
 
-Carson orchestrates a closed governance loop across two layers:
+**As git strategist:**
 
-1. **CI enforcement** — Carson's `audit` gates on CI check status reported by GitHub. The actual CI runs are delegated to GitHub Actions.
-2. **Autonomous triage** — `carson govern` reads CI status, review disposition, and audit health for every open PR. Ready PRs are merged. Failing PRs get a coding agent (Codex or Claude) dispatched to fix them. Stuck PRs are escalated.
+- **Sync before branch** — always pull main before creating any branch. Stale bases cause merge pain; Carson eliminates them at the source.
+- **Worktree isolation** — all concurrent work happens in worktrees, never the main working tree. Prevents cross-agent conflicts and keeps the host repository clean.
+- **Atomic delivery** — commit, push, PR, and merge as one continuous flow via `carson deliver`. No half-shipped states.
+- **Content-aware merge detection** — proves branch content is on main regardless of how it was merged (squash, rebase, or fast-forward). Compares file content, not commit SHAs — so squash-merged branches are correctly recognised as done.
+- **Fast-forward-only main** — main stays linear. Non-fast-forward pulls are rejected. If main has diverged, something is wrong — Carson surfaces it instead of papering over it.
+- **Push rejection recovery** — when a push is rejected as non-fast-forward, Carson triages by context: if an open PR exists, advise a fresh branch (force-push would disrupt review); if no PR, clean up the stale remote ref and re-push.
+- **Worktree-aware merge** — inside a worktree, Carson merges without `--delete-branch` (which would fail because main is already checked out elsewhere). Branch cleanup is deferred to `carson prune`, run from the main tree.
+- **Post-merge guidance** — after a successful merge, Carson detects where the agent is (worktree or main tree) and provides the exact next command for cleanup.
 
-Carson's role is governance orchestration — gating on results and dispatching action. The actual CI runs and code fixes are delegated to specialised tools: GitHub Actions for CI and coding agents for remediation.
+**As repositories governor:**
+
+- **Outsider boundary** — no Carson-owned artefacts inside governed repositories. Offboarding leaves no trace.
+- **Active review gating** — every reviewer comment must be explicitly acknowledged (accepted, rejected, or deferred) before merge. Feedback is never silently buried.
+- **Command interception** — blocks raw `git push` and `gh pr create/merge` from agents via a three-layer guard (pre-push hook, PreToolUse hook, main-branch push guard). Redirects to `carson deliver`.
+- **Portfolio triage** — `carson govern` classifies every open PR across all governed repos through ordered gates: CI status, review decision, review gate. Each PR gets one disposition: merge, dispatch agent, or escalate.
+- **CI baseline enforcement** — if the default branch CI is broken, Carson blocks operations. Fix the baseline before merging anything new.
+- **Advisory vs critical checks** — checks are stratified by severity. Critical checks block merge; advisory checks warn but do not block.
+- **Check-wait window** — a grace period for CI checks to register before triage. Avoids premature merge while checks are still spinning up.
+- **Review convergence** — polls review state until activity stabilises (two consecutive identical snapshots). No premature merge while comments are still arriving.
+- **Agent dispatch deduplication** — tracks dispatched agents per PR and objective. Running agents are not re-dispatched; failed agents are retried.
+- **Pending tracking** — batch operations track repos that were skipped (active worktree, uncommitted changes) and retry them on the next `--all` run.
+- **Template propagation** — syncs templates via a detached worktree with hooks disabled (prevents recursive Carson invocation). Trunk repos push directly; branch repos create a PR.
+
+**Safety strategies:**
+
+- **Process-aware worktree removal** — before removing a worktree, checks if the current shell or any other process (via `lsof`) has its CWD inside it. Blocks removal with a recovery command instead of crashing the shell.
+- **Stale worktree sweep** — before batch operations, removes worktrees whose branches are already absorbed into main. Prevents stale worktrees from blocking `refresh --all` or `housekeep --all`.
+- **Branch protection** — never deletes branches held by active worktrees. Prune skips them with a diagnostic message.
+- **Environment signalling** — sets `CARSON_PUSH=1` during managed pushes so pre-push hooks can distinguish Carson-governed pushes from raw agent pushes.
+- **Self-diagnosing errors** — every error names what happened, why, and the exact command to fix it. If you have to read source code to understand a message, that message is a bug.
+- **Self-configuring** — running any Carson command installs all safety guards (hooks, command guard, config). No manual post-install setup.
 
 ### Principles
 

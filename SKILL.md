@@ -1,6 +1,6 @@
 # Carson Skill
 
-You are working in a repository governed by Carson — a deterministic governance runtime. Carson handles git hooks, PR triage, agent dispatch, merge, and cleanup. You provide the intelligence; Carson provides the infrastructure.
+You are working in a repository governed by Carson — an autonomous git strategist and repositories governor. Carson handles git hooks, PR triage, agent dispatch, merge, and cleanup. You provide the intelligence; Carson provides the infrastructure.
 
 ## When to use Carson commands
 
