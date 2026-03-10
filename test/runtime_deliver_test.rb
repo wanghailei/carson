@@ -40,6 +40,20 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_creates_new_pr_when_previous_pr_merged
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "merged_pr" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/stale-pr" )
+
+		result = runtime.deliver!
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		# Should create PR #99 (from pr create mock), not reuse merged PR #42.
+		assert_includes output, "PR: #99"
+		refute_includes output, "PR: #42"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_deliver_passes_title_to_pr_create
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false )
 		init_git_repo_with_remote( repo_root )
@@ -406,9 +420,15 @@ private
 					echo '{"reviewDecision":"APPROVED"}'
 					exit 0
 				fi
+				if [[ "$scenario" == "merged_pr" ]]; then
+					cat <<'JSON'
+			{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"MERGED"}
+			JSON
+					exit 0
+				fi
 				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" || "$scenario" == "ci_pass_changes_requested" || "$scenario" == "ci_none" ]]; then
 					cat <<'JSON'
-			{"number":42,"url":"https://github.com/mock/repo/pull/42"}
+			{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"OPEN"}
 			JSON
 					exit 0
 				fi
