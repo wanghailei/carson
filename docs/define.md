@@ -1,9 +1,14 @@
 # Carson Product Definition
 
 ## Product statement
-Carson is an outsider governance runtime that keeps repository governance consistent without embedding Carson-owned runtime artefacts inside client repositories.
+Carson is an autonomous git strategist and repositories governor that lives outside the repositories it governs — no Carson-owned runtime artefacts in your repo.
 
-Named after Carson, the head of household in Downton Abbey, Carson embodies the same role for your repositories: you write the code, Carson manages everything else — from commit-time checks through merge-readiness on GitHub to cleaning up your local workspace afterwards. Like the consummate head of staff, Carson runs the household with strict discipline and professional standards, but never oversteps — it prepares everything for the merge decision without making it, and keeps the estate (your repositories) in impeccable order without owning it.
+Named after Carson, the head of household in Downton Abbey, Carson embodies the same role for your repositories: you write the code, Carson manages everything else — from commit-time checks through merge-readiness on GitHub to cleaning up your local workspace afterwards. Two roles define Carson's identity:
+
+- **Git strategist** — Carson knows *when* to branch, *how* to isolate concurrent work, *what order* to merge, and *how* to recover from failures. Every git decision encodes a strategy learned from real agent workflow failures.
+- **Repositories governor** — Carson enforces rules, gates merges, manages templates, and coordinates coding agents across the portfolio. It prepares everything for the merge decision without making it, and keeps the estate in impeccable order without owning it.
+
+Like the consummate head of staff, Carson runs the household with strict discipline and professional standards, but never oversteps. The butler is the *character* — professional, precise, never flustered. The strategist and governor are the *roles*.
 
 ## Problem statement
 Repository controls degrade when local workflows diverge, review handling is inconsistent, or policy checks are treated as optional. Developers should focus on writing code, not on chasing unresolved review comments, keeping templates in sync, or pruning stale branches. Teams need a repeatable governance layer that is strict enough for enterprise stability while remaining operationally practical — one that takes over the entire housekeeping burden so developers never think about it.

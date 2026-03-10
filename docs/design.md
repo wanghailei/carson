@@ -72,7 +72,7 @@ Example:
 ## Brand language
 - Tone: precise, operational, and credible.
 - Claims: factual and verifiable; avoid hype language.
-- Positioning: Carson is governance runtime support for GitHub workflows, not a GitHub replacement.
+- Positioning: Carson is an autonomous git strategist and repositories governor for GitHub workflows, not a GitHub replacement.
 - Voice: Carson speaks as the butler it is — measured, direct, and never flustered. It does not apologise for blocks, celebrate successes, or editorialize. It states facts and prescribes actions.
 
 ### Vocabulary guide

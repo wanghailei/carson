@@ -7,8 +7,8 @@ Gem::Specification.new do |spec|
 	spec.version = Carson::VERSION
 	spec.authors = [ "Hailei Wang", "Codex", "Claude Code" ]
 	spec.email = [ "wanghailei@users.noreply.github.com" ]
-	spec.summary = "Autonomous repository governance — you write the code, Carson manages everything else."
-	spec.description = "Carson is a governance runtime that lives outside the repositories it governs — no Carson-owned artefacts in your repo. On every commit, managed hooks enforce centralised lint policy and review gates. At portfolio level, carson govern triages every open PR across your registered repositories: merge what's ready, dispatch coding agents to fix what's failing, escalate what needs human judgement. One command, all your projects, unmanned."
+	spec.summary = "Autonomous git strategist and repositories governor — you write the code, Carson manages everything else."
+	spec.description = "Carson is an autonomous git strategist and repositories governor that lives outside the repositories it governs — no Carson-owned artefacts in your repo. As strategist, Carson knows when to branch, how to isolate concurrent work, and how to recover from failures. As governor, it enforces review gates, manages templates, and triages every open PR across your portfolio: merge what's ready, dispatch coding agents to fix what's failing, escalate what needs human judgement. One command, all your projects, unmanned."
 	spec.homepage = "https://github.com/wanghailei/carson"
 	spec.license = "PolyForm-Shield-1.0.0"
 	spec.required_ruby_version = ">= 3.4"
