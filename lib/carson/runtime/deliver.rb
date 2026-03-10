@@ -195,14 +195,17 @@ module Carson
 
 			# Queries gh for an open PR on this branch.
 			# Returns [number, url] or [nil, nil].
+			# gh pr view returns any PR on the branch — open, merged, or closed.
+			# We check state explicitly so merged/closed PRs are treated as absent,
+			# letting find_or_create_pr! fall through to create a new PR.
 			def find_existing_pr( branch: )
 				stdout, _, success, = gh_run(
 					"pr", "view", branch,
-					"--json", "number,url"
+					"--json", "number,url,state"
 				)
 				if success
 					data = JSON.parse( stdout ) rescue nil
-					if data && data[ "number" ]
+					if data && data[ "number" ] && data[ "state" ] == "OPEN"
 						return [ data[ "number" ], data[ "url" ].to_s ]
 					end
 				end
