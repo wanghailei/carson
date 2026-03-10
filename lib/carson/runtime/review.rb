@@ -24,7 +24,7 @@ module Carson
 					puts_line "Review Gate"
 				end
 				unless gh_available?
-					puts_line "ERROR: gh CLI not available in PATH."
+					puts_line "gh CLI not found in PATH — install it to use review commands."
 					return EXIT_ERROR
 				end
 
@@ -43,7 +43,7 @@ module Carson
 						}
 					end
 				if pr_summary.nil?
-					puts_line "BLOCK: no pull request found for branch #{current_branch}."
+					puts_line "No pull request found for branch #{current_branch}."
 					report = {
 						generated_at: Time.now.utc.iso8601,
 						branch: current_branch,
@@ -123,13 +123,13 @@ module Carson
 					puts_line "OK: review gate passed."
 					return EXIT_OK
 				end
-				block_reasons.each { |reason| puts_line "BLOCK: #{reason}" }
+				block_reasons.each { |reason| puts_line reason }
 				EXIT_BLOCK
 			rescue JSON::ParserError => exception
-				puts_line "ERROR: invalid gh JSON response (#{exception.message})."
+				puts_line "Unexpected response from gh (#{exception.message})."
 				EXIT_ERROR
 			rescue StandardError => exception
-				puts_line "ERROR: #{exception.message}"
+				puts_line exception.message
 				EXIT_ERROR
 			end
 
@@ -140,7 +140,7 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Review Sweep]"
 				unless gh_available?
-					puts_line "ERROR: gh CLI not available in PATH."
+					puts_line "gh CLI not found in PATH — install it to use review commands."
 					return EXIT_ERROR
 				end
 
@@ -176,13 +176,13 @@ module Carson
 					puts_line "OK: no actionable late review activity detected."
 					return EXIT_OK
 				end
-				puts_line "BLOCK: actionable late review activity detected."
+				puts_line "Late review activity needs attention."
 				EXIT_BLOCK
 			rescue JSON::ParserError => exception
-				puts_line "ERROR: invalid gh JSON response (#{exception.message})."
+				puts_line "Unexpected response from gh (#{exception.message})."
 				EXIT_ERROR
 			rescue StandardError => exception
-				puts_line "ERROR: #{exception.message}"
+				puts_line exception.message
 				EXIT_ERROR
 			end
 		end

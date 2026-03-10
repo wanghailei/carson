@@ -6,7 +6,7 @@
 #   2. Blocks raw git push in governed repos — agents must use `carson deliver`.
 #      Carson sets CARSON_PUSH=1 internally so its own pushes pass through.
 #
-# Bypass (emergency only): git push --no-verify
+# Bypass: git push --no-verify
 set -euo pipefail
 
 hooks_dir="$(cd "$(dirname "$0")" && pwd)"
@@ -21,9 +21,9 @@ has_commit_push=false
 while read -r local_ref local_sha remote_ref remote_sha; do
 	case "$remote_ref" in
 		refs/heads/main|refs/heads/master)
-			echo "BLOCKED: direct push to ${remote_ref#refs/heads/} is not allowed." >&2
+			echo "Pushes to ${remote_ref#refs/heads/} go through PRs, not direct push." >&2
 			echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
-			echo "Bypass (emergency only): git push --no-verify" >&2
+			echo "Bypass: git push --no-verify" >&2
 			exit 1
 			;;
 	esac
@@ -43,9 +43,9 @@ if [[ -z "${CARSON_PUSH:-}" ]]; then
 			# Uses a simple grep against the JSON — no jq dependency required.
 			normalised="$(cd "$repo_root" && pwd -P)"
 			if grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
-				echo "BLOCKED: raw \`git push\` in a Carson-governed repository." >&2
+				echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`git push\`." >&2
 				echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
-				echo "Bypass (emergency only): git push --no-verify" >&2
+				echo "Bypass: git push --no-verify" >&2
 				exit 1
 			fi
 		fi

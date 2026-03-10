@@ -53,6 +53,6 @@ if ! grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
 fi
 
 # This is a raw gh pr command in a governed repo — block it.
-echo "BLOCKED: raw \`gh pr create/merge\` in a Carson-governed repository." >&2
+echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`gh pr\`." >&2
 echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
 exit 2

@@ -100,7 +100,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		)
 
 		refute status.success?, "pre-push should block raw push in governed repo"
-		assert_includes stderr, "BLOCKED"
+		assert_includes stderr, "Carson-governed"
 		assert_includes stderr, "carson deliver"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
@@ -182,7 +182,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		)
 
 		refute status.success?, "pre-push should block push to main"
-		assert_includes stderr, "BLOCKED"
+		assert_includes stderr, "Pushes to"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
@@ -215,7 +215,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		)
 
 		refute status.success?, "command-guard should block gh pr create in governed repo"
-		assert_includes stderr, "BLOCKED"
+		assert_includes stderr, "Carson-governed"
 		assert_includes stderr, "carson deliver"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
@@ -353,7 +353,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		)
 
 		refute status.success?, "command-guard should block gh pr create after &&"
-		assert_includes stderr, "BLOCKED"
+		assert_includes stderr, "Carson-governed"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end

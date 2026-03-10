@@ -24,7 +24,7 @@ module Carson
 			target_repo_root = parsed.fetch( :repo_root, nil )
 			target_repo_root = repo_root if target_repo_root.to_s.strip.empty?
 			unless Dir.exist?( target_repo_root )
-				error.puts "#{BADGE} ERROR: repository path does not exist: #{target_repo_root}"
+				error.puts "#{BADGE} Repository path not found: #{target_repo_root}"
 				return Runtime::EXIT_ERROR
 			end
 
@@ -32,10 +32,10 @@ module Carson
 			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, output: output, error: error, verbose: verbose )
 			dispatch( parsed: parsed, runtime: runtime )
 		rescue ConfigError => exception
-			error.puts "#{BADGE} CONFIG ERROR: #{exception.message}"
+			error.puts "#{BADGE} Configuration problem: #{exception.message}"
 			Runtime::EXIT_ERROR
 		rescue StandardError => exception
-			error.puts "#{BADGE} ERROR: #{exception.message}"
+			error.puts "#{BADGE} #{exception.message}"
 			Runtime::EXIT_ERROR
 		end
 
@@ -660,7 +660,7 @@ module Carson
 				parser.on( "--dry-run", "Run all checks but do not merge or dispatch" ) { options[ :dry_run ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles" ) do |seconds|
-					error.puts( "#{BADGE} Error: --loop must be a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
+					error.puts( "#{BADGE} --loop expects a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
 					options[ :loop_seconds ] = seconds
 				end
 				parser.separator ""

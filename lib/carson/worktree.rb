@@ -388,11 +388,11 @@ module Carson
 					end
 				end
 			when "error"
-				runtime.puts_line "ERROR: #{result[ :error ]}"
-				runtime.puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+				runtime.puts_line result[ :error ]
+				runtime.puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 			when "block"
-				runtime.puts_line "#{result[ :error ]&.capitalize || 'Blocked'}: #{result[ :name ]}"
-				runtime.puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+				runtime.puts_line "#{result[ :error ]&.capitalize || 'Held'}: #{result[ :name ]}"
+				runtime.puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 			end
 		end
 		private_class_method :print_human

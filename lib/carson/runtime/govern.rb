@@ -56,7 +56,7 @@ module Carson
 
 				EXIT_OK
 			rescue StandardError => exception
-				puts_line "ERROR: govern failed — #{exception.message}"
+				puts_line "Govern did not complete: #{exception.message}"
 				EXIT_ERROR
 			end
 
@@ -70,7 +70,7 @@ module Carson
 					begin
 						govern_cycle!( dry_run: dry_run, json_output: json_output )
 					rescue StandardError => exception
-						puts_line "ERROR: cycle #{cycle_count} failed — #{exception.message}"
+						puts_line "Cycle #{cycle_count} did not complete: #{exception.message}"
 					end
 					puts_line "sleeping #{loop_seconds}s until next cycle…"
 					sleep loop_seconds
@@ -88,7 +88,7 @@ module Carson
 				config.govern_repos.map do |path|
 					expanded = File.expand_path( path )
 					unless Dir.exist?( expanded )
-						puts_line "WARN: governed repo path does not exist: #{expanded}"
+						puts_line "Skipping #{expanded} — path not found"
 						next nil
 					end
 					expanded
@@ -107,14 +107,14 @@ module Carson
 
 				unless Dir.exist?( repo_path )
 					repo_report[ :error ] = "path does not exist"
-					puts_line "ERROR: #{repo_path} does not exist"
+					puts_line "#{repo_path}: path not found, skipping"
 					return repo_report
 				end
 
 				prs = list_open_prs( repo_path: repo_path )
 				if prs.nil?
 					repo_report[ :error ] = "failed to list open PRs"
-					puts_line "ERROR: failed to list open PRs for #{repo_path}"
+					puts_line "#{File.basename(repo_path)}: unable to list open PRs"
 					return repo_report
 				end
 
@@ -296,7 +296,7 @@ module Carson
 					housekeep_repo!( repo_path: repo_path )
 				else
 					error_text = stderr_text.to_s.strip
-					puts_line "    merge failed: #{error_text}"
+					puts_line "    merge did not succeed: #{error_text}"
 				end
 			end
 
