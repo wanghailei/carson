@@ -12,7 +12,7 @@ module Carson
 				return fingerprint_status unless fingerprint_status.nil?
 
 				unless inside_git_work_tree?
-					puts_line "ERROR: #{repo_root} is not a git repository."
+					puts_line "#{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
 
@@ -38,7 +38,7 @@ module Carson
 				return fingerprint_status unless fingerprint_status.nil?
 
 				unless inside_git_work_tree?
-					puts_line "ERROR: #{repo_root} is not a git repository."
+					puts_line "#{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
 
@@ -58,7 +58,7 @@ module Carson
 					if audit_status == EXIT_OK
 						puts_line "OK: Carson refresh completed for #{repo_root}."
 					elsif audit_status == EXIT_BLOCK
-						puts_line "BLOCK: Carson refresh completed with policy blocks; resolve and rerun carson audit."
+						puts_line "Refresh complete — some checks need attention. Run carson audit for details."
 					end
 					return audit_status
 				end
@@ -109,7 +109,7 @@ module Carson
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: FAIL (path not found)"
+						puts_line "#{repo_name}: not found"
 						record_batch_skip( command: "refresh", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
@@ -157,7 +157,7 @@ module Carson
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: FAIL (path not found)"
+						puts_line "#{repo_name}: not found"
 						record_batch_skip( command: "prune", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
@@ -180,7 +180,7 @@ module Carson
 							succeeded += 1
 						end
 					rescue StandardError => exception
-						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						puts_line "#{repo_name}: could not complete (#{exception.message})"
 						record_batch_skip( command: "prune", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end
@@ -196,7 +196,7 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Offboard]"
 				unless inside_git_work_tree?
-					puts_line "ERROR: #{repo_root} is not a git repository."
+					puts_line "#{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
 				if self.in.respond_to?( :tty? ) && self.in.tty?
@@ -322,7 +322,7 @@ module Carson
 				if git_remote_exists?( remote_name: config.git_remote )
 					puts_verbose "remote_ok: #{config.git_remote}"
 				else
-					puts_line "WARN: remote '#{config.git_remote}' not found; run carson setup to configure."
+					puts_line "Remote '#{config.git_remote}' not found — run carson setup to configure."
 				end
 			end
 
@@ -349,7 +349,7 @@ module Carson
 				puts_line "#{repo_name}: #{label}#{sync_suffix}"
 				status
 			rescue StandardError => exception
-				puts_line "#{repo_name}: FAIL (#{exception.message})"
+				puts_line "#{repo_name}: could not complete (#{exception.message})"
 				EXIT_ERROR
 			end
 
@@ -357,7 +357,7 @@ module Carson
 				case status
 				when EXIT_OK then "OK"
 				when EXIT_BLOCK then "BLOCK"
-				else "FAIL"
+				else "incomplete"
 				end
 			end
 
@@ -377,7 +377,7 @@ module Carson
 				puts_verbose "hooks_path_unset: core.hooksPath"
 				EXIT_OK
 			rescue StandardError => exception
-				puts_line "ERROR: unable to update core.hooksPath (#{exception.message})"
+				puts_line "Could not update core.hooksPath: #{exception.message}"
 				EXIT_ERROR
 			end
 

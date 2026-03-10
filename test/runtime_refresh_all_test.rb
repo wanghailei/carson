@@ -95,7 +95,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 				output = output.string
 
 				assert_includes output, "repo-a: OK"
-				assert_includes output, "nonexistent-repo: FAIL (path not found)"
+				assert_includes output, "nonexistent-repo: not found"
 				assert_includes output, "1 refreshed, 1 failed"
 				assert_equal Carson::Runtime::EXIT_ERROR, status
 			end
@@ -133,7 +133,7 @@ class RuntimeRefreshAllTest < Minitest::Test
 				output = output.string
 
 				assert_includes output, "repo-a: OK"
-				assert_includes output, "not-a-repo: FAIL"
+				assert_includes output, "not-a-repo: incomplete"
 				assert_includes output, "repo-c: OK"
 				assert_includes output, "2 refreshed, 1 failed"
 				assert_equal Carson::Runtime::EXIT_ERROR, status

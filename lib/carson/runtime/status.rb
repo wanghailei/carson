@@ -53,7 +53,7 @@ module Carson
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: MISSING"
+						puts_line "#{repo_name}: not found"
 						next
 					end
 
@@ -74,7 +74,7 @@ module Carson
 						repo_pending = status_pending_for_repo( all_pending: all_pending, repo_path: repo_path )
 						repo_pending.each { |description| puts_line "  pending: #{description}" }
 					rescue StandardError => exception
-						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						puts_line "#{repo_name}: could not read (#{exception.message})"
 					end
 				end
 

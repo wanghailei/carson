@@ -175,7 +175,7 @@ module Carson
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: FAIL (path not found)"
+						puts_line "#{repo_name}: not found"
 						record_batch_skip( command: "audit", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
@@ -190,15 +190,15 @@ module Carson
 							clear_batch_success( command: "audit", repo_path: repo_path )
 							passed += 1
 						when EXIT_BLOCK
-							puts_line "#{repo_name}: BLOCK" unless verbose?
+							puts_line "#{repo_name}: needs attention" unless verbose?
 							blocked += 1
 						else
-							puts_line "#{repo_name}: FAIL" unless verbose?
+							puts_line "#{repo_name}: could not complete" unless verbose?
 							record_batch_skip( command: "audit", repo_path: repo_path, reason: "audit failed" )
 							failed += 1
 						end
 					rescue StandardError => exception
-						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						puts_line "#{repo_name}: could not complete (#{exception.message})"
 						record_batch_skip( command: "audit", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end

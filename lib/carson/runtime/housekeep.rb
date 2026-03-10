@@ -137,7 +137,7 @@ module Carson
 
 				{ name: repo_name, path: repo_path, status: ok ? "ok" : "error" }
 			rescue StandardError => exception
-				puts_line "#{repo_name}: FAIL (#{exception.message})" unless silent
+				puts_line "#{repo_name}: did not complete (#{exception.message})" unless silent
 				{ name: repo_name, path: repo_path, status: "error", error: exception.message }
 			end
 

@@ -97,7 +97,7 @@ class RuntimeDeliverTest < Minitest::Test
 		result = runtime.deliver!( merge: true )
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		output = output_string( runtime )
-		assert_includes output, "CI: failing"
+		assert_includes output, "CI: not passing yet"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -211,7 +211,7 @@ class RuntimeDeliverTest < Minitest::Test
 		init_git_repo_with_remote( repo_root )
 		runtime.deliver!
 		output = output_string( runtime )
-		assert_includes output, "Recovery:"
+		assert_includes output, "→"
 		assert_includes output, "git checkout"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -223,7 +223,7 @@ class RuntimeDeliverTest < Minitest::Test
 
 		runtime.deliver!( merge: true )
 		output = output_string( runtime )
-		assert_includes output, "Recovery:"
+		assert_includes output, "→"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -234,7 +234,7 @@ class RuntimeDeliverTest < Minitest::Test
 
 		runtime.deliver!( merge: true )
 		output = output_string( runtime )
-		assert_includes output, "Recovery:"
+		assert_includes output, "→"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

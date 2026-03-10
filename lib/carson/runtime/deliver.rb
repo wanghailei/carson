@@ -100,8 +100,8 @@ module Carson
 				exit_code = result.fetch( :exit_code )
 
 				if result[ :error ]
-					puts_line "ERROR: #{result[ :error ]}"
-					puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					puts_line result[ :error ]
+					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 					return
 				end
 
@@ -118,10 +118,10 @@ module Carson
 						puts_line "CI: none — no checks configured, proceeding."
 					when "pending"
 						puts_line "CI: pending — merge when checks complete."
-						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+						puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 					when "fail"
-						puts_line "CI: failing — fix before merging."
-						puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+						puts_line "CI: not passing yet — fix before merging."
+						puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 					end
 				end
 

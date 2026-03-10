@@ -62,7 +62,7 @@ module Carson
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: FAIL (path not found)"
+						puts_line "#{repo_name}: not found"
 						record_batch_skip( command: "template_check", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
@@ -80,7 +80,7 @@ module Carson
 							drifted += 1
 						end
 					rescue StandardError => exception
-						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						puts_line "#{repo_name}: could not complete (#{exception.message})"
 						record_batch_skip( command: "template_check", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end

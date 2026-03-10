@@ -51,9 +51,8 @@ class RuntimeSyncTest < Minitest::Test
 
 		runtime.sync!( json_output: false )
 		output = output_string( runtime )
-		assert_includes output, "BLOCK:"
 		assert_includes output, "dirty"
-		assert_includes output, "Recovery:"
+		assert_includes output, "→"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

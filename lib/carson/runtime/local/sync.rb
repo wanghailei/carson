@@ -59,7 +59,7 @@ module Carson
 				repos.each do |repo_path|
 					repo_name = File.basename( repo_path )
 					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: FAIL (path not found)"
+						puts_line "#{repo_name}: not found"
 						record_batch_skip( command: "sync", repo_path: repo_path, reason: "path not found" )
 						failed += 1
 						next
@@ -73,12 +73,12 @@ module Carson
 							clear_batch_success( command: "sync", repo_path: repo_path )
 							synced += 1
 						else
-							puts_line "#{repo_name}: FAIL" unless verbose?
+							puts_line "#{repo_name}: could not sync" unless verbose?
 							record_batch_skip( command: "sync", repo_path: repo_path, reason: "sync failed" )
 							failed += 1
 						end
 					rescue StandardError => exception
-						puts_line "#{repo_name}: FAIL (#{exception.message})"
+						puts_line "#{repo_name}: could not sync (#{exception.message})"
 						record_batch_skip( command: "sync", repo_path: repo_path, reason: exception.message )
 						failed += 1
 					end
@@ -117,8 +117,8 @@ module Carson
 			# Human-readable output for sync results.
 			def print_sync_human( result: )
 				if result[ :error ]
-					puts_line "BLOCK: #{result[ :error ]}."
-					puts_line "  Recovery: #{result[ :recovery ]}" if result[ :recovery ]
+					puts_line "#{result[ :error ]}."
+					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 					return
 				end
 
@@ -162,7 +162,7 @@ module Carson
 				violations = outsider_fingerprint_violations
 				return nil if violations.empty?
 
-				violations.each { |entry| puts_line "BLOCK: #{entry}" }
+				violations.each { |entry| puts_line entry }
 				EXIT_BLOCK
 			end
 

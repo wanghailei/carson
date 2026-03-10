@@ -62,7 +62,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				result = runtime.template_check_all!
 				assert_equal Carson::Runtime::EXIT_BLOCK, result
 				output = runtime.instance_variable_get( :@output ).string
-				assert_includes output, "FAIL (path not found)"
+				assert_includes output, ": not found"
 				destroy_runtime_repo( repo_root: repo_root )
 			end
 		end
@@ -106,7 +106,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				runtime, repo_root = build_runtime
 				result = runtime.audit_all!
 				output = runtime.instance_variable_get( :@output ).string
-				assert_includes output, "FAIL (path not found)"
+				assert_includes output, ": not found"
 				assert_includes output, "0 ok"
 				assert_includes output, "1 failed"
 				destroy_runtime_repo( repo_root: repo_root )
@@ -152,7 +152,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				runtime, repo_root = build_runtime
 				result = runtime.sync_all!
 				output = runtime.instance_variable_get( :@output ).string
-				assert_includes output, "FAIL (path not found)"
+				assert_includes output, ": not found"
 				assert_includes output, "Sync all complete:"
 				assert_includes output, "1 failed"
 				destroy_runtime_repo( repo_root: repo_root )
@@ -201,7 +201,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				result = runtime.status_all!
 				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "repo-a:"
-				assert_includes output, "gone-repo: MISSING"
+				assert_includes output, "gone-repo: not found"
 				assert_equal Carson::Runtime::EXIT_OK, result
 				destroy_runtime_repo( repo_root: repo_root )
 			end
@@ -276,7 +276,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				runtime, repo_root = build_runtime
 				result = runtime.prune_all!
 				output = runtime.instance_variable_get( :@output ).string
-				assert_includes output, "FAIL (path not found)"
+				assert_includes output, ": not found"
 				assert_includes output, "Prune all complete:"
 				assert_includes output, "1 failed"
 				destroy_runtime_repo( repo_root: repo_root )
