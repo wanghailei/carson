@@ -31,6 +31,50 @@ The layering is a direct consequence of the outsider boundary rule. Carson must 
 
 **`govern.rb` is deliberately isolated.** Govern runs a long, stateful loop that reads from GitHub and potentially mutates PRs. Isolating it prevents its complexity from contaminating the synchronous local commands. Local commands (`audit`, `review gate`, `sync`) are fast, deterministic, and offline-capable. Govern is explicitly asynchronous, network-dependent, and advisory.
 
+## Product architecture
+
+**Carson is for coding agents, not for humans.** The primary user of Carson's commands and lifecycle management is the coding agent working on behalf of the developer. Carson is confident because it is professional and knows things deeply well. It does not hedge, guess, or ask unnecessary questions. It acts with the certainty of a butler who has managed the household for decades. The human owner benefits indirectly: when Carson keeps the agent's environment disciplined and predictable, the agent produces better work, and the human never has to intervene in housekeeping.
+
+**Single-repo depth is the core.** Working on one repository thoroughly well is the essence and the foundation. Multi-repo governance is the same discipline repeated across the estate. Get the single-repo story perfect first; multi-repo follows naturally with `--all`.
+
+**`--all` is the elegant extension.** Every command that works on a single repository gains cross-repo reach through a single `--all` flag. No separate commands, no different mental model — same operation, wider scope.
+
+**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson owns the full worktree lifecycle: create, track, and clean up.
+
+### Three-layer command model
+
+| Layer | Scope | Trigger | Examples |
+|-------|-------|---------|----------|
+| **1. Granular** | Single repo | Explicit command | `refresh`, `housekeep`, `template check`, `deliver`, `prune`, `audit`, `sync`, `status` |
+| **2. Batch** | All governed repos | `--all` flag | `refresh --all`, `housekeep --all`, `prune --all`, `audit --all`, `sync --all`, `status --all`, `template check --all` |
+| **3. Automation** | All governed repos | Event-driven | Canonical config change triggers propagation, post-upgrade refresh, scheduled hygiene |
+
+Layer 1 is the foundation — every command works perfectly on one repo. Layer 2 extends the same operation across the portfolio with `--all`. Layer 3 (future) removes the need for even the `--all` flag by triggering operations automatically on events.
+
+### Scope
+
+**In-scope capabilities:**
+- Layer 1 commands (`onboard`, `audit`, `sync`, `prune`, `template`, `review`, `offboard`, `refresh`, `status`, `deliver`, `housekeep`, `worktree`).
+- Layer 2 batch commands (`refresh --all`, `audit --all`, `sync --all`, `prune --all`, `status --all`, `template check --all`, `housekeep --all`).
+- Portfolio governance commands (`govern`).
+- Review governance via `review gate` and `review sweep`.
+- Whole-file management of selected GitHub-native policy files under `.github/*`.
+- Strict exit status contract suitable for automation.
+
+**Out-of-scope capabilities:**
+- Replacing GitHub as merge authority (Carson has optional merge authority gated by `govern.auto_merge`, but defers to GitHub rulesets and human judgement by default).
+- Deciding business-domain policy for host repositories.
+- Executing force merges or bypassing required checks.
+- Persisting Carson-specific configuration inside host repositories.
+
+## Carson 3.0 — Theme
+
+**Carson is for coding agents.** The primary consumer of Carson's commands, lifecycle management, and governance is the coding agent — not the human developer directly. What makes working with agents best, therefore makes the human owners most happy with no burden, Carson should handle.
+
+**Overseer model.** Carson's current model is per-repo: `carson onboard` sets up each repository individually. The 3.0 model is central oversight: repositories are *registered* under Carson's protection, and Carson oversees all of them by default. This makes cross-repo operations natural — you never need to know which repo you're standing in to manage the estate. The vocabulary shifts from "onboard" to "register."
+
+**Licensing.** Commercial use may require a paid licence in 3.0. Open-source and personal use remain free.
+
 ## Adding a new command
 
 Each command follows the same four-step pattern. Using a hypothetical `carson status` command as an example:
@@ -345,7 +389,6 @@ carson version
 - `MANUAL.md` — installation, daily operations, troubleshooting.
 - `API.md` — formal interface contract.
 - `RELEASE.md` — version history.
-- `docs/define.md` — product definition and scope.
 - `docs/design.md` — experience and brand design.
 - `VERSION`
 - `lib/carson/cli.rb`
