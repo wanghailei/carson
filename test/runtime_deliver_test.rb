@@ -238,9 +238,9 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	# --- non-fast-forward handling ---
+	# --- non-fast-forward handling (force-with-lease) ---
 
-	def test_deliver_clears_stale_remote_ref_on_non_fast_forward_no_open_pr
+	def test_deliver_force_pushes_with_lease_on_non_fast_forward
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/rebased" )
@@ -251,7 +251,7 @@ class RuntimeDeliverTest < Minitest::Test
 		# Simulate rebase by amending the commit (creates a new SHA, diverging from remote).
 		system( "git", "-C", repo_root, "commit", "--amend", "-m", "amended feature", out: File::NULL, err: File::NULL )
 
-		# deliver should detect non-fast-forward, find no open PR, delete stale ref, re-push.
+		# deliver should detect non-fast-forward and retry with --force-with-lease.
 		result = runtime.deliver!
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
@@ -259,7 +259,7 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_deliver_advises_fresh_branch_on_non_fast_forward_with_open_pr
+	def test_deliver_force_pushes_with_lease_on_non_fast_forward_with_open_pr
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "existing_pr" )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/rebased-with-pr" )
@@ -270,13 +270,57 @@ class RuntimeDeliverTest < Minitest::Test
 		# Simulate rebase by amending the commit.
 		system( "git", "-C", repo_root, "commit", "--amend", "-m", "amended feature", out: File::NULL, err: File::NULL )
 
-		# deliver should detect non-fast-forward, find open PR #42, advise fresh branch.
+		# deliver should detect non-fast-forward and retry with --force-with-lease.
+		# Same behaviour regardless of PR state.
 		result = runtime.deliver!
-		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
-		assert_includes output, "non-fast-forward"
-		assert_includes output, "PR #42"
-		assert_includes output, "git checkout -b"
+		assert_includes output, "PR: #42"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_errors_when_force_with_lease_rejected
+		# Tests the safety guarantee: --force-with-lease rejects when another actor
+		# has pushed to the remote branch since our last fetch. We test
+		# force_push_with_lease! directly because git's initial push rejection
+		# distinguishes "non-fast-forward" (local diverged) from "fetch first"
+		# (remote advanced) — and when both conditions are true, git reports
+		# "fetch first", bypassing the non-fast-forward detection path.
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/contested" )
+
+		# Push the branch so the remote has it.
+		system( "git", "-C", repo_root, "push", "-u", "origin", "feature/contested", out: File::NULL, err: File::NULL )
+
+		# Simulate another actor pushing to the same branch via a second clone.
+		remote_path = @remote_path
+		actor_b = File.join( File.dirname( repo_root ), "actor-b-#{File.basename( repo_root )}" )
+		system( "git", "clone", remote_path, actor_b, out: File::NULL, err: File::NULL )
+		system( "git", "-C", actor_b, "config", "user.email", "b@test", out: File::NULL, err: File::NULL )
+		system( "git", "-C", actor_b, "config", "user.name", "B", out: File::NULL, err: File::NULL )
+		system( "git", "-C", actor_b, "checkout", "feature/contested", out: File::NULL, err: File::NULL )
+		File.write( File.join( actor_b, "b.txt" ), "B was here" )
+		system( "git", "-C", actor_b, "add", "b.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", actor_b, "commit", "-m", "B's commit", out: File::NULL, err: File::NULL )
+		system( "git", "-C", actor_b, "push", "origin", "feature/contested", out: File::NULL, err: File::NULL )
+
+		# Amend locally — local tracking ref points to the original SHA,
+		# but the remote has B's newer commit.
+		system( "git", "-C", repo_root, "commit", "--amend", "-m", "amended feature", out: File::NULL, err: File::NULL )
+
+		# Call force_push_with_lease! directly — the lease check will see that
+		# the remote ref (B's commit) doesn't match our tracking ref (original SHA).
+		result = {}
+		exit_code = runtime.send(
+			:force_push_with_lease!,
+			branch: "feature/contested", remote: "origin", result: result
+		)
+		assert_equal Carson::Runtime::EXIT_ERROR, exit_code
+		assert_includes result[ :error ], "force-with-lease rejected"
+		assert_includes result[ :recovery ], "git fetch"
+
+		FileUtils.remove_entry( actor_b ) if File.directory?( actor_b )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
