@@ -22,11 +22,49 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
-				# Step 1: push the branch.
+				# Step 1: sync managed template files before push.
+				# Output is captured to prevent pollution of --json mode.
+				# Diagnostics are preserved for error reporting.
+				sync_exit, sync_diagnostics = begin
+					saved_output, saved_error = @output, @error
+					captured_out = StringIO.new
+					captured_err = StringIO.new
+					@output = captured_out
+					@error = captured_err
+					exit_code = template_apply!( push_prep: false )
+					[ exit_code, captured_out.string + captured_err.string ]
+				rescue StandardError => exception
+					[ EXIT_ERROR, "template sync error: #{exception.message}" ]
+				ensure
+					@output, @error = saved_output, saved_error
+				end
+
+				if sync_exit != EXIT_OK
+					result[ :error ] = sync_diagnostics.to_s.strip.empty? ? "template sync failed" : sync_diagnostics.strip
+					return deliver_finish( result: result, exit_code: sync_exit, json_output: json_output )
+				end
+
+				# Step 1b: commit any dirty managed files so the push includes them.
+				dirty = managed_dirty_paths
+				unless dirty.empty?
+					_, add_stderr, add_ok, = git_run( "add", *dirty )
+					unless add_ok
+						result[ :error ] = "template staging failed: #{add_stderr.to_s.strip}"
+						return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+					end
+					_, commit_stderr, commit_ok, = git_run( "commit", "-m", "chore: sync Carson managed files" )
+					unless commit_ok
+						result[ :error ] = "template commit failed: #{commit_stderr.to_s.strip}"
+						return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+					end
+					puts_verbose "committed managed template updates"
+				end
+
+				# Step 2: push the branch.
 				push_exit = push_branch!( branch: branch, remote: remote, result: result )
 				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
 
-				# Step 2: find or create the PR.
+				# Step 3: find or create the PR.
 				pr_number, pr_url = find_or_create_pr!(
 					branch: branch, title: title, body_file: body_file, result: result
 				)
@@ -41,7 +79,7 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				end
 
-				# Step 3: check CI status.
+				# Step 4: check CI status.
 				ci_status = check_pr_ci( number: pr_number )
 				result[ :ci ] = ci_status.to_s
 
@@ -56,7 +94,7 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
-				# Step 4: check review gate — block on unresolved review debt.
+				# Step 5: check review gate — block on unresolved review debt.
 				review = check_pr_review( number: pr_number, branch: branch, pr_url: pr_url )
 				result[ :review ] = review.fetch( :review ).to_s
 				if review.fetch( :review ) == :changes_requested
@@ -75,16 +113,16 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
 				end
 
-				# Step 5: merge.
+				# Step 6: merge.
 				merge_exit = merge_pr!( number: pr_number, result: result )
 				return deliver_finish( result: result, exit_code: merge_exit, json_output: json_output ) unless merge_exit == EXIT_OK
 
 				result[ :merged ] = true
 
-				# Step 6: sync main in the main worktree.
+				# Step 7: sync main in the main worktree.
 				sync_after_merge!( remote: remote, main: main, result: result )
 
-				# Step 7: compute next-step guidance for the agent.
+				# Step 8: compute next-step guidance for the agent.
 				compute_post_merge_next_step!( result: result )
 
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
@@ -144,6 +182,7 @@ module Carson
 			# Pushes the branch to the remote with tracking.
 			# Uses --no-verify to skip the pre-push hook that Carson itself installed.
 			# The hook blocks raw pushes unconditionally; Carson bypasses by skipping it.
+			# Template sync (previously in the hook) now runs in deliver! before push.
 			# On non-fast-forward rejection (typically after rebase), retries with
 			# --force-with-lease — a protected force push that rejects if the remote
 			# ref has been updated by another actor since the last fetch.
