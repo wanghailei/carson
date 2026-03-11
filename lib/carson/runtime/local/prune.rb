@@ -215,8 +215,7 @@ module Carson
 				Branch.orphaned(
 					active_branch: active_branch, cwd_branch: cwd_branch,
 					protected_branches: config.protected_branches, runtime: self
-				).reject { it.name == TEMPLATE_SYNC_BRANCH }
-				 .map( &:name )
+				).reject { it.name == TEMPLATE_SYNC_BRANCH }.map( &:name )
 			end
 
 			# Detects local branches whose upstream still exists but whose content is already on main.
@@ -226,8 +225,7 @@ module Carson
 				Branch.absorbed(
 					active_branch: active_branch, cwd_branch: cwd_branch,
 					protected_branches: config.protected_branches, main_branch: config.main_branch, runtime: self
-				).reject { it.name == TEMPLATE_SYNC_BRANCH }
-				 .map do |branch|
+				).reject { it.name == TEMPLATE_SYNC_BRANCH }.map do |branch|
 					upstream = git_capture!( "for-each-ref", "--format=%(upstream:short)", "refs/heads/#{branch.name}" ).strip
 					{ branch: branch.name, upstream: upstream }
 				end
