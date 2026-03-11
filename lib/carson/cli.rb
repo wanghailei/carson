@@ -165,6 +165,7 @@ module Carson
 			{ command: "setup", cli_choices: options }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts setup_parser
 			{ command: :invalid }
 		end
 
@@ -195,6 +196,7 @@ module Carson
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts onboard_parser
 			{ command: :invalid }
 		end
 
@@ -222,6 +224,7 @@ module Carson
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts offboard_parser
 			{ command: :invalid }
 		end
 
@@ -265,6 +268,7 @@ module Carson
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts refresh_parser
 			{ command: :invalid }
 		end
 
@@ -292,6 +296,7 @@ module Carson
 			{ command: "prune", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts prune_parser
 			{ command: :invalid }
 		end
 
@@ -348,6 +353,7 @@ module Carson
 			end
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts worktree_parser
 			{ command: :invalid }
 		end
 
@@ -378,6 +384,7 @@ module Carson
 			{ command: "review:#{action}" }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts review_parser
 			{ command: :invalid }
 		end
 
@@ -436,6 +443,7 @@ module Carson
 			{ command: "template:apply", push_prep: options.fetch( :push_prep ) }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts( apply_parser || template_parser )
 			{ command: :invalid }
 		end
 
@@ -468,6 +476,7 @@ module Carson
 			{ command: "audit", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts audit_parser
 			{ command: :invalid }
 		end
 
@@ -499,6 +508,7 @@ module Carson
 			{ command: "sync", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts sync_parser
 			{ command: :invalid }
 		end
 
@@ -530,6 +540,7 @@ module Carson
 			{ command: "status", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts status_parser
 			{ command: :invalid }
 		end
 
@@ -568,6 +579,7 @@ module Carson
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts deliver_parser
 			{ command: :invalid }
 		end
 
@@ -596,6 +608,7 @@ module Carson
 			{ command: "repos", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts repos_parser
 			{ command: :invalid }
 		end
 
@@ -638,6 +651,7 @@ module Carson
 			{ command: "housekeep", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts housekeep_parser
 			{ command: :invalid }
 		end
 
