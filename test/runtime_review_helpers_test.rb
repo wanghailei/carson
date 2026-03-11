@@ -180,4 +180,97 @@ class RuntimeReviewHelpersTest < Minitest::Test
 			assert_match( /no merged PR evidence/, error_text )
 			assert_equal 51, call_count
 		end
+
+		def test_merged_pr_for_branch_ignores_closed_unmerged_matches
+			call_count = 0
+			@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
+			@runtime.define_singleton_method( :gh_run ) do |*|
+				call_count += 1
+				if call_count == 1
+					payload = [
+						{
+							"number" => 12,
+							"html_url" => "https://github.com/acme/widgets/pull/12",
+							"merged_at" => nil,
+							"closed_at" => "2026-02-20T12:00:00Z",
+							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
+							"base" => { "ref" => "main" }
+						},
+						{
+							"number" => 11,
+							"html_url" => "https://github.com/acme/widgets/pull/11",
+							"merged_at" => "2026-02-19T12:00:00Z",
+							"closed_at" => "2026-02-19T12:00:00Z",
+							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
+							"base" => { "ref" => "main" }
+						}
+					]
+					[ JSON.generate( payload ), "", true, 0 ]
+				else
+					[ "[]", "", true, 0 ]
+				end
+			end
+
+			evidence, error_text = @runtime.send(
+				:merged_pr_for_branch,
+				branch: "feature/reap",
+				branch_tip_sha: "abc123"
+			)
+
+			assert_nil error_text
+			assert_equal 11, evidence.fetch( :number )
+			assert_equal "2026-02-19T12:00:00Z", evidence.fetch( :merged_at )
+			assert_equal 2, call_count
+		end
+
+		def test_abandoned_pr_for_branch_returns_latest_closed_unmerged_match
+			call_count = 0
+			@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
+			@runtime.define_singleton_method( :gh_run ) do |*|
+				call_count += 1
+				if call_count == 1
+					payload = [
+						{
+							"number" => 21,
+							"html_url" => "https://github.com/acme/widgets/pull/21",
+							"merged_at" => nil,
+							"closed_at" => "2026-02-18T12:00:00Z",
+							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
+							"base" => { "ref" => "main" }
+						},
+						{
+							"number" => 22,
+							"html_url" => "https://github.com/acme/widgets/pull/22",
+							"merged_at" => nil,
+							"closed_at" => "2026-02-20T12:00:00Z",
+							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
+							"base" => { "ref" => "main" }
+						},
+						{
+							"number" => 23,
+							"html_url" => "https://github.com/acme/widgets/pull/23",
+							"merged_at" => "2026-02-19T12:00:00Z",
+							"closed_at" => "2026-02-19T12:00:00Z",
+							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
+							"base" => { "ref" => "main" }
+						}
+					]
+					[ JSON.generate( payload ), "", true, 0 ]
+				else
+					[ "[]", "", true, 0 ]
+				end
+			end
+
+			evidence, error_text = @runtime.send(
+				:abandoned_pr_for_branch,
+				branch: "feature/reap",
+				branch_tip_sha: "abc123"
+			)
+
+			assert_nil error_text
+			assert_equal 22, evidence.fetch( :number )
+			assert_equal "2026-02-20T12:00:00Z", evidence.fetch( :closed_at )
+			assert_nil evidence.fetch( :merged_at )
+			assert_equal 2, call_count
+		end
 	end
