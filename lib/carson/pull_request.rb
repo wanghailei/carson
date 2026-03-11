@@ -13,10 +13,11 @@ module Carson
 			end
 		end
 
-		attr_reader :number, :url, :state
+		attr_reader :number, :title, :url, :state
 
-		def initialize( number:, url: nil, state: nil, runtime: )
+		def initialize( number:, title: nil, url: nil, state: nil, runtime: )
 			@number = number
+			@title = title.to_s
 			@url = url.to_s
 			@state = state.to_s
 			@runtime = runtime
@@ -42,7 +43,7 @@ module Carson
 			data = JSON.parse( stdout ) rescue nil
 			return nil unless data && data[ "number" ]
 
-			new( number: data[ "number" ], url: data[ "url" ], state: data[ "state" ], runtime: runtime )
+			new( number: data[ "number" ], title: data[ "title" ], url: data[ "url" ], state: data[ "state" ], runtime: runtime )
 		end
 
 		# Fast check: does this branch have any open PR? Returns boolean.

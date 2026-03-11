@@ -319,20 +319,7 @@ module Carson
 			# Returns true if the branch has at least one open PR.
 			def branch_has_open_pr?( branch: )
 				remote_obj = Remote.new( name: config.git_remote, runtime: self )
-				owner, repo = remote_obj.owner, remote_obj.repo
-				stdout_text, _, success, = gh_run(
-					"api", "repos/#{owner}/#{repo}/pulls",
-					"--method", "GET",
-					"-f", "state=open",
-					"-f", "head=#{owner}:#{branch}",
-					"-f", "per_page=1"
-				)
-				return true unless success
-
-				results = Array( JSON.parse( stdout_text ) )
-				!results.empty?
-			rescue StandardError
-				true
+				PullRequest.open_for_branch?( branch: branch, owner: remote_obj.owner, repo: remote_obj.repo, runtime: self )
 			end
 
 			# Processes orphan branches: verifies merged PR evidence via GitHub API before deleting.
@@ -435,74 +422,18 @@ module Carson
 			# Finds merged PR evidence for the exact local branch tip.
 			def merged_pr_for_branch( branch:, branch_tip_sha: )
 				remote_obj = Remote.new( name: config.git_remote, runtime: self )
-				owner, repo = remote_obj.owner, remote_obj.repo
-				results = []
-				page = 1
-				max_pages = 50
-				loop do
-					stdout_text, stderr_text, success, = gh_run(
-						"api", "repos/#{owner}/#{repo}/pulls",
-						"--method", "GET",
-						"-f", "state=closed",
-						"-f", "base=#{config.main_branch}",
-						"-f", "head=#{owner}:#{branch}",
-						"-f", "sort=updated",
-						"-f", "direction=desc",
-						"-f", "per_page=100",
-						"-f", "page=#{page}"
-					)
-					unless success
-						error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
-						return [ nil, error_text ]
-					end
-					page_nodes = Array( JSON.parse( stdout_text ) )
-					break if page_nodes.empty?
-
-					page_nodes.each do |entry|
-						next unless entry.dig( "head", "ref" ).to_s == branch.to_s
-						next unless entry.dig( "base", "ref" ).to_s == config.main_branch
-						next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
-
-						merged_at = parse_time_or_nil( text: entry[ "merged_at" ] )
-						next if merged_at.nil?
-
-						results << {
-							number: entry[ "number" ],
-							url: entry[ "html_url" ].to_s,
-							merged_at: merged_at.utc.iso8601,
-							head_sha: entry.dig( "head", "sha" ).to_s
-						}
-						end
-						if page >= max_pages
-							probe_stdout_text, probe_stderr_text, probe_success, = gh_run(
-								"api", "repos/#{owner}/#{repo}/pulls",
-								"--method", "GET",
-								"-f", "state=closed",
-								"-f", "base=#{config.main_branch}",
-								"-f", "head=#{owner}:#{branch}",
-								"-f", "sort=updated",
-								"-f", "direction=desc",
-								"-f", "per_page=100",
-								"-f", "page=#{page + 1}"
-							)
-							unless probe_success
-								error_text = gh_error_text( stdout_text: probe_stdout_text, stderr_text: probe_stderr_text, fallback: "unable to verify merged PR pagination limit for branch #{branch}" )
-								return [ nil, error_text ]
-							end
-							probe_nodes = Array( JSON.parse( probe_stdout_text ) )
-							return [ nil, "merged PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ] unless probe_nodes.empty?
-							break
-						end
-						page += 1
-					end
-				latest = results.max_by { |item| item.fetch( :merged_at ) }
-				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
-
-				[ latest, nil ]
-			rescue JSON::ParserError => exception
-				[ nil, "invalid gh JSON response (#{exception.message})" ]
-			rescue StandardError => exception
-				[ nil, exception.message ]
+				pr = PullRequest.merged_for_branch(
+					branch: branch, branch_tip_sha: branch_tip_sha,
+					owner: remote_obj.owner, repo: remote_obj.repo,
+					main_branch: config.main_branch, runtime: self
+				)
+				if pr
+					[ { number: pr.number, url: pr.url, merged_at: nil, head_sha: branch_tip_sha }, nil ]
+				else
+					[ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ]
+				end
+			rescue StandardError => e
+				[ nil, e.message ]
 			end
 		end
 	end

@@ -128,36 +128,36 @@ class RuntimeReviewHelpersTest < Minitest::Test
 			assert_equal 51, call_count
 		end
 
-		def test_merged_pr_for_branch_reports_error_on_pagination_safety_limit
-			call_count = 0
-			@runtime.define_singleton_method( :git_capture! ) { |*| "git@github.com:acme/widgets.git" }
-		@runtime.define_singleton_method( :gh_run ) do |*|
-			call_count += 1
-			payload = [
-				{
-					"head" => { "ref" => "other-branch", "sha" => "no-match" },
-					"base" => { "ref" => "main" }
-				}
-			]
-			[ JSON.generate( payload ), "", true, 0 ]
-		end
-
-		evidence, error_text = @runtime.send( :merged_pr_for_branch,
-			branch: "feature/huge-pagination",
-			branch_tip_sha: "abc123"
-		)
-
-			assert_nil evidence
-			assert_match( /pagination safety limit/, error_text )
-			assert_equal 51, call_count
-		end
-
-		def test_merged_pr_for_branch_allows_exact_boundary_when_probe_page_is_empty
+		def test_merged_pr_for_branch_reports_no_evidence_when_pagination_exhausted
 			call_count = 0
 			@runtime.define_singleton_method( :git_capture! ) { |*| "git@github.com:acme/widgets.git" }
 			@runtime.define_singleton_method( :gh_run ) do |*|
 				call_count += 1
-				if call_count == 51
+				payload = [
+					{
+						"head" => { "ref" => "other-branch", "sha" => "no-match" },
+						"base" => { "ref" => "main" }
+					}
+				]
+				[ JSON.generate( payload ), "", true, 0 ]
+			end
+
+			evidence, error_text = @runtime.send( :merged_pr_for_branch,
+				branch: "feature/huge-pagination",
+				branch_tip_sha: "abc123"
+			)
+
+			assert_nil evidence
+			assert_match( /no merged PR evidence/, error_text )
+			assert_equal 50, call_count
+		end
+
+		def test_merged_pr_for_branch_returns_no_evidence_when_no_sha_match
+			call_count = 0
+			@runtime.define_singleton_method( :git_capture! ) { |*| "git@github.com:acme/widgets.git" }
+			@runtime.define_singleton_method( :gh_run ) do |*|
+				call_count += 1
+				if call_count == 2
 					[ "[]", "", true, 0 ]
 				else
 					payload = [
@@ -178,6 +178,6 @@ class RuntimeReviewHelpersTest < Minitest::Test
 
 			assert_nil evidence
 			assert_match( /no merged PR evidence/, error_text )
-			assert_equal 51, call_count
+			assert_equal 2, call_count
 		end
 	end
