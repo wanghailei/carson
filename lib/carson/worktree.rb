@@ -431,8 +431,11 @@ module Carson
 		end
 		private_class_method :check_unpushed_commits
 
-		# Resolves a worktree path: if it's a bare name, always resolve under
-		# .claude/worktrees/ — even when the directory no longer exists.
+		# Resolves a worktree path: if it's a bare name, first tries the flat
+		# .claude/worktrees/<name> convention; if that isn't registered, searches
+		# all registered worktrees for one whose directory name matches.
+		# This handles worktrees created by external tools (e.g. Claude Code) that
+		# nest under a subdirectory like .claude/worktrees/claude/<name>.
 		# Returns the canonical (realpath) form so comparisons against git worktree list
 		# succeed, even when the OS resolves symlinks differently.
 		# Uses main_worktree_root (not repo_root) so resolution works from inside worktrees.
@@ -443,7 +446,16 @@ module Carson
 
 			root = runtime.main_worktree_root
 			candidate = File.join( root, ".claude", "worktrees", path )
-			runtime.realpath_safe( candidate )
+			canonical = runtime.realpath_safe( candidate )
+			return canonical if registered?( path: canonical, runtime: runtime )
+
+			# Bare name didn't match flat layout — search registered worktrees by dirname.
+			matches = list( runtime: runtime ).select { File.basename( it.path ) == path }
+			return matches.first.path if matches.size == 1
+
+			# No match or ambiguous — return the flat candidate and let the caller
+			# produce the appropriate error message.
+			canonical
 		end
 		private_class_method :resolve_path
 
