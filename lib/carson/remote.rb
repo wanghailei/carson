@@ -23,6 +23,41 @@ module Carson
 			@owner, @repo = parse_remote_url
 		end
 
+		# Pushes the given branch to this remote.
+		# Bypasses the pre-push hook (--no-verify) because Carson is the actor performing the push.
+		# Returns self on success; raises Remote::Error on failure.
+		def push!( branch: )
+			_, stderr, success, = runtime.git_run( "push", "--no-verify", "-u", name, branch )
+
+			return self if success
+
+			error_text = stderr.to_s.strip
+			error_text = "push failed" if error_text.empty?
+			raise Error.new( error_text )
+		end
+
+		# Force-pushes with lease protection after a rebase.
+		# The lease check compares the local tracking ref against the remote — if
+		# another actor pushed since the last fetch, the push is refused ("stale info").
+		# Returns self on success; raises Remote::Error on failure (with recovery hint
+		# when the rejection is due to stale tracking info).
+		def force_push_with_lease!( branch: )
+			_, stderr, success, = runtime.git_run( "push", "--no-verify", "--force-with-lease", "-u", name, branch )
+
+			return self if success
+
+			if stderr.to_s.include?( "stale info" )
+				raise Error.new(
+					"force-with-lease rejected — another push landed on #{branch} since your last fetch",
+					recovery: "git fetch #{name} #{branch} && carson deliver"
+				)
+			end
+
+			error_text = stderr.to_s.strip
+			error_text = "push failed (force-with-lease)" if error_text.empty?
+			raise Error.new( error_text )
+		end
+
 	private
 
 		attr_reader :runtime
