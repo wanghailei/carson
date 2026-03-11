@@ -6,6 +6,7 @@ module Carson
 end
 
 require_relative "carson/worktree"
+require_relative "carson/remote"
 require_relative "carson/config"
 require_relative "carson/adapters/git"
 require_relative "carson/adapters/github"

@@ -354,7 +354,7 @@ require_relative "runtime/deliver"
 module Carson
 	class Runtime
 		public :config, :output, :verbose?, :puts_verbose, :puts_line,
-			:git_run, :git_capture!, :main_worktree_root, :realpath_safe,
+			:git_run, :git_capture!, :gh_run, :main_worktree_root, :realpath_safe,
 			:block_if_outsider_fingerprints!, :branch_absorbed_into_main?
 	end
 end
