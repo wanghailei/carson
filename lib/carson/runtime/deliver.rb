@@ -46,47 +46,58 @@ module Carson
 				end
 
 				# Step 2: find or create the PR.
-				pr_number, pr_url = find_or_create_pr!(
-					branch: branch, title: title, body_file: body_file, result: result
-				)
-				if pr_number.nil?
-					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+				pr = PullRequest.find_open( branch: branch, runtime: self )
+				unless pr
+					begin
+						pr = PullRequest.create!( branch: branch, title: title, body_file: body_file, runtime: self )
+					rescue PullRequest::Error => e
+						result[ :error ] = e.message
+						result[ :recovery ] = e.recovery
+						return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+					end
 				end
 
-				result[ :pr_number ] = pr_number
-				result[ :pr_url ] = pr_url
+				result[ :pr_number ] = pr.number
+				result[ :pr_url ] = pr.url
 				# Without --merge, we are done.
 				unless merge
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				end
 
 				# Step 3: check CI status.
-				ci_status = check_pr_ci( number: pr_number )
+				ci_status = pr.ci_status
 				result[ :ci ] = ci_status.to_s
 
 				case ci_status
 				when :pass, :none
 					# Continue to review gate. :none means no checks configured — nothing to wait for.
 				when :pending
-					result[ :recovery ] = "gh pr checks #{pr_number} --watch && carson deliver --merge"
+					result[ :recovery ] = "gh pr checks #{pr.number} --watch && carson deliver --merge"
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				when :fail
-					result[ :recovery ] = "gh pr checks #{pr_number} — fix failures, push, then `carson deliver --merge`"
+					result[ :recovery ] = "gh pr checks #{pr.number} — fix failures, push, then `carson deliver --merge`"
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
 				# Step 4: check review gate — block if changes are requested.
-				review = check_pr_review( number: pr_number )
+				review = pr.review_decision
 				result[ :review ] = review.to_s
 				if review == :changes_requested
-					result[ :error ] = "review changes requested on PR ##{pr_number}"
+					result[ :error ] = "review changes requested on PR ##{pr.number}"
 					result[ :recovery ] = "address review comments, push, then `carson deliver --merge`"
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
 				# Step 5: merge.
-				merge_exit = merge_pr!( number: pr_number, result: result )
-				return deliver_finish( result: result, exit_code: merge_exit, json_output: json_output ) unless merge_exit == EXIT_OK
+				begin
+					method = config.govern_merge_method
+					result[ :merge_method ] = method
+					pr.merge!( method: method )
+				rescue PullRequest::Error => e
+					result[ :error ] = e.message
+					result[ :recovery ] = e.recovery
+					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+				end
 
 				result[ :merged ] = true
 
@@ -147,134 +158,6 @@ module Carson
 				if result[ :merged ]
 					puts_line "Merged PR ##{result[ :pr_number ]} via #{result[ :merge_method ]}."
 					puts_line "  Next: #{result[ :next_step ]}" if result[ :next_step ]
-				end
-			end
-
-			# Finds an existing PR for the branch, or creates a new one.
-			# Returns [number, url] or [nil, nil] on failure.
-			def find_or_create_pr!( branch:, title: nil, body_file: nil, result: )
-				# Check for existing PR.
-				existing = find_existing_pr( branch: branch )
-				return existing if existing.first
-
-				# Create a new PR.
-				create_pr!( branch: branch, title: title, body_file: body_file, result: result )
-			end
-
-			# Queries gh for an open PR on this branch.
-			# Returns [number, url] or [nil, nil].
-			# gh pr view returns any PR on the branch — open, merged, or closed.
-			# We check state explicitly so merged/closed PRs are treated as absent,
-			# letting find_or_create_pr! fall through to create a new PR.
-			def find_existing_pr( branch: )
-				stdout, _, success, = gh_run(
-					"pr", "view", branch,
-					"--json", "number,url,state"
-				)
-				if success
-					data = JSON.parse( stdout ) rescue nil
-					if data && data[ "number" ] && data[ "state" ] == "OPEN"
-						return [ data[ "number" ], data[ "url" ].to_s ]
-					end
-				end
-				[ nil, nil ]
-			end
-
-			# Creates a PR via gh. Title defaults to branch name humanised.
-			# Returns [number, url] or [nil, nil] on failure.
-			def create_pr!( branch:, title: nil, body_file: nil, result: )
-				pr_title = title || default_pr_title( branch: branch )
-
-				args = [ "pr", "create", "--title", pr_title, "--head", branch ]
-				if body_file && File.exist?( body_file )
-					args.push( "--body-file", body_file )
-				else
-					args.push( "--body", "" )
-				end
-
-				stdout, stderr, success, = gh_run( *args )
-				unless success
-					error_text = stderr.to_s.strip
-					error_text = "pr create failed" if error_text.empty?
-					result[ :error ] = error_text
-					result[ :recovery ] = "gh pr create --title '#{pr_title}' --head #{branch}"
-					return [ nil, nil ]
-				end
-
-				# gh pr create prints the URL on success. Parse number from it.
-				pr_url = stdout.to_s.strip
-				pr_number = pr_url.split( "/" ).last.to_i
-				if pr_number > 0
-					[ pr_number, pr_url ]
-				else
-					# Fallback: query the just-created PR.
-					find_existing_pr( branch: branch )
-				end
-			end
-
-			# Generates a default PR title from the branch name.
-			def default_pr_title( branch: )
-				branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { it.upcase }
-			end
-
-			# Checks CI status on a PR. Returns :pass, :fail, :pending, or :none.
-			# Uses the `bucket` field (pass/fail/pending) from `gh pr checks --json`.
-			def check_pr_ci( number: )
-				stdout, _, success, = gh_run(
-					"pr", "checks", number.to_s,
-					"--json", "name,bucket"
-				)
-				return :none unless success
-
-				checks = JSON.parse( stdout ) rescue []
-				return :none if checks.empty?
-
-				buckets = checks.map { it[ "bucket" ].to_s.downcase }
-				return :fail if buckets.include?( "fail" )
-				return :pending if buckets.include?( "pending" )
-
-				:pass
-			end
-
-			# Checks review decision on a PR. Returns :approved, :changes_requested, :review_required, or :none.
-			def check_pr_review( number: )
-				stdout, _, success, = gh_run(
-					"pr", "view", number.to_s,
-					"--json", "reviewDecision"
-				)
-				return :none unless success
-
-				data = JSON.parse( stdout ) rescue {}
-				decision = data[ "reviewDecision" ].to_s.strip.upcase
-				case decision
-				when "APPROVED" then :approved
-				when "CHANGES_REQUESTED" then :changes_requested
-				when "REVIEW_REQUIRED" then :review_required
-				else :none
-				end
-			end
-
-			# Merges the PR using the configured merge method.
-			# Deliberately omits --delete-branch: gh tries to switch the local
-			# checkout to main afterwards, which fails inside a worktree where
-			# main is already checked output. Branch cleanup deferred to `carson prune`.
-			def merge_pr!( number:, result: )
-				method = config.govern_merge_method
-				result[ :merge_method ] = method
-
-				_, stderr, success, = gh_run(
-					"pr", "merge", number.to_s,
-					"--#{method}"
-				)
-
-				if success
-					EXIT_OK
-				else
-					error_text = stderr.to_s.strip
-					error_text = "merge failed" if error_text.empty?
-					result[ :error ] = error_text
-					result[ :recovery ] = "gh pr merge #{number} --#{method}"
-					EXIT_ERROR
 				end
 			end
 

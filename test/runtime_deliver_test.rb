@@ -340,10 +340,8 @@ class RuntimeDeliverTest < Minitest::Test
 	# --- default_pr_title ---
 
 	def test_default_pr_title_from_branch_name
-		runtime, repo_root = build_runtime( verbose: false )
-		title = runtime.send( :default_pr_title, branch: "feature/add-deliver-command" )
+		title = Carson::PullRequest.default_title( branch: "feature/add-deliver-command" )
 		assert_equal "Feature: add deliver command", title
-		destroy_runtime_repo( repo_root: repo_root )
 	end
 
 private
