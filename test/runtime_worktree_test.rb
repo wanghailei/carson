@@ -69,6 +69,28 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+
+	def test_worktree_remove_by_name_nested
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			# Simulate a worktree created by Claude Code under .claude/worktrees/claude/<name>.
+			nested_dir = File.join( repo_root, ".claude", "worktrees", "claude", "nested-wt" )
+			FileUtils.mkdir_p( File.dirname( nested_dir ) )
+			branch_name = "claude/nested-wt"
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, nested_dir, out: File::NULL, err: File::NULL )
+			File.write( File.join( nested_dir, "nested.txt" ), "work\n" )
+			system( "git", "-C", nested_dir, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", nested_dir, "commit", "-m", "nested work", out: File::NULL, err: File::NULL )
+			system( "git", "-C", nested_dir, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+
+			assert Dir.exist?( nested_dir ), "nested worktree directory should exist"
+			# Pass just the leaf name — should resolve to the nested path.
+			status = runtime.worktree_remove!( worktree_path: "nested-wt" )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute Dir.exist?( nested_dir ), "nested worktree directory should be removed"
+			assert_includes output.string, "worktree_removed:"
+		end
+	end
+
 	def test_worktree_remove_branch_deleted
 		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
 			worktree = create_worktree( repo_root: repo_root, worktree_name: "branch-del" )
