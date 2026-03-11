@@ -1,6 +1,6 @@
 # Carson Governance
 
-This repository is governed by [Carson](https://github.com/wanghailei/carson), an autonomous governance runtime. Carson lives on the maintainer's workstation, not inside this repository.
+This repository is governed by [Carson](https://github.com/wanghailei/carson), an autonomous git strategist and repositories governor. Carson lives on the maintainer's workstation, not inside this repository.
 
 ## Commands
 
