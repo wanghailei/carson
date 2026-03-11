@@ -33,7 +33,7 @@ module Carson
 
 			error_text = stderr.to_s.strip
 			error_text = "push failed" if error_text.empty?
-			raise Error.new( error_text )
+			raise Error, error_text
 		end
 
 		# Force-pushes with lease protection after a rebase.
@@ -55,7 +55,7 @@ module Carson
 
 			error_text = stderr.to_s.strip
 			error_text = "push failed (force-with-lease)" if error_text.empty?
-			raise Error.new( error_text )
+			raise Error, error_text
 		end
 
 	private
@@ -81,7 +81,7 @@ module Carson
 			repo_name = File.basename( remote_url ).sub( /\.git\z/, "" )
 			return [ "local", repo_name ] unless repo_name.empty?
 
-			raise Error.new( "unable to parse owner/repo from remote URL #{remote_url}" )
+			raise Error, "unable to parse owner/repo from remote URL #{remote_url}"
 		end
 	end
 end

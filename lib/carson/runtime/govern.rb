@@ -465,7 +465,7 @@ module Carson
 
 			def review_evidence( pr:, repo_path: )
 				scoped_runtime = scoped_runtime( repo_path: repo_path )
-				remote_obj = Remote.new( name: scoped_runtime.config.git_remote, runtime: scoped_runtime )
+				remote_obj = Remote.new( name: scoped_runtime.send( :config ).git_remote, runtime: scoped_runtime )
 				owner, repo = remote_obj.owner, remote_obj.repo
 				pr_number = pr[ "number" ]
 				details = scoped_runtime.send( :pull_request_details, owner: owner, repo: repo, pr_number: pr_number )
