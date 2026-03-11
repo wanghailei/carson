@@ -23,8 +23,27 @@ module Carson
 				end
 
 				# Step 1: push the branch.
-				push_exit = push_branch!( branch: branch, remote: remote, result: result )
-				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
+				remote_obj = Remote.new( name: remote, runtime: self )
+				begin
+					remote_obj.push!( branch: branch )
+					puts_verbose "pushed #{branch} to #{remote}"
+				rescue Remote::Error => e
+					if e.message.include?( "non-fast-forward" )
+						begin
+							puts_verbose "push rejected (non-fast-forward), retrying with --force-with-lease"
+							remote_obj.force_push_with_lease!( branch: branch )
+							puts_verbose "pushed #{branch} to #{remote} (force-with-lease)"
+						rescue Remote::Error => e2
+							result[ :error ] = e2.message
+							result[ :recovery ] = e2.recovery
+							return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+						end
+					else
+						result[ :error ] = e.message
+						result[ :recovery ] = e.recovery
+						return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+					end
+				end
 
 				# Step 2: find or create the PR.
 				pr_number, pr_url = find_or_create_pr!(
@@ -129,54 +148,6 @@ module Carson
 					puts_line "Merged PR ##{result[ :pr_number ]} via #{result[ :merge_method ]}."
 					puts_line "  Next: #{result[ :next_step ]}" if result[ :next_step ]
 				end
-			end
-
-			# Pushes the branch to the remote with tracking.
-			# Uses --no-verify to skip the pre-push hook that Carson itself installed.
-			# The hook blocks raw pushes unconditionally; Carson bypasses by skipping it.
-			# On non-fast-forward rejection (typically after rebase), retries with
-			# --force-with-lease — a protected force push that rejects if the remote
-			# ref has been updated by another actor since the last fetch.
-			def push_branch!( branch:, remote:, result: )
-				_, push_stderr, push_success, = git_run( "push", "--no-verify", "-u", remote, branch )
-
-				if !push_success && push_stderr.to_s.include?( "non-fast-forward" )
-					return force_push_with_lease!( branch: branch, remote: remote, result: result )
-				end
-
-				unless push_success
-					error_text = push_stderr.to_s.strip
-					error_text = "push failed" if error_text.empty?
-					result[ :error ] = error_text
-					return EXIT_ERROR
-				end
-				puts_verbose "pushed #{branch} to #{remote}"
-				EXIT_OK
-			end
-
-			# Retries push with --force-with-lease after a non-fast-forward rejection.
-			# The lease check compares the local tracking ref against the remote — if
-			# another actor pushed since our last fetch, the push is refused ("stale info").
-			# This is atomic and safe, unlike delete-and-re-push.
-			def force_push_with_lease!( branch:, remote:, result: )
-				puts_verbose "push rejected (non-fast-forward), retrying with --force-with-lease"
-				_, lease_stderr, lease_success, = git_run( "push", "--no-verify", "--force-with-lease", "-u", remote, branch )
-
-				if lease_success
-					puts_verbose "pushed #{branch} to #{remote} (force-with-lease)"
-					return EXIT_OK
-				end
-
-				# --force-with-lease rejected — another actor pushed to this branch.
-				if lease_stderr.to_s.include?( "stale info" )
-					result[ :error ] = "force-with-lease rejected — another push landed on #{branch} since your last fetch"
-					result[ :recovery ] = "git fetch #{remote} #{branch} && carson deliver"
-				else
-					error_text = lease_stderr.to_s.strip
-					error_text = "push failed (force-with-lease)" if error_text.empty?
-					result[ :error ] = error_text
-				end
-				EXIT_ERROR
 			end
 
 			# Finds an existing PR for the branch, or creates a new one.

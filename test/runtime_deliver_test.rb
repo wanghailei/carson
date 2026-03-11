@@ -323,16 +323,15 @@ class RuntimeDeliverTest < Minitest::Test
 		# but the remote has B's newer commit.
 		system( "git", "-C", repo_root, "commit", "--amend", "-m", "amended feature", out: File::NULL, err: File::NULL )
 
-		# Call force_push_with_lease! directly — the lease check will see that
-		# the remote ref (B's commit) doesn't match our tracking ref (original SHA).
-		result = {}
-		exit_code = runtime.send(
-			:force_push_with_lease!,
-			branch: "feature/contested", remote: "origin", result: result
-		)
-		assert_equal Carson::Runtime::EXIT_ERROR, exit_code
-		assert_includes result[ :error ], "force-with-lease rejected"
-		assert_includes result[ :recovery ], "git fetch"
+		# Call force_push_with_lease! on the Remote object directly — the lease
+		# check will see that the remote ref (B's commit) doesn't match our
+		# tracking ref (original SHA).
+		remote_obj = Carson::Remote.new( name: "origin", runtime: runtime )
+		error = assert_raises( Carson::Remote::Error ) do
+			remote_obj.force_push_with_lease!( branch: "feature/contested" )
+		end
+		assert_includes error.message, "force-with-lease rejected"
+		assert_includes error.recovery, "git fetch"
 
 		FileUtils.remove_entry( actor_b ) if File.directory?( actor_b )
 		destroy_runtime_repo( repo_root: repo_root )
