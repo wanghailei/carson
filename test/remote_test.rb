@@ -88,7 +88,31 @@ class RemoteTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_force_push_with_lease_raises_on_failure
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_bare_remote( repo_root )
+		create_feature_branch( repo_root, "feat/lease-fail" )
+
+		# Push once so remote has the branch.
+		system( "git", "-C", repo_root, "push", "-u", "origin", "feat/lease-fail", out: File::NULL, err: File::NULL )
+
+		remote = Carson::Remote.new( name: "origin", runtime: runtime )
+
+		# Point origin at a non-existent path so force-push fails.
+		system( "git", "-C", repo_root, "remote", "set-url", "origin", "/tmp/no-such-remote.git", out: File::NULL, err: File::NULL )
+
+		error = assert_raises( Carson::Remote::Error ) { remote.force_push_with_lease!( branch: "feat/lease-fail" ) }
+		refute_nil error.message
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
+
+	def destroy_runtime_repo( repo_root: )
+		remote_path = File.join( File.dirname( repo_root ), "remote-#{File.basename( repo_root )}.git" )
+		FileUtils.remove_entry( remote_path ) if File.directory?( remote_path )
+		super
+	end
 
 	def init_git_repo( repo_root )
 		system( "git", "-C", repo_root, "init", "-b", "main", out: File::NULL, err: File::NULL )
