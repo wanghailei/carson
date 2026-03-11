@@ -31,7 +31,7 @@ Release-note scope rule:
 ### What changed
 
 - **Command guard for governed repositories** — Carson now detects and blocks raw `git push` and `gh pr create/merge` commands in governed repos, redirecting agents to `carson deliver` instead. Three enforcement layers:
-  - **Pre-push hook** — blocks raw `git push` unconditionally in governed repos. Carson uses `--no-verify` internally to skip its own hook.
+  - **Pre-push hook** — blocks raw `git push` unconditionally in governed repos. Carson uses `--no-verify` internally to skip its own hook. *(Side effect: `--no-verify` also skips the hook's `template apply --push-prep` block — template sync moved into `deliver!` in a later release to restore coverage.)*
   - **Command guard script** — a Claude Code `PreToolUse` hook that intercepts `gh pr create` and `gh pr merge` Bash commands in governed repos.
   - **Existing pre-push guard** — the main/master branch push block now uses the same `BLOCKED` message format with explicit recovery guidance.
 - **`with_env_var` helper** — new Runtime utility for temporarily setting environment variables with guaranteed cleanup.

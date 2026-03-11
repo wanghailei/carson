@@ -364,6 +364,57 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- template sync in deliver ---
+
+	def test_deliver_json_output_clean_with_template_sync
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/template-sync" )
+		result = runtime.deliver!( json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		json_text = output_string( runtime ).strip
+		parsed = JSON.parse( json_text )
+		assert parsed.is_a?( Hash ), "deliver --json must produce valid JSON"
+		refute parsed.key?( "error" ), "template sync should not produce errors"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_pushes_canonical_content_for_drifted_template
+		managed_file = ".github/carson.md"
+		runtime, repo_root = build_runtime_with_mock_gh(
+			verbose: false, managed_files: [ managed_file ]
+		)
+
+		# Create the template source under tool_root (= repo_root).
+		# template_source_path looks for tool_root/templates/<relative>.
+		template_dir = File.join( repo_root, "templates", ".github" )
+		FileUtils.mkdir_p( template_dir )
+		File.write( File.join( template_dir, "carson.md" ), "canonical content\n" )
+
+		init_git_repo_with_remote( repo_root )
+
+		# Create the managed file with drifted content and commit it on the feature branch.
+		create_feature_branch( repo_root, "feature/drift-sync" )
+		managed_dir = File.join( repo_root, ".github" )
+		FileUtils.mkdir_p( managed_dir )
+		File.write( File.join( repo_root, managed_file ), "drifted content\n" )
+		system( "git", "-C", repo_root, "add", managed_file, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "add drifted managed file", out: File::NULL, err: File::NULL )
+
+		result = runtime.deliver!
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		# The regression: drift must not reach the remote.
+		# Inspect the pushed branch in the bare remote to confirm canonical content was pushed.
+		remote_content, = Open3.capture2(
+			"git", "-C", @remote_path, "show", "feature/drift-sync:#{managed_file}"
+		)
+		assert_equal "canonical content\n", remote_content,
+			"deliver must push canonical content, not drifted content, to the remote"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- default_pr_title ---
 
 	def test_default_pr_title_from_branch_name
@@ -398,7 +449,7 @@ private
 		system( "git", "-C", repo_root, "commit", "-m", "add feature", out: File::NULL, err: File::NULL )
 	end
 
-	def build_runtime_with_mock_gh( verbose: false, scenario: "default" )
+	def build_runtime_with_mock_gh( verbose: false, scenario: "default", managed_files: nil )
 		repo_root = Dir.mktmpdir( "carson-deliver-test", carson_tmp_root )
 		output = StringIO.new
 		error = StringIO.new
@@ -420,10 +471,25 @@ private
 		ENV[ "CARSON_REVIEW_POLL_SECONDS" ] = "0"
 		ENV[ "CARSON_REVIEW_MAX_POLLS" ] = "2"
 
-		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: repo_root, output: output, error: error, verbose: verbose )
-		ENV[ "CARSON_REVIEW_WAIT_SECONDS" ] = previous_review_wait
-		ENV[ "CARSON_REVIEW_POLL_SECONDS" ] = previous_review_poll
-		ENV[ "CARSON_REVIEW_MAX_POLLS" ] = previous_review_max_polls
+			# Override config so template_apply! processes only what the test sets up.
+			# Default: a single placeholder file with matching template source so sync succeeds.
+			effective_files = managed_files || [ ".github/placeholder.md" ]
+			config_file = File.join( repo_root, "test-carson-config.json" )
+			File.write( config_file, JSON.generate( { "template" => { "managed_files" => effective_files } } ) )
+
+		# Create matching template sources for default placeholder so template_apply! returns EXIT_OK.
+		if managed_files.nil?
+			template_dir = File.join( repo_root, "templates", ".github" )
+			FileUtils.mkdir_p( template_dir )
+			File.write( File.join( template_dir, "placeholder.md" ), "" )
+		end
+
+			runtime = with_env( "CARSON_CONFIG_FILE" => config_file ) do
+				Carson::Runtime.new( repo_root: repo_root, tool_root: repo_root, output: output, error: error, verbose: verbose )
+			end
+			ENV[ "CARSON_REVIEW_WAIT_SECONDS" ] = previous_review_wait
+			ENV[ "CARSON_REVIEW_POLL_SECONDS" ] = previous_review_poll
+			ENV[ "CARSON_REVIEW_MAX_POLLS" ] = previous_review_max_polls
 
 		# Restore PATH after runtime creation (the adapter shells output at call time, not at init).
 		# We keep mock_bin in PATH for the duration of the test.
