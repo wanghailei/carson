@@ -93,7 +93,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		ref_input = "refs/heads/feature/guard-test abc123 refs/heads/feature/guard-test 000000\n"
 
 		stdout, stderr, status = Open3.capture3(
-			{ "HOME" => repo_root, "CARSON_PUSH" => "" },
+			{ "HOME" => repo_root },
 			"bash", hook_path, "origin", "git@github.com:mock/repo.git",
 			stdin_data: ref_input,
 			chdir: repo_root
@@ -106,7 +106,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
-	def test_pre_push_hook_allows_carson_push
+	def test_pre_push_hook_blocks_even_with_carson_push_env
 		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/carson-push" )
@@ -122,7 +122,8 @@ class RuntimeCommandGuardTest < Minitest::Test
 		hook_path = File.join( tool_root_path, "hooks", "pre-push" )
 		ref_input = "refs/heads/feature/carson-push abc123 refs/heads/feature/carson-push 000000\n"
 
-		# CARSON_PUSH=1 signals this is a Carson-managed push — should pass through.
+		# CARSON_PUSH=1 should no longer bypass the hook — the hook blocks unconditionally.
+		# Carson uses --no-verify to skip the hook entirely, not an env var.
 		stdout, stderr, status = Open3.capture3(
 			{ "HOME" => repo_root, "CARSON_PUSH" => "1" },
 			"bash", hook_path, "origin", "git@github.com:mock/repo.git",
@@ -130,10 +131,8 @@ class RuntimeCommandGuardTest < Minitest::Test
 			chdir: repo_root
 		)
 
-		# The hook will try to run `carson template apply --push-prep` which will fail
-		# in the test environment. That's OK — we're testing the guard, not template apply.
-		# The important thing is it didn't exit with the "BLOCKED" message.
-		refute_includes stderr, "BLOCKED: raw"
+		refute status.success?, "pre-push should block even with CARSON_PUSH=1 — no env-var bypass"
+		assert_includes stderr, "Carson-governed"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
@@ -155,7 +154,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		ref_input = "refs/heads/feature/non-governed abc123 refs/heads/feature/non-governed 000000\n"
 
 		stdout, stderr, status = Open3.capture3(
-			{ "HOME" => repo_root, "CARSON_PUSH" => "" },
+			{ "HOME" => repo_root },
 			"bash", hook_path, "origin", "git@github.com:mock/repo.git",
 			stdin_data: ref_input,
 			chdir: repo_root
