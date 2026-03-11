@@ -433,6 +433,32 @@ module Carson
 
 			# Finds merged PR evidence for the exact local branch tip.
 			def merged_pr_for_branch( branch:, branch_tip_sha: )
+				closed_prs, error = closed_prs_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				return [ nil, error ] unless error.nil?
+
+				latest = Array( closed_prs )
+					.select { |entry| !entry[ :merged_at ].nil? }
+					.max_by { |entry| entry.fetch( :merged_at ) }
+				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
+
+				[ latest, nil ]
+			end
+
+			# Finds closed-but-unmerged PR evidence for the exact local branch tip.
+			def abandoned_pr_for_branch( branch:, branch_tip_sha: )
+				closed_prs, error = closed_prs_for_branch( branch: branch, branch_tip_sha: branch_tip_sha )
+				return [ nil, error ] unless error.nil?
+
+				latest = Array( closed_prs )
+					.select { |entry| entry[ :merged_at ].nil? && !entry[ :closed_at ].nil? }
+					.max_by { |entry| entry.fetch( :closed_at ) }
+				return [ nil, "no abandoned PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
+
+				[ latest, nil ]
+			end
+
+			# Queries all closed PRs for the branch tip, regardless of merge state.
+			def closed_prs_for_branch( branch:, branch_tip_sha: )
 				owner, repo = repository_coordinates
 				results = []
 				page = 1
@@ -450,7 +476,7 @@ module Carson
 						"-f", "page=#{page}"
 					)
 					unless success
-						error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query merged PR evidence for branch #{branch}" )
+						error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to query closed PR evidence for branch #{branch}" )
 						return [ nil, error_text ]
 					end
 					page_nodes = Array( JSON.parse( stdout_text ) )
@@ -461,42 +487,39 @@ module Carson
 						next unless entry.dig( "base", "ref" ).to_s == config.main_branch
 						next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
 
-						merged_at = parse_time_or_nil( text: entry[ "merged_at" ] )
-						next if merged_at.nil?
-
 						results << {
 							number: entry[ "number" ],
 							url: entry[ "html_url" ].to_s,
-							merged_at: merged_at.utc.iso8601,
+							merged_at: parse_time_or_nil( text: entry[ "merged_at" ] )&.utc&.iso8601,
+							closed_at: parse_time_or_nil( text: entry[ "closed_at" ] )&.utc&.iso8601,
 							head_sha: entry.dig( "head", "sha" ).to_s
 						}
-						end
-						if page >= max_pages
-							probe_stdout_text, probe_stderr_text, probe_success, = gh_run(
-								"api", "repos/#{owner}/#{repo}/pulls",
-								"--method", "GET",
-								"-f", "state=closed",
-								"-f", "base=#{config.main_branch}",
-								"-f", "head=#{owner}:#{branch}",
-								"-f", "sort=updated",
-								"-f", "direction=desc",
-								"-f", "per_page=100",
-								"-f", "page=#{page + 1}"
-							)
-							unless probe_success
-								error_text = gh_error_text( stdout_text: probe_stdout_text, stderr_text: probe_stderr_text, fallback: "unable to verify merged PR pagination limit for branch #{branch}" )
-								return [ nil, error_text ]
-							end
-							probe_nodes = Array( JSON.parse( probe_stdout_text ) )
-							return [ nil, "merged PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ] unless probe_nodes.empty?
-							break
-						end
-						page += 1
 					end
-				latest = results.max_by { |item| item.fetch( :merged_at ) }
-				return [ nil, "no merged PR evidence for branch tip #{branch_tip_sha} into #{config.main_branch}" ] if latest.nil?
 
-				[ latest, nil ]
+					if page >= max_pages
+						probe_stdout_text, probe_stderr_text, probe_success, = gh_run(
+							"api", "repos/#{owner}/#{repo}/pulls",
+							"--method", "GET",
+							"-f", "state=closed",
+							"-f", "base=#{config.main_branch}",
+							"-f", "head=#{owner}:#{branch}",
+							"-f", "sort=updated",
+							"-f", "direction=desc",
+							"-f", "per_page=100",
+							"-f", "page=#{page + 1}"
+						)
+						unless probe_success
+							error_text = gh_error_text( stdout_text: probe_stdout_text, stderr_text: probe_stderr_text, fallback: "unable to verify closed PR pagination limit for branch #{branch}" )
+							return [ nil, error_text ]
+						end
+						probe_nodes = Array( JSON.parse( probe_stdout_text ) )
+						return [ nil, "closed PR lookup exceeded pagination safety limit (#{max_pages} pages) for branch #{branch}" ] unless probe_nodes.empty?
+						break
+					end
+					page += 1
+				end
+
+				[ results, nil ]
 			rescue JSON::ParserError => exception
 				[ nil, "invalid gh JSON response (#{exception.message})" ]
 			rescue StandardError => exception
