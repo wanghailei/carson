@@ -222,24 +222,6 @@ module Carson
 					base_state
 				end
 
-				# Extracts owner/repository from configured git remote URL.
-				def repository_coordinates
-					remote_url = git_capture!( "config", "--get", "remote.#{config.git_remote}.url" ).strip
-					match = remote_url.match( %r{\A(?:git@|https?://|ssh://git@)?[^/:]+[:/](?<owner>[^/]+)/(?<repo>[^/]+?)(?:\.git)?\z} )
-					return [ match[ :owner ], match[ :repo ] ] unless match.nil?
-
-					stdout_text, = gh_capture_soft( "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner" )
-					name_with_owner = stdout_text.to_s.strip
-					if name_with_owner.include?( "/" )
-						owner, repo = name_with_owner.split( "/", 2 )
-						return [ owner, repo ] unless owner.to_s.empty? || repo.to_s.empty?
-					end
-
-					repo_name = File.basename( remote_url ).sub( /\.git\z/, "" )
-					return [ "local", repo_name ] unless repo_name.empty?
-					raise "unable to parse owner/repo from remote URL #{remote_url}"
-				end
-
 				# Optional CI override for detached-HEAD contexts where branch-based PR lookup is not possible.
 				def carson_pr_number_override
 					text = ENV.fetch( "CARSON_PR_NUMBER", "" ).to_s.strip

@@ -318,7 +318,8 @@ module Carson
 
 			# Returns true if the branch has at least one open PR.
 			def branch_has_open_pr?( branch: )
-				owner, repo = repository_coordinates
+				remote_obj = Remote.new( name: config.git_remote, runtime: self )
+				owner, repo = remote_obj.owner, remote_obj.repo
 				stdout_text, _, success, = gh_run(
 					"api", "repos/#{owner}/#{repo}/pulls",
 					"--method", "GET",
@@ -433,7 +434,8 @@ module Carson
 
 			# Finds merged PR evidence for the exact local branch tip.
 			def merged_pr_for_branch( branch:, branch_tip_sha: )
-				owner, repo = repository_coordinates
+				remote_obj = Remote.new( name: config.git_remote, runtime: self )
+				owner, repo = remote_obj.owner, remote_obj.repo
 				results = []
 				page = 1
 				max_pages = 50

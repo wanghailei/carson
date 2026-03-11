@@ -130,7 +130,7 @@ class RuntimeReviewHelpersTest < Minitest::Test
 
 		def test_merged_pr_for_branch_reports_error_on_pagination_safety_limit
 			call_count = 0
-			@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
+			@runtime.define_singleton_method( :git_capture! ) { |*| "git@github.com:acme/widgets.git" }
 		@runtime.define_singleton_method( :gh_run ) do |*|
 			call_count += 1
 			payload = [
@@ -154,7 +154,7 @@ class RuntimeReviewHelpersTest < Minitest::Test
 
 		def test_merged_pr_for_branch_allows_exact_boundary_when_probe_page_is_empty
 			call_count = 0
-			@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
+			@runtime.define_singleton_method( :git_capture! ) { |*| "git@github.com:acme/widgets.git" }
 			@runtime.define_singleton_method( :gh_run ) do |*|
 				call_count += 1
 				if call_count == 51

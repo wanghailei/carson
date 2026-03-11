@@ -310,7 +310,8 @@ module Carson
 					puts_verbose "baseline: SKIP (#{report.fetch( :skip_reason )})"
 					return report
 				end
-				owner, repo = repository_coordinates
+				remote_obj = Remote.new( name: config.git_remote, runtime: self )
+				owner, repo = remote_obj.owner, remote_obj.repo
 				report[ :repository ] = "#{owner}/#{repo}"
 				repository_data = gh_json_payload!(
 					"api", "repos/#{owner}/#{repo}",

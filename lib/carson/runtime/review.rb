@@ -28,7 +28,8 @@ module Carson
 					return EXIT_ERROR
 				end
 
-				owner, repo = repository_coordinates
+				remote_obj = Remote.new( name: config.git_remote, runtime: self )
+				owner, repo = remote_obj.owner, remote_obj.repo
 				pr_number_override = carson_pr_number_override
 				pr_summary =
 					if pr_number_override.nil?
@@ -144,7 +145,8 @@ module Carson
 					return EXIT_ERROR
 				end
 
-				owner, repo = repository_coordinates
+				remote_obj = Remote.new( name: config.git_remote, runtime: self )
+				owner, repo = remote_obj.owner, remote_obj.repo
 				cutoff_time = Time.now.utc - ( config.review_sweep_window_days * 86_400 )
 				pull_requests = recent_pull_requests_for_sweep( owner: owner, repo: repo, cutoff_time: cutoff_time )
 				puts_verbose "window_days: #{config.review_sweep_window_days}"
