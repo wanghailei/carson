@@ -1,0 +1,23 @@
+---
+EnableDefaultLinters: true
+linters:
+  Rubocop:
+    enabled: true
+    config_file_path: .rubocop.yml
+  ClosingErbTagIndent:
+    enabled: true
+  ExtraNewline:
+    enabled: true
+  FinalNewline:
+    enabled: true
+  NoJavascriptTagHelper:
+    enabled: true
+  RightTrim:
+    enabled: true
+    enforced_style: "-"
+  SelfClosingTag:
+    enabled: true
+  SpaceAroundErbTag:
+    enabled: true
+  TrailingWhitespace:
+    enabled: true
