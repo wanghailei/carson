@@ -132,14 +132,13 @@ module Carson
 			end
 
 			# Pushes the branch to the remote with tracking.
-			# Sets CARSON_PUSH=1 so the pre-push hook knows this is a Carson-managed push.
+			# Uses --no-verify to skip the pre-push hook that Carson itself installed.
+			# The hook blocks raw pushes unconditionally; Carson bypasses by skipping it.
 			# On non-fast-forward rejection (typically after rebase), retries with
 			# --force-with-lease — a protected force push that rejects if the remote
 			# ref has been updated by another actor since the last fetch.
 			def push_branch!( branch:, remote:, result: )
-				_, push_stderr, push_success, = with_env_var( "CARSON_PUSH", "1" ) do
-					git_run( "push", "-u", remote, branch )
-				end
+				_, push_stderr, push_success, = git_run( "push", "--no-verify", "-u", remote, branch )
 
 				if !push_success && push_stderr.to_s.include?( "non-fast-forward" )
 					return force_push_with_lease!( branch: branch, remote: remote, result: result )
@@ -161,9 +160,7 @@ module Carson
 			# This is atomic and safe, unlike delete-and-re-push.
 			def force_push_with_lease!( branch:, remote:, result: )
 				puts_verbose "push rejected (non-fast-forward), retrying with --force-with-lease"
-				_, lease_stderr, lease_success, = with_env_var( "CARSON_PUSH", "1" ) do
-					git_run( "push", "--force-with-lease", "-u", remote, branch )
-				end
+				_, lease_stderr, lease_success, = git_run( "push", "--no-verify", "--force-with-lease", "-u", remote, branch )
 
 				if lease_success
 					puts_verbose "pushed #{branch} to #{remote} (force-with-lease)"

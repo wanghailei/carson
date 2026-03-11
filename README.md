@@ -63,7 +63,7 @@ Carson's git decisions are not arbitrary — each encodes a strategy learned fro
 - **Process-aware worktree removal** — before removing a worktree, checks if the current shell or any other process (via `lsof`) has its CWD inside it. Blocks removal with a recovery command instead of crashing the shell.
 - **Stale worktree sweep** — before batch operations, removes worktrees whose branches are already absorbed into main. Prevents stale worktrees from blocking `refresh --all` or `housekeep --all`.
 - **Branch protection** — never deletes branches held by active worktrees. Prune skips them with a diagnostic message.
-- **Environment signalling** — sets `CARSON_PUSH=1` during managed pushes so pre-push hooks can distinguish Carson-governed pushes from raw agent pushes.
+- **Hook bypass** — uses `--no-verify` during managed pushes so the pre-push hook (which blocks all raw pushes unconditionally) is skipped. No env-var signal that can be spoofed.
 - **Self-diagnosing errors** — every error names what happened, why, and the exact command to fix it. If you have to read source code to understand a message, that message is a bug.
 - **Self-configuring** — running any Carson command installs all safety guards (hooks, command guard, config). No manual post-install setup.
 

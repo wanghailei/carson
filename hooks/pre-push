@@ -4,7 +4,7 @@
 # Guards:
 #   1. Blocks direct push to main/master refs.
 #   2. Blocks raw git push in governed repos — agents must use `carson deliver`.
-#      Carson sets CARSON_PUSH=1 internally so its own pushes pass through.
+#      Carson bypasses via --no-verify internally. No env-var signal to spoof.
 #
 # Bypass: git push --no-verify
 set -euo pipefail
@@ -31,23 +31,20 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 done
 
 # --- Guard 2: block raw git push in governed repos ---
-# Carson sets CARSON_PUSH=1 when pushing internally via `deliver`.
-# If the variable is absent, this is a raw git push from an agent or human.
+# All pushes in governed repos are blocked unconditionally.
+# Carson bypasses this hook via --no-verify when pushing internally.
+# No env-var bypass — cannot be spoofed.
 
-if [[ -z "${CARSON_PUSH:-}" ]]; then
-	config_file="${HOME}/.carson/config.json"
-	if [[ -f "$config_file" ]]; then
-		repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
-		if [[ -n "$repo_root" ]]; then
-			# Check if this repo appears in govern.repos.
-			# Uses a simple grep against the JSON — no jq dependency required.
-			normalised="$(cd "$repo_root" && pwd -P)"
-			if grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
-				echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`git push\`." >&2
-				echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
-				echo "Bypass: git push --no-verify" >&2
-				exit 1
-			fi
+config_file="${HOME}/.carson/config.json"
+if [[ -f "$config_file" ]]; then
+	repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+	if [[ -n "$repo_root" ]]; then
+		normalised="$(cd "$repo_root" && pwd -P)"
+		if grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
+			echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`git push\`." >&2
+			echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
+			echo "Bypass: git push --no-verify" >&2
+			exit 1
 		fi
 	fi
 fi
