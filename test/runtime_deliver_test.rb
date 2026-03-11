@@ -337,6 +337,42 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- template sync via deliver ---
+
+	def test_deliver_pushes_canonical_templates_to_remote
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "fix/template-drift" )
+
+		# Set up canonical template sources for all managed files so template_apply! can run.
+		# Without sources for every managed file, template_apply! returns EXIT_ERROR before committing.
+		templates_dir = File.join( repo_root, "templates", ".github" )
+		FileUtils.mkdir_p( templates_dir )
+		%w[carson.md copilot-instructions.md CLAUDE.md AGENTS.md pull_request_template.md].each do |name|
+			File.write( File.join( templates_dir, name ), name == "carson.md" ? "canonical content\n" : "# #{name}\n" )
+		end
+
+		# Write a drifted template on the feature branch.
+		github_dir = File.join( repo_root, ".github" )
+		FileUtils.mkdir_p( github_dir )
+		File.write( File.join( github_dir, "carson.md" ), "stale content\n" )
+		system( "git", "-C", repo_root, "add", ".github/carson.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "add drifted template", out: File::NULL, err: File::NULL )
+
+		# Act: deliver — push succeeds; PR creation fails (no gh), but that is acceptable.
+		runtime.deliver!( merge: false )
+
+		# Assert: the remote branch has canonical content, not stale.
+		remote_content, = Open3.capture2(
+			"git", "-C", @remote_path,
+			"show", "fix/template-drift:.github/carson.md"
+		)
+		refute_equal "stale content\n", remote_content.to_s,
+			"remote branch must have canonical .github/carson.md — --no-verify must not skip template sync"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- default_pr_title ---
 
 	def test_default_pr_title_from_branch_name
