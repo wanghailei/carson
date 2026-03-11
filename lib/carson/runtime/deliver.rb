@@ -22,6 +22,9 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
 				end
 
+				# Step 0b: sync templates (the pre-push hook does this, but --no-verify skips it).
+				with_captured_output { template_apply!( push_prep: true ) }
+
 				# Step 1: push the branch.
 				remote_obj = Remote.new( name: remote, runtime: self )
 				begin
