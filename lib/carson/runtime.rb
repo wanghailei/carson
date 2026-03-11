@@ -71,13 +71,13 @@ module Carson
 
 		# Current local branch name.
 		def current_branch
-			git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
+			branch = Branch.current( runtime: self )
+			branch&.name || git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
 		end
 
 		# Checks local branch existence before restore attempts in ensure blocks.
 		def branch_exists?( branch_name: )
-			_, _, success, = git_run( "show-ref", "--verify", "--quiet", "refs/heads/#{branch_name}" )
-			success
+			Branch.exists?( name: branch_name, runtime: self )
 		end
 
 		# Human-readable plural suffix helper for audit messaging.

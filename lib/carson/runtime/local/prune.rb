@@ -203,81 +203,39 @@ module Carson
 
 			# Detects local branches whose upstream tracking is marked [gone] after fetch --prune.
 			def stale_local_branches
-				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.map do |line|
-					branch, upstream, track = line.strip.split( "\t", 3 )
-					upstream = upstream.to_s
-					track = track.to_s
-					next if branch.to_s.empty? || upstream.empty?
-					next unless upstream.start_with?( "#{config.git_remote}/" ) && track.include?( "gone" )
-
-					{ branch: branch, upstream: upstream, track: track }
-				end.compact
+				Branch.stale( remote_name: config.git_remote, runtime: self ).map do |branch|
+					upstream = git_capture!( "for-each-ref", "--format=%(upstream:short)\t%(upstream:track)", "refs/heads/#{branch.name}" ).strip
+					upstream_name, track = upstream.split( "\t", 2 )
+					{ branch: branch.name, upstream: upstream_name.to_s, track: track.to_s }
+				end
 			end
 
 			# Detects local branches with no upstream tracking ref — candidates for orphan pruning.
 			def orphan_local_branches( active_branch:, cwd_branch: nil )
-				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" ).lines.filter_map do |line|
-					branch, upstream = line.strip.split( "\t", 2 )
-					branch = branch.to_s.strip
-					upstream = upstream.to_s.strip
-					next if branch.empty?
-					next unless upstream.empty?
-					next if config.protected_branches.include?( branch )
-					next if branch == active_branch
-					next if cwd_branch && branch == cwd_branch
-					next if branch == TEMPLATE_SYNC_BRANCH
-
-					branch
-				end
+				Branch.orphaned(
+					active_branch: active_branch, cwd_branch: cwd_branch,
+					protected_branches: config.protected_branches, runtime: self
+				).reject { it.name == TEMPLATE_SYNC_BRANCH }
+				 .map( &:name )
 			end
 
 			# Detects local branches whose upstream still exists but whose content is already on main.
 			# Two-step evidence: (1) find the merge-base, (2) verify every file the branch changed
 			# relative to the merge-base has identical content on main.
 			def absorbed_local_branches( active_branch:, cwd_branch: nil )
-				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
-					branch, upstream, track = line.strip.split( "\t", 3 )
-					branch = branch.to_s.strip
-					upstream = upstream.to_s.strip
-					track = track.to_s
-					next if branch.empty?
-					next if upstream.empty?
-					next if track.include?( "gone" )
-					next if config.protected_branches.include?( branch )
-					next if branch == active_branch
-					next if cwd_branch && branch == cwd_branch
-					next if branch == TEMPLATE_SYNC_BRANCH
-
-					next unless branch_absorbed_into_main?( branch: branch )
-
-					{ branch: branch, upstream: upstream }
+				Branch.absorbed(
+					active_branch: active_branch, cwd_branch: cwd_branch,
+					protected_branches: config.protected_branches, main_branch: config.main_branch, runtime: self
+				).reject { it.name == TEMPLATE_SYNC_BRANCH }
+				 .map do |branch|
+					upstream = git_capture!( "for-each-ref", "--format=%(upstream:short)", "refs/heads/#{branch.name}" ).strip
+					{ branch: branch.name, upstream: upstream }
 				end
 			end
 
 			# Returns true when the branch has no unique content relative to main.
 			def branch_absorbed_into_main?( branch: )
-				# Fast path: branch is a strict ancestor of main (fully merged).
-				_, _, is_ancestor, = git_run( "merge-base", "--is-ancestor", branch, config.main_branch )
-				return true if is_ancestor
-
-				# Find the merge-base between main and the branch.
-				merge_base_text, _, mb_success, = git_run( "merge-base", config.main_branch, branch )
-				return false unless mb_success
-
-				merge_base = merge_base_text.to_s.strip
-				return false if merge_base.empty?
-
-				# List every file the branch changed relative to the merge-base.
-				changed_text, _, changed_success, = git_run( "diff", "--name-only", merge_base, branch )
-				return false unless changed_success
-
-				changed_files = changed_text.to_s.strip.lines.map( &:strip ).reject( &:empty? )
-				return true if changed_files.empty?
-
-				# Compare only those files between branch tip and main tip.
-				# If identical, every branch change is already on main.
-				_, _, identical, = git_run( "diff", "--quiet", branch, config.main_branch, "--", *changed_files )
-				identical
+				Branch.absorbed_into_main?( branch: branch, main_branch: config.main_branch, runtime: self )
 			end
 
 			# Processes absorbed branches: verifies no open PR exists before deleting local and remote.
