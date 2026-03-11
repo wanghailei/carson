@@ -129,6 +129,15 @@ class PullRequestTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_ci_status_pending
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "ci_pending" )
+		init_git_repo( repo_root )
+		pr = Carson::PullRequest.new( number: 42, runtime: runtime )
+
+		assert_equal :pending, pr.ci_status
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- review_decision ---
 
 	def test_review_decision_approved
@@ -184,6 +193,51 @@ class PullRequestTest < Minitest::Test
 		)
 
 		assert_nil pr
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- for_branch ---
+
+	def test_for_branch_returns_instance_for_any_state
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "merged_pr" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.for_branch( branch: "feature", runtime: runtime )
+
+		assert_instance_of Carson::PullRequest, pr
+		assert_equal 42, pr.number
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_for_branch_returns_nil_when_no_pr
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "no_pr" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.for_branch( branch: "feature", runtime: runtime )
+
+		assert_nil pr
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- open_for_branch? ---
+
+	def test_open_for_branch_true_when_open_pr_exists
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "api_open_pr" )
+		init_git_repo( repo_root )
+
+		result = Carson::PullRequest.open_for_branch?( branch: "feature", owner: "test", repo: "test", runtime: runtime )
+
+		assert result
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_open_for_branch_false_when_no_open_pr
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "api_no_open_pr" )
+		init_git_repo( repo_root )
+
+		result = Carson::PullRequest.open_for_branch?( branch: "feature", owner: "test", repo: "test", runtime: runtime )
+
+		refute result
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -288,6 +342,10 @@ private
 				fi
 				if [[ "$scenario" == "ci_fail" ]]; then
 					echo '[{"name":"CI","bucket":"fail"}]'
+					exit 0
+				fi
+				if [[ "$scenario" == "ci_pending" ]]; then
+					echo '[{"name":"CI","bucket":"pending"}]'
 					exit 0
 				fi
 				echo '[]'

@@ -24,7 +24,7 @@ module Carson
 
 		# Finds an open PR for the given branch. Returns instance or nil.
 		def self.find_open( branch:, runtime: )
-			stdout, _, success, = runtime.gh_run( "pr", "view", branch, "--json", "number,url,state" )
+			stdout, _, success, = runtime.gh_run( "pr", "view", "--", branch, "--json", "number,url,state" )
 			return nil unless success
 
 			data = JSON.parse( stdout ) rescue nil
