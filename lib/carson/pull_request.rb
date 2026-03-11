@@ -94,6 +94,43 @@ module Carson
 			branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { it.upcase }
 		end
 
+		def merge!( method: )
+			_, stderr, success, = runtime.gh_run( "pr", "merge", number.to_s, "--#{method}" )
+			unless success
+				error_text = stderr.to_s.strip
+				error_text = "merge failed" if error_text.empty?
+				raise Error.new( error_text, recovery: "gh pr merge #{number} --#{method}" )
+			end
+			self
+		end
+
+		def ci_status
+			stdout, _, success, = runtime.gh_run( "pr", "checks", number.to_s, "--json", "name,bucket" )
+			return :none unless success
+
+			checks = JSON.parse( stdout ) rescue []
+			return :none if checks.empty?
+
+			buckets = checks.map { it[ "bucket" ].to_s.downcase }
+			return :fail if buckets.include?( "fail" )
+			return :pending if buckets.include?( "pending" )
+			:pass
+		end
+
+		def review_decision
+			stdout, _, success, = runtime.gh_run( "pr", "view", number.to_s, "--json", "reviewDecision" )
+			return :none unless success
+
+			data = JSON.parse( stdout ) rescue {}
+			decision = data[ "reviewDecision" ].to_s.strip.upcase
+			case decision
+			when "APPROVED" then :approved
+			when "CHANGES_REQUESTED" then :changes_requested
+			when "REVIEW_REQUIRED" then :review_required
+			else :none
+			end
+		end
+
 	private
 
 		attr_reader :runtime

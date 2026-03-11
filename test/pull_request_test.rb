@@ -74,6 +74,81 @@ class PullRequestTest < Minitest::Test
 		assert_equal "Docs update", Carson::PullRequest.default_title( branch: "docs-update" )
 	end
 
+	# --- merge! ---
+
+	def test_merge_returns_self
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "merge_ok" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "https://github.com/mock/repo/pull/42", state: "OPEN", runtime: runtime )
+		result = pr.merge!( method: "squash" )
+
+		assert_same pr, result
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_merge_raises_on_failure
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "merge_fail" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "https://github.com/mock/repo/pull/42", state: "OPEN", runtime: runtime )
+		error = assert_raises( Carson::PullRequest::Error ) do
+			pr.merge!( method: "squash" )
+		end
+		refute_nil error.message
+		refute_nil error.recovery
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- ci_status ---
+
+	def test_ci_status_pass
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "ci_pass" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "", state: "OPEN", runtime: runtime )
+		assert_equal :pass, pr.ci_status
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_ci_status_fail
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "ci_fail" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "", state: "OPEN", runtime: runtime )
+		assert_equal :fail, pr.ci_status
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_ci_status_none_when_no_checks
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "ci_none" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "", state: "OPEN", runtime: runtime )
+		assert_equal :none, pr.ci_status
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- review_decision ---
+
+	def test_review_decision_approved
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "review_approved" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "", state: "OPEN", runtime: runtime )
+		assert_equal :approved, pr.review_decision
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_review_decision_changes_requested
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "review_changes_requested" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.new( number: 42, url: "", state: "OPEN", runtime: runtime )
+		assert_equal :changes_requested, pr.review_decision
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def init_git_repo( repo_root )
