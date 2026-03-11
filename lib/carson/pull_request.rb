@@ -94,6 +94,55 @@ module Carson
 			branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { it.upcase }
 		end
 
+		# Finds a merged PR whose head SHA matches branch_tip_sha.
+		# Returns instance or nil. Used by prune for evidence-based deletion.
+		def self.merged_for_branch( branch:, branch_tip_sha:, owner:, repo:, main_branch:, runtime: )
+			results = []
+			page = 1
+			max_pages = 50
+
+			loop do
+				stdout, _, success, = runtime.gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=closed",
+					"-f", "base=#{main_branch}",
+					"-f", "head=#{owner}:#{branch}",
+					"-f", "sort=updated",
+					"-f", "direction=desc",
+					"-f", "per_page=100",
+					"-f", "page=#{page}"
+				)
+				return nil unless success
+
+				page_nodes = Array( JSON.parse( stdout ) )
+				break if page_nodes.empty?
+
+				page_nodes.each do |entry|
+					next unless entry.dig( "head", "ref" ).to_s == branch.to_s
+					next unless entry.dig( "base", "ref" ).to_s == main_branch
+					next unless entry.dig( "head", "sha" ).to_s == branch_tip_sha
+					next if entry[ "merged_at" ].nil?
+
+					results << {
+						number: entry[ "number" ],
+						url: entry[ "html_url" ].to_s,
+						merged_at: entry[ "merged_at" ]
+					}
+				end
+
+				break if page >= max_pages
+				page += 1
+			end
+
+			latest = results.max_by { it.fetch( :merged_at ) }
+			return nil if latest.nil?
+
+			new( number: latest[ :number ], url: latest[ :url ], state: "MERGED", runtime: runtime )
+		rescue StandardError
+			nil
+		end
+
 		def merge!( method: )
 			_, stderr, success, = runtime.gh_run( "pr", "merge", number.to_s, "--#{method}" )
 			unless success

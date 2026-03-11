@@ -149,6 +149,44 @@ class PullRequestTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- merged_for_branch ---
+
+	def test_merged_for_branch_returns_instance
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "merged_for_branch_match" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.merged_for_branch(
+			branch: "feature/done",
+			branch_tip_sha: "abc123",
+			owner: "owner",
+			repo: "repo",
+			main_branch: "main",
+			runtime: runtime
+		)
+
+		assert_instance_of Carson::PullRequest, pr
+		assert_equal 55, pr.number
+		assert_equal "MERGED", pr.state
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_merged_for_branch_returns_nil_when_no_match
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "merged_for_branch_no_match" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.merged_for_branch(
+			branch: "feature/done",
+			branch_tip_sha: "deadbeef",
+			owner: "owner",
+			repo: "repo",
+			main_branch: "main",
+			runtime: runtime
+		)
+
+		assert_nil pr
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def init_git_repo( repo_root )
