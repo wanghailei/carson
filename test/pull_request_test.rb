@@ -38,6 +38,42 @@ class PullRequestTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- create! ---
+
+	def test_create_returns_instance
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "create_pr" )
+		init_git_repo( repo_root )
+
+		pr = Carson::PullRequest.create!( branch: "feature/my-work", runtime: runtime )
+
+		assert_instance_of Carson::PullRequest, pr
+		assert_equal 99, pr.number
+		assert_equal "OPEN", pr.state
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_create_raises_on_failure
+		runtime, repo_root = build_runtime_with_mock_gh( scenario: "create_pr_fail" )
+		init_git_repo( repo_root )
+
+		error = assert_raises( Carson::PullRequest::Error ) do
+			Carson::PullRequest.create!( branch: "feature/bad", runtime: runtime )
+		end
+		refute_nil error.message
+		refute_nil error.recovery
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# --- default_title ---
+
+	def test_default_title_humanises_branch_name
+		assert_equal "Feature: add deliver command", Carson::PullRequest.default_title( branch: "feature/add-deliver-command" )
+	end
+
+	def test_default_title_capitalises_first_word
+		assert_equal "Docs update", Carson::PullRequest.default_title( branch: "docs-update" )
+	end
+
 private
 
 	def init_git_repo( repo_root )

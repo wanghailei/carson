@@ -63,6 +63,37 @@ module Carson
 			true
 		end
 
+		# Creates a PR via gh. Returns instance. Raises PullRequest::Error on failure.
+		def self.create!( branch:, title: nil, body_file: nil, runtime: )
+			pr_title = title || default_title( branch: branch )
+			args = [ "pr", "create", "--title", pr_title, "--head", branch ]
+			if body_file && File.exist?( body_file )
+				args.push( "--body-file", body_file )
+			else
+				args.push( "--body", "" )
+			end
+
+			stdout, stderr, success, = runtime.gh_run( *args )
+			unless success
+				error_text = stderr.to_s.strip
+				error_text = "pr create failed" if error_text.empty?
+				raise Error.new( error_text, recovery: "gh pr create --title '#{pr_title}' --head #{branch}" )
+			end
+
+			pr_url = stdout.to_s.strip
+			pr_number = pr_url.split( "/" ).last.to_i
+			if pr_number > 0
+				new( number: pr_number, url: pr_url, state: "OPEN", runtime: runtime )
+			else
+				find_open( branch: branch, runtime: runtime ) ||
+					raise( Error, "created PR but could not retrieve it" )
+			end
+		end
+
+		def self.default_title( branch: )
+			branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { it.upcase }
+		end
+
 	private
 
 		attr_reader :runtime
