@@ -5,6 +5,14 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.22.1
+
+### What changed
+
+- **Template sync moved into deliver** — `deliver!` now runs `template_apply!` before push, restoring template drift detection that was lost when 3.21.0 added `--no-verify` to `push_branch!`. The pre-push hook's `template apply --push-prep` block was silently skipped; managed files with drifted content could reach the remote undetected. Canonical content is now written and committed automatically before the push.
+
+### No migration required
+
 ## 3.22.0
 
 ### What changed
