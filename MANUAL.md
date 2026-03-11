@@ -154,7 +154,7 @@ cd /path/to/.claude/worktrees/my-feature
 
 **2. Work** — make changes, commit, iterate.
 
-**3. Deliver and merge** — use Carson's landing path for the repo authority. In remote authority that means push, PR, and merge; in local authority that means integrate into local `main` and back it up by pushing `main`. After delivery, Carson prints the exact next command:
+**3. Deliver and merge** — use Carson's landing path for the repo authority. In remote authority that means push, PR, and merge; in local authority that means integrate into local `main` and back it up by pushing `main`. Managed template drift is corrected and committed automatically before push (3.22.1+). After delivery, Carson prints the exact next command:
 
 ```bash
 carson deliver --merge
