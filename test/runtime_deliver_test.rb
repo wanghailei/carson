@@ -413,8 +413,17 @@ private
 		# Prepend mock bin to PATH for the runtime's GitHub adapter.
 		original_path = ENV[ "PATH" ]
 		ENV[ "PATH" ] = "#{mock_bin}:#{original_path}"
+		previous_review_wait = ENV[ "CARSON_REVIEW_WAIT_SECONDS" ]
+		previous_review_poll = ENV[ "CARSON_REVIEW_POLL_SECONDS" ]
+		previous_review_max_polls = ENV[ "CARSON_REVIEW_MAX_POLLS" ]
+		ENV[ "CARSON_REVIEW_WAIT_SECONDS" ] = "0"
+		ENV[ "CARSON_REVIEW_POLL_SECONDS" ] = "0"
+		ENV[ "CARSON_REVIEW_MAX_POLLS" ] = "2"
 
 		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: repo_root, output: output, error: error, verbose: verbose )
+		ENV[ "CARSON_REVIEW_WAIT_SECONDS" ] = previous_review_wait
+		ENV[ "CARSON_REVIEW_POLL_SECONDS" ] = previous_review_poll
+		ENV[ "CARSON_REVIEW_MAX_POLLS" ] = previous_review_max_polls
 
 		# Restore PATH after runtime creation (the adapter shells output at call time, not at init).
 		# We keep mock_bin in PATH for the duration of the test.

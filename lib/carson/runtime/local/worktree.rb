@@ -62,11 +62,30 @@ module Carson
 			end
 
 			# Resolves a path to its canonical form, tolerating non-existent paths.
-			# Falls back to File.expand_path when the path does not exist yet.
+			# Preserves canonical parents for missing paths so deleted worktrees still
+			# compare equal to git's recorded path (for example /tmp vs /private/tmp).
 			def realpath_safe( path )
 				File.realpath( path )
 			rescue Errno::ENOENT
-				File.expand_path( path )
+				expanded = File.expand_path( path )
+				missing_segments = []
+				candidate = expanded
+
+				until File.exist?( candidate ) || Dir.exist?( candidate )
+					parent = File.dirname( candidate )
+					break if parent == candidate
+
+					missing_segments.unshift( File.basename( candidate ) )
+					candidate = parent
+				end
+
+				base = if File.exist?( candidate ) || Dir.exist?( candidate )
+					File.realpath( candidate )
+				else
+					candidate
+				end
+
+				missing_segments.empty? ? base : File.join( base, *missing_segments )
 			end
 		end
 
