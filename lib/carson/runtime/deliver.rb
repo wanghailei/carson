@@ -56,12 +56,22 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
-				# Step 4: check review gate — block if changes are requested.
-				review = check_pr_review( number: pr_number )
-				result[ :review ] = review.to_s
-				if review == :changes_requested
+				# Step 4: check review gate — block on unresolved review debt.
+				review = check_pr_review( number: pr_number, branch: branch, pr_url: pr_url )
+				result[ :review ] = review.fetch( :review ).to_s
+				if review.fetch( :review ) == :changes_requested
 					result[ :error ] = "review changes requested on PR ##{pr_number}"
 					result[ :recovery ] = "address review comments, push, then `carson deliver --merge`"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+				if review.fetch( :status ) == :fail
+					result[ :error ] = "review gate blocked on PR ##{pr_number}: #{review.fetch( :detail )}"
+					result[ :recovery ] = "resolve review gate blockers, push, then `carson deliver --merge`"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+				if review.fetch( :status ) == :error
+					result[ :error ] = "unable to evaluate review gate for PR ##{pr_number}: #{review.fetch( :detail )}"
+					result[ :recovery ] = "run `carson review gate`, then retry `carson deliver --merge`"
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
@@ -265,22 +275,24 @@ module Carson
 				:pass
 			end
 
-			# Checks review decision on a PR. Returns :approved, :changes_requested, :review_required, or :none.
-			def check_pr_review( number: )
-				stdout, _, success, = gh_run(
-					"pr", "view", number.to_s,
-					"--json", "reviewDecision"
+			# Checks the full review gate on a PR. Returns a structured result hash.
+			def check_pr_review( number:, branch:, pr_url: nil )
+				owner, repo = repository_coordinates
+				report = review_gate_report_for_pr(
+					owner: owner,
+					repo: repo,
+					pr_number: number,
+					branch_name: branch,
+					pr_summary: {
+						number: number,
+						title: "",
+						url: pr_url.to_s,
+						state: "OPEN"
+					}
 				)
-				return :none unless success
-
-				data = JSON.parse( stdout ) rescue {}
-				decision = data[ "reviewDecision" ].to_s.strip.upcase
-				case decision
-				when "APPROVED" then :approved
-				when "CHANGES_REQUESTED" then :changes_requested
-				when "REVIEW_REQUIRED" then :review_required
-				else :none
-				end
+				review_gate_result( report: report )
+			rescue StandardError => exception
+				{ status: :error, review: :error, detail: exception.message }
 			end
 
 			# Merges the PR using the configured merge method.

@@ -193,6 +193,31 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_merge_blocks_when_unresolved_thread_remains
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass_unresolved_thread" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/thread-block" )
+
+		result = runtime.deliver!( merge: true )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		output = output_string( runtime )
+		assert_includes output, "review gate blocked"
+		assert_includes output, "unresolved review threads remain"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_merge_succeeds_when_risk_comment_is_acknowledged
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass_acknowledged_risk" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/review-acknowledged" )
+
+		result = runtime.deliver!( merge: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "Merged PR"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_deliver_merge_json_includes_review_field
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "ci_pass" )
 		init_git_repo_with_remote( repo_root )
@@ -409,27 +434,19 @@ private
 				exit 0
 			fi
 
+			if [[ "${1:-}" == "api" && "${2:-}" == "graphql" ]]; then
+				printf '%s\n' '__GRAPHQL_PAYLOAD__'
+				exit 0
+			fi
+
 			# pr view — check for existing PR or review decision.
 			if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
-				# Check if this is a reviewDecision query (from check_pr_review).
-				if echo "$*" | grep -q "reviewDecision"; then
-					if [[ "$scenario" == "ci_pass_changes_requested" ]]; then
-						echo '{"reviewDecision":"CHANGES_REQUESTED"}'
-						exit 0
-					fi
-					echo '{"reviewDecision":"APPROVED"}'
-					exit 0
-				fi
 				if [[ "$scenario" == "merged_pr" ]]; then
-					cat <<'JSON'
-			{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"MERGED"}
-			JSON
+					printf '%s\n' '{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"MERGED"}'
 					exit 0
 				fi
-				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" || "$scenario" == "ci_pass_changes_requested" || "$scenario" == "ci_none" ]]; then
-					cat <<'JSON'
-			{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"OPEN"}
-			JSON
+				if [[ "$scenario" == "existing_pr" || "$scenario" == "ci_pass" || "$scenario" == "ci_fail" || "$scenario" == "ci_pending" || "$scenario" == "ci_pass_changes_requested" || "$scenario" == "ci_pass_unresolved_thread" || "$scenario" == "ci_pass_acknowledged_risk" || "$scenario" == "ci_none" ]]; then
+					printf '%s\n' '{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"OPEN"}'
 					exit 0
 				fi
 				echo "no pull requests found" >&2
@@ -444,20 +461,14 @@ private
 
 			# pr checks — CI status.
 			if [[ "${1:-}" == "pr" && "${2:-}" == "checks" ]]; then
-				if [[ "$scenario" == "ci_pass" || "$scenario" == "ci_pass_changes_requested" ]]; then
-					cat <<'JSON'
-			[{"name":"CI","bucket":"pass"}]
-			JSON
+				if [[ "$scenario" == "ci_pass" || "$scenario" == "ci_pass_changes_requested" || "$scenario" == "ci_pass_unresolved_thread" || "$scenario" == "ci_pass_acknowledged_risk" ]]; then
+					printf '%s\n' '[{"name":"CI","bucket":"pass"}]'
 					exit 0
 				elif [[ "$scenario" == "ci_fail" ]]; then
-					cat <<'JSON'
-			[{"name":"CI","bucket":"fail"}]
-			JSON
+					printf '%s\n' '[{"name":"CI","bucket":"fail"}]'
 					exit 0
 				elif [[ "$scenario" == "ci_pending" ]]; then
-					cat <<'JSON'
-			[{"name":"CI","bucket":"pending"}]
-			JSON
+					printf '%s\n' '[{"name":"CI","bucket":"pending"}]'
 					exit 0
 				fi
 				echo "[]"
@@ -480,6 +491,123 @@ private
 			exit 1
 		BASH
 			.gsub( "__SCENARIO__", scenario )
+			.gsub( "__GRAPHQL_PAYLOAD__", review_gate_graphql_payload( scenario: scenario ) )
+	end
+
+	def review_gate_graphql_payload( scenario: )
+		case scenario
+		when "ci_pass_changes_requested"
+			graphql_pull_request_payload(
+				reviews: [
+					graphql_review_node(
+						author: "reviewer",
+						state: "CHANGES_REQUESTED",
+						body: "Please address this regression risk.",
+						url: "https://github.com/mock/repo/pull/42#pullrequestreview-1",
+						submitted_at: "2026-03-12T10:00:01Z"
+					)
+				]
+			)
+		when "ci_pass_unresolved_thread"
+			graphql_pull_request_payload(
+				review_threads: [
+					graphql_thread_node(
+						is_resolved: false,
+						comment_url: "https://github.com/mock/repo/pull/42#discussion_r1",
+						comment_body: "This still needs a fix.",
+						comment_created_at: "2026-03-12T10:00:01Z"
+					)
+				]
+			)
+		when "ci_pass_acknowledged_risk"
+			graphql_pull_request_payload(
+				comments: [
+					graphql_comment_node(
+						author: "reviewer",
+						body: "There is regression risk here.",
+						url: "https://github.com/mock/repo/pull/42#issuecomment-risk",
+						created_at: "2026-03-12T10:00:01Z"
+					),
+					graphql_comment_node(
+						author: "owner",
+						body: "Disposition: accepted https://github.com/mock/repo/pull/42#issuecomment-risk",
+						url: "https://github.com/mock/repo/pull/42#issuecomment-ack",
+						created_at: "2026-03-12T10:00:02Z"
+					)
+				]
+			)
+		else
+			graphql_pull_request_payload
+		end
+	end
+
+	def graphql_pull_request_payload( comments: [], reviews: [], review_threads: [] )
+		JSON.pretty_generate(
+			{
+				"data" => {
+					"repository" => {
+						"pullRequest" => {
+							"number" => 42,
+							"title" => "Mock PR",
+							"url" => "https://github.com/mock/repo/pull/42",
+							"state" => "OPEN",
+							"updatedAt" => "2026-03-12T10:00:00Z",
+							"mergedAt" => nil,
+							"closedAt" => nil,
+							"author" => { "login" => "owner" },
+							"reviewThreads" => {
+								"pageInfo" => { "hasNextPage" => false, "endCursor" => nil },
+								"nodes" => review_threads
+							},
+							"comments" => {
+								"pageInfo" => { "hasNextPage" => false, "endCursor" => nil },
+								"nodes" => comments
+							},
+							"reviews" => {
+								"pageInfo" => { "hasNextPage" => false, "endCursor" => nil },
+								"nodes" => reviews
+							}
+						}
+					}
+				}
+			}
+		)
+	end
+
+	def graphql_comment_node( author:, body:, url:, created_at: )
+		{
+			"author" => { "login" => author },
+			"body" => body,
+			"url" => url,
+			"createdAt" => created_at
+		}
+	end
+
+	def graphql_review_node( author:, state:, body:, url:, submitted_at: )
+		{
+			"author" => { "login" => author },
+			"state" => state,
+			"body" => body,
+			"url" => url,
+			"submittedAt" => submitted_at
+		}
+	end
+
+	def graphql_thread_node( is_resolved:, comment_url:, comment_body:, comment_created_at: )
+		{
+			"isResolved" => is_resolved,
+			"isOutdated" => false,
+			"comments" => {
+				"nodes" => [
+					graphql_comment_node(
+						author: "reviewer",
+						body: comment_body,
+						url: comment_url,
+						created_at: comment_created_at
+					)
+				]
+			}
+		}
 	end
 
 	def output_string( runtime )
