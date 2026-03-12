@@ -60,12 +60,19 @@ module Carson
 				parser.separator ""
 				parser.separator "Repository governance and workflow automation for coding agents."
 				parser.separator ""
-				parser.separator "Commands:"
+				parser.separator "Tier 1 streams:"
+				parser.separator "    deliver      Complete delivery stream: push, PR, merge, sync"
+				parser.separator "    realign      Realign the current branch with main"
+				parser.separator "    revert       Revert merged work through a dedicated branch/PR"
+				parser.separator "    release      Tag and publish a prepared release"
+				parser.separator "    track        Manage issue lifecycle"
+				parser.separator "    review       Manage PR review workflow"
+				parser.separator ""
+				parser.separator "Support commands:"
 				parser.separator "    status       Show repository state (branch, PRs, worktrees)"
 				parser.separator "    setup        Initialise Carson configuration"
 				parser.separator "    audit        Run pre-commit health checks"
 				parser.separator "    sync         Sync local main with remote"
-				parser.separator "    deliver      Push, create PR, and optionally merge"
 				parser.separator "    prune        Remove stale local branches"
 				parser.separator "    worktree     Manage isolated coding worktrees"
 				parser.separator "    housekeep    Sync, reap worktrees, and prune branches"
@@ -74,7 +81,6 @@ module Carson
 				parser.separator "    offboard     Remove a repository from governance"
 				parser.separator "    refresh      Re-install hooks and configuration"
 				parser.separator "    template     Manage canonical template files"
-				parser.separator "    review       Manage PR review workflow"
 				parser.separator "    govern       Portfolio-level PR triage loop"
 				parser.separator "    version      Show Carson version"
 				parser.separator ""
@@ -118,6 +124,8 @@ module Carson
 				parse_housekeep_command( arguments: arguments, error: error )
 			when "review"
 				parse_review_subcommand( arguments: arguments, error: error )
+			when "track"
+				parse_track_subcommand( arguments: arguments, error: error )
 			when "audit"
 				parse_audit_command( arguments: arguments, error: error )
 			when "sync"
@@ -126,6 +134,12 @@ module Carson
 				parse_status_command( arguments: arguments, error: error )
 			when "deliver"
 				parse_deliver_command( arguments: arguments, error: error )
+			when "realign"
+				parse_realign_command( arguments: arguments, error: error )
+			when "revert"
+				parse_revert_command( arguments: arguments, error: error )
+			when "release"
+				parse_release_command( arguments: arguments, error: error )
 			when "govern"
 				parse_govern_subcommand( arguments: arguments, error: error )
 			else
@@ -360,31 +374,210 @@ module Carson
 		# --- review ---
 
 		def self.parse_review_subcommand( arguments:, error: )
-			review_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson review <gate|sweep>"
-				parser.separator ""
-				parser.separator "Manage PR review workflow."
-				parser.separator ""
-				parser.separator "Subcommands:"
-				parser.separator "    gate     Check if review requirements are met for merge"
-				parser.separator "    sweep    Scan and resolve pending review threads"
-				parser.separator ""
-				parser.separator "Examples:"
-				parser.separator "    carson review gate     Check merge readiness"
-				parser.separator "    carson review sweep    Resolve pending review threads"
-			end
-			review_parser.parse!( arguments )
-
 			action = arguments.shift
 			if action.to_s.strip.empty?
+				review_parser = build_review_parser
 				error.puts "#{BADGE} Missing subcommand for review. Use: carson review gate|sweep"
 				error.puts review_parser
 				return { command: :invalid }
 			end
-			{ command: "review:#{action}" }
+			case action
+			when "gate", "sweep"
+				review_parser = build_review_parser
+				review_parser.parse!( arguments )
+				unless arguments.empty?
+					error.puts "#{BADGE} Unexpected arguments for review #{action}: #{arguments.join( ' ' )}"
+					error.puts review_parser
+					return { command: :invalid }
+				end
+				{ command: "review:#{action}" }
+			when "comment", "approve", "request-changes"
+				parse_review_numbered_action( action: action, arguments: arguments, error: error )
+			when "reply"
+				parse_review_reply_action( arguments: arguments, error: error )
+			when "disposition"
+				parse_review_disposition_action( arguments: arguments, error: error )
+			else
+				error.puts "#{BADGE} Unknown review subcommand: #{action}. Use: carson review gate|sweep|comment|reply|approve|request-changes|disposition"
+				{ command: :invalid }
+			end
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
+			error.puts( review_parser || build_review_parser )
+			{ command: :invalid }
+		end
+
+		def self.build_review_parser
+			OptionParser.new do |parser|
+				parser.banner = "Usage: carson review <gate|sweep|comment|reply|approve|request-changes|disposition> [options]"
+				parser.separator ""
+				parser.separator "Manage pull-request review workflow."
+				parser.separator ""
+				parser.separator "Subcommands:"
+				parser.separator "    gate               Check if review requirements are met for merge"
+				parser.separator "    sweep              Scan for late actionable review feedback"
+				parser.separator "    comment PR         Add a top-level PR comment"
+				parser.separator "    reply URL          Reply to a review thread comment URL"
+				parser.separator "    approve PR         Submit an approval review"
+				parser.separator "    request-changes PR Submit a changes-requested review"
+				parser.separator "    disposition URL    Post a disposition referencing a finding URL"
+			end
+		end
+
+		def self.parse_review_numbered_action( action:, arguments:, error: )
+			options = { json: false, body: nil, body_file: nil }
+			review_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson review #{action} <pr-number> [--body TEXT] [--body-file PATH] [--json]"
+				parser.separator ""
+				parser.on( "--body TEXT", "Inline review body text" ) { |value| options[ :body ] = value }
+				parser.on( "--body-file PATH", "File containing review body text" ) { |value| options[ :body_file ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			review_parser.parse!( arguments )
+			pr_number = arguments.shift
+			if pr_number.to_s.strip.empty? || arguments.any?
+				error.puts "#{BADGE} Usage: carson review #{action} <pr-number> [--body TEXT] [--body-file PATH] [--json]"
+				error.puts review_parser
+				return { command: :invalid }
+			end
+			{
+				command: "review:#{action}",
+				pr_number: Integer( pr_number ),
+				body: options[ :body ],
+				body_file: options[ :body_file ],
+				json: options[ :json ]
+			}
+		rescue ArgumentError
+			error.puts "#{BADGE} PR number must be an integer"
 			error.puts review_parser
+			{ command: :invalid }
+		end
+
+		def self.parse_review_reply_action( arguments:, error: )
+			options = { json: false, body: nil, body_file: nil }
+			reply_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson review reply <target-url> [--body TEXT] [--body-file PATH] [--json]"
+				parser.separator ""
+				parser.on( "--body TEXT", "Inline reply text" ) { |value| options[ :body ] = value }
+				parser.on( "--body-file PATH", "File containing reply text" ) { |value| options[ :body_file ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			reply_parser.parse!( arguments )
+			target_url = arguments.shift
+			if target_url.to_s.strip.empty? || arguments.any?
+				error.puts "#{BADGE} Usage: carson review reply <target-url> [--body TEXT] [--body-file PATH] [--json]"
+				error.puts reply_parser
+				return { command: :invalid }
+			end
+			{ command: "review:reply", target_url: target_url, body: options[ :body ], body_file: options[ :body_file ], json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts reply_parser
+			{ command: :invalid }
+		end
+
+		def self.parse_review_disposition_action( arguments:, error: )
+			options = { json: false, body: nil, body_file: nil }
+			disposition_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson review disposition <target-url> <accepted|rejected|deferred> [--body TEXT] [--body-file PATH] [--json]"
+				parser.separator ""
+				parser.on( "--body TEXT", "Optional explanatory text" ) { |value| options[ :body ] = value }
+				parser.on( "--body-file PATH", "File containing explanatory text" ) { |value| options[ :body_file ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			disposition_parser.parse!( arguments )
+			target_url = arguments.shift
+			disposition = arguments.shift
+			if target_url.to_s.strip.empty? || disposition.to_s.strip.empty? || arguments.any?
+				error.puts "#{BADGE} Usage: carson review disposition <target-url> <accepted|rejected|deferred> [--body TEXT] [--body-file PATH] [--json]"
+				error.puts disposition_parser
+				return { command: :invalid }
+			end
+			unless %w[accepted rejected deferred].include?( disposition )
+				error.puts "#{BADGE} disposition must be accepted, rejected, or deferred"
+				error.puts disposition_parser
+				return { command: :invalid }
+			end
+			{ command: "review:disposition", target_url: target_url, disposition: disposition, body: options[ :body ], body_file: options[ :body_file ], json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts disposition_parser
+			{ command: :invalid }
+		end
+
+		# --- track ---
+
+		def self.parse_track_subcommand( arguments:, error: )
+			action = arguments.shift
+			if action.to_s.strip.empty?
+				error.puts "#{BADGE} Missing subcommand for track. Use: carson track open|comment|close|reopen"
+				return { command: :invalid }
+			end
+
+			case action
+			when "open"
+				parse_track_open_action( arguments: arguments, error: error )
+			when "comment", "close", "reopen"
+				parse_track_issue_action( action: action, arguments: arguments, error: error )
+			else
+				error.puts "#{BADGE} Unknown track subcommand: #{action}. Use: carson track open|comment|close|reopen"
+				{ command: :invalid }
+			end
+		end
+
+		def self.parse_track_open_action( arguments:, error: )
+			options = { json: false, title: nil, body: nil, body_file: nil }
+			track_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson track open --title TITLE [--body TEXT] [--body-file PATH] [--json]"
+				parser.separator ""
+				parser.on( "--title TITLE", "Issue title" ) { |value| options[ :title ] = value }
+				parser.on( "--body TEXT", "Inline issue body text" ) { |value| options[ :body ] = value }
+				parser.on( "--body-file PATH", "File containing issue body text" ) { |value| options[ :body_file ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			track_parser.parse!( arguments )
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for track open: #{arguments.join( ' ' )}"
+				error.puts track_parser
+				return { command: :invalid }
+			end
+			{ command: "track:open", title: options[ :title ], body: options[ :body ], body_file: options[ :body_file ], json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts track_parser
+			{ command: :invalid }
+		end
+
+		def self.parse_track_issue_action( action:, arguments:, error: )
+			options = { json: false, body: nil, body_file: nil }
+			track_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson track #{action} <issue-number> [--body TEXT] [--body-file PATH] [--json]"
+				parser.separator ""
+				parser.on( "--body TEXT", "Inline issue comment text" ) { |value| options[ :body ] = value }
+				parser.on( "--body-file PATH", "File containing issue comment text" ) { |value| options[ :body_file ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			track_parser.parse!( arguments )
+			issue_number = arguments.shift
+			if issue_number.to_s.strip.empty? || arguments.any?
+				error.puts "#{BADGE} Usage: carson track #{action} <issue-number> [--body TEXT] [--body-file PATH] [--json]"
+				error.puts track_parser
+				return { command: :invalid }
+			end
+			{
+				command: "track:#{action}",
+				issue_number: Integer( issue_number ),
+				body: options[ :body ],
+				body_file: options[ :body_file ],
+				json: options[ :json ]
+			}
+		rescue ArgumentError
+			error.puts "#{BADGE} issue number must be an integer"
+			error.puts track_parser
+			{ command: :invalid }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts track_parser
 			{ command: :invalid }
 		end
 
@@ -547,22 +740,23 @@ module Carson
 		# --- deliver ---
 
 		def self.parse_deliver_command( arguments:, error: )
-			options = { merge: false, json: false, title: nil, body_file: nil }
+			options = { merge: false, pr_only: false, json: false, title: nil, body_file: nil }
 			deliver_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson deliver [--merge] [--json] [--title TITLE] [--body-file PATH]"
+				parser.banner = "Usage: carson deliver [--pr-only] [--merge] [--json] [--title TITLE] [--body-file PATH]"
 				parser.separator ""
-				parser.separator "Push the current branch, create a pull request, and optionally merge."
-				parser.separator "Collapses the manual push → PR → merge flow into a single command."
+				parser.separator "Run the complete post-commit delivery stream."
+				parser.separator "Pushes the branch, creates or reuses the PR, waits for readiness, merges, and syncs local main."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--merge", "Also merge the PR if CI passes" ) { options[ :merge ] = true }
+				parser.on( "--pr-only", "Stop after pushing and opening/updating the PR" ) { options[ :pr_only ] = true }
+				parser.on( "--merge", "Compatibility alias for the default full stream" ) { options[ :merge ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.on( "--title TITLE", "PR title (defaults to branch name)" ) { |value| options[ :title ] = value }
 				parser.on( "--body-file PATH", "File containing PR body text" ) { |value| options[ :body_file ] = value }
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson deliver               Push and open a PR"
-				parser.separator "    carson deliver --merge       Push, open a PR, and merge if CI passes"
+				parser.separator "    carson deliver               Push, open/update the PR, merge when ready, and sync main"
+				parser.separator "    carson deliver --pr-only     Push and open/update the PR without waiting or merging"
 			end
 			deliver_parser.parse!( arguments )
 			unless arguments.empty?
@@ -570,9 +764,15 @@ module Carson
 				error.puts deliver_parser
 				return { command: :invalid }
 			end
+			if options[ :pr_only ] && options[ :merge ]
+				error.puts "#{BADGE} --pr-only and --merge are mutually exclusive"
+				error.puts deliver_parser
+				return { command: :invalid }
+			end
 			{
 				command: "deliver",
 				merge: options.fetch( :merge ),
+				pr_only: options.fetch( :pr_only ),
 				json: options.fetch( :json ),
 				title: options[ :title ],
 				body_file: options[ :body_file ]
@@ -580,6 +780,78 @@ module Carson
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts deliver_parser
+			{ command: :invalid }
+		end
+
+		# --- realign / revert / release ---
+
+		def self.parse_realign_command( arguments:, error: )
+			options = { json: false }
+			realign_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson realign [--json]"
+				parser.separator ""
+				parser.separator "Realign the current branch with the latest main and safely update the remote branch."
+				parser.separator ""
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			realign_parser.parse!( arguments )
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for realign: #{arguments.join( ' ' )}"
+				error.puts realign_parser
+				return { command: :invalid }
+			end
+			{ command: "realign", json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts realign_parser
+			{ command: :invalid }
+		end
+
+		def self.parse_revert_command( arguments:, error: )
+			options = { json: false }
+			revert_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson revert <pr-number-or-sha> [--json]"
+				parser.separator ""
+				parser.separator "Create a dedicated revert branch/worktree for merged work and hand off to deliver."
+				parser.separator ""
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			revert_parser.parse!( arguments )
+			target = arguments.shift
+			if target.to_s.strip.empty? || arguments.any?
+				error.puts "#{BADGE} Usage: carson revert <pr-number-or-sha> [--json]"
+				error.puts revert_parser
+				return { command: :invalid }
+			end
+			{ command: "revert", target: target, json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts revert_parser
+			{ command: :invalid }
+		end
+
+		def self.parse_release_command( arguments:, error: )
+			options = { json: false, notes_file: nil, draft: false }
+			release_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson release <version> [--notes-file PATH] [--draft] [--json]"
+				parser.separator ""
+				parser.separator "Tag and publish an already-prepared release from main."
+				parser.separator ""
+				parser.on( "--notes-file PATH", "File containing release notes" ) { |value| options[ :notes_file ] = value }
+				parser.on( "--draft", "Create the GitHub release as a draft" ) { options[ :draft ] = true }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+			end
+			release_parser.parse!( arguments )
+			version = arguments.shift
+			if version.to_s.strip.empty? || arguments.any?
+				error.puts "#{BADGE} Usage: carson release <version> [--notes-file PATH] [--draft] [--json]"
+				error.puts release_parser
+				return { command: :invalid }
+			end
+			{ command: "release", version: version, notes_file: options[ :notes_file ], draft: options[ :draft ], json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts release_parser
 			{ command: :invalid }
 		end
 
@@ -759,15 +1031,45 @@ module Carson
 				runtime.template_apply!( push_prep: parsed.fetch( :push_prep, false ) )
 			when "deliver"
 				runtime.deliver!(
+					pr_only: parsed.fetch( :pr_only, false ),
 					merge: parsed.fetch( :merge, false ),
 					title: parsed.fetch( :title, nil ),
 					body_file: parsed.fetch( :body_file, nil ),
+					json_output: parsed.fetch( :json, false )
+				)
+			when "realign"
+				runtime.realign!( json_output: parsed.fetch( :json, false ) )
+			when "revert"
+				runtime.revert!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ) )
+			when "release"
+				runtime.release!(
+					version: parsed.fetch( :version ),
+					notes_file: parsed.fetch( :notes_file, nil ),
+					draft: parsed.fetch( :draft, false ),
 					json_output: parsed.fetch( :json, false )
 				)
 			when "review:gate"
 				runtime.review_gate!
 			when "review:sweep"
 				runtime.review_sweep!
+			when "review:comment"
+				runtime.send( :review_comment!, pr_number: parsed.fetch( :pr_number ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "review:reply"
+				runtime.send( :review_reply!, target_url: parsed.fetch( :target_url ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "review:approve"
+				runtime.send( :review_approve!, pr_number: parsed.fetch( :pr_number ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "review:request-changes"
+				runtime.send( :review_request_changes!, pr_number: parsed.fetch( :pr_number ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "review:disposition"
+				runtime.send( :review_disposition!, target_url: parsed.fetch( :target_url ), disposition: parsed.fetch( :disposition ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "track:open"
+				runtime.track_open!( title: parsed.fetch( :title, nil ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "track:comment"
+				runtime.track_comment!( issue_number: parsed.fetch( :issue_number ), body: parsed.fetch( :body, nil ), body_file: parsed.fetch( :body_file, nil ), json_output: parsed.fetch( :json, false ) )
+			when "track:close"
+				runtime.track_close!( issue_number: parsed.fetch( :issue_number ), json_output: parsed.fetch( :json, false ) )
+			when "track:reopen"
+				runtime.track_reopen!( issue_number: parsed.fetch( :issue_number ), json_output: parsed.fetch( :json, false ) )
 			when "repos"
 				runtime.repos!( json_output: parsed.fetch( :json, false ) )
 			when "housekeep"

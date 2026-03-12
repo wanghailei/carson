@@ -1,98 +1,78 @@
-# PR delivery lifecycle — push, create PR, and optionally merge.
-# Collapses the 8-step manual PR flow into one or two commands.
-# `carson deliver` pushes and creates the PR.
-# `carson deliver --merge` also merges if CI passes or no checks are configured.
-# `carson deliver --json` outputs structured result for agent consumption.
+# PR delivery lifecycle — push, create or reuse PR, wait for readiness, merge, then sync local main.
+# `carson deliver` is the full post-commit stream.
+# `carson deliver --pr-only` is the explicit escape hatch for PR creation without merge/watch.
 module Carson
 	class Runtime
 		module Deliver
-			# Entry point for `carson deliver`.
-			# Pushes current branch, creates a PR if needed, reports the PR URL.
-			# With merge: true, also merges if CI passes and cleans up.
-			def deliver!( merge: false, title: nil, body_file: nil, json_output: false )
+			DELIVER_WATCH_CAP_SECONDS = 5
+
+			def deliver!( pr_only: false, merge: false, title: nil, body_file: nil, json_output: false )
 				branch = current_branch
 				main = config.main_branch
 				remote = config.git_remote
-				result = { command: "deliver", branch: branch }
+				result = { command: "deliver", branch: branch, status: "starting" }
 
-				# Guard: cannot deliver from main.
 				if branch == main
 					result[ :error ] = "cannot deliver from #{main}"
 					result[ :recovery ] = "carson worktree create <name>"
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
-				# Step 1: push the branch.
+				unless send( :working_tree_clean? )
+					result[ :error ] = "working tree is dirty"
+					result[ :recovery ] = "git add -A && git commit, then carson deliver"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+
 				push_exit = push_branch!( branch: branch, remote: remote, result: result )
 				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
 
-				# Step 2: find or create the PR.
 				pr_number, pr_url = find_or_create_pr!(
 					branch: branch, title: title, body_file: body_file, result: result
 				)
-				if pr_number.nil?
-					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
-				end
+				return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output ) if pr_number.nil?
 
 				result[ :pr_number ] = pr_number
 				result[ :pr_url ] = pr_url
-				# Without --merge, we are done.
-				unless merge
+
+				if pr_only
+					result[ :status ] = "pr_open"
+					result[ :recovery ] = "carson deliver"
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 				end
 
-				# Step 3: check CI status.
-				ci_status = check_pr_ci( number: pr_number )
-				result[ :ci ] = ci_status.to_s
-
-				case ci_status
-				when :pass, :none
-					# Continue to review gate. :none means no checks configured — nothing to wait for.
+				readiness = wait_for_deliver_readiness!( pr_number: pr_number, result: result )
+				case readiness.fetch( :state )
 				when :pending
-					result[ :recovery ] = "gh pr checks #{pr_number} --watch && carson deliver --merge"
+					result[ :status ] = "pending"
+					result[ :recovery ] = "carson deliver or carson govern"
 					return deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
-				when :fail
-					result[ :recovery ] = "gh pr checks #{pr_number} — fix failures, push, then `carson deliver --merge`"
+				when :block
+					result[ :status ] = "blocked"
+					result[ :error ] = readiness.fetch( :detail )
+					result[ :recovery ] = readiness.fetch( :recovery )
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				end
-
-				# Step 4: check review gate — block on unresolved review debt.
-				review = check_pr_review( number: pr_number, branch: branch, pr_url: pr_url )
-				result[ :review ] = review.fetch( :review ).to_s
-				if review.fetch( :review ) == :changes_requested
-					result[ :error ] = "review changes requested on PR ##{pr_number}"
-					result[ :recovery ] = "address review comments, push, then `carson deliver --merge`"
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				end
-				if review.fetch( :status ) == :fail
-					result[ :error ] = "review gate blocked on PR ##{pr_number}: #{review.fetch( :detail )}"
-					result[ :recovery ] = "resolve review gate blockers, push, then `carson deliver --merge`"
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				end
-				if review.fetch( :status ) == :error
-					result[ :error ] = "unable to evaluate review gate for PR ##{pr_number}: #{review.fetch( :detail )}"
-					result[ :recovery ] = "run `carson review gate`, then retry `carson deliver --merge`"
+				when :error
+					result[ :status ] = "error"
+					result[ :error ] = readiness.fetch( :detail )
+					result[ :recovery ] = readiness.fetch( :recovery )
 					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
 				end
 
-				# Step 5: merge.
-				merge_exit = merge_pr!( number: pr_number, result: result )
-				return deliver_finish( result: result, exit_code: merge_exit, json_output: json_output ) unless merge_exit == EXIT_OK
+			merge_exit = merge_pr!( number: pr_number, result: result )
+			return deliver_finish( result: result, exit_code: merge_exit, json_output: json_output ) unless merge_exit == EXIT_OK
 
 				result[ :merged ] = true
-
-				# Step 6: sync main in the main worktree.
-				sync_after_merge!( remote: remote, main: main, result: result )
-
-				# Step 7: compute next-step guidance for the agent.
+				synced = sync_after_merge!( remote: remote, main: main, result: result )
 				compute_post_merge_next_step!( result: result )
+				result[ :status ] = synced ? "merged" : "merged_unsynced"
 
-				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
+				exit_code = synced ? EXIT_OK : EXIT_ERROR
+				deliver_finish( result: result, exit_code: exit_code, json_output: json_output )
 			end
 
 		private
 
-			# Outputs the final result — JSON or human-readable — and returns exit code.
 			def deliver_finish( result:, exit_code:, json_output: )
 				result[ :exit_code ] = exit_code
 
@@ -105,12 +85,9 @@ module Carson
 				exit_code
 			end
 
-			# Human-readable output for deliver results.
 			def print_deliver_human( result: )
-				exit_code = result.fetch( :exit_code )
-
-				if result[ :error ]
-					puts_line result[ :error ]
+				if result[ :error ] && !result[ :merged ]
+					puts_line result.fetch( :error )
 					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 					return
 				end
@@ -119,37 +96,133 @@ module Carson
 					puts_line "PR: ##{result[ :pr_number ]} #{result[ :pr_url ]}"
 				end
 
-				if result[ :ci ]
-					ci = result[ :ci ]
-					case ci
-					when "pass"
-						puts_line "CI: pass"
-					when "none"
-						puts_line "CI: none — no checks configured, proceeding."
-					when "pending"
-						puts_line "CI: pending — merge when checks complete."
-						puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
-					when "fail"
-						puts_line "CI: not passing yet — fix before merging."
-						puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
-					end
-				end
+				print_deliver_ci_review( result: result )
 
-				if result[ :merged ]
+				case result[ :status ]
+				when "pr_open"
+					puts_line "PR updated — merge deferred."
+					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
+				when "pending"
+					puts_line "Delivery pending — waiting on checks or review."
+					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
+				when "merged"
 					puts_line "Merged PR ##{result[ :pr_number ]} via #{result[ :merge_method ]}."
 					puts_line "  Next: #{result[ :next_step ]}" if result[ :next_step ]
+				when "merged_unsynced"
+					puts_line "Merged PR ##{result[ :pr_number ]} via #{result[ :merge_method ]}, but local #{config.main_branch} did not sync."
+					puts_line "  → carson sync"
 				end
 			end
 
-			# Pushes the branch to the remote with tracking.
-			# Uses --no-verify to skip the pre-push hook that Carson itself installed.
-			# The hook blocks raw pushes unconditionally; Carson bypasses by skipping it.
-			# On non-fast-forward rejection (typically after rebase), retries with
-			# --force-with-lease — a protected force push that rejects if the remote
-			# ref has been updated by another actor since the last fetch.
+			def print_deliver_ci_review( result: )
+				if result[ :ci ]
+					case result[ :ci ]
+					when "pass"
+						puts_line "CI: pass"
+					when "none"
+						puts_line "CI: none — no checks configured"
+					when "pending"
+						puts_line "CI: pending"
+					when "fail"
+						puts_line "CI: failing"
+					end
+				end
+
+				if result[ :review ]
+					case result[ :review ]
+					when "pass"
+						puts_line "Review: pass"
+					when "pending"
+						puts_line "Review: pending"
+					when "block"
+						puts_line "Review: blocked"
+					end
+				end
+			end
+
+			def wait_for_deliver_readiness!( pr_number:, result: )
+				deadline = Time.now + deliver_watch_seconds
+				loop do
+					readiness = deliver_readiness( pr_number: pr_number )
+					result[ :ci ] = readiness[ :ci ].to_s if readiness[ :ci ]
+					result[ :review ] = readiness[ :review ].to_s if readiness[ :review ]
+					return readiness unless readiness.fetch( :state ) == :pending
+					return readiness if Time.now >= deadline
+					sleep deliver_poll_interval
+				end
+			end
+
+			def deliver_watch_seconds
+				seconds = config.govern_check_wait.to_i
+				seconds = 0 if seconds.negative?
+				[ seconds, DELIVER_WATCH_CAP_SECONDS ].min
+			end
+
+			def deliver_poll_interval
+				interval = config.review_poll_seconds.to_i
+				interval = 1 if interval <= 0
+				[ interval, deliver_watch_seconds ].reject( &:zero? ).min || 1
+			end
+
+			def deliver_readiness( pr_number: )
+				ci_status = check_pr_ci( number: pr_number )
+				case ci_status
+				when :pending
+					return { state: :pending, ci: :pending, review: :pending, detail: "checks still running" }
+				when :fail
+					return {
+						state: :block,
+						ci: :fail,
+						review: :pending,
+						detail: "CI checks are failing on PR ##{pr_number}",
+						recovery: "fix the failing checks, push, then rerun carson deliver"
+					}
+				end
+
+				review_state = check_pr_review( number: pr_number )
+				if review_state == :changes_requested
+					return {
+						state: :block,
+						ci: ci_status == :none ? :none : :pass,
+						review: :block,
+						detail: "review changes requested on PR ##{pr_number}",
+						recovery: "address review comments, push, then rerun carson deliver"
+					}
+				end
+				if review_state == :review_required
+					return {
+						state: :pending,
+						ci: ci_status == :none ? :none : :pass,
+						review: :pending,
+						detail: "review approval still required"
+					}
+				end
+
+				gate = check_pr_review_gate( number: pr_number )
+				case gate.fetch( :state )
+				when :pass
+					{ state: :ready, ci: ci_status == :none ? :none : :pass, review: :pass, detail: gate.fetch( :detail ) }
+				when :block
+					{
+						state: :block,
+						ci: ci_status == :none ? :none : :pass,
+						review: :block,
+						detail: gate.fetch( :detail ),
+						recovery: "resolve review blockers, push, then rerun carson deliver"
+					}
+				else
+					{
+						state: :error,
+						ci: ci_status == :none ? :none : :pass,
+						review: :block,
+						detail: gate.fetch( :detail ),
+						recovery: "run carson review gate, then rerun carson deliver"
+					}
+				end
+			end
+
 			def push_branch!( branch:, remote:, result: )
 				_, push_stderr, push_success, = git_run( "push", "--no-verify", "-u", remote, branch )
-
 				if !push_success && push_stderr.to_s.include?( "non-fast-forward" )
 					return force_push_with_lease!( branch: branch, remote: remote, result: result )
 				end
@@ -160,14 +233,11 @@ module Carson
 					result[ :error ] = error_text
 					return EXIT_ERROR
 				end
+
 				puts_verbose "pushed #{branch} to #{remote}"
 				EXIT_OK
 			end
 
-			# Retries push with --force-with-lease after a non-fast-forward rejection.
-			# The lease check compares the local tracking ref against the remote — if
-			# another actor pushed since our last fetch, the push is refused ("stale info").
-			# This is atomic and safe, unlike delete-and-re-push.
 			def force_push_with_lease!( branch:, remote:, result: )
 				puts_verbose "push rejected (non-fast-forward), retrying with --force-with-lease"
 				_, lease_stderr, lease_success, = git_run( "push", "--no-verify", "--force-with-lease", "-u", remote, branch )
@@ -177,7 +247,6 @@ module Carson
 					return EXIT_OK
 				end
 
-				# --force-with-lease rejected — another actor pushed to this branch.
 				if lease_stderr.to_s.include?( "stale info" )
 					result[ :error ] = "force-with-lease rejected — another push landed on #{branch} since your last fetch"
 					result[ :recovery ] = "git fetch #{remote} #{branch} && carson deliver"
@@ -189,41 +258,26 @@ module Carson
 				EXIT_ERROR
 			end
 
-			# Finds an existing PR for the branch, or creates a new one.
-			# Returns [number, url] or [nil, nil] on failure.
 			def find_or_create_pr!( branch:, title: nil, body_file: nil, result: )
-				# Check for existing PR.
 				existing = find_existing_pr( branch: branch )
 				return existing if existing.first
 
-				# Create a new PR.
 				create_pr!( branch: branch, title: title, body_file: body_file, result: result )
 			end
 
-			# Queries gh for an open PR on this branch.
-			# Returns [number, url] or [nil, nil].
-			# gh pr view returns any PR on the branch — open, merged, or closed.
-			# We check state explicitly so merged/closed PRs are treated as absent,
-			# letting find_or_create_pr! fall through to create a new PR.
 			def find_existing_pr( branch: )
-				stdout, _, success, = gh_run(
+				payload, _, _, success, = github_adapter.run_json(
 					"pr", "view", branch,
 					"--json", "number,url,state"
 				)
-				if success
-					data = JSON.parse( stdout ) rescue nil
-					if data && data[ "number" ] && data[ "state" ] == "OPEN"
-						return [ data[ "number" ], data[ "url" ].to_s ]
-					end
+				if success && payload.is_a?( Hash ) && payload[ "number" ] && payload[ "state" ] == "OPEN"
+					return [ payload[ "number" ], payload[ "url" ].to_s ]
 				end
 				[ nil, nil ]
 			end
 
-			# Creates a PR via gh. Title defaults to branch name humanised.
-			# Returns [number, url] or [nil, nil] on failure.
 			def create_pr!( branch:, title: nil, body_file: nil, result: )
 				pr_title = title || default_pr_title( branch: branch )
-
 				args = [ "pr", "create", "--title", pr_title, "--head", branch ]
 				if body_file && File.exist?( body_file )
 					args.push( "--body-file", body_file )
@@ -240,32 +294,25 @@ module Carson
 					return [ nil, nil ]
 				end
 
-				# gh pr create prints the URL on success. Parse number from it.
 				pr_url = stdout.to_s.strip
 				pr_number = pr_url.split( "/" ).last.to_i
-				if pr_number > 0
-					[ pr_number, pr_url ]
-				else
-					# Fallback: query the just-created PR.
-					find_existing_pr( branch: branch )
-				end
+				return [ pr_number, pr_url ] if pr_number.positive?
+
+				find_existing_pr( branch: branch )
 			end
 
-			# Generates a default PR title from the branch name.
 			def default_pr_title( branch: )
 				branch.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) { it.upcase }
 			end
 
-			# Checks CI status on a PR. Returns :pass, :fail, :pending, or :none.
-			# Uses the `bucket` field (pass/fail/pending) from `gh pr checks --json`.
 			def check_pr_ci( number: )
-				stdout, _, success, = gh_run(
+				payload, _, _, success, = github_adapter.run_json(
 					"pr", "checks", number.to_s,
 					"--json", "name,bucket"
 				)
 				return :none unless success
 
-				checks = JSON.parse( stdout ) rescue []
+				checks = Array( payload )
 				return :none if checks.empty?
 
 				buckets = checks.map { it[ "bucket" ].to_s.downcase }
@@ -275,30 +322,36 @@ module Carson
 				:pass
 			end
 
-			# Checks the full review gate on a PR. Returns a structured result hash.
-			def check_pr_review( number:, branch:, pr_url: nil )
-				owner, repo = repository_coordinates
-				report = review_gate_report_for_pr(
-					owner: owner,
-					repo: repo,
-					pr_number: number,
-					branch_name: branch,
-					pr_summary: {
-						number: number,
-						title: "",
-						url: pr_url.to_s,
-						state: "OPEN"
-					}
+			def check_pr_review( number: )
+				payload, _, _, success, = github_adapter.run_json(
+					"pr", "view", number.to_s,
+					"--json", "reviewDecision"
 				)
-				review_gate_result( report: report )
-			rescue StandardError => exception
-				{ status: :error, review: :error, detail: exception.message }
+				return :none unless success
+
+				decision = payload.is_a?( Hash ) ? payload[ "reviewDecision" ].to_s.strip.upcase : ""
+				case decision
+				when "APPROVED" then :approved
+				when "CHANGES_REQUESTED" then :changes_requested
+				when "REVIEW_REQUIRED" then :review_required
+				else :none
+				end
 			end
 
-			# Merges the PR using the configured merge method.
-			# Deliberately omits --delete-branch: gh tries to switch the local
-			# checkout to main afterwards, which fails inside a worktree where
-			# main is already checked output. Branch cleanup deferred to `carson prune`.
+			def check_pr_review_gate( number: )
+				owner, repo = repository_coordinates
+				snapshot = review_gate_snapshot( owner: owner, repo: repo, pr_number: number )
+				if snapshot.fetch( :unresolved_threads ).any?
+					return { state: :block, detail: "unresolved review threads remain (#{snapshot.fetch( :unresolved_threads ).count})" }
+				end
+				if snapshot.fetch( :unacknowledged_actionable ).any?
+					return { state: :block, detail: "actionable review findings remain (#{snapshot.fetch( :unacknowledged_actionable ).count})" }
+				end
+				{ state: :pass, detail: "review gate passed" }
+			rescue StandardError => exception
+				{ state: :error, detail: "unable to evaluate review gate: #{exception.message}" }
+			end
+
 			def merge_pr!( number:, result: )
 				method = config.govern_merge_method
 				result[ :merge_method ] = method
@@ -319,10 +372,6 @@ module Carson
 				end
 			end
 
-			# Syncs main after a successful merge.
-			# Pulls into the main worktree directly — does not attempt checkout,
-			# because checkout would fail when running inside a feature worktree
-			# (main is already checked output in the main tree).
 			def sync_after_merge!( remote:, main:, result: )
 				main_root = main_worktree_root
 				_, pull_stderr, pull_success, = Open3.capture3(
@@ -331,29 +380,29 @@ module Carson
 				if pull_success
 					result[ :synced ] = true
 					puts_verbose "synced #{main} in #{main_root} from #{remote}"
+					true
 				else
 					result[ :synced ] = false
 					result[ :sync_error ] = pull_stderr.to_s.strip
 					puts_verbose "sync failed: #{pull_stderr.to_s.strip}"
+					false
 				end
 			end
 
-			# Builds next-step guidance after a successful merge.
-			# Detects whether the agent is inside a worktree and suggests cleanup.
 			def compute_post_merge_next_step!( result: )
 				main_root = main_worktree_root
 				current_wt = worktree_list
 					.reject { it.path == realpath_safe( main_root ) }
 					.find { it.holds_cwd? }
 
-				if current_wt
-					wt_name = File.basename( current_wt.path )
-					result[ :next_step ] = "cd #{main_root} && carson worktree remove #{wt_name}"
-				else
-					result[ :next_step ] = "carson prune"
-				end
+				result[ :next_step ] =
+					if current_wt
+						"cd #{main_root} && carson housekeep"
+					else
+						"carson housekeep"
+					end
 			rescue StandardError
-				# Best-effort — do not fail deliver because of next-step detection.
+				nil
 			end
 		end
 

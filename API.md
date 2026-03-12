@@ -11,6 +11,40 @@ Command form:
 carson <command> [subcommand] [arguments]
 ```
 
+### Tier 1 streams
+
+Carson's primary agent-facing interface is a fixed set of named streams. There is no generic passthrough command such as `carson do`.
+
+| Command | Purpose |
+|---|---|
+| `carson deliver [--pr-only] [--json]` | Default post-commit delivery stream: push/update branch, open or reuse PR, wait briefly for readiness, merge when ready, then sync local `main`. |
+| `carson realign [--json]` | Realign a clean non-`main` branch onto the latest `main`, then safely update the remote branch. |
+| `carson revert <pr-number-or-sha> [--json]` | Prepare a revert branch/worktree for merged work and hand it off to `deliver`. |
+| `carson release <version> [--notes-file PATH] [--draft] [--json]` | Tag and publish an already-prepared release from clean, synced `main`. |
+| `carson track <open|comment|close|reopen> ...` | Issue-only lifecycle stream for GitHub issues. |
+| `carson review <gate|sweep|comment|reply|approve|request-changes|disposition> ...` | Pull-request-only review workflow stream. |
+
+`deliver` semantics:
+- Default behaviour is the full stream. `--pr-only` is the only built-in escape hatch when an agent wants to stop after PR creation or update.
+- If checks or approval are still pending after the bounded watch window, `deliver` exits `0` with `status: pending` and a resumable recovery path.
+- If CI fails or review is blocked, `deliver` exits `2`.
+- Post-merge cleanup remains explicit via `carson housekeep`.
+
+`track` scope:
+- `carson track open --title TITLE [--body TEXT | --body-file PATH]`
+- `carson track comment ISSUE_NUMBER --body TEXT | --body-file PATH`
+- `carson track close ISSUE_NUMBER`
+- `carson track reopen ISSUE_NUMBER`
+
+`review` scope:
+- `carson review gate`
+- `carson review sweep`
+- `carson review comment PR_NUMBER --body TEXT | --body-file PATH`
+- `carson review reply FINDING_URL --body TEXT | --body-file PATH`
+- `carson review approve PR_NUMBER [--body TEXT | --body-file PATH]`
+- `carson review request-changes PR_NUMBER --body TEXT | --body-file PATH`
+- `carson review disposition FINDING_URL <accepted|rejected|deferred> [--body TEXT | --body-file PATH]`
+
 ### Setup commands
 
 | Command | Purpose |
@@ -20,7 +54,7 @@ carson <command> [subcommand] [arguments]
 | `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
 
-### Daily commands
+### Support commands
 
 | Command | Purpose |
 |---|---|
@@ -30,6 +64,8 @@ carson <command> [subcommand] [arguments]
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
 | `carson status` | Show repository state (branch, worktrees, PRs, governance). |
+| `carson worktree <create|remove> ...` | Manage isolated coding worktrees. |
+| `carson housekeep [--all]` | Sync, reap dead worktrees, and prune stale branches. |
 
 ### Batch commands (Layer 2)
 
@@ -55,13 +91,6 @@ All batch commands operate across every governed repository registered in `gover
 
 `govern.merge.method` accepts `squash`, `merge`, or `rebase` (default: `squash`). Squash keeps main linear — one PR, one commit. When the target repository enforces linear history via branch protection, both `squash` and `rebase` are accepted by GitHub — only `merge` is rejected.
 
-### Review commands
-
-| Command | Purpose |
-|---|---|
-| `carson review gate` | Block until actionable review findings are resolved or convergence timeout is reached. |
-| `carson review sweep` | Scan recent PR activity and update a rolling tracking issue for late actionable feedback. |
-
 ### Info commands
 
 | Command | Purpose |
@@ -74,7 +103,7 @@ All batch commands operate across every governed repository registered in `gover
 - `1`: runtime/configuration/command error
 - `2`: policy blocked (hard stop)
 
-Automation and CI integrations should treat exit `2` as an expected policy failure signal.
+Automation and CI integrations should treat exit `2` as an expected policy failure signal. Pending `deliver` runs are not failures: they return exit `0` with `status: pending`.
 
 ## Repository boundary contract
 

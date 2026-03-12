@@ -220,6 +220,70 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
+	def test_command_guard_blocks_gh_issue_comment_in_governed_repo
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+
+		normalised = File.realpath( repo_root )
+		carson_dir = File.join( repo_root, ".carson" )
+		FileUtils.mkdir_p( carson_dir )
+		File.write(
+			File.join( carson_dir, "config.json" ),
+			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+		)
+
+		guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+		input = JSON.generate( {
+			tool_name: "Bash",
+			tool_input: { command: "gh issue comment 17 --body 'note'" }
+		} )
+
+		stdout, stderr, status = Open3.capture3(
+			{ "HOME" => repo_root },
+			"bash", guard_path,
+			stdin_data: input,
+			chdir: repo_root
+		)
+
+		refute status.success?, "command-guard should block gh issue comment in governed repo"
+		assert_includes stderr, "Carson-governed"
+		assert_includes stderr, "carson track"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_gh_pr_review_in_governed_repo
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+
+		normalised = File.realpath( repo_root )
+		carson_dir = File.join( repo_root, ".carson" )
+		FileUtils.mkdir_p( carson_dir )
+		File.write(
+			File.join( carson_dir, "config.json" ),
+			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+		)
+
+		guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+		input = JSON.generate( {
+			tool_name: "Bash",
+			tool_input: { command: "gh pr review 42 --approve" }
+		} )
+
+		stdout, stderr, status = Open3.capture3(
+			{ "HOME" => repo_root },
+			"bash", guard_path,
+			stdin_data: input,
+			chdir: repo_root
+		)
+
+		refute status.success?, "command-guard should block gh pr review in governed repo"
+		assert_includes stderr, "Carson-governed"
+		assert_includes stderr, "carson review"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
 	def test_command_guard_allows_gh_pr_create_in_non_governed_repo
 		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
 		init_git_repo( repo_root )
@@ -325,9 +389,9 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
-	def test_command_guard_blocks_gh_pr_create_after_chain_operator
-		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
-		init_git_repo( repo_root )
+		def test_command_guard_blocks_gh_pr_create_after_chain_operator
+			repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+			init_git_repo( repo_root )
 
 		normalised = File.realpath( repo_root )
 		carson_dir = File.join( repo_root, ".carson" )
@@ -351,13 +415,77 @@ class RuntimeCommandGuardTest < Minitest::Test
 			chdir: repo_root
 		)
 
-		refute status.success?, "command-guard should block gh pr create after &&"
-		assert_includes stderr, "Carson-governed"
-	ensure
-		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
-	end
+			refute status.success?, "command-guard should block gh pr create after &&"
+			assert_includes stderr, "Carson-governed"
+		ensure
+			FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+		end
 
-private
+		def test_command_guard_blocks_gh_issue_comment_in_governed_repo
+			repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+			init_git_repo( repo_root )
+
+			normalised = File.realpath( repo_root )
+			carson_dir = File.join( repo_root, ".carson" )
+			FileUtils.mkdir_p( carson_dir )
+			File.write(
+				File.join( carson_dir, "config.json" ),
+				JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+			)
+
+			guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+			input = JSON.generate( {
+				tool_name: "Bash",
+				tool_input: { command: "gh issue comment 12 --body 'tracked'" }
+			} )
+
+			stdout, stderr, status = Open3.capture3(
+				{ "HOME" => repo_root },
+				"bash", guard_path,
+				stdin_data: input,
+				chdir: repo_root
+			)
+
+			refute status.success?, "command-guard should block gh issue comment in governed repo"
+			assert_includes stderr, "Carson-governed"
+			assert_includes stderr, "carson track"
+		ensure
+			FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+		end
+
+		def test_command_guard_blocks_gh_pr_review_in_governed_repo
+			repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+			init_git_repo( repo_root )
+
+			normalised = File.realpath( repo_root )
+			carson_dir = File.join( repo_root, ".carson" )
+			FileUtils.mkdir_p( carson_dir )
+			File.write(
+				File.join( carson_dir, "config.json" ),
+				JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+			)
+
+			guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+			input = JSON.generate( {
+				tool_name: "Bash",
+				tool_input: { command: "gh pr review 42 --approve" }
+			} )
+
+			stdout, stderr, status = Open3.capture3(
+				{ "HOME" => repo_root },
+				"bash", guard_path,
+				stdin_data: input,
+				chdir: repo_root
+			)
+
+			refute status.success?, "command-guard should block gh pr review in governed repo"
+			assert_includes stderr, "Carson-governed"
+			assert_includes stderr, "carson review"
+		ensure
+			FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+		end
+
+	private
 
 	def tool_root_path
 		File.expand_path( "../..", __FILE__ )

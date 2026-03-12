@@ -481,13 +481,12 @@ module Carson
 		end
 		private_class_method :ensure_claude_dir_excluded!
 
-			# Instance-level realpath helper for query methods.
-			def realpath_safe( a_path )
-				return runtime.realpath_safe( a_path ) if runtime
+		# Instance-level realpath helper for query methods.
+		def realpath_safe( a_path )
+			return runtime.realpath_safe( a_path ) if runtime
 
-				File.realpath( a_path )
-			rescue Errno::ENOENT
-				File.expand_path( a_path )
-			end
+			File.realpath( a_path )
+		rescue Errno::ENOENT
+			File.expand_path( a_path )
 		end
 end

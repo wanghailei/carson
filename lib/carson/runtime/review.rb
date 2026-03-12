@@ -3,6 +3,7 @@ require_relative "review/query_text"
 require_relative "review/data_access"
 require_relative "review/gate_support"
 require_relative "review/sweep_support"
+require_relative "review/actions_support"
 require_relative "review/utility"
 
 module Carson
@@ -13,6 +14,7 @@ module Carson
 			include DataAccess
 			include GateSupport
 			include SweepSupport
+			include ActionsSupport
 			include Utility
 
 			def review_gate!

@@ -123,19 +123,20 @@ cd /path/to/.claude/worktrees/my-feature
 
 **2. Work** — make changes, commit, iterate.
 
-**3. Deliver and merge** — push, create PR, merge when CI passes. After merge, Carson prints the exact next command (3.13.0+):
+**3. Deliver** — `carson deliver` is now the default full stream: push or update the branch, open or reuse the PR, watch for readiness, merge when ready, then sync local `main`. After merge, Carson prints the exact cleanup hand-off:
 
 ```bash
-carson deliver --merge
+carson deliver
 # Output: Merged PR #N via squash.
-#   Next: cd /path/to/repo && carson worktree remove my-feature
+#   Next: cd /path/to/repo && carson housekeep
 ```
 
-**4. Clean up** — follow the printed next step. After squash merge, Carson detects the content is on main and allows removal without `--force` (3.13.1+):
+Use `carson deliver --pr-only` only when you explicitly want Carson to stop after PR creation or update.
+
+**4. Clean up** — follow the printed next step. `housekeep` remains the cleanup verb and keeps removal explicit:
 
 ```bash
-cd /path/to/repo && carson worktree remove my-feature
-carson prune
+cd /path/to/repo && carson housekeep
 ```
 
 **Safety guards** — `worktree remove` blocks when:
@@ -144,7 +145,20 @@ carson prune
 
 After squash or rebase merge, the content matches main — removal proceeds without `--force`.
 
-**Stale worktree recovery** — if a worktree directory is destroyed externally (e.g. by running `gh pr merge --delete-branch` from inside it), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use `carson deliver --merge` instead of raw `gh pr merge --delete-branch` to avoid this situation — `deliver` deliberately omits `--delete-branch` so the worktree directory stays intact for orderly cleanup.
+**Stale worktree recovery** — if a worktree directory is destroyed externally (e.g. by running `gh pr merge --delete-branch` from inside it), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use `carson deliver` instead of raw `gh pr merge --delete-branch` to avoid this situation — `deliver` deliberately omits `--delete-branch` so the worktree directory stays intact for orderly cleanup.
+
+## Tier 1 Streams
+
+Carson's primary agent surface is six named streams. There is no passthrough command such as `carson do`; common agent duties must go through the named stream that owns them.
+
+- `carson deliver` — complete delivery stream from an already-committed branch. Default behaviour is push/update branch, open/reuse PR, bounded readiness watch, merge when ready, then sync local `main`.
+- `carson realign` — sync local `main`, rebase the current clean feature branch onto it, then safely update the remote branch.
+- `carson revert` — prepare a revert branch and PR for already-merged work, then feed it back through `deliver`.
+- `carson release` — tag and publish an already-prepared release from clean, up-to-date `main`.
+- `carson track` — issue-only lifecycle stream: open, comment, close, reopen.
+- `carson review` — pull-request-only review workflow: gate, sweep, comment, reply, approve, request changes, disposition.
+
+`deliver` exits `0` with `status: pending` when checks or approval are still outstanding after the bounded watch window. That is not a failure; rerun `carson deliver` or let `carson govern` finish it later.
 
 ### Carson vs Claude Code EnterWorktree
 

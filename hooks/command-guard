@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Carson command guard — Claude Code PreToolUse hook.
 #
-# Blocks raw `gh pr create` and `gh pr merge` in Carson-governed repositories.
-# Agents should use `carson deliver` instead.
+# Blocks raw GitHub CLI commands in Carson-governed repositories when Carson
+# provides a named stream for the same duty.
 #
 # Claude Code sends JSON on stdin: {"tool_name": "Bash", "tool_input": {"command": "..."}}
 # To block: print reason to stderr, exit 2.
@@ -32,11 +32,21 @@ tool_name="$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 command_text="$(echo "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 [ -n "$command_text" ] || exit 0
 
-# Check for gh pr commands that Carson replaces.
+# Check for gh commands that Carson replaces.
 # Match only at command position: start of line, or after a shell operator (&&, ||, ;, |).
-# This avoids false positives from gh pr references inside commit messages or string arguments.
-guarded_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(create|merge)'
-if ! echo "$command_text" | grep -qE "$guarded_pattern"; then
+# This avoids false positives from gh references inside commit messages or string arguments.
+deliver_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(create|merge)\b'
+track_pattern='(^|&&|\|\||;|\|)\s*gh\s+issue\s+(create|comment|close|reopen)\b'
+review_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(comment|review)\b'
+
+replacement=""
+if echo "$command_text" | grep -qE "$deliver_pattern"; then
+	replacement="carson deliver"
+elif echo "$command_text" | grep -qE "$track_pattern"; then
+	replacement="carson track"
+elif echo "$command_text" | grep -qE "$review_pattern"; then
+	replacement="carson review"
+else
 	exit 0
 fi
 
@@ -52,7 +62,7 @@ if ! grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
 	exit 0
 fi
 
-# This is a raw gh pr command in a governed repo — block it.
-echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`gh pr\`." >&2
-echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
+# This is a raw gh command in a governed repo — block it.
+echo "This repo is Carson-governed — use \`${replacement}\` instead of raw \`gh\`." >&2
+echo "Use \`${replacement}\` instead — Carson owns this workflow." >&2
 exit 2

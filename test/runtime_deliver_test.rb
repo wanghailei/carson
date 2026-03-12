@@ -29,6 +29,19 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_pr_only_opens_pr_without_merge
+		runtime, repo_root = build_runtime_with_mock_gh( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/pr-only" )
+
+		result = runtime.deliver!( pr_only: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "PR updated — merge deferred."
+		refute_includes output, "Merged PR"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_deliver_uses_existing_pr_if_found
 		runtime, repo_root = build_runtime_with_mock_gh( verbose: false, scenario: "existing_pr" )
 		init_git_repo_with_remote( repo_root )
@@ -112,7 +125,7 @@ class RuntimeDeliverTest < Minitest::Test
 		result = runtime.deliver!( merge: true )
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		output = output_string( runtime )
-		assert_includes output, "CI: not passing yet"
+		assert_includes output, "CI checks are failing on PR #42"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -404,7 +417,7 @@ private
 		error = StringIO.new
 
 		# Create a mock gh script.
-		mock_bin = File.join( repo_root, ".mock-bin" )
+		mock_bin = File.join( File.dirname( repo_root ), "mock-bin-#{File.basename( repo_root )}" )
 		FileUtils.mkdir_p( mock_bin )
 		mock_gh = File.join( mock_bin, "gh" )
 		File.write( mock_gh, mock_gh_script( scenario: scenario ) )
@@ -626,10 +639,11 @@ private
 
 	def destroy_runtime_repo( repo_root: )
 		# Clean up mock bin PATH entry.
-		mock_bin = File.join( repo_root, ".mock-bin" )
+		mock_bin = File.join( File.dirname( repo_root ), "mock-bin-#{File.basename( repo_root )}" )
 		if ENV[ "PATH" ]&.include?( mock_bin )
 			ENV[ "PATH" ] = ENV[ "PATH" ].split( ":" ).reject { |path| path == mock_bin }.join( ":" )
 		end
+		FileUtils.remove_entry( mock_bin ) if File.directory?( mock_bin )
 
 		# Clean up remote repo if it exists.
 		remote_path = File.join( File.dirname( repo_root ), "remote-#{File.basename( repo_root )}.git" )

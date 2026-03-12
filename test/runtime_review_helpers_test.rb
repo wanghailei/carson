@@ -189,6 +189,103 @@ class RuntimeReviewHelpersTest < Minitest::Test
 		assert_includes report.fetch( :block_reasons ), "unresolved review threads remain (1)"
 	end
 
+	def test_review_comment_posts_comment_and_returns_pr_url
+		@runtime.define_singleton_method( :gh_run ) do |*args|
+			if args == [ "pr", "comment", "12", "--body", "Looks good" ]
+				[ "commented", "", true, 0 ]
+			else
+				raise "unexpected gh_run args: #{args.inspect}"
+			end
+		end
+
+		adapter = Object.new
+		adapter.define_singleton_method( :run_json ) do |*args|
+			if args == [ "pr", "view", "12", "--json", "url" ]
+				[ { "url" => "https://github.com/acme/widgets/pull/12" }, "", "", true, 0 ]
+			else
+				raise "unexpected run_json args: #{args.inspect}"
+			end
+		end
+		@runtime.instance_variable_set( :@github_adapter, adapter )
+
+		result = @runtime.send( :review_comment!, pr_number: 12, body: "Looks good" )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_includes @runtime.instance_variable_get( :@output ).string, "PR commented"
+		assert_includes @runtime.instance_variable_get( :@output ).string, "pull/12"
+	end
+
+	def test_review_reply_rejects_non_thread_url
+		result = @runtime.send( :review_reply!, target_url: "https://github.com/acme/widgets/pull/12", body: "Reply" )
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_includes @runtime.instance_variable_get( :@output ).string, "reply target must be a pull-request review thread comment URL"
+	end
+
+	def test_review_reply_posts_to_pull_request_thread_endpoint
+		@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
+
+		adapter = Object.new
+		adapter.define_singleton_method( :run_json ) do |*args|
+			case args
+			when [ "api", "--method", "POST", "repos/acme/widgets/pulls/12/comments/99/replies", "-f", "body=Reply" ]
+				[ { "html_url" => "https://github.com/acme/widgets/pull/12#discussion_r100" }, "", "", true, 0 ]
+			when [ "pr", "view", "12", "--json", "url" ]
+				[ { "url" => "https://github.com/acme/widgets/pull/12" }, "", "", true, 0 ]
+			else
+				raise "unexpected run_json args: #{args.inspect}"
+			end
+		end
+		@runtime.instance_variable_set( :@github_adapter, adapter )
+
+		result = @runtime.send(
+			:review_reply!,
+			target_url: "https://github.com/acme/widgets/pull/12#discussion_r99",
+			body: "Reply"
+		)
+
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_includes @runtime.instance_variable_get( :@output ).string, "Review thread replied"
+		assert_includes @runtime.instance_variable_get( :@output ).string, "discussion_r100"
+	end
+
+	def test_review_request_changes_requires_body
+		result = @runtime.send( :review_request_changes!, pr_number: 12 )
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_includes @runtime.instance_variable_get( :@output ).string, "body cannot be blank"
+	end
+
+	def test_review_disposition_posts_prefixed_comment
+		recorded = []
+		@runtime.define_singleton_method( :gh_run ) do |*args|
+			recorded << args
+			[ "commented", "", true, 0 ]
+		end
+		@runtime.define_singleton_method( :config ) do
+			Struct.new( :review_disposition ).new( "Disposition:" )
+		end
+
+		adapter = Object.new
+		adapter.define_singleton_method( :run_json ) do |*args|
+			if args == [ "pr", "view", "12", "--json", "url" ]
+				[ { "url" => "https://github.com/acme/widgets/pull/12" }, "", "", true, 0 ]
+			else
+				raise "unexpected run_json args: #{args.inspect}"
+			end
+		end
+		@runtime.instance_variable_set( :@github_adapter, adapter )
+
+		result = @runtime.send(
+			:review_disposition!,
+			target_url: "https://github.com/acme/widgets/pull/12#discussion_r99",
+			disposition: "accepted",
+			body: "Handled in follow-up"
+		)
+
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_includes recorded.flatten.join( " " ), "Disposition: accepted https://github.com/acme/widgets/pull/12#discussion_r99"
+		assert_includes recorded.flatten.join( " " ), "Handled in follow-up"
+		assert_includes @runtime.instance_variable_get( :@output ).string, "Disposition posted"
+	end
+
 	def test_recent_pull_requests_for_sweep_raises_on_pagination_safety_limit
 		call_count = 0
 		@runtime.define_singleton_method( :gh_run ) do |*|
@@ -305,98 +402,5 @@ class RuntimeReviewHelpersTest < Minitest::Test
 			assert_nil evidence
 			assert_match( /no merged PR evidence/, error_text )
 			assert_equal 51, call_count
-		end
-
-		def test_merged_pr_for_branch_ignores_closed_unmerged_matches
-			call_count = 0
-			@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
-			@runtime.define_singleton_method( :gh_run ) do |*|
-				call_count += 1
-				if call_count == 1
-					payload = [
-						{
-							"number" => 12,
-							"html_url" => "https://github.com/acme/widgets/pull/12",
-							"merged_at" => nil,
-							"closed_at" => "2026-02-20T12:00:00Z",
-							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
-							"base" => { "ref" => "main" }
-						},
-						{
-							"number" => 11,
-							"html_url" => "https://github.com/acme/widgets/pull/11",
-							"merged_at" => "2026-02-19T12:00:00Z",
-							"closed_at" => "2026-02-19T12:00:00Z",
-							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
-							"base" => { "ref" => "main" }
-						}
-					]
-					[ JSON.generate( payload ), "", true, 0 ]
-				else
-					[ "[]", "", true, 0 ]
-				end
-			end
-
-			evidence, error_text = @runtime.send(
-				:merged_pr_for_branch,
-				branch: "feature/reap",
-				branch_tip_sha: "abc123"
-			)
-
-			assert_nil error_text
-			assert_equal 11, evidence.fetch( :number )
-			assert_equal "2026-02-19T12:00:00Z", evidence.fetch( :merged_at )
-			assert_equal 2, call_count
-		end
-
-		def test_abandoned_pr_for_branch_returns_latest_closed_unmerged_match
-			call_count = 0
-			@runtime.define_singleton_method( :repository_coordinates ) { [ "acme", "widgets" ] }
-			@runtime.define_singleton_method( :gh_run ) do |*|
-				call_count += 1
-				if call_count == 1
-					payload = [
-						{
-							"number" => 21,
-							"html_url" => "https://github.com/acme/widgets/pull/21",
-							"merged_at" => nil,
-							"closed_at" => "2026-02-18T12:00:00Z",
-							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
-							"base" => { "ref" => "main" }
-						},
-						{
-							"number" => 22,
-							"html_url" => "https://github.com/acme/widgets/pull/22",
-							"merged_at" => nil,
-							"closed_at" => "2026-02-20T12:00:00Z",
-							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
-							"base" => { "ref" => "main" }
-						},
-						{
-							"number" => 23,
-							"html_url" => "https://github.com/acme/widgets/pull/23",
-							"merged_at" => "2026-02-19T12:00:00Z",
-							"closed_at" => "2026-02-19T12:00:00Z",
-							"head" => { "ref" => "feature/reap", "sha" => "abc123" },
-							"base" => { "ref" => "main" }
-						}
-					]
-					[ JSON.generate( payload ), "", true, 0 ]
-				else
-					[ "[]", "", true, 0 ]
-				end
-			end
-
-			evidence, error_text = @runtime.send(
-				:abandoned_pr_for_branch,
-				branch: "feature/reap",
-				branch_tip_sha: "abc123"
-			)
-
-			assert_nil error_text
-			assert_equal 22, evidence.fetch( :number )
-			assert_equal "2026-02-20T12:00:00Z", evidence.fetch( :closed_at )
-			assert_nil evidence.fetch( :merged_at )
-			assert_equal 2, call_count
 		end
 	end

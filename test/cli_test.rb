@@ -50,6 +50,51 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def review_comment!( pr_number:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :review_comment, { pr_number: pr_number, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def review_reply!( target_url:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :review_reply, { target_url: target_url, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def review_approve!( pr_number:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :review_approve, { pr_number: pr_number, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def review_request_changes!( pr_number:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :review_request_changes, { pr_number: pr_number, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def review_disposition!( target_url:, disposition:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :review_disposition, { target_url: target_url, disposition: disposition, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def track_open!( title:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :track_open, { title: title, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def track_comment!( issue_number:, body: nil, body_file: nil, json_output: false )
+			@calls << [ :track_comment, { issue_number: issue_number, body: body, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def track_close!( issue_number:, json_output: false )
+			@calls << [ :track_close, { issue_number: issue_number, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def track_reopen!( issue_number:, json_output: false )
+			@calls << [ :track_reopen, { issue_number: issue_number, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def status!( json_output: false )
 			@calls << [ :status, { json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
@@ -70,8 +115,23 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def deliver!( merge: false, title: nil, body_file: nil, json_output: false )
-			@calls << [ :deliver, { merge: merge, title: title, body_file: body_file, json_output: json_output } ]
+		def deliver!( pr_only: false, merge: false, title: nil, body_file: nil, json_output: false )
+			@calls << [ :deliver, { pr_only: pr_only, merge: merge, title: title, body_file: body_file, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def realign!( json_output: false )
+			@calls << [ :realign, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def revert!( target:, json_output: false )
+			@calls << [ :revert, { target: target, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def release!( version:, notes_file: nil, draft: false, json_output: false )
+			@calls << [ :release, { version: version, notes_file: notes_file, draft: draft, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -149,6 +209,10 @@ class CLITest < Minitest::Test
 		parsed = Carson::CLI.parse_args( arguments: [ "--help" ], output: output, error: error )
 		assert_equal :help, parsed.fetch( :command )
 		assert_includes output.string, "Usage: carson"
+		assert_includes output.string, "Tier 1 streams:"
+		assert_includes output.string, "deliver"
+		assert_includes output.string, "track"
+		refute_includes output.string, "carson do"
 	end
 
 	def test_parse_args_version_returns_version_command
@@ -485,6 +549,7 @@ class CLITest < Minitest::Test
 		parsed = Carson::CLI.parse_args( arguments: [ "deliver" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :merge )
+		assert_equal false, parsed.fetch( :pr_only )
 		assert_equal false, parsed.fetch( :json )
 		assert_nil parsed[ :title ]
 		assert_nil parsed[ :body_file ]
@@ -504,6 +569,15 @@ class CLITest < Minitest::Test
 		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--title", "My PR" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "My PR", parsed.fetch( :title )
+	end
+
+	def test_parse_args_deliver_with_pr_only
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--pr-only" ], output: output, error: error )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :pr_only )
+		assert_equal false, parsed.fetch( :merge )
 	end
 
 	def test_parse_args_deliver_with_body_file
@@ -545,28 +619,107 @@ class CLITest < Minitest::Test
 	def test_dispatch_routes_deliver_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
-			command: "deliver", merge: false, title: nil, body_file: nil
+			command: "deliver", pr_only: false, merge: false, title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: false } ] ], runtime.calls
+		assert_equal [ [ :deliver, { pr_only: false, merge: false, title: nil, body_file: nil, json_output: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_deliver_with_merge_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
-			command: "deliver", merge: true, title: "T", body_file: "/tmp/b.md"
+			command: "deliver", pr_only: false, merge: true, title: "T", body_file: "/tmp/b.md"
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: true, title: "T", body_file: "/tmp/b.md", json_output: false } ] ], runtime.calls
+		assert_equal [ [ :deliver, { pr_only: false, merge: true, title: "T", body_file: "/tmp/b.md", json_output: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_deliver_with_json_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
-			command: "deliver", merge: false, json: true, title: nil, body_file: nil
+			command: "deliver", pr_only: false, merge: false, json: true, title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: true } ] ], runtime.calls
+		assert_equal [ [ :deliver, { pr_only: false, merge: false, title: nil, body_file: nil, json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_deliver_with_pr_only_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: {
+			command: "deliver", pr_only: true, merge: false, title: nil, body_file: nil
+		}, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :deliver, { pr_only: true, merge: false, title: nil, body_file: nil, json_output: false } ] ], runtime.calls
+	end
+
+	def test_parse_args_realign
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "realign", "--json" ], output: output, error: error )
+		assert_equal "realign", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_revert
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "revert", "42" ], output: output, error: error )
+		assert_equal "revert", parsed.fetch( :command )
+		assert_equal "42", parsed.fetch( :target )
+	end
+
+	def test_parse_args_release
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "release", "1.2.3", "--draft" ], output: output, error: error )
+		assert_equal "release", parsed.fetch( :command )
+		assert_equal "1.2.3", parsed.fetch( :version )
+		assert_equal true, parsed.fetch( :draft )
+	end
+
+	def test_parse_args_track_open
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "track", "open", "--title", "Bug" ], output: output, error: error )
+		assert_equal "track:open", parsed.fetch( :command )
+		assert_equal "Bug", parsed.fetch( :title )
+	end
+
+	def test_parse_args_review_comment
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "review", "comment", "7", "--body", "Looks good" ], output: output, error: error )
+		assert_equal "review:comment", parsed.fetch( :command )
+		assert_equal 7, parsed.fetch( :pr_number )
+		assert_equal "Looks good", parsed.fetch( :body )
+	end
+
+	def test_dispatch_routes_realign_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "realign", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :realign, { json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_revert_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "revert", target: "42", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :revert, { target: "42", json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_release_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "release", version: "1.2.3", notes_file: "/tmp/notes.md", draft: true, json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :release, { version: "1.2.3", notes_file: "/tmp/notes.md", draft: true, json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_track_comment_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "track:comment", issue_number: 12, body: "Note", body_file: nil, json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :track_comment, { issue_number: 12, body: "Note", body_file: nil, json_output: true } ] ], runtime.calls
 	end
 
 	# --- audit CLI tests ---

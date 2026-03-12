@@ -346,6 +346,10 @@ require_relative "runtime/govern"
 require_relative "runtime/setup"
 require_relative "runtime/status"
 require_relative "runtime/deliver"
+require_relative "runtime/realign"
+require_relative "runtime/release"
+require_relative "runtime/revert"
+require_relative "runtime/track"
 
 # Infrastructure interface for domain objects.
 # Carson::Worktree and future domain objects call these methods
