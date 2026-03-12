@@ -4,7 +4,7 @@ require_relative "test_helper"
 class RuntimeWorktreeTest < Minitest::Test
 	include CarsonTestSupport
 
-	def with_worktree_repo
+	def with_worktree_repo( mock_gh_script: nil )
 		Dir.mktmpdir( "carson-worktree-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
 			repo_root = File.join( tmp_dir, "repo" )
@@ -17,7 +17,14 @@ class RuntimeWorktreeTest < Minitest::Test
 			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
-			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			mock_bin = File.join( tmp_dir, "mock-bin" )
+			FileUtils.mkdir_p( mock_bin )
+			if mock_gh_script
+				File.write( File.join( mock_bin, "gh" ), mock_gh_script )
+				FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+			end
+
+			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => "", "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
 				output = StringIO.new
 				runtime = Carson::Runtime.new(
 					repo_root: repo_root,
@@ -42,6 +49,84 @@ class RuntimeWorktreeTest < Minitest::Test
 			system( "git", "-C", worktree_dir, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
 		end
 		{ path: worktree_dir, branch: branch_name }
+	end
+
+	def mock_gh_for_worktree_reap( closed_prs_by_branch:, open_pr_branches: [] )
+		closed_clauses = closed_prs_by_branch.map do |branch, entries|
+			pr_json = JSON.generate(
+				Array( entries ).map do |entry|
+					{
+						"number" => entry.fetch( :number ),
+						"html_url" => "https://github.com/test/repo/pull/#{entry.fetch( :number )}",
+						"merged_at" => entry[ :merged_at ],
+						"closed_at" => entry[ :closed_at ],
+						"head" => { "ref" => branch, "sha" => entry.fetch( :sha ) },
+						"base" => { "ref" => "main" }
+					}
+				end
+			)
+			<<~CLAUSE
+				if echo "$@" | grep -q "state=closed" && echo "$@" | grep -q "head=test:#{branch}"; then
+					if echo "$@" | grep -qE " page=1$"; then
+						cat <<'PRJSON'
+			#{pr_json}
+			PRJSON
+						exit 0
+					fi
+					echo "[]"
+					exit 0
+				fi
+			CLAUSE
+		end.join( "\n" )
+
+		open_clauses = Array( open_pr_branches ).map do |branch|
+			pr_json = JSON.generate( [ {
+				"number" => 99,
+				"html_url" => "https://github.com/test/repo/pull/99",
+				"state" => "open",
+				"head" => { "ref" => branch },
+				"base" => { "ref" => "main" }
+			} ] )
+			<<~CLAUSE
+				if echo "$@" | grep -q "state=open" && echo "$@" | grep -q "head=test:#{branch}"; then
+					cat <<'PRJSON'
+			#{pr_json}
+			PRJSON
+					exit 0
+				fi
+			CLAUSE
+		end.join( "\n" )
+
+		<<~BASH
+			#!/usr/bin/env bash
+			if [[ "$1" == "--version" ]]; then
+				echo "gh version mock"
+				exit 0
+			fi
+			if [[ "$1" == "repo" && "$2" == "view" ]]; then
+				echo "test/repo"
+				exit 0
+			fi
+			if [[ "$1" == "api" ]]; then
+				#{open_clauses}
+				#{closed_clauses}
+				echo "[]"
+				exit 0
+			fi
+			echo "unsupported: $*" >&2
+			exit 1
+		BASH
+	end
+
+	def with_mock_gh( repo_root:, script: )
+		mock_bin = File.join( repo_root, ".mock-bin" )
+		FileUtils.mkdir_p( mock_bin )
+		File.write( File.join( mock_bin, "gh" ), script )
+		FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+
+		with_env( "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
+			yield
+		end
 	end
 
 	def test_worktree_remove_by_path
@@ -314,6 +399,112 @@ class RuntimeWorktreeTest < Minitest::Test
 
 			runtime.sweep_stale_worktrees!
 			assert Dir.exist?( worktree.fetch( :path ) ), "dirty worktree must be preserved even if absorbed"
+		end
+	end
+
+	def test_reap_dead_worktrees_reaps_abandoned_worktree_with_closed_pr
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandoned-pr" )
+			tip_sha = `git -C #{worktree.fetch( :path )} rev-parse HEAD`.strip
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {
+					worktree.fetch( :branch ) => [ {
+						number: 41,
+						sha: tip_sha,
+						merged_at: nil,
+						closed_at: "2026-03-11T10:00:00Z"
+					} ]
+				}
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.reap_dead_worktrees!
+			end
+
+			refute Dir.exist?( worktree.fetch( :path ) ), "abandoned worktree should be reaped"
+			refute system( "git", "-C", repo_root, "rev-parse", "--verify", worktree.fetch( :branch ), out: File::NULL, err: File::NULL ),
+				"abandoned branch should be deleted after reap"
+			assert_includes output.string, "reaped abandoned worktree: abandoned-pr"
+			assert_includes output.string, "https://github.com/test/repo/pull/41"
+		end
+	end
+
+	def test_reap_dead_worktrees_skips_abandoned_worktree_when_open_pr_exists
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandoned-open" )
+			tip_sha = `git -C #{worktree.fetch( :path )} rev-parse HEAD`.strip
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {
+					worktree.fetch( :branch ) => [ {
+						number: 42,
+						sha: tip_sha,
+						merged_at: nil,
+						closed_at: "2026-03-11T10:00:00Z"
+					} ]
+				},
+				open_pr_branches: [ worktree.fetch( :branch ) ]
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.reap_dead_worktrees!
+			end
+
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree with open PR must be preserved"
+			assert system( "git", "-C", repo_root, "rev-parse", "--verify", worktree.fetch( :branch ), out: File::NULL, err: File::NULL ),
+				"branch with open PR should still exist"
+			refute_includes output.string, "reaped abandoned worktree: abandoned-open"
+		end
+	end
+
+	def test_reap_dead_worktrees_skips_abandoned_worktree_when_closed_pr_sha_mismatches
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandoned-mismatch" )
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {
+					worktree.fetch( :branch ) => [ {
+						number: 43,
+						sha: "deadbeef",
+						merged_at: nil,
+						closed_at: "2026-03-11T10:00:00Z"
+					} ]
+				}
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.reap_dead_worktrees!
+			end
+
+			assert Dir.exist?( worktree.fetch( :path ) ), "worktree should be preserved when closed PR SHA does not match"
+			assert system( "git", "-C", repo_root, "rev-parse", "--verify", worktree.fetch( :branch ), out: File::NULL, err: File::NULL ),
+				"branch should still exist when closed PR SHA does not match"
+			refute_includes output.string, "reaped abandoned worktree: abandoned-mismatch"
+		end
+	end
+
+	def test_reap_dead_worktrees_skips_dirty_abandoned_worktree
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandoned-dirty" )
+			tip_sha = `git -C #{worktree.fetch( :path )} rev-parse HEAD`.strip
+			File.write( File.join( worktree.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {
+					worktree.fetch( :branch ) => [ {
+						number: 44,
+						sha: tip_sha,
+						merged_at: nil,
+						closed_at: "2026-03-11T10:00:00Z"
+					} ]
+				}
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.reap_dead_worktrees!
+			end
+
+			assert Dir.exist?( worktree.fetch( :path ) ), "dirty abandoned worktree must be preserved"
+			assert system( "git", "-C", repo_root, "rev-parse", "--verify", worktree.fetch( :branch ), out: File::NULL, err: File::NULL ),
+				"dirty abandoned branch should still exist"
+			refute_includes output.string, "reaped abandoned worktree: abandoned-dirty"
 		end
 	end
 

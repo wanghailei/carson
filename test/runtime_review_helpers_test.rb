@@ -63,6 +63,132 @@ class RuntimeReviewHelpersTest < Minitest::Test
 		assert_equal [ "https://github.com/acme/widgets/pull/12#issuecomment-risk" ], acknowledgements.first.fetch( :target_urls )
 	end
 
+	def test_review_gate_snapshot_flags_changes_requested_review_without_disposition
+		details = {
+			updated_at: "2026-02-20T00:00:00Z",
+			author: { login: "owner" },
+			comments: [],
+			reviews: [
+				{
+					author: "reviewer",
+					state: "CHANGES_REQUESTED",
+					body: "Please fix this bug before merge.",
+					url: "https://github.com/acme/widgets/pull/12#pullrequestreview-1",
+					created_at: "2026-02-20T00:00:01Z"
+				}
+			],
+			review_threads: []
+		}
+		@runtime.define_singleton_method( :pull_request_details ) { |**| details }
+
+		snapshot = @runtime.send( :review_gate_snapshot, owner: "acme", repo: "widgets", pr_number: 12 )
+
+		assert_equal 1, snapshot.fetch( :unacknowledged_actionable ).length
+		assert_equal "changes_requested_review", snapshot.fetch( :unacknowledged_actionable ).first.fetch( :reason )
+	end
+
+	def test_review_gate_snapshot_ignores_acknowledged_risk_keyword_comment
+		details = {
+			updated_at: "2026-02-20T00:00:00Z",
+			author: { login: "owner" },
+			comments: [
+				{
+					author: "reviewer",
+					body: "This change has regression risk.",
+					url: "https://github.com/acme/widgets/pull/12#issuecomment-risk",
+					created_at: "2026-02-20T00:00:01Z"
+				},
+				{
+					author: "owner",
+					body: "Disposition: accepted https://github.com/acme/widgets/pull/12#issuecomment-risk",
+					url: "https://github.com/acme/widgets/pull/12#issuecomment-ack",
+					created_at: "2026-02-20T00:00:02Z"
+				}
+			],
+			reviews: [],
+			review_threads: []
+		}
+		@runtime.define_singleton_method( :pull_request_details ) { |**| details }
+
+		snapshot = @runtime.send( :review_gate_snapshot, owner: "acme", repo: "widgets", pr_number: 12 )
+
+		assert_equal 1, snapshot.fetch( :actionable_top_level ).length
+		assert_empty snapshot.fetch( :unacknowledged_actionable )
+	end
+
+	def test_review_gate_report_for_pr_blocks_when_snapshot_does_not_converge
+		call_count = 0
+		@runtime.define_singleton_method( :wait_for_review_warmup ) { |**| nil }
+		@runtime.define_singleton_method( :wait_for_review_poll ) { nil }
+		@runtime.define_singleton_method( :review_gate_snapshot ) do |**|
+			call_count += 1
+			{
+				latest_activity: format( "2026-02-20T00:00:%02dZ", call_count ),
+				unresolved_threads: [],
+				actionable_top_level: [],
+				unacknowledged_actionable: [],
+				acknowledgements: []
+			}
+		end
+
+		report = @runtime.send(
+			:review_gate_report_for_pr,
+			owner: "acme",
+			repo: "widgets",
+			pr_number: 12,
+			branch_name: "feature/test",
+			pr_summary: {
+				number: 12,
+				title: "Test PR",
+				url: "https://github.com/acme/widgets/pull/12",
+				state: "OPEN"
+			}
+		)
+
+		assert_equal "block", report.fetch( :status )
+		assert_equal false, report.fetch( :converged )
+		assert_includes report.fetch( :block_reasons ), "review snapshot did not converge within #{@runtime.send( :config ).review_max_polls} polls"
+	end
+
+	def test_review_gate_report_for_pr_blocks_on_unresolved_threads_after_convergence
+		snapshot = {
+			latest_activity: "2026-02-20T00:00:00Z",
+			unresolved_threads: [
+				{
+					url: "https://github.com/acme/widgets/pull/12#discussion_r1",
+					author: "reviewer",
+					created_at: "2026-02-20T00:00:01Z",
+					outdated: false,
+					reason: "unresolved_thread"
+				}
+			],
+			actionable_top_level: [],
+			unacknowledged_actionable: [],
+			acknowledgements: []
+		}
+		@runtime.define_singleton_method( :wait_for_review_warmup ) { |**| snapshot }
+		@runtime.define_singleton_method( :wait_for_review_poll ) { nil }
+		@runtime.define_singleton_method( :review_gate_snapshot ) { |**| snapshot }
+
+		report = @runtime.send(
+			:review_gate_report_for_pr,
+			owner: "acme",
+			repo: "widgets",
+			pr_number: 12,
+			branch_name: "feature/test",
+			pr_summary: {
+				number: 12,
+				title: "Test PR",
+				url: "https://github.com/acme/widgets/pull/12",
+				state: "OPEN"
+			}
+		)
+
+		assert_equal "block", report.fetch( :status )
+		assert_equal true, report.fetch( :converged )
+		assert_includes report.fetch( :block_reasons ), "unresolved review threads remain (1)"
+	end
+
 	def test_recent_pull_requests_for_sweep_raises_on_pagination_safety_limit
 		call_count = 0
 		@runtime.define_singleton_method( :gh_run ) do |*|
