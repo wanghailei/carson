@@ -399,4 +399,15 @@ class RuntimeReviewHelpersTest < Minitest::Test
 			assert_nil evidence.fetch( :merged_at )
 			assert_equal 2, call_count
 		end
+
+		def test_bot_username_matches_with_and_without_bot_suffix
+			# GraphQL returns "gemini-code-assist"; REST returns "gemini-code-assist[bot]".
+			# Both must match against the config default "gemini-code-assist[bot]".
+			assert @runtime.send( :bot_username?, author: "gemini-code-assist[bot]" )
+			assert @runtime.send( :bot_username?, author: "gemini-code-assist" )
+			assert @runtime.send( :bot_username?, author: "Gemini-Code-Assist" )
+			assert @runtime.send( :bot_username?, author: "github-actions[bot]" )
+			assert @runtime.send( :bot_username?, author: "github-actions" )
+			refute @runtime.send( :bot_username?, author: "random-user" )
+		end
 	end

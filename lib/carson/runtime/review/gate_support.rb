@@ -134,8 +134,11 @@ module Carson
 					}
 				end
 
+				# GraphQL returns "gemini-code-assist"; REST returns "gemini-code-assist[bot]".
+				# Normalise both sides by stripping the [bot] suffix for a consistent match.
 				def bot_username?( author: )
-					config.review_bot_usernames.any? { it.downcase == author.to_s.downcase }
+					normalised = author.to_s.downcase.delete_suffix( "[bot]" )
+					config.review_bot_usernames.any? { it.downcase.delete_suffix( "[bot]" ) == normalised }
 				end
 
 				def unresolved_thread_entries( details: )
