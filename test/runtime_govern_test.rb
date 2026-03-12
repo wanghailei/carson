@@ -11,6 +11,7 @@ class RuntimeGovernTest < Minitest::Test
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "remote", "add", "origin", "https://github.com/test/repo.git", out: File::NULL, err: File::NULL )
 
 			mock_bin = File.join( tmp_dir, "mock-bin" )
 			FileUtils.mkdir_p( mock_bin )
@@ -52,52 +53,28 @@ class RuntimeGovernTest < Minitest::Test
 	end
 
 	def test_govern_dry_run_classifies_ready_pr
-		Dir.mktmpdir( "carson-govern-test", carson_tmp_root ) do |tmp_dir|
-			repo_root = File.join( tmp_dir, "repo" )
-			FileUtils.mkdir_p( repo_root )
-			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
-			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
-			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
-
-			mock_bin = File.join( tmp_dir, "mock-bin" )
-			FileUtils.mkdir_p( mock_bin )
-			File.write( File.join( mock_bin, "gh" ), <<~BASH )
-				#!/usr/bin/env bash
-				if [[ "$1" == "pr" && "$2" == "list" ]]; then
-					cat <<'JSON'
-				[{"number":1,"title":"Test PR","headRefName":"feature/test","url":"https://github.com/test/repo/pull/1","statusCheckRollup":[{"state":"SUCCESS","conclusion":"SUCCESS"}],"reviewDecision":"APPROVED"}]
-				JSON
-					exit 0
-				fi
-				if [[ "$1" == "--version" ]]; then
-					echo "gh version mock"
-					exit 0
-				fi
-				echo "unsupported: $*" >&2
-				exit 1
-			BASH
-			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
-
-			with_env(
-				"HOME" => tmp_dir,
-				"CARSON_CONFIG_FILE" => "",
-				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
-			) do
-				output = StringIO.new
-				error = StringIO.new
-				runtime = Carson::Runtime.new(
-					repo_root: repo_root,
-					tool_root: File.expand_path( "..", __dir__ ),
-					output: output,
-					error: error,
-					verbose: true
-				)
-				status = runtime.govern!( dry_run: true )
-				assert_equal Carson::Runtime::EXIT_OK, status
-				output = output.string
-				assert_includes output, "ready"
-				assert_includes output, "would_merge"
-			end
+		with_mock_govern_runtime(
+			mock_gh_script: mock_govern_gh_script(
+				prs_json: JSON.generate(
+					[
+						{
+							number: 1,
+							title: "Test PR",
+							headRefName: "feature/test",
+							url: "https://github.com/test/repo/pull/1",
+							statusCheckRollup: [ { state: "SUCCESS", conclusion: "SUCCESS" } ],
+							reviewDecision: "APPROVED"
+						}
+					]
+				),
+				graphql_payload: govern_graphql_payload( number: 1 )
+			)
+		) do |runtime, output|
+			status = runtime.govern!( dry_run: true )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			text = output.string
+			assert_includes text, "ready"
+			assert_includes text, "would_merge"
 		end
 	end
 
@@ -108,6 +85,7 @@ class RuntimeGovernTest < Minitest::Test
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "remote", "add", "origin", "https://github.com/test/repo.git", out: File::NULL, err: File::NULL )
 
 			mock_bin = File.join( tmp_dir, "mock-bin" )
 			FileUtils.mkdir_p( mock_bin )
@@ -198,6 +176,68 @@ class RuntimeGovernTest < Minitest::Test
 				assert_includes output, "review_blocked"
 				assert_includes output, "would_dispatch_review_fix"
 			end
+		end
+	end
+
+	def test_govern_dry_run_classifies_review_blocked_when_review_gate_blocks
+		with_mock_govern_runtime(
+			mock_gh_script: mock_govern_gh_script(
+				prs_json: JSON.generate(
+					[
+						{
+							number: 4,
+							title: "Thread blocked PR",
+							headRefName: "feature/thread-blocked",
+							url: "https://github.com/test/repo/pull/4",
+							statusCheckRollup: [ { state: "SUCCESS", conclusion: "SUCCESS" } ],
+							reviewDecision: "APPROVED"
+						}
+					]
+				),
+				graphql_payload: govern_graphql_payload(
+					number: 4,
+					review_threads: [
+						govern_thread_node(
+							is_resolved: false,
+							comment_url: "https://github.com/test/repo/pull/4#discussion_r1",
+							comment_body: "This still needs work.",
+							comment_created_at: "2026-03-12T10:00:01Z"
+						)
+					]
+				)
+			)
+		) do |runtime, output|
+			status = runtime.govern!( dry_run: true )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			text = output.string
+			assert_includes text, "review_blocked"
+			assert_includes text, "unresolved review threads remain"
+		end
+	end
+
+	def test_govern_dry_run_escalates_when_review_gate_check_fails
+		with_mock_govern_runtime(
+			mock_gh_script: mock_govern_gh_script(
+				prs_json: JSON.generate(
+					[
+						{
+							number: 5,
+							title: "Broken review gate PR",
+							headRefName: "feature/review-gate-error",
+							url: "https://github.com/test/repo/pull/5",
+							statusCheckRollup: [ { state: "SUCCESS", conclusion: "SUCCESS" } ],
+							reviewDecision: "APPROVED"
+						}
+					]
+				),
+				graphql_error: "boom"
+			)
+		) do |runtime, output|
+			status = runtime.govern!( dry_run: true )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			text = output.string
+			assert_includes text, "needs_attention"
+			assert_includes text, "review gate check failed"
 		end
 	end
 
@@ -1053,6 +1093,132 @@ class RuntimeGovernTest < Minitest::Test
 			runtime: runtime
 		)
 		assert_equal Carson::Runtime::EXIT_OK, status
+	end
+
+private
+
+	def with_mock_govern_runtime( mock_gh_script: )
+		Dir.mktmpdir( "carson-govern-test", carson_tmp_root ) do |tmp_dir|
+			repo_root = File.join( tmp_dir, "repo" )
+			FileUtils.mkdir_p( repo_root )
+			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+
+			mock_bin = File.join( tmp_dir, "mock-bin" )
+			FileUtils.mkdir_p( mock_bin )
+			mock_gh = File.join( mock_bin, "gh" )
+			File.write( mock_gh, mock_gh_script )
+			FileUtils.chmod( 0o755, mock_gh )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => "",
+				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
+			) do
+				output = StringIO.new
+				error = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					output: output,
+					error: error,
+					verbose: true
+				)
+				yield runtime, output
+			end
+		end
+	end
+
+	def mock_govern_gh_script( prs_json:, graphql_payload: govern_graphql_payload, graphql_error: nil )
+		<<~BASH
+			#!/usr/bin/env bash
+			set -euo pipefail
+
+			if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+				printf '%s\n' '__PRS_JSON__'
+				exit 0
+			fi
+
+			if [[ "${1:-}" == "api" && "${2:-}" == "graphql" ]]; then
+				if [[ "__GRAPHQL_ERROR__" != "" ]]; then
+					echo "__GRAPHQL_ERROR__" >&2
+					exit 1
+				fi
+				printf '%s\n' '__GRAPHQL_PAYLOAD__'
+				exit 0
+			fi
+
+			if [[ "${1:-}" == "--version" ]]; then
+				echo "gh version mock"
+				exit 0
+			fi
+
+			echo "unsupported: $*" >&2
+			exit 1
+		BASH
+			.gsub( "__PRS_JSON__", prs_json )
+			.gsub( "__GRAPHQL_PAYLOAD__", graphql_payload )
+			.gsub( "__GRAPHQL_ERROR__", graphql_error.to_s )
+	end
+
+	def govern_graphql_payload( number: 1, comments: [], reviews: [], review_threads: [] )
+		JSON.pretty_generate(
+			{
+				"data" => {
+					"repository" => {
+						"pullRequest" => {
+							"number" => number,
+							"title" => "Mock PR",
+							"url" => "https://github.com/test/repo/pull/#{number}",
+							"state" => "OPEN",
+							"updatedAt" => "2026-03-12T10:00:00Z",
+							"mergedAt" => nil,
+							"closedAt" => nil,
+							"author" => { "login" => "owner" },
+							"reviewThreads" => {
+								"pageInfo" => { "hasNextPage" => false, "endCursor" => nil },
+								"nodes" => review_threads
+							},
+							"comments" => {
+								"pageInfo" => { "hasNextPage" => false, "endCursor" => nil },
+								"nodes" => comments
+							},
+							"reviews" => {
+								"pageInfo" => { "hasNextPage" => false, "endCursor" => nil },
+								"nodes" => reviews
+							}
+						}
+					}
+				}
+			}
+		)
+	end
+
+	def govern_comment_node( author:, body:, url:, created_at: )
+		{
+			"author" => { "login" => author },
+			"body" => body,
+			"url" => url,
+			"createdAt" => created_at
+		}
+	end
+
+	def govern_thread_node( is_resolved:, comment_url:, comment_body:, comment_created_at: )
+		{
+			"isResolved" => is_resolved,
+			"isOutdated" => false,
+			"comments" => {
+				"nodes" => [
+					govern_comment_node(
+						author: "reviewer",
+						body: comment_body,
+						url: comment_url,
+						created_at: comment_created_at
+					)
+				]
+			}
+		}
 	end
 
 end

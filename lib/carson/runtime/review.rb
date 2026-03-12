@@ -29,10 +29,11 @@ module Carson
 				end
 
 				owner, repo = repository_coordinates
+				branch = current_branch
 				pr_number_override = carson_pr_number_override
 				pr_summary =
 					if pr_number_override.nil?
-						current_pull_request_for_branch( branch_name: current_branch )
+						current_pull_request_for_branch( branch_name: branch )
 					else
 						details = pull_request_details( owner: owner, repo: repo, pr_number: pr_number_override )
 						{
@@ -43,82 +44,25 @@ module Carson
 						}
 					end
 				if pr_summary.nil?
-					puts_line "No pull request found for branch #{current_branch}."
-					report = {
-						generated_at: Time.now.utc.iso8601,
-						branch: current_branch,
-						status: "block",
-						converged: false,
-						wait_seconds: config.review_wait_seconds,
-						poll_seconds: config.review_poll_seconds,
-						max_polls: config.review_max_polls,
-						block_reasons: [ "no pull request found for current branch" ],
-						pr: nil,
-						unresolved_threads: [],
-						actionable_top_level: [],
-						unacknowledged_actionable: []
-					}
+					puts_line "No pull request found for branch #{branch}."
+					report = review_gate_report_for_missing_pr( branch_name: branch )
 					write_review_gate_report( report: report )
 					return EXIT_BLOCK
 				end
 
-				pre_snapshot = wait_for_review_warmup( owner: owner, repo: repo, pr_number: pr_summary.fetch( :number ) )
-				converged = false
-				last_snapshot = pre_snapshot
-				last_signature = pre_snapshot.nil? ? nil : review_gate_signature( snapshot: pre_snapshot )
-				poll_attempts = 0
-
-				config.review_max_polls.times do |index|
-					poll_attempts = index + 1
-					snapshot = review_gate_snapshot( owner: owner, repo: repo, pr_number: pr_summary.fetch( :number ) )
-					last_snapshot = snapshot
-					signature = review_gate_signature( snapshot: snapshot )
-					puts_verbose "poll_attempt: #{poll_attempts}/#{config.review_max_polls}"
-					puts_verbose "latest_activity: #{snapshot.fetch( :latest_activity ) || 'unknown'}"
-					puts_verbose "unresolved_threads: #{snapshot.fetch( :unresolved_threads ).count}"
-					puts_verbose "unacknowledged_actionable: #{snapshot.fetch( :unacknowledged_actionable ).count}"
-					if !last_signature.nil? && signature == last_signature
-						converged = true
-						puts_verbose "convergence: stable"
-						break
-					end
-					last_signature = signature
-					wait_for_review_poll if index < config.review_max_polls - 1
-				end
-
-				block_reasons = []
-				block_reasons << "review snapshot did not converge within #{config.review_max_polls} polls" unless converged
-				if last_snapshot.fetch( :unresolved_threads ).any?
-					block_reasons << "unresolved review threads remain (#{last_snapshot.fetch( :unresolved_threads ).count})"
-				end
-				if last_snapshot.fetch( :unacknowledged_actionable ).any?
-					block_reasons << "actionable top-level comments/reviews without required disposition (#{last_snapshot.fetch( :unacknowledged_actionable ).count})"
-				end
-
-				report = {
-					generated_at: Time.now.utc.iso8601,
-					branch: current_branch,
-					status: block_reasons.empty? ? "ok" : "block",
-					converged: converged,
-					wait_seconds: config.review_wait_seconds,
-					poll_seconds: config.review_poll_seconds,
-					max_polls: config.review_max_polls,
-					poll_attempts: poll_attempts,
-					block_reasons: block_reasons,
-					pr: {
-						number: pr_summary.fetch( :number ),
-						title: pr_summary.fetch( :title ),
-						url: pr_summary.fetch( :url ),
-						state: pr_summary.fetch( :state )
-					},
-					unresolved_threads: last_snapshot.fetch( :unresolved_threads ),
-					actionable_top_level: last_snapshot.fetch( :actionable_top_level ),
-					unacknowledged_actionable: last_snapshot.fetch( :unacknowledged_actionable )
-				}
+				report = review_gate_report_for_pr(
+					owner: owner,
+					repo: repo,
+					pr_number: pr_summary.fetch( :number ),
+					branch_name: branch,
+					pr_summary: pr_summary
+				)
 				write_review_gate_report( report: report )
 				unless verbose?
+					poll_attempts = report.fetch( :poll_attempts, 0 )
 					puts_line "Polling... (converged after #{poll_attempts} attempt#{plural_suffix( count: poll_attempts )})"
 				end
+				block_reasons = report.fetch( :block_reasons )
 				if block_reasons.empty?
 					puts_line "OK: review gate passed."
 					return EXIT_OK

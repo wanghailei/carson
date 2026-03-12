@@ -196,8 +196,12 @@ module Carson
 				if review_decision == "CHANGES_REQUESTED"
 					return [ TRIAGE_REVIEW_BLOCKED, "changes requested by reviewer" ]
 				end
+				if review_decision == "REVIEW_REQUIRED"
+					return [ TRIAGE_REVIEW_BLOCKED, "review required" ]
+				end
 
 				review_status, review_detail = check_review_gate_status( pr: pr, repo_path: repo_path )
+				return [ TRIAGE_NEEDS_ATTENTION, review_detail ] if review_status == :error
 				return [ TRIAGE_REVIEW_BLOCKED, review_detail ] unless review_status == :pass
 
 				[ TRIAGE_READY, "all gates pass" ]
@@ -231,17 +235,25 @@ module Carson
 
 			# Checks review gate status. Returns [:pass/:fail, detail].
 			def check_review_gate_status( pr:, repo_path: )
-				review_decision = pr[ "reviewDecision" ].to_s.upcase
-				case review_decision
-				when "APPROVED"
-					[ :pass, "approved" ]
-				when "CHANGES_REQUESTED"
-					[ :fail, "changes requested" ]
-				when "REVIEW_REQUIRED"
-					[ :fail, "review required" ]
-				else
-					[ :pass, "no review policy or approved" ]
-				end
+				repo_runtime = scoped_runtime( repo_path: repo_path )
+				owner, repo = repo_runtime.send( :repository_coordinates )
+				report = repo_runtime.send(
+					:review_gate_report_for_pr,
+					owner: owner,
+					repo: repo,
+					pr_number: pr.fetch( "number" ),
+					branch_name: pr.fetch( "headRefName" ).to_s,
+					pr_summary: {
+						number: pr.fetch( "number" ),
+						title: pr.fetch( "title" ).to_s,
+						url: pr.fetch( "url" ).to_s,
+						state: "OPEN"
+					}
+				)
+				result = repo_runtime.send( :review_gate_result, report: report )
+				[ result.fetch( :status ), result.fetch( :detail ) ]
+			rescue StandardError => exception
+				[ :error, "review gate check failed: #{exception.message}" ]
 			end
 
 			# Maps classification to action.
