@@ -33,6 +33,9 @@ class RuntimeGovernTest < Minitest::Test
 			with_env(
 				"HOME" => tmp_dir,
 				"CARSON_CONFIG_FILE" => "",
+				"CARSON_REVIEW_WAIT_SECONDS" => "0",
+				"CARSON_REVIEW_POLL_SECONDS" => "0",
+				"CARSON_REVIEW_MAX_POLLS" => "2",
 				"PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}"
 			) do
 				output = StringIO.new

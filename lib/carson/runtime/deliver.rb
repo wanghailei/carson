@@ -72,7 +72,7 @@ module Carson
 				if review.fetch( :status ) == :error
 					result[ :error ] = "unable to evaluate review gate for PR ##{pr_number}: #{review.fetch( :detail )}"
 					result[ :recovery ] = "run `carson review gate`, then retry `carson deliver --merge`"
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
 				end
 
 				# Step 5: merge.
