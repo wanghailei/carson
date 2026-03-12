@@ -4,6 +4,68 @@
 module Carson
 	class Runtime
 		module Local
+			# Returns a plan hash describing what prune! would do, without executing any mutations.
+			# Does NOT fetch — branch staleness reflects whatever the last fetch left behind.
+			# Returns: { stale: [...], orphan: [...], absorbed: [...] }
+			# Each item: { branch:, action: :delete|:skip, reason:, type: }
+			def prune_plan( dry_run: true ) # rubocop:disable Lint/UnusedMethodArgument
+				active_branch = current_branch
+				cwd_branch = cwd_worktree_branch
+
+				stale = stale_local_branches.map do |entry|
+					branch   = entry.fetch( :branch )
+					upstream = entry.fetch( :upstream )
+					if config.protected_branches.include?( branch )
+						{ action: :skip, branch: branch, upstream: upstream, name: branch, type: "stale", reason: "protected branch" }
+					elsif branch == active_branch
+						{ action: :skip, branch: branch, upstream: upstream, name: branch, type: "stale", reason: "current branch" }
+					elsif cwd_branch && branch == cwd_branch
+						{ action: :skip, branch: branch, upstream: upstream, name: branch, type: "stale", reason: "checked out in CWD worktree" }
+					else
+						{ action: :delete, branch: branch, upstream: upstream, name: branch, type: "stale", reason: "upstream gone" }
+					end
+				end
+
+				orphan = orphan_local_branches( active_branch: active_branch, cwd_branch: cwd_branch ).map do |branch|
+					if gh_available?
+						tip_sha = begin
+							git_capture!( "rev-parse", "--verify", branch ).strip
+						rescue StandardError
+							nil
+						end
+
+						if tip_sha
+							merged_pr, = merged_pr_for_branch( branch: branch, branch_tip_sha: tip_sha )
+							if merged_pr.nil? && branch_absorbed_into_main?( branch: branch )
+								merged_pr = { url: "absorbed into #{config.main_branch}" }
+							end
+
+							if merged_pr
+								{ action: :delete, branch: branch, upstream: "", name: branch, type: "orphan", reason: "merged — #{merged_pr[ :url ]}" }
+							else
+								{ action: :skip, branch: branch, upstream: "", name: branch, type: "orphan", reason: "no merged PR evidence" }
+							end
+						else
+							{ action: :skip, branch: branch, upstream: "", name: branch, type: "orphan", reason: "cannot read branch tip SHA" }
+						end
+					else
+						{ action: :skip, branch: branch, upstream: "", name: branch, type: "orphan", reason: "gh CLI not available" }
+					end
+				end
+
+				absorbed = absorbed_local_branches( active_branch: active_branch, cwd_branch: cwd_branch ).map do |entry|
+					branch   = entry.fetch( :branch )
+					upstream = entry.fetch( :upstream )
+					if gh_available? && branch_has_open_pr?( branch: branch )
+						{ action: :skip, branch: branch, upstream: upstream, name: branch, type: "absorbed", reason: "open PR exists" }
+					else
+						{ action: :delete, branch: branch, upstream: upstream, name: branch, type: "absorbed", reason: "content already on main" }
+					end
+				end
+
+				{ stale: stale, orphan: orphan, absorbed: absorbed }
+			end
+
 			def prune!( json_output: false )
 				fingerprint_status = block_if_outsider_fingerprints!
 				unless fingerprint_status.nil?
