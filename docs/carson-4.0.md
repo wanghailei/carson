@@ -1,44 +1,141 @@
-# Carson 4.0
+# Carson 4.0 Specification
 
-This document captures concrete Carson 4.0 behaviour changes that tighten repository governance. The first 4.0 contract is worktree-first governance.
+## Status
 
-## 4.0 worktree-first governance
+This document is the implementation spec for Carson 4.
 
-### Objective
+README and MANUAL describe the intended Carson 4 model for users. This document defines the product contract that implementation must satisfy.
 
-Keep substantive work off `main` in Carson-governed repositories, and require Carson-owned mechanisms for worktree and delivery operations.
+## Theme
 
-### Scope
+Carson 4 is the strategic governor for multiple agents working in one repository.
 
-This spec applies only when the current working directory is inside a Carson-governed repository.
+The core problem is not GitHub automation. The core problem is concurrent agent work inside one repository: stale bases, inconsistent landing paths, worktree collisions, unsafe clean-up, and drift between what agents believe is true and what the repository actually contains.
 
-A repository is governed when:
-- the current working directory resolves to a git repository root
-- that root is registered in Carson governance config
+Carson 4 solves that single-repo concurrency problem first. Portfolio governance remains important, but it is an extension of the same discipline, not the primary story.
 
-If either check fails, this spec does not apply.
+## Objectives
 
-### Responsibility split
+- Make worktree-based multi-agent work the default operating model in governed repositories.
+- Give every governed repository exactly one integration authority at a time.
+- Make work start, landing, and clean-up deterministic for the selected authority.
+- Keep Carson as the single tool for governed worktree and delivery operations.
+- Preserve the outsider boundary: Carson governs repositories without becoming a host-repository runtime dependency.
 
-- The agent decides when a task leaves read-only mode.
-- Carson creates and removes worktrees.
-- Carson governs delivery operations.
-- Platform adapters and hooks trigger Carson at the correct moment.
-- Carson does not decide when code is ready to commit.
+## Non-goals
 
-### Agent instruction contract
+- Replacing GitHub rulesets or bypassing required checks.
+- Deciding whether a code change is good enough to ship.
+- Eliminating plain Git outside Carson-governed repositories.
+- Replacing `workflow.style` in Carson 4. Authority and workflow style are separate concerns.
 
-Shared agent instructions for governed repositories must state:
-- before the first substantive action, create a worktree with `carson worktree create <name>`
-- never begin substantive work on `main`
-- never use raw `git worktree add` in a governed repository
+## Definitions
 
-### Substantive action
+**Governed repository** — a git repository registered under `govern.repos`.
 
-Substantive action includes:
-- file edits or file writes
-- Edit or Write tool calls
-- code generation that writes files
+**Root worktree** — the protected primary working tree for the repository.
+
+**Agent worktree** — a Carson-created worktree used for isolated implementation work.
+
+**Primary branch** — the repository's configured long-lived branch, usually `main`.
+
+**Integration authority** — the location whose primary branch is authoritative for where completed work rejoins shared truth.
+
+**Remote authority** — the remote primary branch is authoritative.
+
+**Local authority** — the local primary branch in the root worktree is authoritative.
+
+**Landing path** — the only valid path for completed work to rejoin shared truth for the chosen authority.
+
+## Scope
+
+This spec applies when the current working directory is inside a Carson-governed repository or when Carson is operating on one through an explicit path or `--all`.
+
+This spec covers:
+- governed single-repo worktree lifecycle
+- authority-aware sync and delivery
+- per-repo authority configuration
+- authority-aware behaviour for status, audit, review, and govern
+
+This spec does not redefine Carson's branding, release process, or internal code organisation.
+
+## Product Model
+
+Carson 4 has two roles:
+
+- **Git strategist** — Carson decides how new work begins, which baseline it uses, how it lands, and how clean-up happens safely.
+- **Repo governor** — Carson enforces the operating contract of the governed repository and reports exact recovery actions when the contract is violated.
+
+The governing idea is simple:
+
+1. Agents do substantive work in Carson worktrees.
+2. Each governed repository has exactly one integration authority.
+3. Carson owns the valid landing path for that authority.
+4. Carson owns the safe clean-up path afterwards.
+
+## Public Configuration Contract
+
+Carson 4 adds per-repo authority to the governed repository registry.
+
+Legacy form:
+
+```json
+{
+  "govern": {
+    "repos": [
+      "~/Dev/project-a",
+      "~/Dev/project-b"
+    ]
+  }
+}
+```
+
+Carson 4 form:
+
+```json
+{
+  "govern": {
+    "repos": [
+      { "path": "~/Dev/project-a", "authority": "remote" },
+      { "path": "~/Dev/project-b", "authority": "local" }
+    ]
+  }
+}
+```
+
+Contract:
+- `authority` is stored per governed repository entry.
+- Valid authority values are `remote` and `local`.
+- Default authority is `remote`.
+- Legacy string entries remain valid and mean `authority: "remote"`.
+- Carson expands `~` internally for matching, but should prefer `~` in user-facing config when the path is under `$HOME`.
+
+`workflow.style` remains a separate setting. It continues to describe repository workflow style and must not be overloaded to mean authority.
+
+## Public Command Contract
+
+Carson 4 introduces one new authority command:
+
+```bash
+carson repo authority <remote|local>
+```
+
+Contract:
+- The command operates on the current governed repository.
+- It changes the repo's configured authority only when Carson can prove the switch is safe.
+- Carson may auto-fix safe preconditions first.
+- Carson must block unsafe or ambiguous switches and print exact recovery steps.
+
+Carson 4 does not change the names of existing worktree or delivery commands.
+
+## Core Invariants
+
+### 1. Worktree-first
+
+Substantive work must not begin on the root worktree on the configured primary branch in a governed repository.
+
+Substantive work includes:
+- file edits and file writes
 - `git add`
 - `git commit`
 - `git push`
@@ -47,121 +144,275 @@ Substantive action includes:
 - `carson deliver`
 - any other mutating repository command
 
-Read-only inspection remains allowed on `main`, including:
-- `git status`
-- `git diff`
-- `git log`
-- `gh pr view`
-- `gh pr list`
-- `gh pr checks`
-- `carson sync`
+Read-only inspection is allowed on the root worktree.
 
-### Rule 1: worktree-first
+### 2. Carson owns governed worktree operations
 
-If all of the following are true, substantive work must not proceed:
-- the repository is governed
-- the current working directory is the main working tree
-- the current branch is `main` or `master`
-- the requested action is substantive
+In governed repositories, Carson owns:
+- worktree creation
+- worktree removal
+- governed clean-up of absorbed work
 
-Minimum required behaviour:
-- block the action
-- instruct the caller to create a worktree first
+Raw `git worktree add` and `git worktree remove` are outside the governed path and should be blocked by platform guards where possible.
 
-Preferred behaviour:
-- auto-run `carson worktree create <name>`
-- switch into the returned worktree
-- continue the requested action there
+### 3. Carson owns governed delivery operations
 
-Required block message:
+In governed repositories, Carson owns the delivery path.
 
-`This repo is Carson-governed. Do not work on main. Create a worktree first: carson worktree create <name>.`
+Raw `git push`, `gh pr create`, and `gh pr merge` are not valid substitutes for Carson's governed delivery path.
 
-### Rule 2: Carson owns worktree operations
+### 4. One authority at a time
 
-In governed repositories, the following raw commands are forbidden:
-- `git worktree add`
-- `git worktree remove`
+Every governed repository has exactly one active integration authority.
 
-Required replacements:
-- `carson worktree create <name>`
-- `carson worktree remove <name>`
+Authority determines:
+- which baseline new work uses
+- where completed work rejoins shared truth
+- how `sync` behaves
+- how `deliver` behaves
+- whether PR review and govern features are applicable
 
-Required block message:
+### 5. One landing path per authority
 
-`This repo is Carson-governed. Use Carson worktrees: carson worktree create <name>.`
+For each authority, Carson defines one valid landing path. Agents must not mix authority models inside one repository.
 
-### Rule 3: Carson owns delivery operations
+## Authority Models
 
-In governed repositories, the following raw commands are forbidden:
-- `git push`
-- `gh pr create`
-- `gh pr merge`
-- `git pull --rebase`
+### Remote Authority
 
-Required replacements:
-- `carson deliver`
-- `carson sync`
+Remote authority means the remote primary branch is the integration authority.
 
-Required block messages:
+Implications:
+- new work starts from a remote-governed baseline
+- completed work rejoins through the remote primary branch
+- PR-based delivery is the governed path
+- review gating and portfolio govern behaviour apply normally
 
-- `This repo is Carson-governed. Use Carson for delivery: carson deliver.`
-- `This repo is Carson-governed. Sync with: carson sync.`
+Remote authority is appropriate whenever the repository's source of truth is the remote primary branch, regardless of whether the repository is used by one person or many.
 
-### Rule 4: Carson backstop
+### Local Authority
 
-`carson deliver` must refuse to run from the main working tree on `main` or `master`.
+Local authority means the local primary branch in the root worktree is the integration authority.
 
-`carson deliver` must instruct the caller to create a worktree first.
+Implications:
+- new work starts from the local primary branch
+- completed work rejoins through the local primary branch
+- after local integration, Carson pushes the primary branch to the remote as backup when possible
+- PR-based delivery is not the governed path
 
-`carson worktree create` is allowed from the main working tree.
+Local authority is appropriate when the repository's source of truth is the local primary branch, even if a remote exists for backup, sharing, or release.
 
-`carson sync` is allowed from the main working tree.
+The distinction is integration authority, not solo versus collaborative use.
 
-### Rule 5: deliver contract
+## Command Semantics by Authority
 
-Carson must document whether `carson deliver`:
-- requires an existing commit and then handles push, PR creation, and merge
-- or accepts staged changes, creates the commit, and then handles push, PR creation, and merge
+### `carson onboard`
 
-This behaviour must be explicit and stable.
+Carson 4 onboarding continues to register repositories in `govern.repos`.
 
-### Evaluation order
+Contract:
+- if no explicit authority is chosen, onboard stores `authority: "remote"`
+- onboard must preserve existing authority when re-run
+- onboarding must not require repository-local Carson config
 
-For every intercepted action:
+### `carson repo authority <remote|local>`
 
-1. Detect whether the repository is governed.
-2. If it is not governed, allow normal behaviour.
-3. Classify the action as read-only or substantive.
-4. If it is read-only, allow it.
-5. If it is substantive on the main working tree on `main` or `master`, trigger Rule 1.
-6. Otherwise, if it is a raw Carson-owned worktree or delivery operation, trigger Rule 2 or Rule 3.
-7. Otherwise, allow it.
+Authority changes are allowed, but not as a blind config flip.
 
-### Acceptance tests
+Switch contract:
+- Carson should first auto-fix safe preconditions
+- Carson must then verify the repository is in a clean switch state
+- only then may Carson write the new authority to config
 
-Must block:
-- editing a file on `main` in a governed repository
-- `git add .` on `main` in a governed repository
-- `git commit -m ...` on `main` in a governed repository
-- `carson deliver` on `main` in a governed repository
-- `git worktree add` anywhere in a governed repository
-- `git worktree remove` anywhere in a governed repository
-- `git push` anywhere in a governed repository
-- `gh pr create` anywhere in a governed repository
-- `gh pr merge` anywhere in a governed repository
+Minimum clean switch conditions:
+- current repo is governed
+- root worktree is clean
+- root worktree is on the configured primary branch
+- no active Carson worktrees remain
+- no in-flight local branches remain that would become ambiguous after the switch
+- local and remote primary branches are aligned closely enough to prove the switch is not changing the source of truth mid-flight
 
-Must allow:
-- `carson worktree create <name>` from the main working tree
-- editing inside a non-main worktree
-- `carson deliver` inside a non-main worktree
-- `carson sync` on the main working tree
-- read-only inspection on the main working tree
+Carson may tighten these checks during implementation, but it must not allow an authority change that leaves the repo in an ambiguous landing state.
 
-### Platform layer
+### `carson sync`
 
-Claude hooks, Codex execpolicy, and similar guards are optional early-warning layers.
+`sync` becomes authority-aware.
 
-Safety must still hold if a platform hook is absent.
+### Remote authority sync
 
-The authoritative model is Carson-governed worktree-first behaviour plus Carson-owned delivery operations.
+Remote authority `sync` must:
+- require a clean root worktree
+- fetch from the configured remote
+- update the local primary branch to the remote fast-forward state
+- block if the local primary branch is ahead or diverged
+
+Remote authority assumes the remote can be consulted. If the remote cannot be reached, Carson must block rather than guess.
+
+### Local authority sync
+
+Local authority `sync` must:
+- require a clean root worktree
+- reconcile local and remote when the remote is available
+- treat push of the local primary branch as backup, not as the source of truth
+
+Expected behaviour:
+- if the local primary branch is behind-only and the remote is reachable, fast-forward pull
+- if the local primary branch is ahead-only and the remote is reachable, push the primary branch
+- if local and remote diverge, block
+- if the remote is unavailable, local authority may continue in a deferred-backup state
+
+### `carson worktree create <name>`
+
+`worktree create` becomes authority-aware.
+
+### Remote authority create
+
+Remote authority worktree creation must:
+- run from the root worktree
+- prove the root worktree is clean
+- fetch and refresh the remote baseline
+- create the new worktree from the refreshed remote-governed baseline, not from arbitrary current HEAD
+
+If the remote baseline cannot be proven, Carson must block creation.
+
+### Local authority create
+
+Local authority worktree creation must:
+- run from the root worktree
+- prove the root worktree is clean
+- create the new worktree from the local primary branch
+
+If the remote is available, Carson should reconcile backup state first. If the remote is unavailable, local authority may still create the worktree because backup freshness is not the source of truth.
+
+### `carson deliver`
+
+`deliver` remains the governed delivery entry point, but becomes authority-aware.
+
+### Shared contract
+
+For both authorities:
+- `deliver` must not run from the root worktree on the configured primary branch
+- `deliver` must operate from an agent worktree
+- `deliver` must use Carson's governed landing path, not a raw git or `gh` substitute
+- `deliver` must print the exact next clean-up command on success
+
+Carson 4 continues the current assumption that the change is already committed before delivery begins. Carson may validate that precondition, but the governed path begins at delivery, not at commit creation.
+
+### Remote authority deliver
+
+Remote authority `deliver` must:
+- push the work branch
+- create or update the PR as required
+- apply review and CI gates
+- merge through the repository's allowed remote merge path
+
+This is the governed commit → push → PR → merge flow for repositories whose source of truth is the remote primary branch.
+
+### Local authority deliver
+
+Local authority `deliver` must:
+- require a clean, committed worktree branch
+- integrate the branch into the local primary branch
+- use Carson's configured merge method where applicable
+- push the local primary branch to the remote as backup when possible
+
+Local authority delivery must not create a PR as part of the governed path.
+
+If the backup push fails because the network is unavailable, local delivery may still succeed with a deferred-backup state.
+
+If the backup push is rejected by remote policy, branch protection, or rulesets, Carson must block and explain that this repository requires remote authority for governed delivery.
+
+### `carson status`
+
+Status must surface repository authority clearly for both single-repo and `--all` output.
+
+### `carson audit`
+
+Audit must evaluate repository health in authority-aware terms.
+
+Expected differences:
+- remote authority treats remote-sync failures as blocking repository health issues
+- local authority treats deferred backup as attention-worthy but not automatically blocking
+- divergence remains blocking in both authorities
+
+### `carson review gate` and `carson review sweep`
+
+Review commands are meaningful only for remote authority's PR-based landing path.
+
+Contract:
+- remote authority: fully supported
+- local authority: blocked with a clear message that review gates require remote authority
+
+### `carson govern`
+
+`govern` is the portfolio layer for PR-based triage.
+
+Contract:
+- remote authority repositories are in scope for normal govern behaviour
+- local authority repositories are skipped explicitly, not treated as errors
+
+## Platform Enforcement
+
+Platform hooks, command guards, and adapter policies remain early-warning layers, not the sole source of safety.
+
+The product contract must still hold if a platform-specific guard is absent.
+
+Preferred enforcement:
+- block substantive work on the root worktree on the configured primary branch
+- redirect worktree lifecycle to Carson commands
+- redirect delivery operations to Carson commands
+
+Required backstop:
+- Carson commands themselves must refuse invalid authority or worktree states even if no shell hook intercepted the earlier command
+
+## Migration Contract
+
+Carson 4 must migrate existing governance config safely.
+
+Required migration behaviour:
+- existing string entries in `govern.repos` remain valid
+- legacy entries default to remote authority
+- Carson may normalise config to object form when it writes the file
+- no repository-local Carson config is introduced as part of authority support
+
+## Acceptance Criteria
+
+Carson 4 is complete only when these behaviours hold.
+
+### Must block
+
+- substantive edits on the root worktree on the configured primary branch in a governed repo
+- raw governed delivery operations in a governed repo
+- remote authority `worktree create` when the remote baseline cannot be proven
+- authority changes that leave active worktrees or ambiguous in-flight state
+- local authority delivery when remote rules reject backup push to the primary branch
+- review commands in local authority repositories
+
+### Must allow
+
+- read-only inspection on the root worktree
+- `carson worktree create <name>` from the root worktree
+- governed work inside Carson-created worktrees
+- remote authority delivery through Carson
+- local authority delivery through Carson
+- local authority worktree creation while offline when the root worktree is clean
+- `govern` skipping local authority repositories without failing the whole run
+
+### Must explain
+
+Every block must say:
+- what condition failed
+- why that condition matters
+- the exact next command or recovery step
+
+If a user must inspect source code to understand a Carson block, the implementation is incomplete.
+
+## Implementation Notes
+
+The current 4.0 note only covered worktree-first governance. Carson 4 now has a broader target:
+- worktree-first remains mandatory
+- authority is the new repository-level organising concept
+- remote and local authorities are both first-class
+- Carson remains the single governed delivery tool
+
+This spec intentionally leads the current implementation. README and MANUAL may describe behaviour that lands incrementally beneath this contract.
