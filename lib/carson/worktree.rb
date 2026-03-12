@@ -292,8 +292,10 @@ module Carson
 			return false if canonical.nil? || canonical.empty?
 			return false unless Dir.exist?( canonical )
 
-			stdout, _, status = Open3.capture3( "lsof", "-d", "cwd" )
-			return false unless status.success?
+			stdout, = Open3.capture3( "lsof", "-d", "cwd" )
+			# Do NOT gate on exit status — lsof exits non-zero on macOS when SIP blocks
+			# access to some system processes, even though user-process output is valid.
+			return false if stdout.nil? || stdout.empty?
 
 			normalised = File.join( canonical, "" )
 			my_pid = Process.pid

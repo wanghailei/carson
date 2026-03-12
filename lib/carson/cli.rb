@@ -615,21 +615,23 @@ module Carson
 		# --- housekeep ---
 
 		def self.parse_housekeep_command( arguments:, error: )
-			options = { all: false, json: false }
+			options = { all: false, json: false, dry_run: false }
 			housekeep_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson housekeep [REPO] [--all] [--json]"
+				parser.banner = "Usage: carson housekeep [REPO] [--all] [--dry-run] [--json]"
 				parser.separator ""
 				parser.separator "Run housekeeping: sync main, reap dead worktrees, and prune stale branches."
 				parser.separator "Defaults to the current repository."
 				parser.separator ""
 				parser.separator "Options:"
 				parser.on( "--all", "Housekeep all governed repositories" ) { options[ :all ] = true }
+				parser.on( "--dry-run", "Show what would be reaped/deleted without making changes" ) { options[ :dry_run ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson housekeep           Housekeep the current repository"
-				parser.separator "    carson housekeep nexus     Housekeep a named governed repo"
-				parser.separator "    carson housekeep --all     Housekeep all governed repos"
+				parser.separator "    carson housekeep              Housekeep the current repository"
+				parser.separator "    carson housekeep --dry-run    Preview what housekeep would do"
+				parser.separator "    carson housekeep nexus        Housekeep a named governed repo"
+				parser.separator "    carson housekeep --all        Housekeep all governed repos"
 			end
 			housekeep_parser.parse!( arguments )
 
@@ -638,7 +640,7 @@ module Carson
 				return { command: :invalid }
 			end
 
-			return { command: "housekeep:all", json: options[ :json ] } if options[ :all ]
+			return { command: "housekeep:all", json: options[ :json ], dry_run: options[ :dry_run ] } if options[ :all ]
 
 			if arguments.length > 1
 				error.puts "#{BADGE} Too many arguments for housekeep. Use: carson housekeep [repo]"
@@ -646,9 +648,9 @@ module Carson
 			end
 
 			target = arguments.shift
-			return { command: "housekeep:target", target: target, json: options[ :json ] } if target
+			return { command: "housekeep:target", target: target, json: options[ :json ], dry_run: options[ :dry_run ] } if target
 
-			{ command: "housekeep", json: options[ :json ] }
+			{ command: "housekeep", json: options[ :json ], dry_run: options[ :dry_run ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts housekeep_parser
@@ -771,11 +773,11 @@ module Carson
 			when "repos"
 				runtime.repos!( json_output: parsed.fetch( :json, false ) )
 			when "housekeep"
-				runtime.housekeep!( json_output: parsed.fetch( :json, false ) )
+				runtime.housekeep!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 			when "housekeep:target"
-				runtime.housekeep_target!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ) )
+				runtime.housekeep_target!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 			when "housekeep:all"
-				runtime.housekeep_all!( json_output: parsed.fetch( :json, false ) )
+				runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 			when "govern"
 				runtime.govern!(
 					dry_run: parsed.fetch( :dry_run, false ),
