@@ -4,6 +4,10 @@
 
 This document is for Carson contributors and internal maintainers who need architecture, runtime contract, and development workflow guidance.
 
+## Active implementation specs
+
+- [Carson 4.0](./carson-4.0.md)
+
 ## Architectural Overview
 
 Primary runtime structure:
