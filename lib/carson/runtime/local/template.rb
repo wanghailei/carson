@@ -356,7 +356,7 @@ module Carson
 			def template_source_path( managed_file: )
 				relative_within_github = managed_file.delete_prefix( ".github/" )
 
-				canonical = config.template_canonical
+				canonical = config.lint_canonical
 				if canonical && !canonical.empty?
 					canonical_candidates = [
 						File.join( canonical, relative_within_github ),

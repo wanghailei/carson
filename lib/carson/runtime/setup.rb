@@ -45,8 +45,8 @@ module Carson
 				merge_choice = prompt_merge_method
 				choices[ "govern.merge.method" ] = merge_choice unless merge_choice.nil?
 
-				canonical_choice = prompt_canonical_template
-				choices[ "template.canonical" ] = canonical_choice unless canonical_choice.nil?
+				canonical_choice = prompt_canonical_lint_policy
+				choices[ "lint.canonical" ] = canonical_choice unless canonical_choice.nil?
 
 				write_setup_config( choices: choices )
 			end
@@ -157,15 +157,15 @@ module Carson
 				prompt_choice( options: options, default: default_index )
 			end
 
-			def prompt_canonical_template
+			def prompt_canonical_lint_policy
 				puts_line ""
-				puts_line "Canonical template directory"
-				current = config.template_canonical
+				puts_line "Canonical lint policy directory"
+				current = config.lint_canonical
 				if current && !current.empty?
 					puts_line "  Currently set to: #{current}"
 					puts_line "  Leave blank to keep current value."
 				else
-					puts_line "  A directory of .github/ files to sync across governed repos."
+					puts_line "  A directory of canonical lint-policy files to sync across governed repos."
 					puts_line "  Leave blank to skip for now."
 				end
 				prompt_custom_value( label: "Path" )
@@ -327,6 +327,7 @@ module Carson
 
 				existing_data = load_existing_config( path: config_path )
 				merged = Config.deep_merge( base: existing_data, overlay: config_data )
+				remove_deprecated_template_canonical!( data: merged ) if config_data.dig( "lint", "canonical" )
 
 				FileUtils.mkdir_p( File.dirname( config_path ) )
 				File.write( config_path, JSON.pretty_generate( merged ) )
@@ -359,6 +360,14 @@ module Carson
 				JSON.parse( File.read( path ) )
 			rescue JSON::ParserError
 				{}
+			end
+
+			def remove_deprecated_template_canonical!( data: )
+				template_hash = data[ "template" ]
+				return unless template_hash.is_a?( Hash )
+
+				template_hash.delete( "canonical" )
+				data.delete( "template" ) if template_hash.empty?
 			end
 
 			def reload_config_after_setup!

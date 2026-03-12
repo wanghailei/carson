@@ -330,7 +330,7 @@ class CLITest < Minitest::Test
 		error = StringIO.new
 		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--canonical", "/tmp/my-templates" ], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
-		assert_equal "/tmp/my-templates", parsed.fetch( :cli_choices )[ "template.canonical" ]
+		assert_equal "/tmp/my-templates", parsed.fetch( :cli_choices )[ "lint.canonical" ]
 	end
 
 	def test_parse_args_setup_with_all_flags
@@ -350,7 +350,7 @@ class CLITest < Minitest::Test
 		assert_equal "main", choices[ "git.main_branch" ]
 		assert_equal "branch", choices[ "workflow.style" ]
 		assert_equal "squash", choices[ "govern.merge.method" ]
-		assert_equal "/tmp/templates", choices[ "template.canonical" ]
+		assert_equal "/tmp/templates", choices[ "lint.canonical" ]
 	end
 
 	def test_parse_args_setup_with_unexpected_positional_args

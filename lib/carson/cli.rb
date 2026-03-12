@@ -149,7 +149,7 @@ module Carson
 				parser.on( "--main-branch NAME", "Main branch name" ) { |value| options[ "git.main_branch" ] = value }
 				parser.on( "--workflow STYLE", "Workflow style (branch or trunk)" ) { |value| options[ "workflow.style" ] = value }
 				parser.on( "--merge METHOD", "Merge method (squash, rebase, or merge)" ) { |value| options[ "govern.merge.method" ] = value }
-				parser.on( "--canonical PATH", "Canonical template directory path" ) { |value| options[ "template.canonical" ] = value }
+				parser.on( "--canonical PATH", "Canonical lint policy directory path" ) { |value| options[ "lint.canonical" ] = value }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson setup                            Auto-detect and write config"
