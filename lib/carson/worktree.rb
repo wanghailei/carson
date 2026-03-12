@@ -313,7 +313,9 @@ module Carson
 			false
 		end
 
+	# rubocop:disable Layout/AccessModifierIndentation -- tab-width calculation produces unfixable mixed tabs+spaces
 	private
+	# rubocop:enable Layout/AccessModifierIndentation
 
 		attr_reader :runtime
 

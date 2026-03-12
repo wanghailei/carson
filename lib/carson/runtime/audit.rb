@@ -216,7 +216,9 @@ module Carson
 				blocked.zero? && failed.zero? ? EXIT_OK : EXIT_BLOCK
 				end
 
+			# rubocop:disable Layout/AccessModifierIndentation -- tab-width calculation produces unfixable mixed tabs+spaces
 			private
+			# rubocop:enable Layout/AccessModifierIndentation
 				def audit_working_tree_report
 					dirty_reason = dirty_worktree_reason
 					return { dirty: false, context: nil, status: "ok" } if dirty_reason.nil?
