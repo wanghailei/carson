@@ -1104,6 +1104,7 @@ private
 			system( "git", "init", repo_root, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "remote", "add", "origin", "https://github.com/test/repo.git", out: File::NULL, err: File::NULL )
 
 			mock_bin = File.join( tmp_dir, "mock-bin" )
 			FileUtils.mkdir_p( mock_bin )
