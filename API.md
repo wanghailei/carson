@@ -89,7 +89,7 @@ Allowed Carson-managed persistence in host repositories:
 - `.github/CLAUDE.md` — agent discovery pointer for Claude Code
 - `.github/AGENTS.md` — agent discovery pointer for Codex
 - `.github/pull_request_template.md` — PR template
-- Any file discovered from `template.canonical` — user's canonical `.github/` files
+- Any file discovered from `template.canonical` — user's canonical GitHub and lint-policy files
 
 ## Configuration interface
 
@@ -153,7 +153,7 @@ Environment overrides:
 ```
 
 `template` semantics:
-- `canonical`: path to a directory of canonical `.github/` files. Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. The directory mirrors `.github/` structure — `workflows/lint.yml` deploys to `.github/workflows/lint.yml`. Default: `nil` (no canonical files).
+- `canonical`: path to a directory of canonical GitHub and lint-policy files. Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. Explicit GitHub paths stay under `.github/` (`workflows/lint.yml` → `.github/workflows/lint.yml`, `.github/labeler.yml` → `.github/labeler.yml`); flat policy files default to `.github/linters/` (`rubocop.yml` → `.github/linters/rubocop.yml`). Legacy root lint configs become stale and are removed on apply. Default: `nil` (no canonical files).
 
 ## Output interface
 

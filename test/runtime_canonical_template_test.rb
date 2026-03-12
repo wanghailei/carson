@@ -42,6 +42,41 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 		end
 	end
 
+	def test_template_check_includes_flat_canonical_linter_files
+		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			repo_root = create_git_repo( parent: tmp_dir, name: "repo" )
+			tool_root = File.expand_path( "..", __dir__ )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
+			) do
+				output = StringIO.new
+				error = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: tool_root,
+					output: output,
+					error: error,
+					verbose: true
+				)
+				runtime.template_check!
+				output = output.string
+
+				assert_includes output, ".github/linters/rubocop.yml"
+				assert_includes output, "drift"
+			end
+		end
+	end
+
 	def test_template_apply_writes_canonical_files
 		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
 			canonical_dir = File.join( tmp_dir, "canonical" )
@@ -74,6 +109,77 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				deployed_path = File.join( repo_root, ".github", "labeler.yml" )
 				assert File.file?( deployed_path ), "Expected canonical file to be deployed"
 				assert_equal "bug:\n", File.read( deployed_path )
+			end
+		end
+	end
+
+	def test_template_apply_writes_flat_canonical_linter_files_to_linters
+		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			repo_root = create_git_repo( parent: tmp_dir, name: "repo" )
+			tool_root = File.expand_path( "..", __dir__ )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
+			) do
+				output = StringIO.new
+				error = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: tool_root,
+					output: output,
+					error: error,
+					verbose: true
+				)
+				runtime.template_apply!
+
+				deployed_path = File.join( repo_root, ".github", "linters", "rubocop.yml" )
+				assert File.file?( deployed_path ), "Expected flat canonical linter file to be deployed under .github/linters"
+				assert_equal "AllCops:\n", File.read( deployed_path )
+			end
+		end
+	end
+
+	def test_template_apply_removes_stale_root_linter_files
+		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			repo_root = create_git_repo( parent: tmp_dir, name: "repo" )
+			FileUtils.mkdir_p( File.join( repo_root, ".github" ) )
+			File.write( File.join( repo_root, ".github", "rubocop.yml" ), "stale\n" )
+			tool_root = File.expand_path( "..", __dir__ )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" )
+			) do
+				output = StringIO.new
+				error = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: tool_root,
+					output: output,
+					error: error,
+					verbose: true
+				)
+				runtime.template_apply!
+
+				refute File.exist?( File.join( repo_root, ".github", "rubocop.yml" ) ), "Expected stale root lint file to be removed"
+				assert File.file?( File.join( repo_root, ".github", "linters", "rubocop.yml" ) ), "Expected replacement lint file under .github/linters"
 			end
 		end
 	end
@@ -150,6 +256,44 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				clone_dir = File.join( tmp_dir, "verify" )
 				system( "git", "clone", bare_remote, clone_dir, out: File::NULL, err: File::NULL )
 				assert File.file?( File.join( clone_dir, ".github", "workflows", "lint.yml" ) ), "Expected canonical file on remote"
+			end
+		end
+	end
+
+	def test_propagation_includes_flat_canonical_linter_files
+		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			tool_root = File.expand_path( "..", __dir__ )
+			bare_remote = create_bare_remote( parent: tmp_dir, name: "remote.git" )
+			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+
+			with_env(
+				"HOME" => tmp_dir,
+				"CARSON_CONFIG_FILE" => config_path,
+				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
+				"CARSON_WORKFLOW_STYLE" => "trunk"
+			) do
+				output = StringIO.new
+				error = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: tool_root,
+					output: output,
+					error: error,
+					verbose: true
+				)
+				result = runtime.send( :template_propagate!, drift_count: 1 )
+				assert_equal :pushed, result.fetch( :status )
+
+				clone_dir = File.join( tmp_dir, "verify" )
+				system( "git", "clone", bare_remote, clone_dir, out: File::NULL, err: File::NULL )
+				assert File.file?( File.join( clone_dir, ".github", "linters", "rubocop.yml" ) ), "Expected flat canonical linter file on remote"
 			end
 		end
 	end

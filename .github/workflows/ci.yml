@@ -66,7 +66,7 @@ jobs:
       - name: RuboCop access modifier indentation
         run: |
           gem install rubocop -v "$RUBOCOP_VERSION" --no-document
-          rubocop --config .github/linters/.rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
+          rubocop --config .github/linters/rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
 
       - name: Ruby indentation guard
         run: ruby script/ruby_indentation_guard.rb

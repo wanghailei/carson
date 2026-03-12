@@ -82,7 +82,7 @@ Notes:
 
 ### Canonical Templates
 
-Carson manages 5 governance files (carson.md, CLAUDE.md, AGENTS.md, copilot-instructions.md, pull_request_template.md). Beyond those, you can tell Carson about your own canonical `.github/` files — CI workflows, linter configs, labeller rules, anything that belongs in `.github/`.
+Carson manages 5 governance files (carson.md, CLAUDE.md, AGENTS.md, copilot-instructions.md, pull_request_template.md). Beyond those, you can tell Carson about your own canonical GitHub and lint-policy files.
 
 Set `template.canonical` in `~/.carson/config.json`:
 
@@ -94,17 +94,19 @@ Set `template.canonical` in `~/.carson/config.json`:
 }
 ```
 
-That directory mirrors the `.github/` structure:
+Flat lint-policy directories default to `.github/linters/`, while explicit GitHub paths stay under `.github/`:
 
 ```
 ~/AI/CODING/LINT/
+├── rubocop.yml           → deployed to .github/linters/rubocop.yml
+├── ruff.toml             → deployed to .github/linters/ruff.toml
 ├── workflows/
 │   └── lint.yml          → deployed to .github/workflows/lint.yml
-├── .mega-linter.yml      → deployed to .github/.mega-linter.yml
-└── labeler.yml           → deployed to .github/labeler.yml
+└── .github/
+    └── labeler.yml       → deployed to .github/labeler.yml
 ```
 
-Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. `carson template check` detects drift, `carson template apply` writes them, and `carson refresh` propagates them to the remote.
+Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. Root files that are not recognised GitHub artefacts are treated as lint policy and written under `.github/linters/`; legacy root lint configs become stale and are removed on apply. `carson template check` detects drift, `carson template apply` writes them, and `carson refresh` propagates them to the remote.
 
 **Why this design.** Lint, CI, and tooling config are personal decisions — not governance decisions. Carson's job is to deliver your canonical files reliably, not to decide what they should contain.
 
