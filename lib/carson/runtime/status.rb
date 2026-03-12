@@ -81,7 +81,9 @@ module Carson
 				EXIT_OK
 			end
 
+		# rubocop:disable Layout/AccessModifierIndentation -- tab-width calculation produces unfixable mixed tabs+spaces
 		private
+		# rubocop:enable Layout/AccessModifierIndentation
 
 			# Returns an array of human-readable pending descriptions for a repo.
 			def status_pending_for_repo( all_pending:, repo_path: )
