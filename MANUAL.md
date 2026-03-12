@@ -110,6 +110,37 @@ Carson discovers files in this directory and syncs them to governed repos alongs
 
 **Why this design.** Lint, CI, and tooling config are personal decisions — not governance decisions. Carson's job is to deliver your canonical files reliably, not to decide what they should contain.
 
+## Operating Strategies
+
+These strategies explain Carson's intended behaviour and are useful when auditing whether a command, policy block, or workflow still matches the product model.
+
+### Git Strategist
+
+- **Worktree-first discipline** — substantive work happens in worktrees, never on the main working tree. This keeps concurrent agent work isolated and makes cleanup explicit.
+- **Deterministic base selection** — new work starts from the repo's chosen integration model, not from whatever branch state happens to be lying around.
+- **Single landing path per authority** — in `remote`, completed work rejoins through remote `main`; in `local`, completed work rejoins through local `main` and then pushes `main` as backup.
+- **Content-aware merge detection** — Carson proves whether a branch's content is already on `main` without relying on commit SHAs, so squash and rebase merges are handled correctly.
+- **Worktree-aware delivery** — Carson lands work without assuming `main` can be checked out in the active worktree, and cleanup is deferred to the correct context.
+- **Exact post-merge guidance** — after a successful landing, Carson tells the caller the next clean-up command instead of leaving the lifecycle half-finished.
+
+### Repo Governor
+
+- **Outsider boundary** — Carson governs repositories without writing Carson-specific config, scripts, or runtime payloads into them.
+- **Command ownership** — in governed repositories, Carson owns worktree and delivery operations so agents do not mix raw git flows with governed ones.
+- **Authority enforcement** — every governed repo has one integration model at a time. The repo authority determines how work starts and how it returns to shared truth.
+- **Active review gating** — when the repo uses PR-based delivery, review findings must be acknowledged before merge. Feedback is never silently buried.
+- **Portfolio triage** — `carson govern` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
+- **Template propagation** — Carson treats governance files and canonical policy files as managed infrastructure and keeps them consistent across repos.
+
+### Safety Strategies
+
+- **Process-aware worktree removal** — Carson checks whether the current shell or another process has its CWD inside a worktree before attempting removal.
+- **Stale worktree sweep** — Carson removes worktrees whose content has already been absorbed into `main` so dead state does not block later maintenance.
+- **Protected branch preservation** — Carson never deletes protected branches and does not prune branches that are still held by active worktrees.
+- **Hook bypass only for managed operations** — Carson uses controlled bypasses such as `--no-verify` only for its own managed flows, not as a general escape hatch.
+- **Self-diagnosing errors** — blocks and failures must explain the condition and prescribe the exact recovery command.
+- **Self-configuring guardrails** — running Carson should install and refresh its own safeguards rather than expecting manual post-install housekeeping.
+
 ## Agent Worktree Workflow
 
 The core workflow for coding agents using Carson. One command per step, full lifecycle.
