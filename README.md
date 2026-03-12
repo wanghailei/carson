@@ -46,7 +46,7 @@ This is about where completed work rejoins shared truth, not about team size. Bo
 
 - **Worktree-first** — substantive work happens in worktrees, not on `main`.
 - **Carson-owned operations** — Carson owns worktree and delivery operations in governed repositories.
-- **Self-diagnosing output** — every block should say what happened and the exact next command.
+- **Self-diagnosing output** — every block should say what happened and the exact next command. This matters doubly for agent consumers: an error message is the agent's only UI. A clear message with a recovery command lets the agent self-correct; a cryptic one causes blind retries.
 - **Outsider boundary** — Carson governs repositories without becoming a host-repository runtime dependency.
 
 ## Quickstart
