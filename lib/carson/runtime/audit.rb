@@ -26,6 +26,12 @@ module Carson
 				puts_verbose ""
 				puts_verbose "[Working Tree]"
 				puts_verbose git_capture!( "status", "--short", "--branch" ).strip
+				working_tree = audit_working_tree_report
+				if working_tree.fetch( :status ) == "block"
+					puts_verbose "ACTION: #{working_tree.fetch( :error )}; #{working_tree.fetch( :recovery )}."
+					audit_state = "block"
+					audit_concise_problems << "Working tree: #{working_tree.fetch( :error )} — #{working_tree.fetch( :recovery )}."
+				end
 				puts_verbose ""
 				puts_verbose "[Hooks]"
 				hooks_ok = hooks_health_report
@@ -128,6 +134,7 @@ module Carson
 						command: "audit",
 						status: audit_state,
 						branch: current_branch,
+						working_tree: working_tree,
 						hooks: { status: hooks_status },
 						main_sync: main_sync,
 						pr: monitor_report[ :pr ],
@@ -207,11 +214,28 @@ module Carson
 				puts_line ""
 				puts_line "Audit all complete: #{passed} ok, #{blocked} blocked, #{failed} failed."
 				blocked.zero? && failed.zero? ? EXIT_OK : EXIT_BLOCK
-			end
+				end
 
-		private
-			def pr_and_check_report
-				report = {
+			private
+				def audit_working_tree_report
+					dirty_reason = dirty_worktree_reason
+					return { dirty: false, context: nil, status: "ok" } if dirty_reason.nil?
+
+					if dirty_reason == "main_worktree"
+						{
+							dirty: true,
+							context: dirty_reason,
+							status: "block",
+							error: "main working tree has uncommitted changes",
+							recovery: "create a worktree with carson worktree create <name>"
+						}
+					else
+						{ dirty: true, context: dirty_reason, status: "ok" }
+					end
+				end
+
+				def pr_and_check_report
+					report = {
 					generated_at: Time.now.utc.iso8601,
 					branch: current_branch,
 					status: "ok",

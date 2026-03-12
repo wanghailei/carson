@@ -61,7 +61,7 @@ module Carson
 						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
 						data = scoped_runtime.send( :gather_status )
 						branch = data.fetch( :branch )
-						dirty = branch.fetch( :dirty ) ? " (dirty)" : ""
+						dirty = format_dirty_marker( branch: branch )
 						worktrees = data.fetch( :worktrees )
 						gov = data.fetch( :governance )
 						parts = []
@@ -119,10 +119,10 @@ module Carson
 			# Branch name, clean/dirty state, sync status with remote.
 			def gather_branch_info
 				branch = current_branch
-				dirty = working_tree_dirty?
+				dirty_reason = dirty_worktree_reason
 				sync = remote_sync_status( branch: branch )
 
-				{ name: branch, dirty: dirty, sync: sync }
+				{ name: branch, dirty: !dirty_reason.nil?, dirty_reason: dirty_reason, sync: sync }
 			end
 
 			# Returns true when the working tree has uncommitted changes.
@@ -130,6 +130,17 @@ module Carson
 				stdout, _, success, = git_run( "status", "--porcelain" )
 				return true unless success
 				!stdout.strip.empty?
+			end
+
+			def dirty_worktree_reason
+				return nil unless working_tree_dirty?
+				return "main_worktree" if main_worktree_context?
+
+				"working_tree"
+			end
+
+			def main_worktree_context?
+				realpath_safe( repo_root ) == realpath_safe( main_worktree_root )
 			end
 
 			# Compares local branch against its remote tracking ref.
@@ -243,9 +254,12 @@ module Carson
 
 				# Branch
 				branch = data.fetch( :branch )
-				dirty_marker = branch.fetch( :dirty ) ? " (dirty)" : ""
+				dirty_marker = format_dirty_marker( branch: branch )
 				sync_marker = format_sync( sync: branch.fetch( :sync ) )
 				puts_line "Branch: #{branch.fetch( :name )}#{dirty_marker}#{sync_marker}"
+				if branch.fetch( :dirty_reason, nil ) == "main_worktree"
+					puts_line "Governance: main working tree has uncommitted changes — create a worktree with `carson worktree create <name>`."
+				end
 
 				# Worktrees
 				worktrees = data.fetch( :worktrees )
@@ -299,8 +313,15 @@ module Carson
 				else ""
 				end
 			end
-		end
 
-		include Status
+			def format_dirty_marker( branch: )
+				return "" unless branch.fetch( :dirty )
+				return " (dirty main worktree)" if branch.fetch( :dirty_reason, nil ) == "main_worktree"
+
+				" (dirty)"
+			end
+			end
+
+			include Status
 	end
 end
