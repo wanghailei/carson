@@ -91,18 +91,18 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep!( json_output: false )
-			@calls << [ :housekeep, { json_output: json_output } ]
+		def housekeep!( json_output: false, dry_run: false )
+			@calls << [ :housekeep, { json_output: json_output, dry_run: dry_run } ]
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep_target!( target:, json_output: false )
-			@calls << [ :housekeep_target, { target: target, json_output: json_output } ]
+		def housekeep_target!( target:, json_output: false, dry_run: false )
+			@calls << [ :housekeep_target, { target: target, json_output: json_output, dry_run: dry_run } ]
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep_all!( json_output: false )
-			@calls << [ :housekeep_all, { json_output: json_output } ]
+		def housekeep_all!( json_output: false, dry_run: false )
+			@calls << [ :housekeep_all, { json_output: json_output, dry_run: dry_run } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -809,25 +809,42 @@ class CLITest < Minitest::Test
 		assert_includes error.string, "Too many arguments for housekeep"
 	end
 
+	def test_parse_args_housekeep_dry_run
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--dry-run" ], output: output, error: error )
+		assert_equal "housekeep", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :dry_run )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_housekeep_all_dry_run
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--dry-run" ], output: output, error: error )
+		assert_equal "housekeep:all", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :dry_run )
+	end
+
 	def test_dispatch_routes_housekeep_current_repo
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep", json: false }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep, { json_output: false } ] ], runtime.calls
+		assert_equal [ [ :housekeep, { json_output: false, dry_run: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_housekeep_targeted
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep:target", target: "AI", json: true }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep_target, { target: "AI", json_output: true } ] ], runtime.calls
+		assert_equal [ [ :housekeep_target, { target: "AI", json_output: true, dry_run: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_housekeep_all
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: false }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep_all, { json_output: false } ] ], runtime.calls
+		assert_equal [ [ :housekeep_all, { json_output: false, dry_run: false } ] ], runtime.calls
 	end
 
 	# --- audit --all CLI tests ---
