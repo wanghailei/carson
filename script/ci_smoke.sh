@@ -516,6 +516,12 @@ if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
 JSON
 	exit 0
 fi
+if [[ "${1:-}" == "api" && "${2:-}" == "graphql" ]]; then
+	cat <<'JSON'
+{"data":{"repository":{"pullRequest":{"number":42,"title":"Ready PR","url":"https://github.com/mock/mock-repo/pull/42","state":"OPEN","updatedAt":"2026-03-12T10:00:00Z","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]},"comments":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]},"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}
+JSON
+	exit 0
+fi
 echo "unsupported gh invocation: $*" >&2
 exit 1
 GHEOF
