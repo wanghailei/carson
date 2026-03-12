@@ -24,6 +24,7 @@ Layout/IndentationStyle:
 
 Layout/AccessModifierIndentation:
   EnforcedStyle: outdent # Enforce outdented access modifiers per CODING.md.
+  IndentationWidth: 1 # Must match tab-based indentation to prevent mixed tabs+spaces.
 
 Layout/FirstHashElementIndentation:
   Enabled: false # Avoid noise conflicts with tab-based style.
