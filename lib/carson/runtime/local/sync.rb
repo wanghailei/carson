@@ -9,7 +9,7 @@ module Carson
 
 				unless working_tree_clean?
 					return sync_finish(
-						result: { command: "sync", status: "block", error: "working tree is dirty", recovery: "git add -A && git commit, then carson sync" },
+						result: sync_dirty_result,
 						exit_code: EXIT_BLOCK, json_output: json_output
 					)
 				end
@@ -142,6 +142,28 @@ module Carson
 
 			def working_tree_clean?
 				git_capture!( "status", "--porcelain" ).strip.empty?
+			end
+
+			def sync_dirty_result
+				if main_worktree_context?
+					{
+						command: "sync",
+						status: "block",
+						error: "main working tree has uncommitted changes",
+						recovery: "create a worktree first: carson worktree create <name>; then move or discard the accidental main-tree changes before retrying carson sync"
+					}
+				else
+					{
+						command: "sync",
+						status: "block",
+						error: "working tree is dirty",
+						recovery: "git add -A && git commit, then carson sync"
+					}
+				end
+			end
+
+			def main_worktree_context?
+				realpath_safe( repo_root ) == realpath_safe( main_worktree_root )
 			end
 
 			def inside_git_work_tree?
