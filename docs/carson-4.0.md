@@ -16,7 +16,7 @@ Carson 4 solves that single-repo concurrency problem first. Portfolio governance
 
 ## Objectives
 
-- Make worktree-based multi-agent work the default operating model in governed repositories.
+- Make worktree-based work by multiple agents the default operating model in governed repositories.
 - Give every governed repository exactly one integration authority at a time.
 - Make work start, landing, and clean-up deterministic for the selected authority.
 - Keep Carson as the single tool for governed worktree and delivery operations.
