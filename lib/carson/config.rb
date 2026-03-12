@@ -24,7 +24,7 @@ module Carson
 
 		attr_accessor :git_remote
 		attr_reader :main_branch, :protected_branches, :hooks_path, :managed_hooks,
-			:template_managed_files, :template_canonical,
+			:template_managed_files, :lint_canonical, :template_canonical,
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
@@ -54,6 +54,9 @@ module Carson
 				},
 				"template" => {
 					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md" ],
+					"canonical" => nil
+				},
+				"lint" => {
 					"canonical" => nil
 				},
 				"workflow" => {
@@ -209,8 +212,11 @@ module Carson
 			@hooks_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" )
 			@managed_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "managed" )
 
-			@template_managed_files = fetch_string_array( hash: fetch_hash( hash: data, key: "template" ), key: "managed_files" )
-			@template_canonical = fetch_optional_path( hash: fetch_hash( hash: data, key: "template" ), key: "canonical" )
+			template_hash = fetch_hash( hash: data, key: "template" )
+			@template_managed_files = fetch_string_array( hash: template_hash, key: "managed_files" )
+			@lint_canonical = fetch_optional_path( hash: fetch_hash( hash: data, key: "lint" ), key: "canonical" )
+			@lint_canonical ||= fetch_optional_path( hash: template_hash, key: "canonical" )
+			@template_canonical = @lint_canonical
 			resolve_canonical_files!
 
 			workflow_hash = fetch_hash( hash: data, key: "workflow" )
@@ -338,17 +344,17 @@ module Carson
 				safe_expand_path( text )
 			end
 
-			# Discovers files in the canonical directory and appends them to managed_files.
+			# Discovers files in the canonical lint-policy directory and appends them to managed_files.
 			# Explicit GitHub paths stay under .github/; flat policy files default to .github/linters/.
 			def resolve_canonical_files!
-				return if @template_canonical.nil? || @template_canonical.empty?
-				return unless Dir.exist?( @template_canonical )
+				return if @lint_canonical.nil? || @lint_canonical.empty?
+				return unless Dir.exist?( @lint_canonical )
 
-				Dir.glob( File.join( @template_canonical, "**", "*" ), File::FNM_DOTMATCH ).sort.each do |absolute_path|
+				Dir.glob( File.join( @lint_canonical, "**", "*" ), File::FNM_DOTMATCH ).sort.each do |absolute_path|
 					basename = File.basename( absolute_path )
 					next if basename == "." || basename == ".."
 					next unless File.file?( absolute_path )
-					relative = absolute_path.delete_prefix( "#{@template_canonical}/" )
+					relative = absolute_path.delete_prefix( "#{@lint_canonical}/" )
 					managed_path = canonical_managed_path( relative_path: relative )
 					@template_managed_files << managed_path unless @template_managed_files.include?( managed_path )
 				end

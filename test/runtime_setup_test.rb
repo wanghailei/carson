@@ -426,7 +426,7 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
-	# --- Canonical template prompt tests ---
+	# --- Canonical lint policy prompt tests ---
 
 	def test_setup_interactive_canonical_path_accepted
 		remote_dir = File.join( @tmp_dir, "remote.git" )
@@ -444,7 +444,8 @@ class RuntimeSetupTest < Minitest::Test
 
 			config_path = File.join( @tmp_dir, ".carson", "config.json" )
 			saved = JSON.parse( File.read( config_path ) )
-			assert_equal "/tmp/my-templates", saved.dig( "template", "canonical" )
+			assert_equal "/tmp/my-templates", saved.dig( "lint", "canonical" )
+			assert_nil saved.dig( "template", "canonical" )
 		end
 	end
 
@@ -463,7 +464,7 @@ class RuntimeSetupTest < Minitest::Test
 
 			config_path = File.join( @tmp_dir, ".carson", "config.json" )
 			saved = JSON.parse( File.read( config_path ) )
-			assert_nil saved.dig( "template", "canonical" ), "blank input should not write template.canonical"
+			assert_nil saved.dig( "lint", "canonical" ), "blank input should not write lint.canonical"
 		end
 	end
 
@@ -512,7 +513,7 @@ class RuntimeSetupTest < Minitest::Test
 				"git.main_branch" => "main",
 				"workflow.style" => "trunk",
 				"govern.merge.method" => "rebase",
-				"template.canonical" => "/tmp/canonical"
+				"lint.canonical" => "/tmp/canonical"
 			} )
 
 			assert_equal Carson::Runtime::EXIT_OK, status
@@ -522,7 +523,8 @@ class RuntimeSetupTest < Minitest::Test
 			assert_equal "main", saved.dig( "git", "main_branch" )
 			assert_equal "trunk", saved.dig( "workflow", "style" )
 			assert_equal "rebase", saved.dig( "govern", "merge", "method" )
-			assert_equal "/tmp/canonical", saved.dig( "template", "canonical" )
+			assert_equal "/tmp/canonical", saved.dig( "lint", "canonical" )
+			assert_nil saved.dig( "template", "canonical" )
 		end
 	end
 

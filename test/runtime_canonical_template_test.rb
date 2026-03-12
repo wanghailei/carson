@@ -16,7 +16,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			tool_root = File.expand_path( "..", __dir__ )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -52,7 +52,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			tool_root = File.expand_path( "..", __dir__ )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -87,7 +87,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			tool_root = File.expand_path( "..", __dir__ )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -123,7 +123,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			tool_root = File.expand_path( "..", __dir__ )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -160,7 +160,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			tool_root = File.expand_path( "..", __dir__ )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -195,7 +195,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			tool_root = File.expand_path( "..", __dir__ )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -232,7 +232,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,
@@ -271,7 +271,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
 
 			config_path = File.join( tmp_dir, "config.json" )
-			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
 
 			with_env(
 				"HOME" => tmp_dir,

@@ -110,10 +110,10 @@ module Carson
 					end
 					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )}."
 				end
-				if config.template_canonical.nil? || config.template_canonical.to_s.empty?
+				if config.lint_canonical.nil? || config.lint_canonical.to_s.empty?
 					puts_verbose ""
-					puts_verbose "[Canonical Templates]"
-					puts_verbose "HINT: canonical templates not configured — run carson setup to enable."
+					puts_verbose "[Canonical Lint Policy]"
+					puts_verbose "HINT: lint.canonical not configured — run carson setup to enable."
 				end
 				write_and_print_pr_monitor_report(
 					report: monitor_report.merge(
