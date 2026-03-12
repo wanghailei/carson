@@ -13,11 +13,12 @@ class ConfigCanonicalTest < Minitest::Test
 
 	def test_canonical_discovers_files_and_appends_to_managed_files
 		Dir.mktmpdir( "carson-canonical-test", carson_tmp_root ) do |dir|
-			# Create a canonical directory with two files.
+			# Explicit .github files stay rooted under .github; flat policy files go to .github/linters.
 			canonical_dir = File.join( dir, "canonical" )
 			FileUtils.mkdir_p( File.join( canonical_dir, "workflows" ) )
 			File.write( File.join( canonical_dir, "workflows", "lint.yml" ), "name: Lint\n" )
 			File.write( File.join( canonical_dir, "labeler.yml" ), "bug:\n" )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
 
 			config_path = File.join( dir, "config.json" )
 			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
@@ -26,7 +27,24 @@ class ConfigCanonicalTest < Minitest::Test
 				config = Carson::Config.load( repo_root: dir )
 				assert_equal canonical_dir, config.template_canonical
 				assert_includes config.template_managed_files, ".github/labeler.yml"
+				assert_includes config.template_managed_files, ".github/linters/rubocop.yml"
 				assert_includes config.template_managed_files, ".github/workflows/lint.yml"
+			end
+		end
+	end
+
+	def test_canonical_honours_explicit_dot_github_paths
+		Dir.mktmpdir( "carson-canonical-test", carson_tmp_root ) do |dir|
+			canonical_dir = File.join( dir, "canonical" )
+			FileUtils.mkdir_p( File.join( canonical_dir, ".github" ) )
+			File.write( File.join( canonical_dir, ".github", "release-drafter.yml" ), "template: notes\n" )
+
+			config_path = File.join( dir, "config.json" )
+			File.write( config_path, JSON.generate( { "template" => { "canonical" => canonical_dir } } ) )
+
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				config = Carson::Config.load( repo_root: dir )
+				assert_includes config.template_managed_files, ".github/release-drafter.yml"
 			end
 		end
 	end
@@ -71,6 +89,10 @@ class ConfigCanonicalTest < Minitest::Test
 	end
 
 	def test_lint_files_are_superseded
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/biome.json"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/erb-lint.yml"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/rubocop.yml"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/ruff.toml"
 		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/workflows/carson-lint.yml"
 		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/.mega-linter.yml"
 		config = Carson::Config.load( repo_root: Dir.pwd )

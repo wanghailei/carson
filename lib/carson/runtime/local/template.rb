@@ -6,6 +6,10 @@ module Carson
 
 			SUPERSEDED = [
 				".github/carson-instructions.md",
+				".github/biome.json",
+				".github/erb-lint.yml",
+				".github/rubocop.yml",
+				".github/ruff.toml",
 				".github/workflows/carson-lint.yml",
 				".github/.mega-linter.yml"
 			].freeze
@@ -354,8 +358,17 @@ module Carson
 
 				canonical = config.template_canonical
 				if canonical && !canonical.empty?
-					canonical_path = File.join( canonical, relative_within_github )
-					return canonical_path if File.file?( canonical_path )
+					canonical_candidates = [
+						File.join( canonical, relative_within_github ),
+						File.join( canonical, ".github", relative_within_github )
+					]
+					if relative_within_github.start_with?( "linters/" ) && relative_within_github.count( "/" ) == 1
+						canonical_candidates << File.join( canonical, relative_within_github.delete_prefix( "linters/" ) )
+					end
+
+					canonical_candidates.each do |canonical_path|
+						return canonical_path if File.file?( canonical_path )
+					end
 				end
 
 				template_path = File.join( github_templates_dir, relative_within_github )

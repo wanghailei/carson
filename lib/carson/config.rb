@@ -7,6 +7,21 @@ module Carson
 
 	# Config is built-in only for outsider mode; host repositories do not carry Carson config files.
 	class Config
+		CANONICAL_GITHUB_DIRECTORIES = %w[actions workflows ISSUE_TEMPLATE DISCUSSION_TEMPLATE linters].freeze
+		CANONICAL_GITHUB_ROOT_FILES = [
+			".mega-linter.yml",
+			"AGENTS.md",
+			"CLAUDE.md",
+			"CODEOWNERS",
+			"FUNDING.yml",
+			"carson.md",
+			"copilot-instructions.md",
+			"dependabot.yml",
+			"funding.yml",
+			"labeler.yml",
+			"pull_request_template.md"
+		].freeze
+
 		attr_accessor :git_remote
 		attr_reader :main_branch, :protected_branches, :hooks_path, :managed_hooks,
 			:template_managed_files, :template_canonical,
@@ -324,17 +339,31 @@ module Carson
 			end
 
 			# Discovers files in the canonical directory and appends them to managed_files.
-			# Canonical files mirror the .github/ structure and are synced alongside Carson's own governance files.
+			# Explicit GitHub paths stay under .github/; flat policy files default to .github/linters/.
 			def resolve_canonical_files!
 				return if @template_canonical.nil? || @template_canonical.empty?
 				return unless Dir.exist?( @template_canonical )
 
-				Dir.glob( File.join( @template_canonical, "**", "*" ) ).sort.each do |absolute_path|
+				Dir.glob( File.join( @template_canonical, "**", "*" ), File::FNM_DOTMATCH ).sort.each do |absolute_path|
+					basename = File.basename( absolute_path )
+					next if basename == "." || basename == ".."
 					next unless File.file?( absolute_path )
 					relative = absolute_path.delete_prefix( "#{@template_canonical}/" )
-					managed_path = ".github/#{relative}"
+					managed_path = canonical_managed_path( relative_path: relative )
 					@template_managed_files << managed_path unless @template_managed_files.include?( managed_path )
 				end
+			end
+
+			def canonical_managed_path( relative_path: )
+				raw_relative = relative_path.to_s
+				return ".github/#{raw_relative.delete_prefix( '.github/' )}" if raw_relative.start_with?( ".github/" )
+
+				clean_relative = raw_relative
+				first_segment = clean_relative.split( "/", 2 ).first
+				return ".github/#{clean_relative}" if CANONICAL_GITHUB_DIRECTORIES.include?( first_segment )
+				return ".github/#{clean_relative}" if !clean_relative.include?( "/" ) && CANONICAL_GITHUB_ROOT_FILES.include?( clean_relative )
+
+				".github/linters/#{clean_relative}"
 			end
 	end
 end
