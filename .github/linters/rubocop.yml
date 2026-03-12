@@ -24,12 +24,6 @@ Layout/IndentationStyle:
 
 Layout/AccessModifierIndentation:
   EnforcedStyle: outdent # Enforce outdented access modifiers per CODING.md.
-  IndentationWidth: 1 # Must match tab-based indentation to prevent mixed tabs+spaces.
-  Exclude: # These files follow the same outdent convention but trigger a rubocop
-    # tab-width calculation bug (the cop produces mixed tabs+spaces when correcting).
-    - "lib/carson/runtime/audit.rb"
-    - "lib/carson/runtime/status.rb"
-    - "lib/carson/worktree.rb"
 
 Layout/FirstHashElementIndentation:
   Enabled: false # Avoid noise conflicts with tab-based style.
