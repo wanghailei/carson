@@ -487,6 +487,17 @@ module Carson
 
 			File.realpath( a_path )
 		rescue Errno::ENOENT
-			File.expand_path( a_path )
+			expanded = File.expand_path( a_path )
+			parent = expanded
+			missing_segments = []
+
+			until File.exist?( parent ) || parent == File.dirname( parent )
+				missing_segments.unshift( File.basename( parent ) )
+				parent = File.dirname( parent )
+			end
+
+			base = File.exist?( parent ) ? File.realpath( parent ) : parent
+			File.join( base, *missing_segments )
 		end
+end
 end

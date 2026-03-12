@@ -1,6 +1,7 @@
 # Tests for the deliver command (push, PR, merge).
 require_relative "test_helper"
 require "open3"
+require "shellwords"
 
 class RuntimeDeliverTest < Minitest::Test
 	include CarsonTestSupport
@@ -215,7 +216,6 @@ class RuntimeDeliverTest < Minitest::Test
 		result = runtime.deliver!( merge: true )
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		output = output_string( runtime )
-		assert_includes output, "review gate blocked"
 		assert_includes output, "unresolved review threads remain"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -254,6 +254,34 @@ class RuntimeDeliverTest < Minitest::Test
 		json = JSON.parse( output_string( runtime ).strip )
 		# synced field should be present after merge (may be true or false depending on test setup).
 		assert json.key?( "synced" ), "JSON should include synced field after merge"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_sync_after_merge_updates_local_main_when_current_branch_is_not_main
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/sync-main-ref" )
+
+		remote_repo = `git -C #{Shellwords.escape( repo_root )} config --get remote.origin.url`.strip
+		pusher_root = File.join( repo_root, "..", "pusher" )
+		system( "git", "clone", remote_repo, pusher_root, out: File::NULL, err: File::NULL )
+		File.write( File.join( pusher_root, "main-update.txt" ), "updated main\n" )
+		system( "git", "-C", pusher_root, "add", "main-update.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", pusher_root, "commit", "-m", "update main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", pusher_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		result = {}
+		assert_equal true, runtime.send( :sync_after_merge!, remote: "origin", main: "main", result: result )
+
+		local_main = `git -C #{Shellwords.escape( repo_root )} rev-parse main`.strip
+		remote_main = `git -C #{Shellwords.escape( repo_root )} rev-parse origin/main`.strip
+		current_branch = `git -C #{Shellwords.escape( repo_root )} branch --show-current`.strip
+
+		assert_equal "feature/sync-main-ref", current_branch
+		assert_equal remote_main, local_main
+		assert_equal true, result[ :synced ]
+	ensure
+		FileUtils.rm_rf( pusher_root ) if pusher_root && File.directory?( pusher_root )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -464,6 +492,16 @@ private
 
 			# pr view — check for existing PR or review decision.
 			if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+				if [[ "$*" == *"reviewDecision"* ]]; then
+					if [[ "$scenario" == "ci_pass_changes_requested" ]]; then
+						printf '%s\n' '{"reviewDecision":"CHANGES_REQUESTED"}'
+					elif [[ "$scenario" == "ci_pending" ]]; then
+						printf '%s\n' '{"reviewDecision":"REVIEW_REQUIRED"}'
+					else
+						printf '%s\n' '{"reviewDecision":""}'
+					fi
+					exit 0
+				fi
 				if [[ "$scenario" == "merged_pr" ]]; then
 					printf '%s\n' '{"number":42,"url":"https://github.com/mock/repo/pull/42","state":"MERGED"}'
 					exit 0

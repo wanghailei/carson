@@ -313,6 +313,7 @@ module Carson
 
 				if status == EXIT_BLOCK
 					puts_line "Some checks need attention — run carson audit for details."
+					return EXIT_OK
 				end
 				status
 			end
@@ -355,8 +356,7 @@ module Carson
 
 			def refresh_status_label( status: )
 				case status
-				when EXIT_OK then "OK"
-				when EXIT_BLOCK then "BLOCK"
+				when EXIT_OK, EXIT_BLOCK then "OK"
 				else "incomplete"
 				end
 			end

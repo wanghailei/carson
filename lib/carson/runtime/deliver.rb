@@ -181,11 +181,12 @@ module Carson
 
 				review_state = check_pr_review( number: pr_number )
 				if review_state == :changes_requested
+					detail_text = "review changes requested on PR ##{pr_number} — actionable review findings remain"
 					return {
 						state: :block,
 						ci: ci_status == :none ? :none : :pass,
 						review: :block,
-						detail: "review changes requested on PR ##{pr_number}",
+						detail: detail_text,
 						recovery: "address review comments, push, then rerun carson deliver"
 					}
 				end
@@ -374,17 +375,23 @@ module Carson
 
 			def sync_after_merge!( remote:, main:, result: )
 				main_root = main_worktree_root
-				_, pull_stderr, pull_success, = Open3.capture3(
-					"git", "-C", main_root, "pull", "--ff-only", remote, main
-				)
-				if pull_success
+				current_branch, = Open3.capture2( "git", "-C", main_root, "branch", "--show-current" )
+				current_branch = current_branch.to_s.strip
+
+				_, sync_stderr, sync_success, = if current_branch == main
+					Open3.capture3( "git", "-C", main_root, "pull", "--ff-only", remote, main )
+				else
+					Open3.capture3( "git", "-C", main_root, "fetch", remote, "#{main}:refs/heads/#{main}" )
+				end
+
+				if sync_success
 					result[ :synced ] = true
 					puts_verbose "synced #{main} in #{main_root} from #{remote}"
 					true
 				else
 					result[ :synced ] = false
-					result[ :sync_error ] = pull_stderr.to_s.strip
-					puts_verbose "sync failed: #{pull_stderr.to_s.strip}"
+					result[ :sync_error ] = sync_stderr.to_s.strip
+					puts_verbose "sync failed: #{sync_stderr.to_s.strip}"
 					false
 				end
 			end
