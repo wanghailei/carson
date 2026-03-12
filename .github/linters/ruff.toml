@@ -1,5 +1,5 @@
 # Canonical Ruff (Python) baseline.
-# Deployed to governed repositories via Carson's template.canonical mechanism.
+# Deployed to governed repositories via Carson's lint.canonical mechanism.
 
 [lint]
 select = ["E", "F", "W", "I"]
