@@ -38,7 +38,9 @@ class RuntimeSyncTest < Minitest::Test
 		result = runtime.sync!( json_output: true )
 		json = JSON.parse( output_string( runtime ).strip )
 		assert_equal "block", json[ "status" ]
-		assert_includes json[ "error" ], "dirty"
+		assert_equal "main working tree has uncommitted changes", json[ "error" ]
+		assert_includes json[ "recovery" ], "carson worktree create <name>"
+		refute_includes json[ "recovery" ], "git add -A && git commit"
 		assert json[ "recovery" ], "Should include recovery command"
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		destroy_runtime_repo( repo_root: repo_root )
@@ -51,9 +53,23 @@ class RuntimeSyncTest < Minitest::Test
 
 		runtime.sync!( json_output: false )
 		output = output_string( runtime )
-		assert_includes output, "dirty"
+		assert_includes output, "main working tree has uncommitted changes"
+		assert_includes output, "carson worktree create <name>"
 		assert_includes output, "→"
 		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_sync_json_dirty_worktree_keeps_commit_recovery
+		with_feature_worktree_runtime do |runtime, _repo_root, worktree_path|
+			File.write( File.join( worktree_path, "dirty.txt" ), "uncommitted" )
+
+			result = runtime.sync!( json_output: true )
+			json = JSON.parse( output_string( runtime ).strip )
+			assert_equal "block", json[ "status" ]
+			assert_equal "working tree is dirty", json[ "error" ]
+			assert_equal "git add -A && git commit, then carson sync", json[ "recovery" ]
+			assert_equal Carson::Runtime::EXIT_BLOCK, result
+		end
 	end
 
 	def test_sync_human_output_success
@@ -86,6 +102,36 @@ private
 
 	def output_string( runtime )
 		runtime.instance_variable_get( :@output ).string
+	end
+
+	def with_feature_worktree_runtime
+		Dir.mktmpdir( "carson-sync-worktree-test", carson_tmp_root ) do |tmp_dir|
+			remote_path = File.join( tmp_dir, "remote.git" )
+			repo_root = File.join( tmp_dir, "repo" )
+			worktree_path = File.join( repo_root, ".claude", "worktrees", "sync-dirty" )
+			branch_name = "codex/sync-dirty"
+
+			system( "git", "init", "--bare", "-b", "main", remote_path, out: File::NULL, err: File::NULL )
+			system( "git", "clone", remote_path, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "# Test" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_path, out: File::NULL, err: File::NULL )
+
+			output = StringIO.new
+			runtime = Carson::Runtime.new(
+				repo_root: worktree_path,
+				tool_root: File.expand_path( "..", __dir__ ),
+				output: output,
+				error: StringIO.new,
+				verbose: false
+			)
+
+			yield runtime, repo_root, worktree_path
+		end
 	end
 
 	def destroy_runtime_repo( repo_root: )
