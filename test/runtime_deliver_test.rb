@@ -11,8 +11,9 @@ class RuntimeDeliverTest < Minitest::Test
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )
 		result = runtime.deliver!
-		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		assert_includes output_string( runtime ), "cannot deliver from main"
+		assert_includes output_string( runtime ), "carson worktree create <name>"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -146,10 +147,10 @@ class RuntimeDeliverTest < Minitest::Test
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )
 		result = runtime.deliver!( json_output: true )
-		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		json = JSON.parse( output_string( runtime ).strip )
 		assert_equal "cannot deliver from main", json[ "error" ]
-		assert_includes json[ "recovery" ], "git checkout"
+		assert_equal "carson worktree create <name>", json[ "recovery" ]
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -226,7 +227,7 @@ class RuntimeDeliverTest < Minitest::Test
 		runtime.deliver!
 		output = output_string( runtime )
 		assert_includes output, "→"
-		assert_includes output, "git checkout"
+		assert_includes output, "carson worktree create <name>"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
