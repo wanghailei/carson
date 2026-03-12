@@ -33,7 +33,8 @@ class RuntimeStatusTest < Minitest::Test
 		init_git_repo( repo_root )
 		File.write( File.join( repo_root, "uncommitted.txt" ), "dirty" )
 		runtime.status!
-		assert_includes output_string( runtime ), "(dirty)"
+		assert_includes output_string( runtime ), "(dirty main worktree)"
+		assert_includes output_string( runtime ), "Governance: main working tree has uncommitted changes"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -62,6 +63,7 @@ class RuntimeStatusTest < Minitest::Test
 		runtime.status!( json_output: true )
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal true, data[ "branch" ][ "dirty" ]
+		assert_equal "main_worktree", data[ "branch" ][ "dirty_reason" ]
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

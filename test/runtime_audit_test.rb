@@ -52,6 +52,16 @@ class RuntimeAuditTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_audit_json_includes_working_tree_section
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+
+		runtime.audit!( json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert json.key?( "working_tree" ), "JSON must include working_tree section"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_audit_json_includes_checks_section
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
@@ -92,6 +102,36 @@ class RuntimeAuditTest < Minitest::Test
 		# Human output should contain "Audit:" line, not JSON.
 		assert_includes output, "Audit:"
 		refute output.strip.start_with?( "{" ), "Human output should not be JSON"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_audit_dirty_main_worktree_blocks_with_governance_message
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		File.write( File.join( repo_root, "uncommitted.txt" ), "dirty" )
+
+		result = runtime.audit!( json_output: false )
+		output = output_string( runtime )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		assert_includes output, "Working tree: main working tree has uncommitted changes"
+		assert_includes output, "carson worktree create <name>"
+		assert_includes output, "Audit: block"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_audit_json_dirty_main_worktree_reports_specific_block
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		File.write( File.join( repo_root, "uncommitted.txt" ), "dirty" )
+
+		result = runtime.audit!( json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		assert_equal "block", json[ "working_tree" ][ "status" ]
+		assert_equal "main_worktree", json[ "working_tree" ][ "context" ]
+		assert_equal "main working tree has uncommitted changes", json[ "working_tree" ][ "error" ]
+		assert_includes json[ "working_tree" ][ "recovery" ], "carson worktree create <name>"
+		assert_includes json[ "problems" ], "Working tree: main working tree has uncommitted changes — create a worktree with carson worktree create <name>."
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
