@@ -24,6 +24,7 @@ carson review gate     # block until actionable review findings are resolved
 
 **Branch housekeeping:**
 ```bash
+carson worktree create <name> # create an isolated worktree before substantive work
 carson sync            # fast-forward local main from remote
 carson prune           # remove stale branches (safer than git branch -d on squash repos)
 carson housekeep       # sync + prune + sweep stale worktrees
@@ -38,6 +39,7 @@ carson housekeep       # sync + prune + sweep stale worktrees
 ## Governance Rules
 
 - Before commit and before push, run `carson audit`.
+- Do not deliver from `main`; create a worktree with `carson worktree create <name>` first.
 - At session start and again immediately before merge recommendation, run `gh pr list --state open --limit 50` and re-confirm active PR priorities.
 - Before merge recommendation, run `carson review gate`; it enforces warm-up wait, unresolved-thread convergence, and `Disposition:` acknowledgements for actionable top-level findings.
 - Actionable findings are unresolved review threads, any non-author `CHANGES_REQUESTED` review, or non-author comments/reviews with risk keywords (`bug`, `security`, `incorrect`, `block`, `fail`, `regression`).

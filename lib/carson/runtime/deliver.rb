@@ -18,8 +18,8 @@ module Carson
 				# Guard: cannot deliver from main.
 				if branch == main
 					result[ :error ] = "cannot deliver from #{main}"
-					result[ :recovery ] = "git checkout -b <branch-name>"
-					return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
+					result[ :recovery ] = "carson worktree create <name>"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
 				# Step 1: push the branch.
