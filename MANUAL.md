@@ -112,12 +112,12 @@ Carson discovers files in this directory and syncs them to governed repos alongs
 
 ## Operating Strategies
 
-These strategies explain Carson's intended behaviour and are useful when auditing whether a command, policy block, or workflow still matches the product model.
+These strategies are the audit lens for Carson. If behaviour departs from them, either the product model or the implementation needs attention.
 
 ### Git Strategist
 
 - **Worktree-first discipline** — substantive work happens in worktrees, never on the main working tree. This keeps concurrent agent work isolated and makes cleanup explicit.
-- **Deterministic base selection** — new work starts from the repo's chosen integration model, not from whatever branch state happens to be lying around.
+- **Deterministic base selection** — new work starts from the repo's chosen integration authority, not from whatever branch state happens to be lying around.
 - **Single landing path per authority** — in `remote`, completed work rejoins through remote `main`; in `local`, completed work rejoins through local `main` and then pushes `main` as backup.
 - **Content-aware merge detection** — Carson proves whether a branch's content is already on `main` without relying on commit SHAs, so squash and rebase merges are handled correctly.
 - **Worktree-aware delivery** — Carson lands work without assuming `main` can be checked out in the active worktree, and cleanup is deferred to the correct context.
@@ -127,7 +127,7 @@ These strategies explain Carson's intended behaviour and are useful when auditin
 
 - **Outsider boundary** — Carson governs repositories without writing Carson-specific config, scripts, or runtime payloads into them.
 - **Command ownership** — in governed repositories, Carson owns worktree and delivery operations so agents do not mix raw git flows with governed ones.
-- **Authority enforcement** — every governed repo has one integration model at a time. The repo authority determines how work starts and how it returns to shared truth.
+- **Authority enforcement** — every governed repo has one integration authority at a time. That authority determines how work starts and how it returns to shared truth.
 - **Active review gating** — when the repo uses PR-based delivery, review findings must be acknowledged before merge. Feedback is never silently buried.
 - **Portfolio triage** — `carson govern` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
 - **Template propagation** — Carson treats governance files and canonical policy files as managed infrastructure and keeps them consistent across repos.
@@ -145,7 +145,7 @@ These strategies explain Carson's intended behaviour and are useful when auditin
 
 The core workflow for coding agents using Carson. One command per step, full lifecycle.
 
-**1. Create a worktree** — Carson auto-syncs main before branching (3.13.0+), so the worktree always starts from the latest code:
+**1. Create a worktree** — Carson starts new work from the repo's chosen integration authority rather than from the caller's current HEAD. When that authority requires sync, Carson checks it before branching:
 
 ```bash
 carson worktree create my-feature
@@ -154,7 +154,7 @@ cd /path/to/.claude/worktrees/my-feature
 
 **2. Work** — make changes, commit, iterate.
 
-**3. Deliver and merge** — push, create PR, merge when CI passes. After merge, Carson prints the exact next command (3.13.0+):
+**3. Deliver and merge** — use Carson's landing path for the repo authority. In remote authority that means push, PR, and merge; in local authority that means integrate into local `main` and back it up by pushing `main`. After delivery, Carson prints the exact next command:
 
 ```bash
 carson deliver --merge
@@ -185,7 +185,7 @@ Claude Code has a built-in `EnterWorktree` tool. Both create a git worktree unde
 
 | Concern | EnterWorktree | Carson |
 |---|---|---|
-| Auto-sync main before branching | No — branches from current HEAD, which may be stale | Yes — `git pull --ff-only` before branch creation |
+| Governed baseline before branching | No — branches from current HEAD, which may be stale | Yes — branches from the repo's governed baseline rather than the caller's current HEAD |
 | CWD guard on removal | No | Yes — blocks if shell is inside the worktree |
 | Unpushed-commits guard | No | Yes — blocks if work hasn't been pushed |
 | Content-aware squash/rebase detection | No | Yes — compares tree content, not SHAs |
