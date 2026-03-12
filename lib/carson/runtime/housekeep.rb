@@ -50,17 +50,20 @@ module Carson
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
 
-			# Removes dead worktrees — those whose content is on main or with merged PR evidence.
+			# Removes dead worktrees — those whose content is on main, with merged PR evidence,
+			# or with closed-unmerged PR evidence and no open PR.
 			# Unblocks prune for the branches they hold.
-			# Two-layer dead check:
+			# Three-layer dead check:
 			#   1. Content-absorbed: delegates to sweep_stale_worktrees! (shared, no gh needed).
 			#   2. Merged PR evidence: covers rebase/squash where main has since evolved
 			#      the same files (requires gh).
+			#   3. Abandoned PR evidence: closed-but-unmerged PR on the exact branch tip,
+			#      but only when no open PR still exists for the branch.
 			def reap_dead_worktrees!
 				# Layer 1: sweep agent-owned worktrees whose content is on main.
 				sweep_stale_worktrees!
 
-				# Layer 2: merged PR evidence for remaining worktrees.
+				# Layers 2 and 3: PR evidence for remaining worktrees.
 				return unless gh_available?
 
 				main_root = main_worktree_root
@@ -68,6 +71,7 @@ module Carson
 					next if worktree.path == main_root
 					next unless worktree.branch
 					next if worktree.holds_cwd?
+					next if worktree.held_by_other_process?
 
 					# Missing directory: worktree was destroyed externally.
 					# Prune the stale entry and delete the branch immediately.
@@ -85,13 +89,31 @@ module Carson
 					next unless tip_sha
 
 					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-					next if merged_pr.nil?
+					if !merged_pr.nil?
+						# Remove the worktree (no --force: refuses if dirty working tree).
+						_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
+						next unless rm_success
+
+						puts_verbose "reaped dead worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
+
+						# Delete the local branch now that no worktree holds it.
+						if !config.protected_branches.include?( worktree.branch )
+							git_run( "branch", "-D", worktree.branch )
+							puts_verbose "deleted branch: #{worktree.branch}"
+						end
+						next
+					end
+
+					next if branch_has_open_pr?( branch: worktree.branch )
+
+					abandoned_pr, = abandoned_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
+					next if abandoned_pr.nil?
 
 					# Remove the worktree (no --force: refuses if dirty working tree).
 					_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
 					next unless rm_success
 
-					puts_verbose "reaped dead worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
+					puts_verbose "reaped abandoned worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch}, closed PR: #{abandoned_pr.fetch( :url )})"
 
 					# Delete the local branch now that no worktree holds it.
 					if !config.protected_branches.include?( worktree.branch )
