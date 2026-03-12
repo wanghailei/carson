@@ -27,8 +27,6 @@ class GemspecTest < Minitest::Test
 
 	def test_gemspec_only_includes_approved_dot_github_files
 		approved = [
-			".github/copilot-instructions.md",
-			".github/pull_request_template.md",
 			".github/workflows/carson_policy.yml"
 		]
 		dot_github_files = @spec.files.select { |path| path.start_with?( ".github/" ) }

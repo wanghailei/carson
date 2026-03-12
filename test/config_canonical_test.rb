@@ -85,9 +85,9 @@ class ConfigCanonicalTest < Minitest::Test
 		end
 	end
 
-	def test_canonical_does_not_duplicate_existing_managed_files
+	def test_canonical_does_not_duplicate_managed_files
 		Dir.mktmpdir( "carson-canonical-test", carson_tmp_root ) do |dir|
-			# Create a canonical directory containing a file that Carson already manages.
+			# Create a canonical directory containing a known GitHub root file.
 			canonical_dir = File.join( dir, "canonical" )
 			FileUtils.mkdir_p( canonical_dir )
 			File.write( File.join( canonical_dir, "carson.md" ), "override\n" )
@@ -113,8 +113,8 @@ class ConfigCanonicalTest < Minitest::Test
 				config = Carson::Config.load( repo_root: dir )
 				assert_equal "/nonexistent/path", config.lint_canonical
 				assert_equal "/nonexistent/path", config.template_canonical
-				# Only Carson's built-in governance files should be present.
-				assert_equal 5, config.template_managed_files.count
+				# No built-in governance files; managed_files is empty by default.
+				assert_equal 0, config.template_managed_files.count
 			end
 		end
 	end
@@ -123,7 +123,7 @@ class ConfigCanonicalTest < Minitest::Test
 		config = Carson::Config.load( repo_root: Dir.pwd )
 		assert_nil config.lint_canonical
 		assert_nil config.template_canonical
-		assert_equal 5, config.template_managed_files.count
+		assert_equal 0, config.template_managed_files.count
 	end
 
 	def test_lint_files_are_superseded
@@ -133,6 +133,11 @@ class ConfigCanonicalTest < Minitest::Test
 		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/ruff.toml"
 		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/workflows/carson-lint.yml"
 		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/.mega-linter.yml"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/carson.md"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/copilot-instructions.md"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/CLAUDE.md"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/AGENTS.md"
+		assert_includes Carson::Runtime::Local::SUPERSEDED, ".github/pull_request_template.md"
 		config = Carson::Config.load( repo_root: Dir.pwd )
 		refute_includes config.template_managed_files, ".github/workflows/carson-lint.yml"
 		refute_includes config.template_managed_files, ".github/.mega-linter.yml"

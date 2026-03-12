@@ -11,7 +11,12 @@ module Carson
 				".github/rubocop.yml",
 				".github/ruff.toml",
 				".github/workflows/carson-lint.yml",
-				".github/.mega-linter.yml"
+				".github/.mega-linter.yml",
+			".github/carson.md",
+			".github/copilot-instructions.md",
+			".github/CLAUDE.md",
+			".github/AGENTS.md",
+			".github/pull_request_template.md"
 			].freeze
 
 			# Read-only template drift check; returns block when managed files are output of sync.

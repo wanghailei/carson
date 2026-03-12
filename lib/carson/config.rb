@@ -53,7 +53,7 @@ module Carson
 					"managed" => [ "pre-commit", "prepare-commit-msg", "pre-merge-commit", "pre-push" ]
 				},
 				"template" => {
-					"managed_files" => [ ".github/carson.md", ".github/copilot-instructions.md", ".github/CLAUDE.md", ".github/AGENTS.md", ".github/pull_request_template.md" ],
+					"managed_files" => [],
 					"canonical" => nil
 				},
 				"lint" => {
@@ -213,7 +213,7 @@ module Carson
 			@managed_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "managed" )
 
 			template_hash = fetch_hash( hash: data, key: "template" )
-			@template_managed_files = fetch_string_array( hash: template_hash, key: "managed_files" )
+			@template_managed_files = fetch_optional_string_array( hash: template_hash, key: "managed_files" )
 			@lint_canonical = fetch_optional_path( hash: fetch_hash( hash: data, key: "lint" ), key: "canonical" )
 			@lint_canonical ||= fetch_optional_path( hash: template_hash, key: "canonical" )
 			@template_canonical = @lint_canonical

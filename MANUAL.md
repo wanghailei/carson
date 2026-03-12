@@ -39,7 +39,7 @@ On first run (no `~/.carson/config.json` exists), `onboard` launches `carson set
 - Hook installation under `~/.carson/hooks/<version>/`.
 - Repository `core.hooksPath` alignment to Carson global hooks.
 - Commit-time governance gate via managed `pre-commit` hook.
-- Managed `.github/*` template synchronisation.
+- Canonical `.github/*` template synchronisation (when `lint.canonical` is configured).
 - Initial governance audit.
 
 ### Reconfigure later
@@ -52,7 +52,7 @@ Re-run the interactive setup quiz to change your remote, main branch, workflow s
 
 ### Commit generated files
 
-After `onboard`, commit the generated `.github/*` changes in your repository. From this point the repository is governed.
+After `onboard`, commit any `.github/*` changes in your repository. From this point the repository is governed.
 
 ## CI Setup
 
@@ -82,7 +82,7 @@ Notes:
 
 ### Canonical Templates
 
-Carson manages 5 governance files (carson.md, CLAUDE.md, AGENTS.md, copilot-instructions.md, pull_request_template.md). Beyond those, you can tell Carson about your own canonical GitHub and lint-policy files.
+Carson has no built-in template files. Instead, you tell Carson about your own canonical GitHub and lint-policy files via `lint.canonical`.
 
 Set `lint.canonical` in `~/.carson/config.json`:
 
@@ -106,7 +106,7 @@ Flat lint-policy directories default to `.github/linters/`, while explicit GitHu
     └── labeler.yml       → deployed to .github/labeler.yml
 ```
 
-Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. Root files that are not recognised GitHub artefacts are treated as lint policy and written under `.github/linters/`; legacy root lint configs become stale and are removed on apply. `carson template check` detects drift, `carson template apply` writes them, and `carson refresh` propagates them to the remote. Carson still reads the deprecated `template.canonical` key for backwards compatibility, but new setup writes `lint.canonical`.
+Carson discovers files in this directory and syncs them to governed repos. Root files that are not recognised GitHub artefacts are treated as lint policy and written under `.github/linters/`; legacy root lint configs become stale and are removed on apply. `carson template check` detects drift, `carson template apply` writes them, and `carson refresh` propagates them to the remote. Carson still reads the deprecated `template.canonical` key for backwards compatibility, but new setup writes `lint.canonical`.
 
 **Why this design.** Lint, CI, and tooling config are personal decisions — not governance decisions. Carson's job is to deliver your canonical files reliably, not to decide what they should contain.
 
@@ -130,7 +130,7 @@ These strategies are the audit lens for Carson. If behaviour departs from them, 
 - **Authority enforcement** — every governed repo has one integration authority at a time. That authority determines how work starts and how it returns to shared truth.
 - **Active review gating** — when the repo uses PR-based delivery, review findings must be acknowledged before merge. Feedback is never silently buried.
 - **Portfolio triage** — `carson govern` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
-- **Template propagation** — Carson treats governance files and canonical policy files as managed infrastructure and keeps them consistent across repos.
+- **Template propagation** — Carson treats canonical policy files as managed infrastructure and keeps them consistent across repos.
 
 ### Safety Strategies
 
@@ -394,22 +394,6 @@ How much Carson prints.
 
 - Default: **concise**. A healthy audit prints one line. Problems print actionable summaries with cause and fix.
 - `--verbose` restores full diagnostic key-value output for debugging.
-
-## Agent Discovery
-
-Carson writes managed files that help interactive agents (Claude Code, Codex, Copilot) discover the governance system when they work in a governed repository.
-
-**How it works:**
-
-- `.github/AGENTS.md` — full governance baseline; read by Codex and other agents. Points to `carson.md`.
-- `.github/CLAUDE.md` — read by Claude Code at session start. Points to `AGENTS.md`.
-- `.github/copilot-instructions.md` — read by GitHub Copilot. Points to `AGENTS.md`.
-
-Each agent reads its own expected filename and follows the reference to the shared baseline. One file to maintain, zero drift across agents.
-
-All four files are managed templates — `carson template check` detects drift, `carson template apply` writes them, and `carson offboard` removes them.
-
-**Why this matters:** without discovery, agents working in governed repos hit Carson's hooks blindly and don't understand the governance contract. With discovery, agents know to run `carson audit` before committing, `carson review gate` before recommending a merge, and to respect protected refs.
 
 ## Configuration
 
