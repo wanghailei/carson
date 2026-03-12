@@ -84,11 +84,6 @@ Blocked Carson artefacts in host repositories:
 - `.tools/carson/*`
 
 Allowed Carson-managed persistence in host repositories:
-- `.github/carson.md` — governance baseline (source of truth)
-- `.github/copilot-instructions.md` — agent discovery pointer for Copilot
-- `.github/CLAUDE.md` — agent discovery pointer for Claude Code
-- `.github/AGENTS.md` — agent discovery pointer for Codex
-- `.github/pull_request_template.md` — PR template
 - Any file discovered from `lint.canonical` — user's canonical GitHub and lint-policy files
 
 ## Configuration interface
@@ -153,7 +148,7 @@ Environment overrides:
 ```
 
 `lint` semantics:
-- `canonical`: path to a directory of canonical GitHub and lint-policy files. Carson discovers files in this directory and syncs them to governed repos alongside its own governance files. Explicit GitHub paths stay under `.github/` (`workflows/lint.yml` → `.github/workflows/lint.yml`, `.github/labeler.yml` → `.github/labeler.yml`); flat policy files default to `.github/linters/` (`rubocop.yml` → `.github/linters/rubocop.yml`). Legacy root lint configs become stale and are removed on apply. Default: `nil` (no canonical files). The deprecated alias `template.canonical` is still accepted when loading config.
+- `canonical`: path to a directory of canonical GitHub and lint-policy files. Carson discovers files in this directory and syncs them to governed repos. Explicit GitHub paths stay under `.github/` (`workflows/lint.yml` → `.github/workflows/lint.yml`, `.github/labeler.yml` → `.github/labeler.yml`); flat policy files default to `.github/linters/` (`rubocop.yml` → `.github/linters/rubocop.yml`). Legacy root lint configs become stale and are removed on apply. Default: `nil` (no canonical files). The deprecated alias `template.canonical` is still accepted when loading config.
 
 ## Output interface
 

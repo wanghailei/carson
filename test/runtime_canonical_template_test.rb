@@ -184,9 +184,9 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 		end
 	end
 
-	def test_canonical_file_overrides_carson_built_in
+	def test_canonical_github_root_file_is_deployed
 		Dir.mktmpdir( "carson-canonical-runtime-test", carson_tmp_root ) do |tmp_dir|
-			# Create a canonical directory with a file that has the same name as a Carson governance file.
+			# Create a canonical directory with a file that matches a known GitHub root file name.
 			canonical_dir = File.join( tmp_dir, "canonical" )
 			FileUtils.mkdir_p( canonical_dir )
 			File.write( File.join( canonical_dir, "pull_request_template.md" ), "Custom PR template\n" )
@@ -213,7 +213,7 @@ class RuntimeCanonicalTemplateTest < Minitest::Test
 				)
 				runtime.template_apply!
 
-				# The canonical version should win because template_source_path checks canonical first.
+				# Canonical GitHub root files are deployed under .github/.
 				deployed_path = File.join( repo_root, ".github", "pull_request_template.md" )
 				assert File.file?( deployed_path )
 				assert_equal "Custom PR template\n", File.read( deployed_path )

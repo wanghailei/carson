@@ -62,9 +62,16 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			bare_remote = create_bare_remote( parent: tmp_dir, name: "remote.git" )
 			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
 
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
+
 			with_env(
 				"HOME" => tmp_dir,
-				"CARSON_CONFIG_FILE" => "",
+				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "branch"
 			) do
@@ -109,9 +116,16 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			bare_remote = create_bare_remote( parent: tmp_dir, name: "remote.git" )
 			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
 
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
+
 			with_env(
 				"HOME" => tmp_dir,
-				"CARSON_CONFIG_FILE" => "",
+				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
@@ -128,10 +142,10 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 				assert_equal :pushed, result.fetch( :status )
 				assert_equal "main", result.fetch( :ref )
 
-				# Verify templates landed on remote main.
+				# Verify canonical file landed on remote main.
 				clone_dir = File.join( tmp_dir, "verify" )
 				system( "git", "clone", bare_remote, clone_dir, out: File::NULL, err: File::NULL )
-				assert File.file?( File.join( clone_dir, ".github", "carson.md" ) ), "Expected template file on remote main"
+				assert File.file?( File.join( clone_dir, ".github", "linters", "rubocop.yml" ) ), "Expected canonical file on remote main"
 			end
 		end
 	end
@@ -142,6 +156,13 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			bare_remote = create_bare_remote( parent: tmp_dir, name: "remote.git" )
 			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
 
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
+
 			# Remove the bare remote's objects dir so push fails with a git error,
 			# without making the filesystem unreadable (avoids chmod cleanup issues).
 			objects_dir = File.join( bare_remote, "objects" )
@@ -149,7 +170,7 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 
 			with_env(
 				"HOME" => tmp_dir,
-				"CARSON_CONFIG_FILE" => "",
+				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
@@ -178,12 +199,19 @@ class RuntimeTemplatePropagateTest < Minitest::Test
 			bare_remote = create_bare_remote( parent: tmp_dir, name: "remote.git" )
 			repo_root = create_repo_with_remote( parent: tmp_dir, name: "repo", bare_remote: bare_remote )
 
+			canonical_dir = File.join( tmp_dir, "canonical" )
+			FileUtils.mkdir_p( canonical_dir )
+			File.write( File.join( canonical_dir, "rubocop.yml" ), "AllCops:\n" )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "lint" => { "canonical" => canonical_dir } } ) )
+
 			# Pre-populate remote main with the same templates Carson would write.
-			pre_populate_templates!( repo_root: repo_root, tool_root: tool_root )
+			pre_populate_templates!( repo_root: repo_root, tool_root: tool_root, config_path: config_path )
 
 			with_env(
 				"HOME" => tmp_dir,
-				"CARSON_CONFIG_FILE" => "",
+				"CARSON_CONFIG_FILE" => config_path,
 				"CARSON_HOOKS_PATH" => File.join( tmp_dir, "hooks" ),
 				"CARSON_WORKFLOW_STYLE" => "trunk"
 			) do
@@ -254,24 +282,40 @@ private
 		repo_root
 	end
 
-	# Pre-populates the repo (and remote) with the exact template files Carson would write,
+	# Pre-populates the repo (and remote) with the exact managed files Carson would write,
 	# so template_propagate! finds no diff.
-	def pre_populate_templates!( repo_root:, tool_root: )
-		templates_dir = File.join( tool_root, "templates", ".github" )
-		cfg = Carson::Config.load( repo_root: repo_root )
+	def pre_populate_templates!( repo_root:, tool_root:, config_path: nil )
+		env = config_path ? { "CARSON_CONFIG_FILE" => config_path } : {}
+		cfg = with_env( env ) { Carson::Config.load( repo_root: repo_root ) }
 		cfg.template_managed_files.each do |managed_file|
-			relative_within_github = managed_file.delete_prefix( ".github/" )
-			template_path = File.join( templates_dir, relative_within_github )
-			template_path = File.join( templates_dir, File.basename( managed_file ) ) unless File.file?( template_path )
-			next unless File.file?( template_path )
+			source = template_source_for( managed_file: managed_file, tool_root: tool_root, config: cfg )
+			next unless source
 
 			target_path = File.join( repo_root, managed_file )
 			FileUtils.mkdir_p( File.dirname( target_path ) )
-			content = File.read( template_path ).gsub( "\r\n", "\n" ).rstrip + "\n"
+			content = File.read( source ).gsub( "\r\n", "\n" ).rstrip + "\n"
 			File.write( target_path, content )
 		end
 		system( "git", "-C", repo_root, "add", "--all", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "commit", "-m", "add templates", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+	end
+
+	# Finds the source file for a managed file — canonical directory first, then built-in templates.
+	def template_source_for( managed_file:, tool_root:, config: )
+		relative = managed_file.delete_prefix( ".github/" )
+		canonical = config.lint_canonical
+		if canonical && !canonical.empty?
+			[ File.join( canonical, relative ),
+				File.join( canonical, relative.delete_prefix( "linters/" ) ) ].each do |path|
+				return path if File.file?( path )
+			end
+		end
+		templates_dir = File.join( tool_root, "templates", ".github" )
+		path = File.join( templates_dir, relative )
+		return path if File.file?( path )
+		path = File.join( templates_dir, File.basename( managed_file ) )
+		return path if File.file?( path )
+		nil
 	end
 end

@@ -49,10 +49,11 @@ module Carson
 					return hook_status unless hook_status == EXIT_OK
 
 					drift_count = template_results.count { it.fetch( :status ) != "ok" }
+					stale_count = template_superseded_present.count
 					template_status = template_apply!
 					return template_status unless template_status == EXIT_OK
 
-					@template_sync_result = template_propagate!( drift_count: drift_count )
+					@template_sync_result = template_propagate!( drift_count: drift_count + stale_count )
 
 					audit_status = audit!
 					if audit_status == EXIT_OK
@@ -69,15 +70,17 @@ module Carson
 				puts_line "Hooks installed (#{config.managed_hooks.count} hooks)."
 
 				template_drift_count = template_results.count { it.fetch( :status ) != "ok" }
+				stale_count = template_superseded_present.count
 				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
-				if template_drift_count.positive?
-					puts_line "Templates applied (#{template_drift_count} updated)."
+				total_drift = template_drift_count + stale_count
+				if total_drift.positive?
+					puts_line "Templates applied (#{template_drift_count} updated, #{stale_count} removed)."
 				else
 					puts_line "Templates in sync."
 				end
 
-				@template_sync_result = template_propagate!( drift_count: template_drift_count )
+				@template_sync_result = template_propagate!( drift_count: total_drift )
 
 				audit_status = audit!
 				puts_line "Refresh complete."
@@ -266,15 +269,12 @@ module Carson
 				auto_register_govern!
 
 				puts_line ""
-				puts_line "Your repository is set up. Carson has placed files in your"
-				puts_line "project's .github/ directory — pull request templates,"
-				puts_line "guidelines for AI coding assistants, and any canonical"
-				puts_line "rules you've configured. Once pushed to GitHub, they'll"
-				puts_line "ensure every pull request follows a consistent standard"
-				puts_line "and all checks run automatically."
-				puts_line ""
-				puts_line "Before your first push, have a look through .github/ to"
-				puts_line "make sure everything is to your liking."
+				puts_line "Your repository is set up. If you have configured"
+				puts_line "lint.canonical, Carson has placed your canonical"
+				puts_line "policy files in the project's .github/ directory."
+				puts_line "Once pushed to GitHub, they'll ensure every pull"
+				puts_line "request follows a consistent standard and all"
+				puts_line "checks run automatically."
 				puts_line ""
 				puts_line "To adjust any setting: carson setup"
 
