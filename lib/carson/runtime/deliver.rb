@@ -23,6 +23,8 @@ module Carson
 				end
 
 				# Step 1: sync managed template files before push.
+				# `push_prep: true` stages and commits managed drift so the subsequent
+				# push carries the canonical content even though deliver uses --no-verify.
 				# Output is captured to prevent pollution of --json mode.
 				# Diagnostics are preserved for error reporting.
 				sync_exit, sync_diagnostics = begin
@@ -31,7 +33,7 @@ module Carson
 					captured_err = StringIO.new
 					@output = captured_out
 					@error = captured_err
-					exit_code = template_apply!( push_prep: false )
+					exit_code = template_apply!( push_prep: true )
 					[ exit_code, captured_out.string + captured_err.string ]
 				rescue StandardError => exception
 					[ EXIT_ERROR, "template sync error: #{exception.message}" ]
@@ -39,25 +41,9 @@ module Carson
 					@output, @error = saved_output, saved_error
 				end
 
-				if sync_exit != EXIT_OK
+				if sync_exit == EXIT_ERROR
 					result[ :error ] = sync_diagnostics.to_s.strip.empty? ? "template sync failed" : sync_diagnostics.strip
 					return deliver_finish( result: result, exit_code: sync_exit, json_output: json_output )
-				end
-
-				# Step 1b: commit any dirty managed files so the push includes them.
-				dirty = managed_dirty_paths
-				unless dirty.empty?
-					_, add_stderr, add_ok, = git_run( "add", *dirty )
-					unless add_ok
-						result[ :error ] = "template staging failed: #{add_stderr.to_s.strip}"
-						return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
-					end
-					_, commit_stderr, commit_ok, = git_run( "commit", "-m", "chore: sync Carson managed files" )
-					unless commit_ok
-						result[ :error ] = "template commit failed: #{commit_stderr.to_s.strip}"
-						return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
-					end
-					puts_verbose "committed managed template updates"
 				end
 
 				# Step 2: push the branch.
