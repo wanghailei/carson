@@ -321,7 +321,7 @@ module Carson
 
 			def template_superseded_present_in( root: )
 				SUPERSEDED.select do |file|
-					File.file?( File.join( root, file ) )
+					File.file?( File.join( root, file ) ) && !config.template_managed_files.include?( file )
 				end
 			end
 
@@ -332,7 +332,7 @@ module Carson
 			def template_superseded_present
 				SUPERSEDED.select do |file|
 					file_path = resolve_repo_path!( relative_path: file, label: "superseded file #{file}" )
-					File.file?( file_path )
+					File.file?( file_path ) && !config.template_managed_files.include?( file )
 				end
 			end
 
