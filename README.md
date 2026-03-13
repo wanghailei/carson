@@ -8,6 +8,12 @@ Carson is deterministic infrastructure for concurrent agent work. It governs how
 
 Carson was built in real work. Its strategies come from scars: more than ten agents running across multiple projects at once, with each repeated failure turned into a rule, guardrail, or recovery path.
 
+Claude Code Insights (5–12 Mar 2026) captured that reality succinctly:
+
+> “...serious agent infrastructure — Carson, hook architectures, edit guards, worktree pipelines...” — Claude Code Insights
+> “You are an intensely hands-on systems builder...” — Claude Code Insights
+> “You turn each failure into a codified rule.” — Claude Code Insights
+
 ## The Problem
 
 When several agents work on one repository, plain Git leaves too much to habit. Branches start from different bases, work lands back on `main` through inconsistent paths, old worktrees linger, and one clean-up step can disrupt another session.
