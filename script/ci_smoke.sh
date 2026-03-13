@@ -266,7 +266,7 @@ expect_exit 0 "deliver pushes and reports PR URL" run_carson_with_mock_gh delive
 
 # Deliver on main should fail.
 git switch main >/dev/null
-expect_exit 1 "deliver blocks on main branch" run_carson_with_mock_gh deliver
+expect_exit 2 "deliver blocks on main branch" run_carson_with_mock_gh deliver
 
 # Clean up feature branch.
 git branch -D feature/deliver-smoke >/dev/null
@@ -337,39 +337,55 @@ for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 done
 echo "PASS: required hooks include pre-commit and are executable"
 
-git switch -c feature/scope-policy-advisory >/dev/null
-mkdir -p app/models lib
-printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
-printf "scope enforcement mixed module smoke\n" > lib/scope_policy_tool_smoke.rb
-git add app/models/scope_policy_smoke.rb lib/scope_policy_tool_smoke.rb
-expect_exit 0 "audit reports mixed module groups as advisory (not blocking)" run_carson audit
-git reset --hard HEAD >/dev/null
-git switch main >/dev/null
-git branch -D feature/scope-policy-advisory >/dev/null
+# Scope-policy smoke must run in disposable worktrees. Audit correctly blocks
+# dirty main-worktree state, so staged-change scenarios belong outside the root.
+scope_advisory_worktree="$tmp_root/scope-policy-advisory"
+git worktree add -b feature/scope-policy-advisory "$scope_advisory_worktree" main >/dev/null
+(
+	cd "$scope_advisory_worktree"
+	mkdir -p app/models lib
+	printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
+	printf "scope enforcement mixed module smoke\n" > lib/scope_policy_tool_smoke.rb
+	git add app/models/scope_policy_smoke.rb lib/scope_policy_tool_smoke.rb
+	expect_exit 0 "audit reports mixed module groups as advisory (not blocking)" run_carson audit
+	git reset --hard HEAD >/dev/null
+)
+git -C "$work_repo" worktree remove "$scope_advisory_worktree" >/dev/null
 
-git switch -c feature/staged-scope-only >/dev/null
-mkdir -p app/models lib
-printf "staged scope pass\n" > lib/staged_scope_ok.rb
-printf "unstaged mismatch should not block\n" > app/models/unstaged_scope_violation.rb
-git add lib/staged_scope_ok.rb
-expect_exit 0 "audit enforces scope using staged paths when index changes exist" run_carson audit
-set +e
-git commit -m "staged scope only commit should pass pre-commit" >/dev/null 2>&1
-commit_status="$?"
-set -e
-if [[ "$commit_status" -ne 0 ]]; then
-	echo "FAIL: pre-commit hook should ignore unstaged scope mismatches when staged scope is valid" >&2
-	exit 1
-fi
-echo "PASS: pre-commit ignores unstaged scope mismatches when staged scope is valid"
-git reset --hard HEAD >/dev/null
-git clean -fd >/dev/null
-git switch main >/dev/null
-git branch -D feature/staged-scope-only >/dev/null
+scope_staged_worktree="$tmp_root/staged-scope-only"
+git worktree add -b feature/staged-scope-only "$scope_staged_worktree" main >/dev/null
+(
+	cd "$scope_staged_worktree"
+	mkdir -p app/models lib
+	printf "staged scope pass\n" > lib/staged_scope_ok.rb
+	printf "unstaged mismatch should not block\n" > app/models/unstaged_scope_violation.rb
+	git add lib/staged_scope_ok.rb
+	expect_exit 0 "audit enforces scope using staged paths when index changes exist" run_carson audit
+	set +e
+	git commit -m "staged scope only commit should pass pre-commit" >/dev/null 2>&1
+	commit_status="$?"
+	set -e
+	if [[ "$commit_status" -ne 0 ]]; then
+		echo "FAIL: pre-commit hook should ignore unstaged scope mismatches when staged scope is valid" >&2
+		exit 1
+	fi
+	echo "PASS: pre-commit ignores unstaged scope mismatches when staged scope is valid"
+	git reset --hard HEAD >/dev/null
+	git clean -fd >/dev/null
+)
+git -C "$work_repo" worktree remove "$scope_staged_worktree" >/dev/null
 
-expect_exit 2 "template check reports drift when managed github files are missing" run_carson template check
-expect_exit 0 "template apply writes managed github files" run_carson template apply
-expect_exit 0 "template check passes after apply" run_carson template check
+template_canonical_dir="$tmp_root/template-canonical"
+mkdir -p "$template_canonical_dir"
+printf "bug:\n  - changed-files:\n      - any-glob-to-any-file: '**/*'\n" > "$template_canonical_dir/labeler.yml"
+template_config_path="$tmp_root/template-config.json"
+cat > "$template_config_path" <<EOF
+{"lint":{"canonical":"$template_canonical_dir"}}
+EOF
+
+expect_exit 2 "template check reports drift when managed github files are missing" run_carson_with_config "$template_config_path" template check
+expect_exit 0 "template apply writes managed github files" run_carson_with_config "$template_config_path" template apply
+expect_exit 0 "template check passes after apply" run_carson_with_config "$template_config_path" template check
 # Commit managed files so subsequent tests see a clean working tree.
 # Without this, push_prep_commit! picks up the untracked managed files,
 # adds an extra commit to test branches, and makes them impossible to
@@ -423,13 +439,13 @@ git switch -c tool/stale-prune-squash >/dev/null
 mkdir -p lib
 printf "stale squash candidate\n" > lib/stale_squash.rb
 git add lib/stale_squash.rb
-git commit -m "stale squash candidate branch" >/dev/null
+git -c core.hooksPath=.git/hooks commit -m "stale squash candidate branch" >/dev/null
 git push -u origin tool/stale-prune-squash >/dev/null
 git switch main >/dev/null
 original_hooks_path="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
 git merge --squash tool/stale-prune-squash >/dev/null 2>&1
-git commit -m "squash-merge tool/stale-prune-squash into main" >/dev/null
+git -c core.hooksPath=.git/hooks commit -m "squash-merge tool/stale-prune-squash into main" >/dev/null
 git push origin main >/dev/null
 if [[ -n "$original_hooks_path" ]]; then
 	git config core.hooksPath "$original_hooks_path"
@@ -450,7 +466,7 @@ git switch -c tool/stale-prune-no-evidence >/dev/null
 mkdir -p lib
 printf "stale no-evidence candidate\n" > lib/stale_no_evidence.rb
 git add lib/stale_no_evidence.rb
-git commit -m "stale no-evidence candidate branch" >/dev/null
+git -c core.hooksPath=.git/hooks commit -m "stale no-evidence candidate branch" >/dev/null
 git push -u origin tool/stale-prune-no-evidence >/dev/null
 git switch main >/dev/null
 git push origin --delete tool/stale-prune-no-evidence >/dev/null
