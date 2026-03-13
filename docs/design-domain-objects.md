@@ -26,6 +26,7 @@ Wraps `repository_coordinates` (currently in review/data_access.rb:226, consumed
 class Carson::Remote
   class Error < StandardError
     attr_reader :recovery
+
     def initialize( message, recovery: nil )
       super( message )
       @recovery = recovery
@@ -35,13 +36,16 @@ class Carson::Remote
   attr_reader :name, :owner, :repo
 
   def initialize( name:, runtime: )
-  # Parses git remote get-url <name> into owner/repo.
+    # Parses git remote get-url <name> into owner/repo.
+  end
 
   def push!( branch: )
-  # Returns self. Raises Remote::Error on failure.
+    # Returns self. Raises Remote::Error on failure.
+  end
 
   def force_push_with_lease!( branch: )
-  # Returns self. Raises Remote::Error on failure.
+    # Returns self. Raises Remote::Error on failure.
+  end
 end
 ```
 
@@ -61,6 +65,7 @@ Lifecycle only (deliver.rb + gate_support.rb) and evidence lookup (prune.rb). Go
 class Carson::PullRequest
   class Error < StandardError
     attr_reader :recovery
+
     def initialize( message, recovery: nil )
       super( message )
       @recovery = recovery
@@ -72,30 +77,38 @@ class Carson::PullRequest
   # --- Class methods: factories and lookups ---
 
   def self.find_open( branch:, runtime: )
-  # Returns instance or nil. gh pr view --json number,url,state, gate on OPEN.
+    # Returns instance or nil. gh pr view --json number,url,state, gate on OPEN.
+  end
 
   def self.create!( branch:, title:, body_file:, runtime: )
-  # Returns instance. Raises PullRequest::Error on failure.
+    # Returns instance. Raises PullRequest::Error on failure.
+  end
 
   def self.for_branch( branch:, runtime: )
-  # Returns instance or nil. Used by gate_support.
+    # Returns instance or nil. Used by gate_support.
+  end
 
   def self.merged_for_branch( branch:, branch_tip_sha:, runtime: )
-  # Returns instance or nil. Paginated REST API. Used by prune, housekeep.
+    # Returns instance or nil. Paginated REST API. Used by prune, housekeep.
+  end
 
   def self.open_for_branch?( branch:, runtime: )
-  # Returns boolean. Fast path per_page=1. Used by prune.
+    # Returns boolean. Fast path per_page=1. Used by prune.
+  end
 
   # --- Instance methods: actions on an existing PR ---
 
   def merge!( method: )
-  # Returns self. Raises PullRequest::Error on failure.
+    # Returns self. Raises PullRequest::Error on failure.
+  end
 
   def ci_status
-  # Returns :pass, :fail, :pending, or :none.
+    # Returns :pass, :fail, :pending, or :none.
+  end
 
   def review_decision
-  # Returns :approved, :changes_requested, :review_required, or :none.
+    # Returns :approved, :changes_requested, :review_required, or :none.
+  end
 end
 ```
 
@@ -130,19 +143,24 @@ class Carson::Branch
   attr_reader :name
 
   def self.current( runtime: )
-  # Returns instance or nil (nil for detached HEAD).
+    # Returns instance or nil (nil for detached HEAD).
+  end
 
   def self.exists?( name:, runtime: )
-  # Returns boolean.
+    # Returns boolean.
+  end
 
   def self.stale( runtime: )
-  # Returns array of Branch instances. Gone upstream.
+    # Returns array of Branch instances. Gone upstream.
+  end
 
   def self.orphaned( runtime: )
-  # Returns array of Branch instances. No upstream, not main.
+    # Returns array of Branch instances. No upstream, not main.
+  end
 
   def self.absorbed( runtime: )
-  # Returns array of Branch instances. Fully merged into main.
+    # Returns array of Branch instances. Fully merged into main.
+  end
 end
 ```
 

@@ -13,15 +13,5 @@
 		"indentStyle": "tab",
 		"indentWidth": 1,
 		"lineWidth": 9999
-	},
-	"javascript": {
-		"formatter": {
-			"indentStyle": "tab"
-		}
-	},
-	"css": {
-		"formatter": {
-			"indentStyle": "tab"
-		}
 	}
 }
