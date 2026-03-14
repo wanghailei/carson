@@ -18,10 +18,12 @@ Primary runtime structure:
 - `lib/carson/runtime/audit.rb`: governance audit and reporting.
 - `lib/carson/runtime/review.rb` plus `lib/carson/runtime/review/*.rb`: review gate/sweep flow, data access, query text, and support helpers.
 - `lib/carson/config.rb`: defaults, config loading, environment overrides, and validation.
-- `lib/carson/runtime/govern.rb`: autonomous portfolio-level triage, dispatch, and merge loop.
+- `lib/carson/runtime/govern.rb`: portfolio-level delivery oversight, revision dispatch, and integration loop.
 - `lib/carson/adapters/git.rb`, `lib/carson/adapters/github.rb`: process adapters for `git` and `gh`.
 - `lib/carson/adapters/agent.rb`, `lib/carson/adapters/prompt.rb`: agent work order definitions and shared prompt builder.
 - `lib/carson/adapters/codex.rb`, `lib/carson/adapters/claude.rb`: coding agent dispatch adapters.
+- `lib/carson/repository.rb`, `lib/carson/branch.rb`, `lib/carson/delivery.rb`, `lib/carson/revision.rb`: passive domain objects for repository, branch, delivery, and revision state.
+- `lib/carson/ledger.rb`: SQLite-backed ledger for active deliveries and revisions.
 
 ## Architecture rationale
 
@@ -43,7 +45,7 @@ The layering is a direct consequence of the outsider boundary rule. Carson must 
 
 **`--all` is the elegant extension.** Every command that works on a single repository gains cross-repo reach through a single `--all` flag. No separate commands, no different mental model — same operation, wider scope.
 
-**Worktree lifecycle is first-class.** Coding agents use worktrees as their unit of work, not branches. Carson owns the full worktree lifecycle: create, track, and clean up.
+**Branch delivery is first-class.** The branch is the delivery unit. Worktree is only the isolation container. Carson owns the full branch/worktree lifecycle: create, track, deliver, and clean up.
 
 ### Three-layer command model
 
@@ -66,7 +68,7 @@ Layer 1 is the foundation — every command works perfectly on one repo. Layer 2
 - Strict exit status contract suitable for automation.
 
 **Out-of-scope capabilities:**
-- Replacing GitHub as merge authority (Carson has optional merge authority gated by `govern.auto_merge`, but defers to GitHub rulesets and human judgement by default).
+- Supporting governed non-squash integration policies. Carson's governed delivery contract is squash-only.
 - Deciding business-domain policy for host repositories.
 - Executing force merges or bypassing required checks.
 - Persisting Carson-specific configuration inside host repositories.

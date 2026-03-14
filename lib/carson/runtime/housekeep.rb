@@ -67,8 +67,8 @@ module Carson
 					results << entry
 				end
 
-				succeeded = results.count { it[ :status ] == "ok" }
-				failed = results.count { it[ :status ] != "ok" }
+				succeeded = results.count { |entry| entry[ :status ] == "ok" }
+				failed = results.count { |entry| entry[ :status ] != "ok" }
 				result = { command: "housekeep", status: failed.zero? ? "ok" : "partial", repos: results, succeeded: succeeded, failed: failed }
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
@@ -90,10 +90,10 @@ module Carson
 				main_root = main_worktree_root
 				items = []
 
-				agent_prefixes = Worktree::AGENT_DIRS.filter_map do |dir|
+				agent_prefixes = Worktree::AGENT_DIRS.map do |dir|
 					full = File.join( main_root, dir, "worktrees" )
 					File.join( realpath_safe( full ), "" ) if Dir.exist?( full )
-				end
+				end.compact
 
 				worktree_list.each do |worktree|
 					next if worktree.path == main_root

@@ -61,11 +61,11 @@ module Carson
 				parser.separator "Repository governance and workflow automation for coding agents."
 				parser.separator ""
 				parser.separator "Commands:"
-				parser.separator "    status       Show repository state (branch, PRs, worktrees)"
+				parser.separator "    status       Show repository delivery state"
 				parser.separator "    setup        Initialise Carson configuration"
 				parser.separator "    audit        Run pre-commit health checks"
 				parser.separator "    sync         Sync local main with remote"
-				parser.separator "    deliver      Push, create PR, and optionally merge"
+				parser.separator "    deliver      Start autonomous branch delivery"
 				parser.separator "    prune        Remove stale local branches"
 				parser.separator "    worktree     Manage isolated coding worktrees"
 				parser.separator "    housekeep    Sync, reap worktrees, and prune branches"
@@ -138,7 +138,7 @@ module Carson
 		def self.parse_setup_command( arguments:, error: )
 			options = {}
 			setup_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--merge METHOD] [--canonical PATH]"
+				parser.banner = "Usage: carson setup [--remote NAME] [--main-branch NAME] [--workflow STYLE] [--canonical PATH]"
 				parser.separator ""
 				parser.separator "Initialise Carson configuration for the current repository."
 				parser.separator "Detects git remote, main branch, and workflow style, then writes .carson.yml."
@@ -148,13 +148,11 @@ module Carson
 				parser.on( "--remote NAME", "Git remote name" ) { |value| options[ "git.remote" ] = value }
 				parser.on( "--main-branch NAME", "Main branch name" ) { |value| options[ "git.main_branch" ] = value }
 				parser.on( "--workflow STYLE", "Workflow style (branch or trunk)" ) { |value| options[ "workflow.style" ] = value }
-				parser.on( "--merge METHOD", "Merge method (squash, rebase, or merge)" ) { |value| options[ "govern.merge.method" ] = value }
 				parser.on( "--canonical PATH", "Canonical lint policy directory path" ) { |value| options[ "lint.canonical" ] = value }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson setup                            Auto-detect and write config"
 				parser.separator "    carson setup --remote github            Use 'github' as the git remote"
-				parser.separator "    carson setup --merge squash             Set squash as the merge method"
 			end
 			setup_parser.parse!( arguments )
 			unless arguments.empty?
@@ -547,22 +545,25 @@ module Carson
 		# --- deliver ---
 
 		def self.parse_deliver_command( arguments:, error: )
-			options = { merge: false, json: false, title: nil, body_file: nil }
+			if arguments.include?( "--merge" )
+				error.puts "#{BADGE} carson deliver --merge is no longer supported; use carson deliver"
+				return { command: :invalid }
+			end
+
+			options = { json: false, title: nil, body_file: nil }
 			deliver_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson deliver [--merge] [--json] [--title TITLE] [--body-file PATH]"
+				parser.banner = "Usage: carson deliver [--json] [--title TITLE] [--body-file PATH]"
 				parser.separator ""
-				parser.separator "Push the current branch, create a pull request, and optionally merge."
-				parser.separator "Collapses the manual push → PR → merge flow into a single command."
+				parser.separator "Push the current branch, create or refresh the pull request, and hand the branch to Carson."
+				parser.separator "Carson records delivery state and continues from there."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--merge", "Also merge the PR if CI passes" ) { options[ :merge ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.on( "--title TITLE", "PR title (defaults to branch name)" ) { |value| options[ :title ] = value }
 				parser.on( "--body-file PATH", "File containing PR body text" ) { |value| options[ :body_file ] = value }
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson deliver               Push and open a PR"
-				parser.separator "    carson deliver --merge       Push, open a PR, and merge if CI passes"
+				parser.separator "    carson deliver               Push, open a PR, and register delivery state"
 			end
 			deliver_parser.parse!( arguments )
 			unless arguments.empty?
@@ -572,7 +573,6 @@ module Carson
 			end
 			{
 				command: "deliver",
-				merge: options.fetch( :merge ),
 				json: options.fetch( :json ),
 				title: options[ :title ],
 				body_file: options[ :body_file ]
@@ -761,7 +761,6 @@ module Carson
 				runtime.template_apply!( push_prep: parsed.fetch( :push_prep, false ) )
 			when "deliver"
 				runtime.deliver!(
-					merge: parsed.fetch( :merge, false ),
 					title: parsed.fetch( :title, nil ),
 					body_file: parsed.fetch( :body_file, nil ),
 					json_output: parsed.fetch( :json, false )

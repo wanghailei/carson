@@ -78,7 +78,7 @@ module Carson
 					failing_count = checks.fetch( :failing_count )
 					pending_count = checks.fetch( :pending_count )
 					total = checks.fetch( :required_total )
-					fail_names = checks.fetch( :failing ).map { it.fetch( :name ) }.join( ", " )
+					fail_names = checks.fetch( :failing ).map { |entry| entry.fetch( :name ) }.join( ", " )
 					if failing_count.positive? && pending_count.positive?
 						audit_concise_problems << "Checks: #{failing_count} failing (#{fail_names}), #{pending_count} pending of #{total} required."
 					elsif failing_count.positive?
@@ -95,11 +95,11 @@ module Carson
 				if baseline_status == "block"
 					parts = []
 					if default_branch_baseline.fetch( :failing_count ).positive?
-						names = default_branch_baseline.fetch( :failing ).map { it.fetch( :name ) }.join( ", " )
+						names = default_branch_baseline.fetch( :failing ).map { |entry| entry.fetch( :name ) }.join( ", " )
 						parts << "#{default_branch_baseline.fetch( :failing_count )} failing (#{names})"
 					end
 					if default_branch_baseline.fetch( :pending_count ).positive?
-						names = default_branch_baseline.fetch( :pending ).map { it.fetch( :name ) }.join( ", " )
+						names = default_branch_baseline.fetch( :pending ).map { |entry| entry.fetch( :name ) }.join( ", " )
 						parts << "#{default_branch_baseline.fetch( :pending_count )} pending (#{names})"
 					end
 					parts << "no check-runs for active workflows" if default_branch_baseline.fetch( :no_check_evidence )
@@ -107,11 +107,11 @@ module Carson
 				elsif baseline_status == "attention"
 					parts = []
 					if default_branch_baseline.fetch( :advisory_failing_count ).positive?
-						names = default_branch_baseline.fetch( :advisory_failing ).map { it.fetch( :name ) }.join( ", " )
+						names = default_branch_baseline.fetch( :advisory_failing ).map { |entry| entry.fetch( :name ) }.join( ", " )
 						parts << "#{default_branch_baseline.fetch( :advisory_failing_count )} advisory failing (#{names})"
 					end
 					if default_branch_baseline.fetch( :advisory_pending_count ).positive?
-						names = default_branch_baseline.fetch( :advisory_pending ).map { it.fetch( :name ) }.join( ", " )
+						names = default_branch_baseline.fetch( :advisory_pending ).map { |entry| entry.fetch( :name ) }.join( ", " )
 						parts << "#{default_branch_baseline.fetch( :advisory_pending_count )} advisory pending (#{names})"
 					end
 					audit_concise_problems << "Baseline (#{default_branch_baseline.fetch( :default_branch, config.main_branch )}): #{parts.join( ', ' )}."
@@ -288,7 +288,7 @@ module Carson
 					return report
 				end
 				checks_data = JSON.parse( checks_stdout )
-				pending = checks_data.select { it[ "bucket" ].to_s == "pending" }
+				pending = checks_data.select { |entry| entry[ "bucket" ].to_s == "pending" }
 				failing = checks_data.select { |entry| check_entry_failing?( entry: entry ) }
 				report[ :checks ][ :status ] = checks_success ? "ok" : ( checks_exit == 8 ? "pending" : "attention" )
 				report[ :checks ][ :required_total ] = checks_data.count

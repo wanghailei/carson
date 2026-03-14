@@ -100,8 +100,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 5 prompts: remote, branch, workflow, merge, canonical template
-		tty_input = build_tty_input( "\n\n\n\n\n" )
+		# 4 prompts: remote, branch, workflow, canonical template
+		tty_input = build_tty_input( "\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			output = StringIO.new
@@ -121,7 +121,7 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "upstream", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		tty_input = build_tty_input( "2\n\n\n\n\n" )
+		tty_input = build_tty_input( "2\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			runtime = build_setup_runtime( input: tty_input )
@@ -222,8 +222,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 5 setup prompts (enter defaults); governance registration is automatic
-		tty_input = build_tty_input( "\n\n\n\n\n" )
+		# 4 setup prompts (enter defaults); governance registration is automatic
+		tty_input = build_tty_input( "\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			output = StringIO.new
@@ -294,8 +294,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# Setup will prompt (5 prompts: remote, branch, workflow, merge, canonical); governance auto-registers
-		tty_input = build_tty_input( "\n\n\n\n\n" )
+		# Setup will prompt (4 prompts: remote, branch, workflow, canonical); governance auto-registers
+		tty_input = build_tty_input( "\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			output = StringIO.new
@@ -434,8 +434,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 4 default prompts + canonical path
-		tty_input = build_tty_input( "\n\n\n\n/tmp/my-templates\n" )
+		# 3 default prompts + canonical path
+		tty_input = build_tty_input( "\n\n\n/tmp/my-templates\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			output = StringIO.new
@@ -455,8 +455,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 4 default prompts + blank canonical
-		tty_input = build_tty_input( "\n\n\n\n\n" )
+		# 3 default prompts + blank canonical
+		tty_input = build_tty_input( "\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			runtime = build_setup_runtime( input: tty_input )
@@ -479,8 +479,8 @@ class RuntimeSetupTest < Minitest::Test
 		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# 4 default prompts + blank canonical (keep existing)
-		tty_input = build_tty_input( "\n\n\n\n\n" )
+		# 3 default prompts + blank canonical (keep existing)
+		tty_input = build_tty_input( "\n\n\n\n" )
 
 		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
 			output = StringIO.new
@@ -512,7 +512,6 @@ class RuntimeSetupTest < Minitest::Test
 				"git.remote" => "upstream",
 				"git.main_branch" => "main",
 				"workflow.style" => "trunk",
-				"govern.merge.method" => "rebase",
 				"lint.canonical" => "/tmp/canonical"
 			} )
 
@@ -522,9 +521,9 @@ class RuntimeSetupTest < Minitest::Test
 			assert_equal "upstream", saved.dig( "git", "remote" )
 			assert_equal "main", saved.dig( "git", "main_branch" )
 			assert_equal "trunk", saved.dig( "workflow", "style" )
-			assert_equal "rebase", saved.dig( "govern", "merge", "method" )
 			assert_equal "/tmp/canonical", saved.dig( "lint", "canonical" )
 			assert_nil saved.dig( "template", "canonical" )
+			assert_equal "squash", runtime.send( :config ).govern_merge_method
 		end
 	end
 

@@ -21,7 +21,7 @@ module Carson
 					return write_setup_config( choices: cli_choices )
 				end
 
-				if self.in.respond_to?( :tty? ) && self.in.tty?
+				if input_stream.respond_to?( :tty? ) && input_stream.tty?
 					interactive_setup!
 				else
 					silent_setup!
@@ -41,9 +41,6 @@ module Carson
 
 				workflow_choice = prompt_workflow_style
 				choices[ "workflow.style" ] = workflow_choice unless workflow_choice.nil?
-
-				merge_choice = prompt_merge_method
-				choices[ "govern.merge.method" ] = merge_choice unless merge_choice.nil?
 
 				canonical_choice = prompt_canonical_lint_policy
 				choices[ "lint.canonical" ] = canonical_choice unless canonical_choice.nil?
@@ -67,7 +64,7 @@ module Carson
 				duplicates = duplicate_remote_groups( remotes: remotes )
 				unless duplicates.empty?
 					duplicates.each_value do |group|
-						names = group.map { it.fetch( :name ) }.join( " and " )
+						names = group.map { |entry| entry.fetch( :name ) }.join( " and " )
 						puts_verbose "duplicate_remotes: #{names} share the same URL"
 					end
 				end
@@ -91,10 +88,10 @@ module Carson
 				end
 
 				duplicates = duplicate_remote_groups( remotes: remotes )
-				duplicate_names = duplicates.values.flatten.map { it.fetch( :name ) }.to_set
+				duplicate_names = duplicates.values.flatten.map { |entry| entry.fetch( :name ) }.to_set
 				unless duplicates.empty?
 					duplicates.each_value do |group|
-						names = group.map { it.fetch( :name ) }.join( " and " )
+						names = group.map { |entry| entry.fetch( :name ) }.join( " and " )
 						puts_line "Remotes #{names} share the same URL. Consider removing the duplicate."
 					end
 				end
@@ -139,21 +136,7 @@ module Carson
 					{ label: "branch — enforce PR-only merges (default)", value: "branch" },
 					{ label: "trunk — commit directly to main", value: "trunk" }
 				]
-				default_index = options.index { it.fetch( :value ) == current } || 0
-				prompt_choice( options: options, default: default_index )
-			end
-
-			def prompt_merge_method
-				puts_line ""
-				puts_line "Merge method"
-				current = config.govern_merge_method
-				puts_line "  Currently: #{current}" unless current.nil? || current.empty?
-				options = [
-					{ label: "squash — one commit per PR (recommended)", value: "squash" },
-					{ label: "rebase — linear history, individual commits", value: "rebase" },
-					{ label: "merge — merge commits", value: "merge" }
-				]
-				default_index = options.index { it.fetch( :value ) == current } || 0
+				default_index = options.index { |option| option.fetch( :value ) == current } || 0
 				prompt_choice( options: options, default: default_index )
 			end
 
@@ -177,7 +160,7 @@ module Carson
 				end
 				output.print "#{BADGE} Choice [#{default + 1}]: "
 				output.flush
-				raw = self.in.gets
+				raw = input_stream.gets
 				return options[ default ].fetch( :value ) if raw.nil?
 
 				input = raw.to_s.strip
@@ -194,7 +177,7 @@ module Carson
 			def prompt_custom_value( label: )
 				output.print "#{BADGE} #{label}: "
 				output.flush
-				raw = self.in.gets
+				raw = input_stream.gets
 				return nil if raw.nil?
 
 				value = raw.to_s.strip
@@ -221,7 +204,7 @@ module Carson
 						others << entry
 					end
 				end
-				well_known.sort_by { WELL_KNOWN_REMOTES.index( it.fetch( :name ) ) || 999 } + others.sort_by { it.fetch( :name ) }
+				well_known.sort_by { |entry| WELL_KNOWN_REMOTES.index( entry.fetch( :name ) ) || 999 } + others.sort_by { |entry| entry.fetch( :name ) }
 			end
 
 			# Normalises a remote URL so SSH and HTTPS variants of the same host/path compare equal.
@@ -297,7 +280,7 @@ module Carson
 
 			def detect_git_remote
 				remotes = list_git_remotes
-				remote_names = remotes.map { it.fetch( :name ) }
+				remote_names = remotes.map { |entry| entry.fetch( :name ) }
 				return nil if remote_names.empty?
 
 				return config.git_remote if remote_names.include?( config.git_remote )
@@ -396,7 +379,7 @@ module Carson
 				hint = default ? "Y/n" : "y/N"
 				output.print "#{BADGE} [#{hint}]: "
 				output.flush
-				raw = self.in.gets
+				raw = input_stream.gets
 				return default if raw.nil?
 
 				input = raw.to_s.strip.downcase

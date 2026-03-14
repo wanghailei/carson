@@ -54,4 +54,31 @@ class ConfigLoadTest < Minitest::Test
 		end
 	end
 
+	def test_runtime_paths_fall_back_to_tmpdir_when_home_is_invalid
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
+			tmpdir = File.join( dir, "custom-tmpdir" )
+			FileUtils.mkdir_p( tmpdir )
+			config_path = File.join( dir, "config.json" )
+			File.write( config_path, JSON.generate( {} ) )
+
+			with_env( "CARSON_CONFIG_FILE" => config_path, "HOME" => "relative-home", "TMPDIR" => tmpdir ) do
+				config = Carson::Config.load( repo_root: dir )
+				assert_equal File.join( tmpdir, "carson", "hooks" ), config.hooks_path
+				assert_equal File.join( tmpdir, "carson", "state.sqlite3" ), config.govern_state_path
+			end
+		end
+	end
+
+	def test_govern_state_path_falls_back_to_tmp_when_home_and_tmpdir_are_invalid
+		Dir.mktmpdir( "carson-config-test", carson_tmp_root ) do |dir|
+			config_path = File.join( dir, "config.json" )
+			File.write( config_path, JSON.generate( {} ) )
+
+			with_env( "CARSON_CONFIG_FILE" => config_path, "HOME" => "relative-home", "TMPDIR" => "relative-tmpdir" ) do
+				config = Carson::Config.load( repo_root: dir )
+				assert_equal "/tmp/carson/state.sqlite3", config.govern_state_path
+			end
+		end
+	end
+
 end

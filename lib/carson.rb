@@ -5,6 +5,11 @@ module Carson
 	BADGE = "\u29D3".freeze # ⧓ BLACK BOWTIE (U+29D3)
 end
 
+require_relative "carson/repository"
+require_relative "carson/branch"
+require_relative "carson/delivery"
+require_relative "carson/revision"
+require_relative "carson/ledger"
 require_relative "carson/worktree"
 require_relative "carson/config"
 require_relative "carson/adapters/git"

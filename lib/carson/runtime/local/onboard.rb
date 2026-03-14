@@ -21,7 +21,7 @@ module Carson
 				puts_line "Onboarding #{repo_name}..."
 
 				if !global_config_exists? || !git_remote_exists?( remote_name: config.git_remote )
-					if self.in.respond_to?( :tty? ) && self.in.tty?
+					if input_stream.respond_to?( :tty? ) && input_stream.tty?
 						setup_status = setup!
 						return setup_status unless setup_status == EXIT_OK
 					else
@@ -48,7 +48,7 @@ module Carson
 					hook_status = prepare!
 					return hook_status unless hook_status == EXIT_OK
 
-					drift_count = template_results.count { it.fetch( :status ) != "ok" }
+					drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
 					stale_count = template_superseded_present.count
 					template_status = template_apply!
 					return template_status unless template_status == EXIT_OK
@@ -69,7 +69,7 @@ module Carson
 				return hook_status unless hook_status == EXIT_OK
 				puts_line "Hooks installed (#{config.managed_hooks.count} hooks)."
 
-				template_drift_count = template_results.count { it.fetch( :status ) != "ok" }
+				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
 				stale_count = template_superseded_present.count
 				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
@@ -202,7 +202,7 @@ module Carson
 					puts_line "#{repo_root} is not a git repository."
 					return EXIT_ERROR
 				end
-				if self.in.respond_to?( :tty? ) && self.in.tty?
+				if input_stream.respond_to?( :tty? ) && input_stream.tty?
 					puts_line ""
 					puts_line "This will remove Carson hooks, managed .github/ files,"
 					puts_line "and deregister this repository from portfolio governance."
@@ -251,7 +251,7 @@ module Carson
 				return hook_status unless hook_status == EXIT_OK
 				puts_line "Hooks installed (#{config.managed_hooks.count} hooks)."
 
-				template_drift_count = template_results.count { it.fetch( :status ) != "ok" }
+				template_drift_count = template_results.count { |entry| entry.fetch( :status ) != "ok" }
 				template_status = with_captured_output { template_apply! }
 				return template_status unless template_status == EXIT_OK
 				if template_drift_count.positive?

@@ -1,5 +1,5 @@
-# Carson govern — portfolio-level triage loop.
-# Scans repos, lists open PRs, classifies each, takes the right action, reports.
+# Carson govern — portfolio-wide oversight over branch deliveries.
+# Govern reassesses queued/gated deliveries, records revision cycles, and integrates one ready delivery at a time.
 require "json"
 require "time"
 require "fileutils"
@@ -10,13 +10,7 @@ module Carson
 			GOVERN_REPORT_MD = "govern_latest.md".freeze
 			GOVERN_REPORT_JSON = "govern_latest.json".freeze
 
-			TRIAGE_READY = "ready".freeze
-			TRIAGE_CI_FAILING = "ci_failing".freeze
-			TRIAGE_REVIEW_BLOCKED = "review_blocked".freeze
-			TRIAGE_NEEDS_ATTENTION = "needs_attention".freeze
-
-			# Portfolio-level entry point. Scans configured repos (or current repo)
-			# and triages all open PRs. Returns EXIT_OK/EXIT_ERROR.
+			# Portfolio-level entry point. Scans governed repos (or the current repo) and advances deliveries.
 			def govern!( dry_run: false, json_output: false, loop_seconds: nil )
 				if loop_seconds
 					govern_loop!( dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds )
@@ -27,31 +21,21 @@ module Carson
 
 			def govern_cycle!( dry_run:, json_output: )
 				print_header "Carson Govern"
-				repos = governed_repo_paths
-				if repos.empty?
-					puts_line "governing current repository: #{repo_root}"
-					repos = [ repo_root ]
-				else
-					puts_line "governing #{repos.length} repo#{plural_suffix( count: repos.length )}"
-				end
+				repositories = governed_repo_paths
+				repositories = [ repo_root ] if repositories.empty?
+				puts_line "governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}"
 
-				portfolio_report = {
+				report = {
 					cycle_at: Time.now.utc.iso8601,
 					dry_run: dry_run,
-					repos: []
+					repositories: repositories.map { |path| govern_repo!( repo_path: path, dry_run: dry_run ) }
 				}
 
-				repos.each do |repo_path|
-					repo_report = govern_repo!( repo_path: repo_path, dry_run: dry_run )
-					portfolio_report[ :repos ] << repo_report
-				end
-
-				write_govern_report( report: portfolio_report )
-
+				write_govern_report( report: report )
 				if json_output
-					puts_line JSON.pretty_generate( portfolio_report )
+					output.puts JSON.pretty_generate( report )
 				else
-					print_govern_summary( report: portfolio_report )
+					print_govern_summary( report: report )
 				end
 
 				EXIT_OK
@@ -61,312 +45,259 @@ module Carson
 			end
 
 			def govern_loop!( dry_run:, json_output:, loop_seconds: )
-				print_header "⧓ Carson Govern — loop mode (every #{loop_seconds}s)"
 				cycle_count = 0
 				loop do
 					cycle_count += 1
 					puts_line ""
-					puts_line "── cycle #{cycle_count} at #{Time.now.utc.strftime( "%Y-%m-%d %H:%M:%S UTC" )} ──"
-					begin
-						govern_cycle!( dry_run: dry_run, json_output: json_output )
-					rescue StandardError => exception
-						puts_line "Cycle #{cycle_count} did not complete: #{exception.message}"
-					end
-					puts_line "sleeping #{loop_seconds}s until next cycle…"
+					puts_line "cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
+					govern_cycle!( dry_run: dry_run, json_output: json_output )
 					sleep loop_seconds
 				end
 			rescue Interrupt
-				puts_line ""
-				puts_line "⧓ govern loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}."
+				puts_line "govern loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}"
 				EXIT_OK
 			end
 
 		private
 
-			# Resolves the list of repo paths to govern from config.
 			def governed_repo_paths
 				config.govern_repos.map do |path|
 					expanded = File.expand_path( path )
-					unless Dir.exist?( expanded )
-						puts_line "Skipping #{expanded} — path not found"
-						next nil
-					end
+					next nil unless Dir.exist?( expanded )
 					expanded
 				end.compact
 			end
 
-			# Governs a single repository: list open PRs, triage each.
 			def govern_repo!( repo_path:, dry_run: )
-				puts_line ""
-				puts_line "--- #{repo_path} ---"
+				scoped_runtime = repo_path == repo_root ? self : build_scoped_runtime( repo_path: repo_path )
+				repository = Repository.new( path: repo_path, authority: scoped_runtime.config.govern_authority, runtime: scoped_runtime )
+				deliveries = scoped_runtime.ledger.active_deliveries( repo_path: repo_path )
+
 				repo_report = {
-					repo: repo_path,
-					prs: [],
+					repository: repository.name,
+					path: repo_path,
+					authority: repository.authority,
+					deliveries: [],
 					error: nil
 				}
 
-				unless Dir.exist?( repo_path )
-					repo_report[ :error ] = "path does not exist"
-					puts_line "#{repo_path}: path not found, skipping"
+				if deliveries.empty?
+					puts_line "#{repository.name}: no active deliveries"
 					return repo_report
 				end
 
-				prs = list_open_prs( repo_path: repo_path )
-				if prs.nil?
-					repo_report[ :error ] = "failed to list open PRs"
-					puts_line "#{File.basename(repo_path)}: unable to list open PRs"
-					return repo_report
-				end
+				puts_line "#{repository.name}: #{deliveries.length} active deliver#{plural_suffix( count: deliveries.length )}"
 
-				if prs.empty?
-					puts_line "no open PRs"
-					return repo_report
-				end
+				reconciled = deliveries.map { |item| scoped_runtime.send( :reconcile_delivery!, delivery: item ) }
+				next_integration_id = reconciled.find( &:ready? )&.id
 
-				puts_line "open PRs: #{prs.length}"
-				prs.each do |pr|
-					pr_report = triage_pr!( pr: pr, repo_path: repo_path, dry_run: dry_run )
-					repo_report[ :prs ] << pr_report
+				reconciled.each do |delivery|
+					delivery_report = scoped_runtime.send(
+						:decide_delivery_action,
+						delivery: delivery,
+						repo_path: repo_path,
+						dry_run: dry_run,
+						next_integration_id: next_integration_id
+					)
+					repo_report[ :deliveries ] << delivery_report
 				end
 
 				repo_report
-			end
-
-			# Lists open PRs via gh CLI.
-			def list_open_prs( repo_path: )
-				stdout_text, stderr_text, status = Open3.capture3(
-					"gh", "pr", "list", "--state", "open",
-					"--json", "number,title,headRefName,statusCheckRollup,reviewDecision,url,updatedAt",
-					chdir: repo_path
-				)
-				unless status.success?
-					error_text = stderr_text.to_s.strip
-					puts_line "gh pr list failed: #{error_text}" unless error_text.empty?
-					return nil
+			rescue StandardError => exception
+				if defined?( repo_report ) && repo_report.is_a?( Hash )
+					repo_report[ :error ] = exception.message
+					repo_report
+				else
+					{ repository: File.basename( repo_path ), path: repo_path, deliveries: [], error: exception.message }
 				end
-				JSON.parse( stdout_text )
-			rescue JSON::ParserError => exception
-				puts_line "gh pr list returned invalid JSON: #{exception.message}"
-				nil
 			end
 
-			# Classifies a PR and takes appropriate action.
-			def triage_pr!( pr:, repo_path:, dry_run: )
-				number = pr[ "number" ]
-				title = pr[ "title" ].to_s
-				branch = pr[ "headRefName" ].to_s
-				url = pr[ "url" ].to_s
+			def reconcile_delivery!( delivery: )
+				branch = Repository.new( path: repo_root, authority: config.govern_authority, runtime: self ).branch( delivery.branch ).reload
+				if branch.head && branch.head != delivery.head
+					return ledger.update_delivery(
+						delivery: delivery,
+						status: "superseded",
+						superseded_at: Time.now.utc.iso8601,
+						summary: "branch head advanced to #{branch.head}; run carson deliver again"
+					)
+				end
 
-				pr_report = {
-					number: number,
-					title: title,
-					branch: branch,
-					url: url,
-					classification: nil,
-					action: nil,
-					detail: nil
+				pr_state = pull_request_state( number: delivery.pull_request_number )
+				if pr_state && pr_state[ "state" ] == "MERGED"
+					return ledger.update_delivery(
+						delivery: delivery,
+						status: "integrated",
+						integrated_at: Time.now.utc.iso8601,
+						summary: "integrated into #{config.main_branch}"
+					)
+				end
+
+				if pr_state && pr_state[ "state" ] == "CLOSED"
+					return ledger.update_delivery(
+						delivery: delivery,
+						status: "failed",
+						cause: "policy",
+						summary: "pull request closed without integration"
+					)
+				end
+
+				assess_delivery!( delivery: delivery, branch_name: delivery.branch )
+			end
+
+			def decide_delivery_action( delivery:, repo_path:, dry_run:, next_integration_id: )
+				report = {
+					id: delivery.id,
+					branch: delivery.branch,
+					status: delivery.status,
+					summary: delivery.summary,
+					revision_count: delivery.revision_count,
+					action: "none"
 				}
 
-				classification, detail = classify_pr( pr: pr, repo_path: repo_path )
-				pr_report[ :classification ] = classification
-				pr_report[ :detail ] = detail
-
-				action = decide_action( classification: classification, dry_run: dry_run )
-				pr_report[ :action ] = action
-
-				puts_line "  PR ##{number} (#{branch}): #{classification} → #{action}"
-				puts_line "    #{detail}" unless detail.to_s.empty?
-
-				execute_action!( action: action, pr: pr, repo_path: repo_path, dry_run: dry_run ) unless dry_run
-
-				pr_report
-			end
-
-			TRIAGE_PENDING = "pending".freeze
-
-			# Classifies PR state by checking CI, review status, and audit readiness.
-			def classify_pr( pr:, repo_path: )
-				ci_status = check_ci_status( pr: pr )
-				if ci_status == :pending && within_check_wait?( pr: pr )
-					return [ TRIAGE_PENDING, "checks still settling (within check_wait window)" ]
-				end
-				return [ TRIAGE_CI_FAILING, "CI checks failing or pending" ] unless ci_status == :green
-
-				review_decision = pr[ "reviewDecision" ].to_s.upcase
-				if review_decision == "CHANGES_REQUESTED"
-					return [ TRIAGE_REVIEW_BLOCKED, "changes requested by reviewer" ]
-				end
-				if review_decision == "REVIEW_REQUIRED"
-					return [ TRIAGE_REVIEW_BLOCKED, "review required" ]
+				if delivery.superseded? || delivery.integrated? || delivery.failed?
+					return report
 				end
 
-				review_status, review_detail = check_review_gate_status( pr: pr, repo_path: repo_path )
-				return [ TRIAGE_NEEDS_ATTENTION, review_detail ] if review_status == :error
-				return [ TRIAGE_REVIEW_BLOCKED, review_detail ] unless review_status == :pass
-
-				[ TRIAGE_READY, "all gates pass" ]
-			end
-
-			# Checks CI status from PR's statusCheckRollup.
-			def check_ci_status( pr: )
-				checks = Array( pr[ "statusCheckRollup" ] )
-				return :green if checks.empty?
-
-				has_failure = checks.any? { check_state_failing?( state: it[ "state" ].to_s ) || check_conclusion_failing?( conclusion: it[ "conclusion" ].to_s ) }
-				return :red if has_failure
-
-				has_pending = checks.any? { check_state_pending?( state: it[ "state" ].to_s ) }
-				return :pending if has_pending
-
-				:green
-			end
-
-			def check_state_failing?( state: )
-				[ "FAILURE", "ERROR" ].include?( state.upcase )
-			end
-
-			def check_conclusion_failing?( conclusion: )
-				[ "FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED" ].include?( conclusion.upcase )
-			end
-
-			def check_state_pending?( state: )
-				[ "PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED" ].include?( state.upcase )
-			end
-
-			# Checks review gate status. Returns [:pass/:fail, detail].
-			def check_review_gate_status( pr:, repo_path: )
-				repo_runtime = scoped_runtime( repo_path: repo_path )
-				owner, repo = repo_runtime.send( :repository_coordinates )
-				report = repo_runtime.send(
-					:review_gate_report_for_pr,
-					owner: owner,
-					repo: repo,
-					pr_number: pr.fetch( "number" ),
-					branch_name: pr.fetch( "headRefName" ).to_s,
-					pr_summary: {
-						number: pr.fetch( "number" ),
-						title: pr.fetch( "title" ).to_s,
-						url: pr.fetch( "url" ).to_s,
-						state: "OPEN"
-					}
-				)
-				result = repo_runtime.send( :review_gate_result, report: report )
-				[ result.fetch( :status ), result.fetch( :detail ) ]
-			rescue StandardError => exception
-				[ :error, "review gate check failed: #{exception.message}" ]
-			end
-
-			# Maps classification to action.
-			def decide_action( classification:, dry_run: )
-				case classification
-				when TRIAGE_READY
-					dry_run ? "would_merge" : "merge"
-				when TRIAGE_CI_FAILING
-					dry_run ? "would_dispatch_ci_fix" : "dispatch_ci_fix"
-				when TRIAGE_REVIEW_BLOCKED
-					dry_run ? "would_dispatch_review_fix" : "dispatch_review_fix"
-				when TRIAGE_PENDING
-					"skip"
-				when TRIAGE_NEEDS_ATTENTION
-					"escalate"
-				else
-					"skip"
+				if delivery.ready? && delivery.id == next_integration_id
+					report[ :action ] = dry_run ? "would_integrate" : "integrate"
+					report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
+					return report
 				end
+
+				if delivery.blocked?
+					if delivery.revision_count >= 3
+						report[ :action ] = dry_run ? "would_escalate" : "escalate"
+						report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
+					else
+						report[ :action ] = dry_run ? "would_revise" : "revise"
+						report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
+					end
+				end
+
+				report
 			end
 
-			# Executes the decided action on a PR.
-			def execute_action!( action:, pr:, repo_path:, dry_run: )
+			def execute_delivery_action!( action:, delivery:, repo_path:, dry_run: )
+				return delivery if dry_run
+
 				case action
-				when "merge"
-					merge_if_ready!( pr: pr, repo_path: repo_path )
-				when "dispatch_ci_fix"
-					dispatch_agent!( pr: pr, repo_path: repo_path, objective: "fix_ci" )
-				when "dispatch_review_fix"
-					dispatch_agent!( pr: pr, repo_path: repo_path, objective: "address_review" )
+				when "integrate"
+					integrate_delivery!( delivery: delivery, repo_path: repo_path )
+				when "revise"
+					revise_delivery!( delivery: delivery, repo_path: repo_path )
 				when "escalate"
-					puts_line "    ESCALATE: PR ##{pr[ 'number' ]} needs human attention"
-				end
-			end
-
-			# Merges a PR that has passed all gates.
-			# Omits --delete-branch (fails inside worktrees). Cleanup via `carson prune`.
-			def merge_if_ready!( pr:, repo_path: )
-				unless config.govern_auto_merge
-					puts_line "    merge authority disabled; skipping merge"
-					return
-				end
-
-				method = config.govern_merge_method
-				number = pr[ "number" ]
-				stdout_text, stderr_text, status = Open3.capture3(
-					"gh", "pr", "merge", number.to_s,
-					"--#{method}",
-					chdir: repo_path
-				)
-				if status.success?
-					puts_line "    merged PR ##{number} via #{method}"
-					housekeep_repo!( repo_path: repo_path )
+					escalate_delivery!( delivery: delivery, reason: "revision limit reached" )
 				else
-					error_text = stderr_text.to_s.strip
-					puts_line "    merge did not succeed: #{error_text}"
+					delivery
 				end
 			end
 
-			# Dispatches an agent to fix an issue on a PR.
-			def dispatch_agent!( pr:, repo_path:, objective: )
-				state = load_dispatch_state
-				state_key = dispatch_state_key( pr: pr, repo_path: repo_path )
-
-				existing = state[ state_key ]
-				if existing && existing[ "status" ] == "running"
-					puts_line "    agent already dispatched for #{objective}; skipping"
-					return
+			def integrate_delivery!( delivery:, repo_path: )
+				result = {}
+				prepared = ledger.update_delivery(
+					delivery: delivery,
+					status: "integrating",
+					summary: "integrating into #{config.main_branch}"
+				)
+				merge_exit = merge_pr!( number: prepared.pull_request_number, result: result )
+				if merge_exit == EXIT_OK
+					integrated = ledger.update_delivery(
+						delivery: prepared,
+						status: "integrated",
+						integrated_at: Time.now.utc.iso8601,
+						summary: "integrated into #{config.main_branch}"
+					)
+					housekeep_repo!( repo_path: repo_path )
+					integrated
+				else
+					ledger.update_delivery(
+						delivery: prepared,
+						status: "gated",
+						cause: "policy",
+						summary: result.fetch( :error, "merge failed" )
+					)
 				end
+			end
 
+			def revise_delivery!( delivery:, repo_path: )
 				provider = select_agent_provider
-				unless provider
-					puts_line "    no agent provider available; escalating"
-					return
-				end
+				return escalate_delivery!( delivery: delivery, reason: "no agent provider available" ) if provider.nil?
+				return escalate_delivery!( delivery: delivery, reason: "worktree missing for revision" ) unless File.directory?( delivery.worktree_path.to_s )
 
-				context = evidence( pr: pr, repo_path: repo_path, objective: objective )
+				objective = revision_objective( cause: delivery.cause )
+				context = evidence( delivery: delivery, repo_path: repo_path, objective: objective )
 				work_order = Adapters::Agent::WorkOrder.new(
 					repo: repo_path,
-					branch: pr[ "headRefName" ].to_s,
-					pr_number: pr[ "number" ],
+					branch: delivery.branch,
+					pr_number: delivery.pull_request_number,
 					objective: objective,
 					context: context,
 					acceptance_checks: nil
 				)
 
-				puts_line "    dispatching #{provider} agent for #{objective}"
-				adapter = build_agent_adapter( provider: provider, repo_path: repo_path )
-				result = adapter.dispatch( work_order: work_order )
+				result = build_agent_adapter( provider: provider, repo_path: delivery.worktree_path ).dispatch( work_order: work_order )
+				revision = ledger.record_revision(
+					delivery: delivery,
+					cause: delivery.cause || "policy",
+					provider: provider,
+					status: revision_status_for( result: result ),
+					summary: result.summary
+				)
 
-				state[ state_key ] = {
-					"objective" => objective,
-					"provider" => provider,
-					"dispatched_at" => Time.now.utc.iso8601,
-					"status" => result.status == "done" ? "done" : "failed",
-					"summary" => result.summary
-				}
-				save_dispatch_state( state: state )
+				if revision.completed?
+					updated = ledger.update_delivery(
+						delivery: delivery,
+						status: "gated",
+						summary: "revision #{revision.number} completed — waiting for reassessment",
+						revision_count: revision.number
+					)
+					return reconcile_delivery!( delivery: updated )
+				end
 
-				puts_line "    agent result: #{result.status} — #{result.summary.to_s[0, 120]}"
+				if revision.number >= 3
+					escalate_delivery!( delivery: delivery, reason: "revision #{revision.number} failed: #{result.summary}" )
+				else
+					ledger.update_delivery(
+						delivery: delivery,
+						status: "gated",
+						summary: "revision #{revision.number} failed: #{result.summary}",
+						revision_count: revision.number
+					)
+				end
 			end
 
-			# Runs sync + prune in the given repo after a successful merge.
-			def housekeep_repo!( repo_path: )
-				scoped_runtime = if repo_path == self.repo_root
-					self
-				else
-					Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error )
+			def escalate_delivery!( delivery:, reason: )
+				ledger.update_delivery(
+					delivery: delivery,
+					status: "escalated",
+					cause: delivery.cause || "policy",
+					summary: reason
+				)
+			end
+
+			def revision_objective( cause: )
+				case cause
+				when "ci" then "fix_ci"
+				when "review" then "address_review"
+				else "fix_audit"
 				end
+			end
+
+			def revision_status_for( result: )
+				case result.status
+				when "done" then "completed"
+				when "timeout" then "stalled"
+				else "failed"
+				end
+			end
+
+			def housekeep_repo!( repo_path: )
+				scoped_runtime = repo_path == repo_root ? self : build_scoped_runtime( repo_path: repo_path )
 				sync_status = scoped_runtime.sync!
 				scoped_runtime.prune! if sync_status == EXIT_OK
 			end
 
-			# Selects which agent provider to use based on config and availability.
 			def select_agent_provider
 				provider = config.govern_agent_provider
 				case provider
@@ -399,48 +330,26 @@ module Carson
 				end
 			end
 
-			# Dispatch state persistence.
-			def load_dispatch_state
-				path = config.govern_dispatch_state_path
-				return {} unless File.file?( path )
-
-				JSON.parse( File.read( path ) )
-			rescue JSON::ParserError
-				{}
-			end
-
-			def save_dispatch_state( state: )
-				path = config.govern_dispatch_state_path
-				FileUtils.mkdir_p( File.dirname( path ) )
-				File.write( path, JSON.pretty_generate( state ) )
-			end
-
-			def dispatch_state_key( pr:, repo_path: )
-				dir_name = File.basename( repo_path )
-				"#{dir_name}##{pr[ 'number' ]}"
-			end
-
-			# Evidence gathering — builds structured context Hash for agent work orders.
-			def evidence( pr:, repo_path:, objective: )
-				context = { title: pr.fetch( "title", "" ) }
+			def evidence( delivery:, repo_path:, objective: )
+				context = { title: delivery.summary.to_s }
 				case objective
 				when "fix_ci"
-					context.merge!( ci_evidence( pr: pr, repo_path: repo_path ) )
+					context.merge!( ci_evidence( delivery: delivery, repo_path: repo_path ) )
 				when "address_review"
-					context.merge!( review_evidence( pr: pr, repo_path: repo_path ) )
+					context.merge!( review_evidence( delivery: delivery, repo_path: repo_path ) )
 				end
-				prior = prior_attempt( pr: pr, repo_path: repo_path )
+				prior = prior_attempt( delivery: delivery )
 				context[ :prior_attempt ] = prior if prior
 				context
 			rescue StandardError => exception
-				puts_line "    evidence gathering failed: #{exception.message}"
-				{ title: pr.fetch( "title", "" ) }
+				puts_line "evidence gathering failed for #{delivery.branch}: #{exception.message}"
+				{ title: delivery.summary.to_s }
 			end
 
 			CI_LOG_LIMIT = 8_000
 
-			def ci_evidence( pr:, repo_path: )
-				branch = pr[ "headRefName" ].to_s
+			def ci_evidence( delivery:, repo_path: )
+				branch = delivery.branch
 				stdout_text, _, status = Open3.capture3(
 					"gh", "run", "list",
 					"--branch", branch,
@@ -456,17 +365,10 @@ module Carson
 
 				run_id = runs.first[ "databaseId" ].to_s
 				run_url = runs.first[ "url" ].to_s
-
-				log_stdout, _, log_status = Open3.capture3(
-					"gh", "run", "view", run_id, "--log-failed",
-					chdir: repo_path
-				)
+				log_stdout, _, log_status = Open3.capture3( "gh", "run", "view", run_id, "--log-failed", chdir: repo_path )
 				return { ci_run_url: run_url } unless log_status.success?
 
 				{ ci_logs: truncate_log( text: log_stdout ), ci_run_url: run_url }
-			rescue StandardError => exception
-				puts_line "    ci_evidence failed: #{exception.message}"
-				{}
 			end
 
 			def truncate_log( text:, limit: CI_LOG_LIMIT )
@@ -475,14 +377,13 @@ module Carson
 				text[ -limit.. ]
 			end
 
-			def review_evidence( pr:, repo_path: )
-				scoped_runtime = scoped_runtime( repo_path: repo_path )
-				owner, repo = scoped_runtime.send( :repository_coordinates )
-				pr_number = pr[ "number" ]
-				details = scoped_runtime.send( :pull_request_details, owner: owner, repo: repo, pr_number: pr_number )
+			def review_evidence( delivery:, repo_path: )
+				repo_runtime = repo_path == repo_root ? self : build_scoped_runtime( repo_path: repo_path )
+				owner, repo = repo_runtime.send( :repository_coordinates )
+				details = repo_runtime.send( :pull_request_details, owner: owner, repo: repo, pr_number: delivery.pull_request_number )
 				pr_author = details.dig( :author, :login ).to_s
-				threads = scoped_runtime.send( :unresolved_thread_entries, details: details )
-				top_level = scoped_runtime.send( :actionable_top_level_items, details: details, pr_author: pr_author )
+				threads = repo_runtime.send( :unresolved_thread_entries, details: details )
+				top_level = repo_runtime.send( :actionable_top_level_items, details: details, pr_author: pr_author )
 
 				findings = []
 				threads.each do |entry|
@@ -495,23 +396,12 @@ module Carson
 				end
 
 				{ review_findings: findings }
-			rescue StandardError => exception
-				puts_line "    review_evidence failed: #{exception.message}"
-				{}
 			end
 
-			def scoped_runtime( repo_path: )
-				return self if repo_path == self.repo_root
-				Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error )
-			end
-
-			def prior_attempt( pr:, repo_path: )
-				state = load_dispatch_state
-				key = dispatch_state_key( pr: pr, repo_path: repo_path )
-				existing = state[ key ]
-				return nil unless existing
-				return nil unless existing[ "status" ] == "failed"
-				{ summary: existing[ "summary" ].to_s, dispatched_at: existing[ "dispatched_at" ].to_s }
+			def prior_attempt( delivery: )
+				revision = ledger.revisions_for_delivery( delivery_id: delivery.id ).last
+				return nil unless revision&.failed?
+				{ summary: revision.summary.to_s, dispatched_at: revision.started_at.to_s }
 			end
 
 			def thread_body( details:, url: )
@@ -533,30 +423,11 @@ module Carson
 				""
 			end
 
-			# Check wait: returns true if the PR was updated within the configured wait window.
-			def within_check_wait?( pr: )
-				wait = config.govern_check_wait
-				return false if wait <= 0
-
-				updated_at_text = pr[ "updatedAt" ].to_s.strip
-				return false if updated_at_text.empty?
-
-				updated_at = Time.parse( updated_at_text )
-				( Time.now.utc - updated_at.utc ) < wait
-			rescue ArgumentError
-				false
-			end
-
-			# Report writing.
 			def write_govern_report( report: )
 				report_dir = report_dir_path
 				FileUtils.mkdir_p( report_dir )
-				json_path = File.join( report_dir, GOVERN_REPORT_JSON )
-				md_path = File.join( report_dir, GOVERN_REPORT_MD )
-				File.write( json_path, JSON.pretty_generate( report ) )
-				File.write( md_path, render_govern_markdown( report: report ) )
-				puts_verbose "report_json: #{json_path}"
-				puts_verbose "report_markdown: #{md_path}"
+				File.write( File.join( report_dir, GOVERN_REPORT_JSON ), JSON.pretty_generate( report ) )
+				File.write( File.join( report_dir, GOVERN_REPORT_MD ), render_govern_markdown( report: report ) )
 			end
 
 			def render_govern_markdown( report: )
@@ -567,8 +438,8 @@ module Carson
 				lines << "**Dry run**: #{report[ :dry_run ]}"
 				lines << ""
 
-				Array( report[ :repos ] ).each do |repo_report|
-					lines << "## #{repo_report[ :repo ]}"
+				Array( report[ :repositories ] ).each do |repo_report|
+					lines << "## #{repo_report[ :path ]}"
 					lines << ""
 					if repo_report[ :error ]
 						lines << "**Error**: #{repo_report[ :error ]}"
@@ -576,20 +447,20 @@ module Carson
 						next
 					end
 
-					prs = Array( repo_report[ :prs ] )
-					if prs.empty?
-						lines << "No open PRs."
+					deliveries = Array( repo_report[ :deliveries ] )
+					if deliveries.empty?
+						lines << "No active deliveries."
 						lines << ""
 						next
 					end
 
-					prs.each do |pr|
-						lines << "### PR ##{pr[ :number ]} — #{pr[ :title ]}"
+					deliveries.each do |delivery|
+						lines << "### #{delivery[ :branch ]}"
 						lines << ""
-						lines << "- **Branch**: #{pr[ :branch ]}"
-						lines << "- **Classification**: #{pr[ :classification ]}"
-						lines << "- **Action**: #{pr[ :action ]}"
-						lines << "- **Detail**: #{pr[ :detail ]}" unless pr[ :detail ].to_s.empty?
+						lines << "- **Status**: #{delivery[ :status ]}"
+						lines << "- **Action**: #{delivery[ :action ]}"
+						lines << "- **Summary**: #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
+						lines << "- **Revision count**: #{delivery[ :revision_count ]}"
 						lines << ""
 					end
 				end
@@ -598,28 +469,21 @@ module Carson
 			end
 
 			def print_govern_summary( report: )
-				puts_line ""
-				total_prs = 0
-				ready_count = 0
-				blocked_count = 0
-
-				Array( report[ :repos ] ).each do |repo_report|
-					Array( repo_report[ :prs ] ).each do |pr|
-						total_prs += 1
-						case pr[ :classification ]
-						when TRIAGE_READY
-							ready_count += 1
-						else
-							blocked_count += 1
-						end
+				Array( report[ :repositories ] ).each do |repo_report|
+					if repo_report[ :error ]
+						puts_line "#{repo_report[ :repository ]}: #{repo_report[ :error ]}"
+						next
 					end
-				end
 
-				repos_count = Array( report[ :repos ] ).length
-				if verbose?
-					puts_line "govern_summary: repos=#{repos_count} prs=#{total_prs} ready=#{ready_count} blocked=#{blocked_count}"
-				else
-					puts_line "Govern: #{repos_count} repo#{plural_suffix( count: repos_count )}, #{total_prs} PR#{plural_suffix( count: total_prs )} (#{ready_count} ready, #{blocked_count} blocked)"
+					if repo_report[ :deliveries ].empty?
+						puts_line "#{repo_report[ :repository ]}: no active deliveries"
+						next
+					end
+
+					repo_report[ :deliveries ].each do |delivery|
+						puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]}: #{delivery[ :status ]} -> #{delivery[ :action ]}"
+						puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
+					end
 				end
 			end
 		end

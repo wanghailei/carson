@@ -549,12 +549,12 @@ if [[ "$govern_ready_output" != *"ready"* ]]; then
 	echo "actual output: $govern_ready_output" >&2
 	exit 1
 fi
-if [[ "$govern_ready_output" != *"would_merge"* ]]; then
-	echo "FAIL: govern --dry-run did not recommend would_merge for ready PR" >&2
+if [[ "$govern_ready_output" != *"would_integrate"* ]]; then
+	echo "FAIL: govern --dry-run did not recommend would_integrate for ready PR" >&2
 	echo "actual output: $govern_ready_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run classifies ready PR and recommends would_merge"
+echo "PASS: govern --dry-run classifies ready PR and recommends would_integrate"
 
 # Govern with failing CI PR.
 cat > "$mock_bin/gh" <<'GHEOF'
@@ -564,9 +564,15 @@ if [[ "${1:-}" == "--version" ]]; then
 	echo "gh version mock"
 	exit 0
 fi
-if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
+if [[ "${1:-}" == "pr" && "${2:-}" == "checks" ]]; then
 	cat <<'JSON'
-[{"number":43,"title":"Failing PR","headRefName":"feature/fail","url":"https://github.com/mock/mock-repo/pull/43","statusCheckRollup":[{"state":"FAILURE","conclusion":"FAILURE"}],"reviewDecision":"APPROVED"}]
+[{"name":"CI","bucket":"fail"}]
+JSON
+	exit 0
+fi
+if [[ "${1:-}" == "api" && "${2:-}" == "graphql" ]]; then
+	cat <<'JSON'
+{"data":{"repository":{"pullRequest":{"number":77,"title":"Failing PR","url":"https://github.com/mock/mock-repo/pull/77","state":"OPEN","updatedAt":"2026-03-12T10:00:00Z","mergedAt":null,"closedAt":null,"author":{"login":"owner"},"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]},"comments":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]},"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}
 JSON
 	exit 0
 fi
@@ -576,12 +582,17 @@ GHEOF
 chmod +x "$mock_bin/gh"
 
 govern_fail_output="$(run_carson_with_mock_gh govern --dry-run)"
-if [[ "$govern_fail_output" != *"ci_failing"* ]]; then
-	echo "FAIL: govern --dry-run did not classify CI-failing PR" >&2
+if [[ "$govern_fail_output" != *"would_revise"* ]]; then
+	echo "FAIL: govern --dry-run did not recommend would_revise for CI-failing PR" >&2
 	echo "actual output: $govern_fail_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run classifies CI-failing PR"
+if [[ "$govern_fail_output" != *"CI checks are failing"* ]]; then
+	echo "FAIL: govern --dry-run did not report failing CI summary" >&2
+	echo "actual output: $govern_fail_output" >&2
+	exit 1
+fi
+echo "PASS: govern --dry-run classifies CI-failing PR and recommends would_revise"
 
 # Restore original mock gh for remaining tests.
 cat > "$mock_bin/gh" <<'EOF'

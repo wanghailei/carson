@@ -15,7 +15,7 @@ carson <command> [subcommand] [arguments]
 
 | Command | Purpose |
 |---|---|
-| `carson setup` | Interactive quiz to configure remote, main branch, workflow, and merge method. Writes `~/.carson/config.json`. |
+| `carson setup` | Interactive quiz to configure remote, main branch, workflow, and canonical lint-policy path. Writes `~/.carson/config.json`. |
 | `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
 | `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). |
 | `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
@@ -25,11 +25,14 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson audit` | Evaluate governance status and generate report output. |
+| `carson deliver` | Start autonomous branch delivery for the current checkout: push, create or refresh PR, record delivery state, and return immediately. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
-| `carson status` | Show repository state (branch, worktrees, PRs, governance). |
+| `carson status [--json]` | Show repository delivery state. Default output is Markdown/text; `--json` is the explicit machine contract. |
+| `carson worktree create <name>` | Create an isolated worktree and branch for a new stream of work. |
+| `carson worktree remove <path_or_name>` | Remove a worktree safely and clean up its branch when allowed. |
 
 ### Batch commands (Layer 2)
 
@@ -41,7 +44,7 @@ All batch commands operate across every governed repository registered in `gover
 | `carson audit --all` | Run governance audit across all governed repos. Reports pass/block/fail per repo. |
 | `carson sync --all` | Sync main branch across all governed repos. |
 | `carson prune --all` | Remove stale branches across all governed repos. |
-| `carson status --all [--json]` | Portfolio-wide status overview with branch, worktrees, and governance state per repo. |
+| `carson status --all [--json]` | Portfolio-wide delivery overview per governed repository. |
 | `carson template check --all` | Read-only template drift detection across all governed repos. |
 | `carson housekeep --all` | Sync, reap dead worktrees, and prune across all governed repos. |
 
@@ -49,11 +52,11 @@ All batch commands operate across every governed repository registered in `gover
 
 | Command | Purpose |
 |---|---|
-| `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level PR triage: classify, merge, dispatch agents, escalate. |
+| `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level delivery oversight: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. |
 
 `--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
-`govern.merge.method` accepts `squash`, `merge`, or `rebase` (default: `squash`). Squash keeps main linear — one PR, one commit. When the target repository enforces linear history via branch protection, both `squash` and `rebase` are accepted by GitHub — only `merge` is rejected.
+Governed integration is fixed to `squash`. Non-squash `govern.merge.method` values are rejected by config validation.
 
 ### Review commands
 
@@ -104,8 +107,7 @@ Environment overrides:
 - `CARSON_REVIEW_SWEEP_STATES`
 - `CARSON_WORKFLOW_STYLE`
 - `CARSON_GOVERN_REPOS`
-- `CARSON_GOVERN_AUTO_MERGE`
-- `CARSON_GOVERN_MERGE_METHOD`
+- `CARSON_GOVERN_AUTHORITY`
 - `CARSON_GOVERN_AGENT_PROVIDER`
 - `CARSON_GOVERN_CHECK_WAIT`
 
@@ -115,27 +117,29 @@ Environment overrides:
 {
   "govern": {
     "repos": ["~/Dev/project-a", "~/Dev/project-b"],
+    "authority": "remote",
     "agent": {
       "provider": "auto",
       "codex": {},
       "claude": {}
     },
     "check_wait": 30,
-    "auto_merge": true,
     "merge": {
       "method": "squash"
-    }
+    },
+    "state_path": "~/.carson/state.sqlite3"
   }
 }
 ```
 
 `govern` semantics:
 - `repos`: list of local repo paths to govern (empty = current repo only).
+- `authority`: `"remote"` (default) or `"local"`.
 - `agent.provider`: `"auto"`, `"codex"`, or `"claude"`.
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
-- `auto_merge`: `true` (default) — Carson may merge autonomously. Set to `false` to require explicit enablement.
-- `merge.method`: `"squash"` (default), `"merge"`, or `"rebase"`.
+- `merge.method`: `"squash"` only in governed mode.
+- `state_path`: SQLite ledger path for active deliveries and revisions.
 
 `template` schema:
 

@@ -8,7 +8,7 @@ require_relative "../lib/carson"
 
 module CarsonTestSupport
 	def carson_tmp_root
-		candidate = File.join( Dir.home, ".carson", "test" )
+		candidate = ENV.fetch( "CARSON_TEST_TMPDIR", File.join( Dir.tmpdir, "carson-test" ) )
 		FileUtils.mkdir_p( candidate )
 		candidate
 	rescue StandardError
@@ -20,7 +20,12 @@ module CarsonTestSupport
 		output = StringIO.new
 		error = StringIO.new
 		resolved_tool_root = tool_root.nil? ? repo_root : tool_root
-		runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: resolved_tool_root, output: output, error: error, verbose: verbose )
+		config_path = ENV.fetch( "CARSON_CONFIG_FILE", "" ).to_s.strip
+		config_path = write_test_config( repo_root: repo_root ) if config_path.empty?
+		runtime = nil
+		with_env( "CARSON_CONFIG_FILE" => config_path ) do
+			runtime = Carson::Runtime.new( repo_root: repo_root, tool_root: resolved_tool_root, output: output, error: error, verbose: verbose )
+		end
 		[ runtime, repo_root ]
 	end
 
@@ -45,6 +50,25 @@ module CarsonTestSupport
 			end
 		end
 	end
+
+	def write_test_config( repo_root: )
+		path = File.join( repo_root, "carson-config.json" )
+		File.write(
+			path,
+			JSON.generate(
+				{
+					"govern" => {
+						"state_path" => File.join( repo_root, "carson-state.sqlite3" )
+					}
+				}
+			)
+		)
+		path
+	end
 end
 
 ENV["CARSON_CONFIG_FILE"] = File.join( Dir.tmpdir, "carson-nonexistent-test-config.json" )
+ENV["HOME"] = File.join( Dir.tmpdir, "carson-test-home" )
+ENV["CARSON_TEST_TMPDIR"] = File.join( Dir.tmpdir, "carson-test" )
+FileUtils.mkdir_p( ENV.fetch( "HOME" ) )
+FileUtils.mkdir_p( ENV.fetch( "CARSON_TEST_TMPDIR" ) )

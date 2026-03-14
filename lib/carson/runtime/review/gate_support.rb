@@ -98,7 +98,9 @@ module Carson
 					unresolved_threads = unresolved_thread_entries( details: details )
 					actionable_top_level = actionable_top_level_items( details: details, pr_author: pr_author )
 					acknowledgements = disposition_acknowledgements( details: details, pr_author: pr_author )
-					unacknowledged_actionable = actionable_top_level.reject { acknowledged_by_disposition?( item: it, acknowledgements: acknowledgements ) }
+					unacknowledged_actionable = actionable_top_level.reject do |item|
+						acknowledged_by_disposition?( item: item, acknowledgements: acknowledgements )
+					end
 					{
 						latest_activity: latest_review_activity( details: details ),
 						unresolved_threads: unresolved_threads,
@@ -112,8 +114,8 @@ module Carson
 				def review_gate_signature( snapshot: )
 					{
 						latest_activity: snapshot.fetch( :latest_activity ).to_s,
-						unresolved_urls: snapshot.fetch( :unresolved_threads ).map { it.fetch( :url ) }.sort,
-						unacknowledged_urls: snapshot.fetch( :unacknowledged_actionable ).map { it.fetch( :url ) }.sort
+						unresolved_urls: snapshot.fetch( :unresolved_threads ).map { |entry| entry.fetch( :url ) }.sort,
+						unacknowledged_urls: snapshot.fetch( :unacknowledged_actionable ).map { |entry| entry.fetch( :url ) }.sort
 					}
 				end
 
@@ -138,7 +140,7 @@ module Carson
 				# Normalise both sides by stripping the [bot] suffix for a consistent match.
 				def bot_username?( author: )
 					normalised = author.to_s.downcase.delete_suffix( "[bot]" )
-					config.review_bot_usernames.any? { it.downcase.delete_suffix( "[bot]" ) == normalised }
+					config.review_bot_usernames.any? { |username| username.downcase.delete_suffix( "[bot]" ) == normalised }
 				end
 
 				def unresolved_thread_entries( details: )
@@ -149,7 +151,7 @@ module Carson
 						comments = thread.fetch( :comments )
 						first_comment = comments.first || {}
 						next if bot_username?( author: first_comment.fetch( :author, "" ) )
-						latest_time = comments.map { it.fetch( :created_at ) }.max.to_s
+						latest_time = comments.map { |comment| comment.fetch( :created_at ) }.max.to_s
 						{
 							url: blank_to( value: first_comment.fetch( :url, "" ), default: "#{details.fetch( :url )}#thread-#{index + 1}" ),
 							author: first_comment.fetch( :author, "" ),
@@ -201,7 +203,7 @@ module Carson
 					sources = []
 					sources.concat( Array( details.fetch( :comments ) ) )
 					sources.concat( Array( details.fetch( :reviews ) ) )
-					sources.concat( Array( details.fetch( :review_threads ) ).flat_map { it.fetch( :comments ) } )
+					sources.concat( Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) } )
 					sources.map do |entry|
 						next unless entry.fetch( :author, "" ) == pr_author
 						body = entry.fetch( :body, "" ).to_s
@@ -222,7 +224,7 @@ module Carson
 				# True when any disposition acknowledgement references the specific finding URL.
 				def acknowledged_by_disposition?( item:, acknowledgements: )
 					acknowledgements.any? do |ack|
-						Array( ack.fetch( :target_urls ) ).any? { it == item.fetch( :url ) }
+						Array( ack.fetch( :target_urls ) ).any? { |target_url| target_url == item.fetch( :url ) }
 					end
 				end
 
@@ -230,10 +232,10 @@ module Carson
 				def latest_review_activity( details: )
 					timestamps = []
 					timestamps << details.fetch( :updated_at )
-					timestamps.concat( Array( details.fetch( :comments ) ).map { it.fetch( :created_at ) } )
-					timestamps.concat( Array( details.fetch( :reviews ) ).map { it.fetch( :created_at ) } )
-					timestamps.concat( Array( details.fetch( :review_threads ) ).flat_map { it.fetch( :comments ) }.map { it.fetch( :created_at ) } )
-					timestamps.map { parse_time_or_nil( text: it ) }.compact.max&.utc&.iso8601
+					timestamps.concat( Array( details.fetch( :comments ) ).map { |comment| comment.fetch( :created_at ) } )
+					timestamps.concat( Array( details.fetch( :reviews ) ).map { |review| review.fetch( :created_at ) } )
+					timestamps.concat( Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) }.map { |comment| comment.fetch( :created_at ) } )
+					timestamps.map { |timestamp| parse_time_or_nil( text: timestamp ) }.compact.max&.utc&.iso8601
 				end
 
 				def resolved_review_gate_pr_summary( owner:, repo:, pr_number:, pr_summary: )
@@ -339,7 +341,7 @@ module Carson
 					if report.fetch( :block_reasons ).empty?
 						lines << "- none"
 					else
-						report.fetch( :block_reasons ).each { lines << "- #{it}" }
+						report.fetch( :block_reasons ).each { |reason| lines << "- #{reason}" }
 					end
 					lines << ""
 					lines << "## Unresolved Threads"

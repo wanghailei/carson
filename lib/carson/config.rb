@@ -30,8 +30,8 @@ module Carson
 			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
 			:audit_advisory_check_names,
 			:workflow_style,
-			:govern_repos, :govern_auto_merge, :govern_merge_method,
-			:govern_agent_provider, :govern_dispatch_state_path,
+			:govern_repos, :govern_authority, :govern_merge_method,
+			:govern_agent_provider, :govern_state_path,
 			:govern_check_wait
 
 		def self.load( repo_root: )
@@ -83,7 +83,7 @@ module Carson
 				},
 				"govern" => {
 					"repos" => [],
-					"auto_merge" => true,
+					"authority" => "remote",
 					"merge" => {
 						"method" => "squash"
 					},
@@ -92,7 +92,7 @@ module Carson
 						"codex" => {},
 						"claude" => {}
 					},
-					"dispatch_state_path" => "~/.carson/govern/dispatch_state.json",
+					"state_path" => "~/.carson/state.sqlite3",
 					"check_wait" => 30
 				}
 			}
@@ -171,8 +171,8 @@ module Carson
 			govern = fetch_hash_section( data: copy, key: "govern" )
 			govern_repos = env_string_array( key: "CARSON_GOVERN_REPOS" )
 			govern[ "repos" ] = govern_repos unless govern_repos.empty?
-			govern_auto_merge = ENV.fetch( "CARSON_GOVERN_AUTO_MERGE", "" ).to_s.strip
-			govern[ "auto_merge" ] = ( govern_auto_merge == "true" ) unless govern_auto_merge.empty?
+			govern_authority = ENV.fetch( "CARSON_GOVERN_AUTHORITY", "" ).to_s.strip
+			govern[ "authority" ] = govern_authority unless govern_authority.empty?
 			govern_method = ENV.fetch( "CARSON_GOVERN_MERGE_METHOD", "" ).to_s.strip
 			unless govern_method.empty?
 				govern[ "merge" ] ||= {}
@@ -209,7 +209,10 @@ module Carson
 			@main_branch = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "main_branch" )
 			@protected_branches = fetch_string_array( hash: fetch_hash( hash: data, key: "git" ), key: "protected_branches" )
 
-			@hooks_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" )
+			@hooks_path = resolve_runtime_path(
+				path: fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" ),
+				fallback_leaf: "hooks"
+			)
 			@managed_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "managed" )
 
 			template_hash = fetch_hash( hash: data, key: "template" )
@@ -240,13 +243,15 @@ module Carson
 
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |path| safe_expand_path( path ) }
-			@govern_auto_merge = fetch_optional_boolean( hash: govern_hash, key: "auto_merge", default: true, key_path: "govern.auto_merge" )
+			@govern_authority = fetch_string( hash: govern_hash, key: "authority" ).downcase
 			govern_merge_hash = fetch_hash( hash: govern_hash, key: "merge" )
 			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
-			dispatch_path = govern_hash.fetch( "dispatch_state_path" ).to_s
-			@govern_dispatch_state_path = safe_expand_path( dispatch_path )
+			@govern_state_path = resolve_runtime_path(
+				path: govern_hash.fetch( "state_path" ).to_s,
+				fallback_leaf: "state.sqlite3"
+			)
 			@govern_check_wait = fetch_non_negative_integer( hash: govern_hash, key: "check_wait" )
 
 			validate!
@@ -267,7 +272,8 @@ module Carson
 				raise ConfigError, "review.tracking_issue.title cannot be empty" if review_tracking_issue_title.empty?
 				raise ConfigError, "review.tracking_issue.label cannot be empty" if review_tracking_issue_label.empty?
 				raise ConfigError, "workflow.style must be one of trunk, branch" unless [ "trunk", "branch" ].include?( workflow_style )
-				raise ConfigError, "govern.merge.method must be one of merge, squash, rebase" unless [ "merge", "squash", "rebase" ].include?( govern_merge_method )
+				raise ConfigError, "govern.authority must be one of remote, local" unless [ "remote", "local" ].include?( govern_authority )
+				raise ConfigError, "govern.merge.method must be squash" unless govern_merge_method == "squash"
 				raise ConfigError, "govern.agent.provider must be one of auto, codex, claude" unless [ "auto", "codex", "claude" ].include?( govern_agent_provider )
 			end
 
@@ -319,13 +325,6 @@ module Carson
 			rescue ArgumentError, TypeError
 				raise ConfigError, "config key #{key} must be an integer"
 			end
-			def fetch_optional_boolean( hash:, key:, default:, key_path: nil )
-				value = hash.fetch( key, default )
-				return true if value == true
-				return false if value == false
-
-				raise ConfigError, "config key #{key_path || key} must be boolean"
-			end
 
 			def safe_expand_path( path )
 				return path unless path.start_with?( "~" )
@@ -333,6 +332,23 @@ module Carson
 				File.expand_path( path )
 			rescue ArgumentError
 				path
+			end
+
+			# Resolves Carson-owned runtime paths even when HOME is intentionally invalid.
+			# CI smoke uses that condition to verify TMPDIR and /tmp fallbacks.
+			def resolve_runtime_path( path:, fallback_leaf: )
+				expanded = safe_expand_path( path )
+				return expanded unless expanded.start_with?( "~" )
+
+				File.join( runtime_fallback_root, fallback_leaf )
+			end
+
+			# Shared fallback root for Carson-owned artefacts when HOME cannot be expanded.
+			def runtime_fallback_root
+				tmpdir = ENV.fetch( "TMPDIR", "" ).to_s.strip
+				return File.join( tmpdir, "carson" ) if tmpdir.start_with?( "/" )
+
+				"/tmp/carson"
 			end
 
 			# Returns an expanded path string, or nil when the value is absent/blank.

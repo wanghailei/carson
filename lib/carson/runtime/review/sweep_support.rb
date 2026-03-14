@@ -60,7 +60,7 @@ module Carson
 						)
 					end
 
-					Array( details.fetch( :review_threads ) ).flat_map { it.fetch( :comments ) }.each do |comment|
+					Array( details.fetch( :review_threads ) ).flat_map { |thread| thread.fetch( :comments ) }.each do |comment|
 						next if comment.fetch( :author ) == pr_author
 						next if bot_username?( author: comment.fetch( :author ) )
 						hits = matched_risk_keywords( text: comment.fetch( :body ) )
@@ -153,7 +153,7 @@ module Carson
 					stdout_text, stderr_text, success, = gh_run( "issue", "list", "--repo", repo_slug, "--state", "all", "--limit", "100", "--json", "number,title,state,url,labels" )
 					raise gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to list issues for review sweep" ) unless success
 					issues = Array( JSON.parse( stdout_text ) )
-					node = issues.find { it[ "title" ].to_s == config.review_tracking_issue_title }
+					node = issues.find { |issue| issue[ "title" ].to_s == config.review_tracking_issue_title }
 					return nil if node.nil?
 					{
 						number: node[ "number" ],
