@@ -5,6 +5,14 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.23.1
+
+### What changed
+
+- **Govern no longer depends on cache-report writes** — `carson govern` no longer writes `govern_latest.md/json` under `~/.carson/cache` as part of its normal execution. Govern now advances deliveries directly from the ledger and prints results to stdout/JSON only.
+
+### No migration required
+
 ## 3.23.0
 
 ### What changed
