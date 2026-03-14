@@ -75,16 +75,16 @@ module Carson
 					[ repository.path, branch_name, head ]
 				)
 
-				if row
-					database.execute(
-						<<~SQL,
+					if row
+						database.execute(
+							<<~SQL,
 							UPDATE deliveries
-							   SET worktree_path = ?, authority = ?, status = ?, pr_number = ?, pr_url = ?,
-							       cause = ?, summary = ?, updated_at = ?
-							 WHERE id = ?
-						SQL
-						[ worktree_path, authority, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
-					)
+							SET worktree_path = ?, authority = ?, status = ?, pr_number = ?, pr_url = ?,
+							cause = ?, summary = ?, updated_at = ?
+							WHERE id = ?
+							SQL
+							[ worktree_path, authority, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
+						)
 					return fetch_delivery( database: database, id: row.fetch( "id" ), repository: repository )
 				end
 
@@ -110,10 +110,10 @@ module Carson
 			with_database do |database|
 				row = database.get_first_row(
 					<<~SQL,
-						SELECT * FROM deliveries
-						 WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
-						 ORDER BY updated_at DESC
-						 LIMIT 1
+					SELECT * FROM deliveries
+					WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
+					ORDER BY updated_at DESC
+					LIMIT 1
 					SQL
 					[ repo_path, branch_name, *ACTIVE_DELIVERY_STATES ]
 				)
@@ -126,9 +126,9 @@ module Carson
 			with_database do |database|
 				rows = database.execute(
 					<<~SQL,
-						SELECT * FROM deliveries
-						 WHERE repo_path = ? AND status IN ( #{active_state_placeholders} )
-						 ORDER BY created_at ASC, id ASC
+					SELECT * FROM deliveries
+					WHERE repo_path = ? AND status IN ( #{active_state_placeholders} )
+					ORDER BY created_at ASC, id ASC
 					SQL
 					[ repo_path, *ACTIVE_DELIVERY_STATES ]
 				)
@@ -283,15 +283,15 @@ module Carson
 			)
 		end
 
-		def supersede_branch!( database:, repository:, branch_name:, timestamp: )
-			database.execute(
-				<<~SQL,
+			def supersede_branch!( database:, repository:, branch_name:, timestamp: )
+				database.execute(
+					<<~SQL,
 					UPDATE deliveries
-					   SET status = ?, superseded_at = ?, updated_at = ?
-					 WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
-				SQL
-				[ "superseded", timestamp, timestamp, repository.path, branch_name, *ACTIVE_DELIVERY_STATES ]
-			)
+					SET status = ?, superseded_at = ?, updated_at = ?
+					WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
+					SQL
+					[ "superseded", timestamp, timestamp, repository.path, branch_name, *ACTIVE_DELIVERY_STATES ]
+				)
 		end
 
 		def active_state_placeholders
