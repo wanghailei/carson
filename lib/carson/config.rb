@@ -209,7 +209,10 @@ module Carson
 			@main_branch = fetch_string( hash: fetch_hash( hash: data, key: "git" ), key: "main_branch" )
 			@protected_branches = fetch_string_array( hash: fetch_hash( hash: data, key: "git" ), key: "protected_branches" )
 
-			@hooks_path = fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" )
+			@hooks_path = resolve_runtime_path(
+				path: fetch_string( hash: fetch_hash( hash: data, key: "hooks" ), key: "path" ),
+				fallback_leaf: "hooks"
+			)
 			@managed_hooks = fetch_string_array( hash: fetch_hash( hash: data, key: "hooks" ), key: "managed" )
 
 			template_hash = fetch_hash( hash: data, key: "template" )
@@ -245,8 +248,10 @@ module Carson
 			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
-			state_path = govern_hash.fetch( "state_path" ).to_s
-			@govern_state_path = safe_expand_path( state_path )
+			@govern_state_path = resolve_runtime_path(
+				path: govern_hash.fetch( "state_path" ).to_s,
+				fallback_leaf: "state.sqlite3"
+			)
 			@govern_check_wait = fetch_non_negative_integer( hash: govern_hash, key: "check_wait" )
 
 			validate!
@@ -327,6 +332,23 @@ module Carson
 				File.expand_path( path )
 			rescue ArgumentError
 				path
+			end
+
+			# Resolves Carson-owned runtime paths even when HOME is intentionally invalid.
+			# CI smoke uses that condition to verify TMPDIR and /tmp fallbacks.
+			def resolve_runtime_path( path:, fallback_leaf: )
+				expanded = safe_expand_path( path )
+				return expanded unless expanded.start_with?( "~" )
+
+				File.join( runtime_fallback_root, fallback_leaf )
+			end
+
+			# Shared fallback root for Carson-owned artefacts when HOME cannot be expanded.
+			def runtime_fallback_root
+				tmpdir = ENV.fetch( "TMPDIR", "" ).to_s.strip
+				return File.join( tmpdir, "carson" ) if tmpdir.start_with?( "/" )
+
+				"/tmp/carson"
 			end
 
 			# Returns an expanded path string, or nil when the value is absent/blank.

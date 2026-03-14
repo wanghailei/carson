@@ -41,6 +41,21 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_dry_run_reconciles_with_private_method_path
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/private-path" )
+		create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/private-path", status: "queued", summary: "ready to integrate into main" )
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN" } }
+		runtime.define_singleton_method( :assess_delivery! ) { |delivery:, branch_name:| delivery }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		refute_includes output_string( runtime ), "private method `reconcile_delivery!`"
+		assert_includes output_string( runtime ), "queued -> would_integrate"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_integrates_first_ready_delivery
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )

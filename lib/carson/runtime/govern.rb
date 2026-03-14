@@ -88,7 +88,7 @@ module Carson
 
 				puts_line "#{repository.name}: #{deliveries.length} active deliver#{plural_suffix( count: deliveries.length )}"
 
-				reconciled = deliveries.map { |item| scoped_runtime.reconcile_delivery!( delivery: item ) }
+				reconciled = deliveries.map { |item| scoped_runtime.send( :reconcile_delivery!, delivery: item ) }
 				next_integration_id = reconciled.find( &:ready? )&.id
 
 				reconciled.each do |delivery|
