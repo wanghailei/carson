@@ -2,14 +2,10 @@
 # Govern reassesses queued/gated deliveries, records revision cycles, and integrates one ready delivery at a time.
 require "json"
 require "time"
-require "fileutils"
 
 module Carson
 	class Runtime
 		module Govern
-			GOVERN_REPORT_MD = "govern_latest.md".freeze
-			GOVERN_REPORT_JSON = "govern_latest.json".freeze
-
 			# Portfolio-level entry point. Scans governed repos (or the current repo) and advances deliveries.
 			def govern!( dry_run: false, json_output: false, loop_seconds: nil )
 				if loop_seconds
@@ -31,7 +27,6 @@ module Carson
 					repositories: repositories.map { |path| govern_repo!( repo_path: path, dry_run: dry_run ) }
 				}
 
-				write_govern_report( report: report )
 				if json_output
 					output.puts JSON.pretty_generate( report )
 				else
@@ -421,51 +416,6 @@ module Carson
 					return review[ :body ].to_s if review[ :url ] == url
 				end
 				""
-			end
-
-			def write_govern_report( report: )
-				report_dir = report_dir_path
-				FileUtils.mkdir_p( report_dir )
-				File.write( File.join( report_dir, GOVERN_REPORT_JSON ), JSON.pretty_generate( report ) )
-				File.write( File.join( report_dir, GOVERN_REPORT_MD ), render_govern_markdown( report: report ) )
-			end
-
-			def render_govern_markdown( report: )
-				lines = []
-				lines << "# Carson Govern Report"
-				lines << ""
-				lines << "**Cycle**: #{report[ :cycle_at ]}"
-				lines << "**Dry run**: #{report[ :dry_run ]}"
-				lines << ""
-
-				Array( report[ :repositories ] ).each do |repo_report|
-					lines << "## #{repo_report[ :path ]}"
-					lines << ""
-					if repo_report[ :error ]
-						lines << "**Error**: #{repo_report[ :error ]}"
-						lines << ""
-						next
-					end
-
-					deliveries = Array( repo_report[ :deliveries ] )
-					if deliveries.empty?
-						lines << "No active deliveries."
-						lines << ""
-						next
-					end
-
-					deliveries.each do |delivery|
-						lines << "### #{delivery[ :branch ]}"
-						lines << ""
-						lines << "- **Status**: #{delivery[ :status ]}"
-						lines << "- **Action**: #{delivery[ :action ]}"
-						lines << "- **Summary**: #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
-						lines << "- **Revision count**: #{delivery[ :revision_count ]}"
-						lines << ""
-					end
-				end
-
-				lines.join( "\n" )
 			end
 
 			def print_govern_summary( report: )

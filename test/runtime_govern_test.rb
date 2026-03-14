@@ -56,6 +56,20 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_dry_run_does_not_depend_on_report_cache_path
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/no-cache" )
+		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/no-cache", status: "queued", summary: "ready to integrate into main" )
+		stub_reconciliation( runtime, delivery: delivery )
+		runtime.define_singleton_method( :report_dir_path ) { raise "govern should not write report cache" }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_includes output_string( runtime ), "queued -> would_integrate"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_integrates_first_ready_delivery
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
