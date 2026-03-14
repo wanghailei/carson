@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.23.0
+
+### What changed
+
+- **Single-actor branch delivery redesign** — Carson is now the sole actor. Repository and branch state are recorded in a SQLite delivery ledger, `carson deliver` becomes the asynchronous branch handoff, and `carson govern` advances queued deliveries and revision cycles without blocking the caller process.
+- **Status redesigned around deliveries** — `carson status` now reports repository authority, the current branch, active deliveries, and stale-branch counts. `--json` exposes the same delivery-centred model explicitly for software consumers.
+- **Governed integration is squash-only** — Carson now enforces a single governed integration policy. Repository settings must allow squash merge, and Carson rejects governed configs that specify any other merge method.
+- **Setup and help contract simplified** — `carson setup` no longer offers merge-method choice for governed repositories, and `carson deliver --merge` is removed in favour of the single autonomous `carson deliver` path.
+
+### Migration required
+
+- Set governed repositories to allow squash merge before using Carson-governed integration.
+- Update Carson config so `govern.merge.method` is `squash`.
+- Stop using `carson deliver --merge`; use `carson deliver`.
+
 ## 3.22.1
 
 ### What changed

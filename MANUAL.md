@@ -154,7 +154,7 @@ cd /path/to/.claude/worktrees/my-feature
 
 **2. Work** — make changes, commit, iterate.
 
-**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. In remote authority Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Managed template drift is corrected and committed automatically before push (3.22.1+).
+**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. In remote authority Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Managed template drift is corrected and committed automatically before push (3.23.0+).
 
 ```bash
 carson deliver
