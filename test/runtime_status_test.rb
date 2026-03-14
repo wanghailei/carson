@@ -1,148 +1,72 @@
-# Tests for the status command and repository state reporting.
+# Tests for the delivery-centred status command.
 require_relative "test_helper"
 
 class RuntimeStatusTest < Minitest::Test
 	include CarsonTestSupport
 
 	def test_status_returns_exit_ok
-		runtime, repo_root = build_runtime
+		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		result = runtime.status!
 		assert_equal Carson::Runtime::EXIT_OK, result
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_status_prints_version
+	def test_status_human_output_reports_repository_authority_and_branch
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		runtime.status!
-		assert_includes output_string( runtime ), Carson::VERSION
+		output = output_string( runtime )
+		assert_includes output, Carson::VERSION
+		assert_includes output, "Authority: remote"
+		assert_includes output, "Branch: main"
+		assert_includes output, "Deliveries: none"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_status_prints_branch_name
-		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-		runtime.status!
-		assert_includes output_string( runtime ), "Branch: main"
-		destroy_runtime_repo( repo_root: repo_root )
-	end
-
-	def test_status_shows_dirty_state
-		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-		File.write( File.join( repo_root, "uncommitted.txt" ), "dirty" )
-		runtime.status!
-		assert_includes output_string( runtime ), "(dirty main worktree)"
-		assert_includes output_string( runtime ), "Governance: main working tree has uncommitted changes"
-		destroy_runtime_repo( repo_root: repo_root )
-	end
-
-	def test_status_shows_clean_state
-		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-		runtime.status!
-		refute_includes output_string( runtime ), "(dirty)"
-		destroy_runtime_repo( repo_root: repo_root )
-	end
-
-	def test_status_json_output_is_valid_json
+	def test_status_json_reports_repository_and_branches
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		runtime.status!( json_output: true )
 		data = JSON.parse( output_string( runtime ) )
-		assert_equal Carson::VERSION, data[ "version" ]
-		assert_equal "main", data[ "branch" ][ "name" ]
+		assert_equal Carson::VERSION, data.fetch( "version" )
+		assert_equal "remote", data.dig( "repository", "authority" )
+		assert_equal "main", data.dig( "branch", "name" )
+		assert_equal [], data.fetch( "branches" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_status_json_includes_branch_dirty_flag
+	def test_status_json_lists_active_deliveries_from_ledger
 		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-		File.write( File.join( repo_root, "uncommitted.txt" ), "dirty" )
-		runtime.status!( json_output: true )
-		data = JSON.parse( output_string( runtime ) )
-		assert_equal true, data[ "branch" ][ "dirty" ]
-		assert_equal "main_worktree", data[ "branch" ][ "dirty_reason" ]
-		destroy_runtime_repo( repo_root: repo_root )
-	end
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/status" )
 
-	def test_status_json_includes_worktrees_array
-		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-		runtime.status!( json_output: true )
-		data = JSON.parse( output_string( runtime ) )
-		assert_kind_of Array, data[ "worktrees" ]
-		destroy_runtime_repo( repo_root: repo_root )
-	end
-
-	def test_status_lists_worktrees
-		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-
-		# Create a worktree.
-		wt_path = File.join( repo_root, ".claude", "worktrees", "test-wt" )
-		system( "git", "-C", repo_root, "worktree", "add", wt_path, "-b", "test-branch", out: File::NULL, err: File::NULL )
+		repository = runtime.send( :repository_record )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/status",
+			head: runtime.send( :current_head ),
+			worktree_path: repo_root,
+			authority: "remote",
+			pr_number: 12,
+			pr_url: "https://github.com/test/repo/pull/12",
+			status: "queued",
+			summary: "ready to integrate into main",
+			cause: nil
+		)
 
 		runtime.status!( json_output: true )
 		data = JSON.parse( output_string( runtime ) )
-		worktrees = data[ "worktrees" ]
-		assert_equal 1, worktrees.size
-		assert_equal "test-wt", worktrees.first[ "name" ]
-		assert_equal "test-branch", worktrees.first[ "branch" ]
-
-		# Cleanup worktree before destroying tmpdir.
-		system( "git", "-C", repo_root, "worktree", "remove", wt_path, out: File::NULL, err: File::NULL )
-		destroy_runtime_repo( repo_root: repo_root )
-	end
-
-	# Path normalisation: status must filter the main worktree even when
-	# repo_root has a different canonical form than git reports (e.g. symlinks).
-	def test_status_filters_main_worktree_with_symlinked_path
-		Dir.mktmpdir( "carson-status-symlink-test", carson_tmp_root ) do |tmp_dir|
-			real_repo = File.join( tmp_dir, "real-repo" )
-			symlink_repo = File.join( tmp_dir, "link-repo" )
-
-			FileUtils.mkdir_p( real_repo )
-			File.symlink( real_repo, symlink_repo )
-
-			# Initialise git in the real directory.
-			system( "git", "-C", real_repo, "init", "-b", "main", out: File::NULL, err: File::NULL )
-			system( "git", "-C", real_repo, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
-			system( "git", "-C", real_repo, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
-			File.write( File.join( real_repo, "README.md" ), "# Test" )
-			system( "git", "-C", real_repo, "add", "README.md", out: File::NULL, err: File::NULL )
-			system( "git", "-C", real_repo, "commit", "-m", "init", out: File::NULL, err: File::NULL )
-
-			# Build runtime pointing at the symlink path.
-			output = StringIO.new
-			runtime = Carson::Runtime.new(
-				repo_root: symlink_repo,
-				tool_root: symlink_repo,
-				output: output,
-				error: StringIO.new,
-				verbose: false
-			)
-
-			runtime.status!( json_output: true )
-			data = JSON.parse( output.string )
-			# Main worktree should be filtered output — worktrees array should be empty.
-			assert_equal 0, data[ "worktrees" ].size, "main worktree should be filtered even with symlink"
-		end
-	end
-
-	def test_status_json_includes_governance
-		runtime, repo_root = build_runtime( verbose: false )
-		init_git_repo( repo_root )
-		runtime.status!( json_output: true )
-		data = JSON.parse( output_string( runtime ) )
-		assert data.key?( "governance" ), "JSON output should include governance key"
+		entry = data.fetch( "branches" ).find { |row| row.fetch( "branch" ) == delivery.branch }
+		refute_nil entry
+		assert_equal "queued", entry.fetch( "delivery_state" )
+		assert_equal 12, entry.fetch( "pr_number" )
+		assert_equal "ready to integrate into main", entry.fetch( "summary" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
 private
 
-	# Initialises a bare git repo with one commit so branch operations work.
 	def init_git_repo( repo_root )
 		system( "git", "-C", repo_root, "init", "-b", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
@@ -153,7 +77,21 @@ private
 		system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
 	end
 
-	# Extracts captured stdout text from the runtime.
+	def init_git_repo_with_remote( repo_root )
+		init_git_repo( repo_root )
+		bare_remote = "#{repo_root}-remote.git"
+		system( "git", "init", "--bare", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "remote", "add", "origin", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+	end
+
+	def create_feature_branch( repo_root, branch_name )
+		system( "git", "-C", repo_root, "checkout", "-b", branch_name, out: File::NULL, err: File::NULL )
+		File.write( File.join( repo_root, "feature.txt" ), branch_name )
+		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "feature", out: File::NULL, err: File::NULL )
+	end
+
 	def output_string( runtime )
 		runtime.instance_variable_get( :@output ).string
 	end

@@ -48,7 +48,7 @@ On first run (no `~/.carson/config.json` exists), `onboard` launches `carson set
 carson setup
 ```
 
-Re-run the interactive setup quiz to change your remote, main branch, workflow style, or merge method. Choices are saved to `~/.carson/config.json`.
+Re-run the interactive setup quiz to change your remote, main branch, workflow style, or canonical lint-policy path. Choices are saved to `~/.carson/config.json`.
 
 ### Commit generated files
 
@@ -154,18 +154,26 @@ cd /path/to/.claude/worktrees/my-feature
 
 **2. Work** — make changes, commit, iterate.
 
-**3. Deliver and merge** — use Carson's landing path for the repo authority. In remote authority that means push, PR, and merge; in local authority that means integrate into local `main` and back it up by pushing `main`. Managed template drift is corrected and committed automatically before push (3.22.1+). After delivery, Carson prints the exact next command:
+**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. In remote authority Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Managed template drift is corrected and committed automatically before push (3.22.1+).
 
 ```bash
-carson deliver --merge
-# Output: Merged PR #N via squash.
-#   Next: cd /path/to/repo && carson worktree remove my-feature
+carson deliver
+# Output: PR #N, Delivery: queued|gated
+#   Next: carson status
 ```
 
-**4. Clean up** — follow the printed next step. After squash merge, Carson detects the content is on main and allows removal without `--force` (3.13.1+):
+**4. Monitor and advance** — `status` is the delivery surface. It shows the current branch plus active deliveries for the repository. Keep `govern` running to advance queued deliveries and revisions across governed repositories:
 
 ```bash
-cd /path/to/repo && carson worktree remove my-feature
+carson status
+carson govern --loop 300
+```
+
+**5. Clean up landed work** — once the delivery is integrated, use Carson cleanup commands from the main worktree:
+
+```bash
+cd /path/to/repo
+carson worktree remove my-feature
 carson prune
 ```
 
@@ -175,7 +183,7 @@ carson prune
 
 After squash or rebase merge, the content matches main — removal proceeds without `--force`.
 
-**Stale worktree recovery** — if a worktree directory is destroyed externally (e.g. by running `gh pr merge --delete-branch` from inside it), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use `carson deliver --merge` instead of raw `gh pr merge --delete-branch` to avoid this situation — `deliver` deliberately omits `--delete-branch` so the worktree directory stays intact for orderly cleanup.
+**Stale worktree recovery** — if a worktree directory is destroyed externally (for example by a raw GitHub merge/delete flow), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use Carson's `deliver` + `govern` flow instead of raw `gh pr merge --delete-branch` so the worktree directory stays intact for orderly cleanup.
 
 ### Carson vs Claude Code EnterWorktree
 
@@ -271,7 +279,7 @@ Use `--loop SECONDS` to run `carson govern` as a persistent daemon that cycles o
 
 ```bash
 carson govern --loop 300              # cycle every 5 minutes
-carson govern --loop 300 --dry-run    # observe mode, no merges or dispatches
+carson govern --loop 300 --dry-run    # observe mode, no integration or revision dispatch
 ```
 
 The loop is built-in and cross-platform — no cron, launchd, or Task Scheduler required. Run it in a terminal, tmux, screen, or as a system service.
@@ -280,25 +288,15 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 ### Govern and Coding Agents
 
-`carson govern` dispatches coding agents (Codex or Claude) when a PR has failing CI checks. The agent receives the failure context and attempts to fix the issues in a follow-up commit. If the agent succeeds, the PR re-enters the governance pipeline. If it fails or times out, the PR is escalated for human attention.
+`carson govern` dispatches coding agents (Codex or Claude) when an active delivery is blocked by CI, review, or policy feedback. The agent receives the failure context and attempts a revision. If the agent succeeds, the delivery re-enters the governance pipeline. If it fails repeatedly or times out, the delivery is escalated for human attention.
 
 The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 
-## Merge Method and Linear History
+## Governed Integration Policy
 
-Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. The options are `squash`, `merge`, and `rebase` (default: `squash`). Set this in `~/.carson/config.json`:
+Governed integration is fixed to `squash`. Carson no longer exposes merge-method choice for governed delivery, and config validation rejects non-squash values.
 
-```json
-{
-  "govern": {
-    "merge": {
-      "method": "squash"
-    }
-  }
-}
-```
-
-**Why squash is the default.** Squash-to-main keeps history linear: one PR = one commit on main. Every commit on main corresponds to a reviewed, CI-passing unit of work. The benefits:
+**Why squash is fixed.** Squash-to-main keeps history linear: one delivered branch = one commit on main. Every commit on main corresponds to a reviewed, CI-passing unit of work. The benefits:
 
 - `git log --oneline` on main tells the full story without merge noise or work-in-progress commits.
 - Every commit is individually revertable — `git revert <sha>` undoes exactly one PR.
@@ -307,10 +305,7 @@ Carson's `govern.merge.method` controls how `carson govern` merges ready PRs. Th
 
 **When to use other methods:**
 
-- `rebase` — if you want to preserve individual commits from the branch on main. Both `squash` and `rebase` are compatible with GitHub's "Require linear history" branch protection — only `merge` is rejected.
-- `merge` — if you want explicit merge commits. This creates a non-linear graph but preserves branch topology.
-
-**Important:** Carson's merge method must match your GitHub repository's allowed merge types. If your repo only allows squash merges and Carson is set to `merge`, govern will fail when it tries to auto-merge. Check your repository settings under Settings > General > Pull Requests.
+There is no governed manual-final-merge mode. Repositories that require a human to perform the final merge are outside Carson's governed delivery contract.
 
 ## Defaults and Why
 
@@ -337,15 +332,13 @@ How code reaches main.
 
 Change: `carson setup` or `CARSON_WORKFLOW_STYLE`.
 
-#### Merge method
+#### Governed integration
 
-How `carson govern` merges ready PRs.
+How Carson lands ready deliveries.
 
-- **`squash`** (default) — one PR = one commit on main. Linear, bisectable history. Every commit is individually revertable. Branch commits are preserved in the PR on GitHub.
-- **`rebase`** — preserves individual branch commits on main. Linear history. Use when commit-level attribution matters.
-- **`merge`** — creates merge commits. Non-linear graph but preserves branch topology. Use when branch structure is meaningful.
+- **`squash`** (fixed) — one delivered branch = one commit on main. Linear, bisectable history. Branch commits remain visible in the PR on GitHub.
 
-Must match your GitHub repo's allowed merge types. Change: `carson setup` or `govern.merge.method` in config.
+This is part of Carson's governed contract, not a setup preference.
 
 #### Git remote
 
@@ -380,13 +373,14 @@ Whether reviewer findings require acknowledgement.
 
 Change: `CARSON_REVIEW_DISPOSITION`.
 
-#### Merge authority
+#### Delivery authority
 
-Whether `carson govern` can merge PRs autonomously.
+Where completed work rejoins shared truth.
 
-- Default: **enabled**. Carson merges PRs that pass all gates (CI green, review clean, audit clean). PRs that need human judgement are escalated, never silently merged.
+- **`remote`** (default) — the PR lands on remote `main`.
+- **`local`** — Carson integrates through local `main`, then pushes `main` as backup.
 
-Disable: `govern.auto_merge: false` in config or `CARSON_GOVERN_AUTO_MERGE=false`.
+Change: `govern.authority` in config.
 
 #### Output verbosity
 
@@ -415,7 +409,7 @@ Common environment overrides:
 | `CARSON_REVIEW_SWEEP_WINDOW_DAYS` | Lookback window for review sweep. |
 | `CARSON_REVIEW_SWEEP_STATES` | PR states to include in sweep. |
 | `CARSON_REVIEW_BOT_USERNAMES` | Comma-separated bot usernames to ignore in review gate and sweep. |
-| `CARSON_GOVERN_AUTO_MERGE` | Enable or disable autonomous PR merging. |
+| `CARSON_GOVERN_AUTHORITY` | Override delivery authority (`remote` or `local`). |
 | `CARSON_WORKFLOW_STYLE` | Workflow style override (`branch` or `trunk`). |
 | `CARSON_RUBY_INDENTATION` | Ruby indentation policy (`tabs`, `spaces`, or `either`). |
 

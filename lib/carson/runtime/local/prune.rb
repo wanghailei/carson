@@ -278,7 +278,7 @@ module Carson
 
 			# Detects local branches with no upstream tracking ref — candidates for orphan pruning.
 			def orphan_local_branches( active_branch:, cwd_branch: nil )
-				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" ).lines.filter_map do |line|
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" ).lines.map do |line|
 					branch, upstream = line.strip.split( "\t", 2 )
 					branch = branch.to_s.strip
 					upstream = upstream.to_s.strip
@@ -290,14 +290,14 @@ module Carson
 					next if branch == TEMPLATE_SYNC_BRANCH
 
 					branch
-				end
+				end.compact
 			end
 
 			# Detects local branches whose upstream still exists but whose content is already on main.
 			# Two-step evidence: (1) find the merge-base, (2) verify every file the branch changed
 			# relative to the merge-base has identical content on main.
 			def absorbed_local_branches( active_branch:, cwd_branch: nil )
-				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.filter_map do |line|
+				git_capture!( "for-each-ref", "--format=%(refname:short)\t%(upstream:short)\t%(upstream:track)", "refs/heads" ).lines.map do |line|
 					branch, upstream, track = line.strip.split( "\t", 3 )
 					branch = branch.to_s.strip
 					upstream = upstream.to_s.strip
@@ -313,7 +313,7 @@ module Carson
 					next unless branch_absorbed_into_main?( branch: branch )
 
 					{ branch: branch, upstream: upstream }
-				end
+				end.compact
 			end
 
 			# Returns true when the branch has no unique content relative to main.

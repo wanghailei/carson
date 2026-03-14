@@ -76,7 +76,7 @@ The user does not think about Carson's installation again. If they upgrade, `bas
 
 ### Stage 2 — Onboarding a repository
 
-The user runs `carson onboard` once per repository. Carson asks only what it cannot detect: the merge method and whether to register the repo for portfolio governance. Everything else — remote, main branch, workflow style — is inferred from the repository itself.
+The user runs `carson onboard` once per repository. Carson asks only what it cannot detect: remote, main branch, workflow style, and optional canonical lint-policy path. Governed integration policy is not a setup preference — Carson fixes it to squash.
 
 After onboarding, the user commits the generated `.github/*` files. The repository is governed. That is the last time the user thinks about setup for that repository.
 

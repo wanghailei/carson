@@ -70,8 +70,8 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def deliver!( merge: false, title: nil, body_file: nil, json_output: false )
-			@calls << [ :deliver, { merge: merge, title: title, body_file: body_file, json_output: json_output } ]
+		def deliver!( title: nil, body_file: nil, json_output: false )
+			@calls << [ :deliver, { title: title, body_file: body_file, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -317,12 +317,11 @@ class CLITest < Minitest::Test
 		assert_equal "trunk", parsed.fetch( :cli_choices )[ "workflow.style" ]
 	end
 
-	def test_parse_args_setup_with_merge_flag
+	def test_parse_args_setup_rejects_merge_flag
 		output = StringIO.new
 		error = StringIO.new
 		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--merge", "squash" ], output: output, error: error )
-		assert_equal "setup", parsed.fetch( :command )
-		assert_equal "squash", parsed.fetch( :cli_choices )[ "govern.merge.method" ]
+		assert_equal :invalid, parsed.fetch( :command )
 	end
 
 	def test_parse_args_setup_with_canonical_flag
@@ -341,7 +340,6 @@ class CLITest < Minitest::Test
 			"--remote", "github",
 			"--main-branch", "main",
 			"--workflow", "branch",
-			"--merge", "squash",
 			"--canonical", "/tmp/templates"
 		], output: output, error: error )
 		assert_equal "setup", parsed.fetch( :command )
@@ -349,7 +347,6 @@ class CLITest < Minitest::Test
 		assert_equal "github", choices[ "git.remote" ]
 		assert_equal "main", choices[ "git.main_branch" ]
 		assert_equal "branch", choices[ "workflow.style" ]
-		assert_equal "squash", choices[ "govern.merge.method" ]
 		assert_equal "/tmp/templates", choices[ "lint.canonical" ]
 	end
 
@@ -484,18 +481,17 @@ class CLITest < Minitest::Test
 		error = StringIO.new
 		parsed = Carson::CLI.parse_args( arguments: [ "deliver" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :merge )
 		assert_equal false, parsed.fetch( :json )
 		assert_nil parsed[ :title ]
 		assert_nil parsed[ :body_file ]
 	end
 
-	def test_parse_args_deliver_with_merge_flag
+	def test_parse_args_deliver_rejects_merge_flag
 		output = StringIO.new
 		error = StringIO.new
 		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--merge" ], output: output, error: error )
-		assert_equal "deliver", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :merge )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "use carson deliver"
 	end
 
 	def test_parse_args_deliver_with_title
@@ -518,10 +514,9 @@ class CLITest < Minitest::Test
 		output = StringIO.new
 		error = StringIO.new
 		parsed = Carson::CLI.parse_args( arguments: [
-			"deliver", "--merge", "--title", "Fix bug", "--body-file", "/tmp/b.md"
+			"deliver", "--title", "Fix bug", "--body-file", "/tmp/b.md"
 		], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :merge )
 		assert_equal "Fix bug", parsed.fetch( :title )
 		assert_equal "/tmp/b.md", parsed.fetch( :body_file )
 	end
@@ -545,28 +540,28 @@ class CLITest < Minitest::Test
 	def test_dispatch_routes_deliver_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
-			command: "deliver", merge: false, title: nil, body_file: nil
+			command: "deliver", title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: false } ] ], runtime.calls
+		assert_equal [ [ :deliver, { title: nil, body_file: nil, json_output: false } ] ], runtime.calls
 	end
 
-	def test_dispatch_routes_deliver_with_merge_to_runtime
+	def test_dispatch_routes_deliver_with_title_and_body_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
-			command: "deliver", merge: true, title: "T", body_file: "/tmp/b.md"
+			command: "deliver", title: "T", body_file: "/tmp/b.md"
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: true, title: "T", body_file: "/tmp/b.md", json_output: false } ] ], runtime.calls
+		assert_equal [ [ :deliver, { title: "T", body_file: "/tmp/b.md", json_output: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_deliver_with_json_to_runtime
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: {
-			command: "deliver", merge: false, json: true, title: nil, body_file: nil
+			command: "deliver", json: true, title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { merge: false, title: nil, body_file: nil, json_output: true } ] ], runtime.calls
+		assert_equal [ [ :deliver, { title: nil, body_file: nil, json_output: true } ] ], runtime.calls
 	end
 
 	# --- audit CLI tests ---

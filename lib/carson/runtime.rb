@@ -33,14 +33,21 @@ module Carson
 			@config = Config.load( repo_root: repo_root )
 			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
+			@ledger = Ledger.new( path: @config.govern_state_path )
 			@template_sync_result = nil
 		end
 
-		attr_reader :template_sync_result
+		attr_reader :template_sync_result, :ledger
 
 	private
 
 		attr_reader :repo_root, :tool_root, :output, :error, :in, :config, :git_adapter, :github_adapter
+
+		# Ruby 2.6 treats bare `in` awkwardly because of pattern-matching parsing.
+		# Keep the original ivar/reader for compatibility, but expose a safe helper name.
+		def input_stream
+			instance_variable_get( :@in )
+		end
 
 		# Returns true when full diagnostic output is enabled via --verbose.
 		def verbose?
@@ -72,6 +79,21 @@ module Carson
 		# Current local branch name.
 		def current_branch
 			git_capture!( "rev-parse", "--abbrev-ref", "HEAD" ).strip
+		end
+
+		# Current branch head SHA for delivery identity.
+		def current_head
+			git_capture!( "rev-parse", "HEAD" ).strip
+		end
+
+		# Passive repository record for the current runtime context.
+		def repository_record
+			Repository.new( path: repo_root, authority: config.govern_authority, runtime: self )
+		end
+
+		# Passive branch record for the current checkout.
+		def branch_record( name: current_branch )
+			repository_record.branch( name ).reload
 		end
 
 		# Checks local branch existence before restore attempts in ensure blocks.
@@ -355,6 +377,7 @@ module Carson
 	class Runtime
 		public :config, :output, :verbose?, :puts_verbose, :puts_line,
 			:git_run, :git_capture!, :main_worktree_root, :realpath_safe,
-			:block_if_outsider_fingerprints!, :branch_absorbed_into_main?
+			:block_if_outsider_fingerprints!, :branch_absorbed_into_main?,
+			:ledger, :current_head, :repository_record, :branch_record
 	end
 end

@@ -25,7 +25,7 @@ module Carson
 
 				# GitHub URL extraction for mapping disposition acknowledgements to finding URLs.
 				def extract_github_urls( text: )
-					text.to_s.scan( %r{https://github\.com/[^\s\)\]]+} ).map { it.sub( /[.,;:]+$/, "" ) }.uniq
+					text.to_s.scan( %r{https://github\.com/[^\s\)\]]+} ).map { |url| url.sub( /[.,;:]+$/, "" ) }.uniq
 				end
 
 				# Parse RFC3339 timestamps and return nil on blank/invalid values.

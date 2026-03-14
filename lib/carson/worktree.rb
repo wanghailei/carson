@@ -52,13 +52,13 @@ module Carson
 		# Compares using realpath to handle symlink differences.
 		def self.find( path:, runtime: )
 			canonical = runtime.realpath_safe( path )
-			list( runtime: runtime ).find { it.path == canonical }
+			list( runtime: runtime ).find { |worktree| worktree.path == canonical }
 		end
 
 		# Returns true if the path is a registered git worktree.
 		def self.registered?( path:, runtime: )
 			canonical = runtime.realpath_safe( path )
-			list( runtime: runtime ).any? { it.path == canonical }
+			list( runtime: runtime ).any? { |worktree| worktree.path == canonical }
 		end
 
 		# Creates a new worktree under .claude/worktrees/<name> with a fresh branch.
@@ -247,10 +247,10 @@ module Carson
 			main_root = runtime.main_worktree_root
 			worktrees = list( runtime: runtime )
 
-			agent_prefixes = AGENT_DIRS.filter_map do |dir|
+			agent_prefixes = AGENT_DIRS.map do |dir|
 				full = File.join( main_root, dir, "worktrees" )
 				File.join( runtime.realpath_safe( full ), "" ) if Dir.exist?( full )
-			end
+			end.compact
 			return if agent_prefixes.empty?
 
 			worktrees.each do |worktree|
@@ -454,7 +454,7 @@ module Carson
 			return canonical if registered?( path: canonical, runtime: runtime )
 
 			# Bare name didn't match flat layout — search registered worktrees by dirname.
-			matches = list( runtime: runtime ).select { File.basename( it.path ) == path }
+			matches = list( runtime: runtime ).select { |worktree| File.basename( worktree.path ) == path }
 			return matches.first.path if matches.size == 1
 
 			# No match or ambiguous — return the flat candidate and let the caller

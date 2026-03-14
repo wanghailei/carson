@@ -57,21 +57,18 @@ Prerequisites: Ruby `>= 3.4`, `git`, and `gem` in your `PATH`. `gh` (GitHub CLI)
 gem install carson
 carson onboard your/repo/path
 
-# Optional: switch from the default remote authority
-carson repo authority local
-
 carson worktree create your-worktree
 cd your/repo/path/.claude/worktrees/your-worktree
 
 # work, test, commit
-carson deliver --merge
+carson deliver
+carson status
 
-cd your/repo/path
-carson worktree remove your-worktree
-carson prune
+# keep govern running to advance queued deliveries
+carson govern --loop 300
 ```
 
-By default, repositories onboard as `remote`. In `remote`, `deliver` lands through remote `main`. In `local`, the same loop lands on local `main` and then pushes `main` to the remote as backup.
+By default, repositories onboard as `remote`. `carson deliver` is the branch handoff: it pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. `carson status` shows the active branch deliveries, and `carson govern` advances queued work across the governed portfolio.
 
 ## Portfolio Layer
 
@@ -83,7 +80,7 @@ carson refresh --all
 carson govern --dry-run
 ```
 
-`carson govern` is the portfolio layer. It triages open PRs, merges what is ready, dispatches agents to fix what is failing, and reports what needs human judgement.
+`carson govern` is the portfolio layer. It advances queued deliveries, dispatches revision work for blocked branches, and surfaces what needs human judgement. Governed integration is squash-only and happens one repository at a time.
 
 ## Where to Read Next
 
