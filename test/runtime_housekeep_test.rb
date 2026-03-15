@@ -281,4 +281,24 @@ class RuntimeHousekeepTest < Minitest::Test
 		assert Dir.exist?( worktree_path_s ), "superseded delivery worktree should be preserved"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
+
+	# --- housekeep_loop! ---
+
+	def test_housekeep_loop_delegates_to_housekeep_all_and_handles_interrupt
+		runtime, repo_root = build_runtime
+		cycle_count = 0
+
+		runtime.define_singleton_method( :housekeep_all! ) do |json_output: false|
+			cycle_count += 1
+			raise Interrupt if cycle_count >= 2
+			Carson::Runtime::EXIT_OK
+		end
+
+		result = runtime.housekeep_loop!( json_output: false, loop_seconds: 0 )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal 2, cycle_count
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "housekeep loop stopped after 2 cycles"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
 end

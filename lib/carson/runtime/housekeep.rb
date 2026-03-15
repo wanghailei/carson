@@ -73,6 +73,22 @@ module Carson
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
 
+			# Runs housekeep_all! in a loop with sleep. Mirrors govern_loop!.
+			# Requires --all — single-repo loop is not supported.
+			def housekeep_loop!( json_output:, loop_seconds: )
+				cycle_count = 0
+				loop do
+					cycle_count += 1
+					puts_line ""
+					puts_line "housekeep cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
+					housekeep_all!( json_output: json_output )
+					sleep loop_seconds
+				end
+			rescue Interrupt
+				puts_line "housekeep loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}"
+				EXIT_OK
+			end
+
 			# Prints a dry-run plan for this repo without making any changes.
 			# Calls reap_dead_worktrees_plan and prune_plan on self (already scoped to the repo).
 			def housekeep_one_dry_run

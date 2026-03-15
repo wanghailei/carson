@@ -623,9 +623,9 @@ module Carson
 		# --- housekeep ---
 
 		def self.parse_housekeep_command( arguments:, error: )
-			options = { all: false, json: false, dry_run: false }
+			options = { all: false, json: false, dry_run: false, loop_seconds: nil }
 			housekeep_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson housekeep [REPO] [--all] [--dry-run] [--json]"
+				parser.banner = "Usage: carson housekeep [REPO] [--all] [--dry-run] [--json] [--loop SECONDS]"
 				parser.separator ""
 				parser.separator "Run housekeeping: sync main, reap dead worktrees, and prune stale branches."
 				parser.separator "Defaults to the current repository."
@@ -634,21 +634,31 @@ module Carson
 				parser.on( "--all", "Housekeep all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--dry-run", "Show what would be reaped/deleted without making changes" ) { options[ :dry_run ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles (requires --all)" ) do |seconds|
+					error.puts( "#{BADGE} --loop expects a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
+					options[ :loop_seconds ] = seconds
+				end
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson housekeep              Housekeep the current repository"
 				parser.separator "    carson housekeep --dry-run    Preview what housekeep would do"
 				parser.separator "    carson housekeep nexus        Housekeep a named governed repo"
 				parser.separator "    carson housekeep --all        Housekeep all governed repos"
+				parser.separator "    carson housekeep --all --loop 300   Housekeep every 5 minutes"
 			end
 			housekeep_parser.parse!( arguments )
+
+			if options[ :loop_seconds ] && !options[ :all ]
+				error.puts "#{BADGE} --loop requires --all"
+				return { command: :invalid }
+			end
 
 			if options[ :all ] && !arguments.empty?
 				error.puts "#{BADGE} --all and repo target are mutually exclusive. Use: carson housekeep --all OR carson housekeep [repo]"
 				return { command: :invalid }
 			end
 
-			return { command: "housekeep:all", json: options[ :json ], dry_run: options[ :dry_run ] } if options[ :all ]
+			return { command: "housekeep:all", json: options[ :json ], dry_run: options[ :dry_run ], loop_seconds: options[ :loop_seconds ] } if options[ :all ]
 
 			if arguments.length > 1
 				error.puts "#{BADGE} Too many arguments for housekeep. Use: carson housekeep [repo]"
@@ -785,7 +795,12 @@ module Carson
 			when "housekeep:target"
 				runtime.housekeep_target!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 			when "housekeep:all"
-				runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
+				loop_seconds = parsed.fetch( :loop_seconds, nil )
+				if loop_seconds
+					runtime.housekeep_loop!( json_output: parsed.fetch( :json, false ), loop_seconds: loop_seconds )
+				else
+					runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
+				end
 			when "govern"
 				runtime.govern!(
 					dry_run: parsed.fetch( :dry_run, false ),

@@ -46,7 +46,9 @@ All batch commands operate across every governed repository registered in `gover
 | `carson prune --all` | Remove stale branches across all governed repos. |
 | `carson status --all [--json]` | Portfolio-wide delivery overview per governed repository. |
 | `carson template check --all` | Read-only template drift detection across all governed repos. |
-| `carson housekeep --all` | Sync, reap dead worktrees, and prune across all governed repos. |
+| `carson housekeep --all [--loop SECONDS]` | Sync, reap dead worktrees, and prune across all governed repos. |
+
+`--loop SECONDS` runs the housekeep cycle continuously, sleeping SECONDS between cycles. Requires `--all` — single-repo loop is not supported. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
 ### Govern commands
 

@@ -106,6 +106,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def housekeep_loop!( json_output: false, loop_seconds: )
+			@calls << [ :housekeep_loop, { json_output: json_output, loop_seconds: loop_seconds } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def template_check_all!
 			@calls << :template_check_all
 			Carson::Runtime::EXIT_OK
@@ -872,6 +877,34 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: false }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :housekeep_all, { json_output: false, dry_run: false } ] ], runtime.calls
+	end
+
+	# --- housekeep --loop CLI tests ---
+
+	def test_parse_args_housekeep_all_loop
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--loop", "300" ], output: output, error: error )
+		assert_equal "housekeep:all", parsed.fetch( :command )
+		assert_equal 300, parsed.fetch( :loop_seconds )
+	end
+
+	def test_parse_args_housekeep_loop_without_all_is_invalid
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--loop", "300" ], output: output, error: error )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "--loop requires --all"
+	end
+
+	def test_dispatch_routes_housekeep_all_loop_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch(
+			parsed: { command: "housekeep:all", json: false, loop_seconds: 300 },
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :housekeep_loop, { json_output: false, loop_seconds: 300 } ] ], runtime.calls
 	end
 
 	# --- audit --all CLI tests ---
