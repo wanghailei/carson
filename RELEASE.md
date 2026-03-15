@@ -5,6 +5,19 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.23.2
+
+### What changed
+
+- **Fix: onboard audit exception silently swallowed** — `onboard_run_audit!` referenced an undefined variable `e` instead of `exception` in its rescue clause. When `audit!` raised during `carson onboard`, the NameError was caught by the ensure block's return, giving the user no diagnostic. Now correctly captures the exception and reports "Audit skipped."
+- **Fix: `sync_after_merge!` always reported success** — `Open3.capture3` returns a `Process::Status` object which is always truthy. The sync-failure branch was unreachable. Now correctly calls `.success?` on the status object.
+- **Test coverage: Ledger revision recording** — unit tests for `record_revision` (numbering, `finished_at`, counter bump), `revisions_for_delivery` ordering, and behavioural verification that `active_deliveries` returns exactly the states `Delivery` considers active.
+- **Test coverage: govern reconciliation** — tests for PR MERGED (integrated), PR CLOSED (failed), head-advanced (superseded), and no-agent-provider (escalated) state transitions that were previously stubbed out.
+- **Test coverage: deliver error paths** — push failure and PR creation failure tests exercising actual error handling at the adapter boundary.
+- **Housekeeping** — `Ledger::ACTIVE_DELIVERY_STATES` now references `Delivery::ACTIVE_STATES` instead of maintaining a duplicate. Fixed indentation in `upsert_delivery` and `supersede_branch!`. Corrected "deliver/delivers" to "delivery/deliveries" in govern output.
+
+### No migration required
+
 ## 3.23.1
 
 ### What changed
