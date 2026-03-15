@@ -100,6 +100,50 @@ class RuntimeHousekeepTest < Minitest::Test
 		FileUtils.rm_f( config_path )
 	end
 
+	# --- housekeep! resolves to main worktree root ---
+
+	def test_housekeep_resolves_to_main_worktree_root
+		runtime, repo_root = build_runtime
+		# Simulate running from a worktree: main_worktree_root differs from repo_root.
+		main_root = File.join( repo_root, "main-root" )
+		FileUtils.mkdir_p( main_root )
+
+		runtime.define_singleton_method( :main_worktree_root ) { main_root }
+
+		received_path = nil
+		runtime.define_singleton_method( :housekeep_one ) do |repo_path:, json_output: false|
+			received_path = repo_path
+			Carson::Runtime::EXIT_OK
+		end
+
+		runtime.housekeep!
+		assert_equal main_root, received_path, "housekeep! should pass main_worktree_root, not repo_root"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_housekeep_dry_run_resolves_to_main_worktree_root
+		runtime, repo_root = build_runtime
+		main_root = File.join( repo_root, "main-root" )
+		FileUtils.mkdir_p( main_root )
+
+		runtime.define_singleton_method( :main_worktree_root ) { main_root }
+
+		scoped_repo_root = nil
+		original_new = Carson::Runtime.method( :new )
+		Carson::Runtime.define_singleton_method( :new ) do |repo_root:, **kwargs|
+			scoped_repo_root = repo_root
+			inst = original_new.call( repo_root: repo_root, **kwargs )
+			inst.define_singleton_method( :housekeep_one_dry_run ) { Carson::Runtime::EXIT_OK }
+			inst
+		end
+
+		runtime.housekeep!( dry_run: true )
+		assert_equal main_root, scoped_repo_root, "dry-run should scope to main_worktree_root, not repo_root"
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Runtime.define_singleton_method( :new, original_new ) if original_new
+	end
+
 	# --- reap_dead_worktrees! ---
 
 	def test_reap_dead_worktrees_reaps_abandoned_worktree_without_open_pr
