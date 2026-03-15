@@ -370,6 +370,7 @@ require_relative "runtime/review"
 require_relative "runtime/govern"
 require_relative "runtime/setup"
 require_relative "runtime/status"
+require_relative "runtime/abandon"
 require_relative "runtime/deliver"
 
 # Infrastructure interface for domain objects.

@@ -13,6 +13,14 @@ class RuntimeHousekeepTest < Minitest::Test
 			def held_by_other_process?
 				held_flag
 			end
+
+			def exists?
+				File.directory?( path )
+			end
+
+			def dirty?
+				false
+			end
 		end.new( path, branch, holds_cwd, held_by_other_process )
 	end
 
@@ -103,7 +111,7 @@ class RuntimeHousekeepTest < Minitest::Test
 	# --- reap_dead_worktrees! ---
 
 	def test_reap_dead_worktrees_reaps_abandoned_worktree_without_open_pr
-		runtime, repo_root = build_runtime
+		runtime, repo_root = build_runtime( verbose: false )
 		worktree_path = File.join( repo_root, ".claude", "worktrees", "abandoned" )
 		FileUtils.mkdir_p( worktree_path )
 		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/abandoned" )
@@ -113,6 +121,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime.define_singleton_method( :gh_available? ) { true }
 		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
 		runtime.define_singleton_method( :worktree_list ) { [ worktree ] }
+		runtime.define_singleton_method( :branch_absorbed_into_main? ) { |branch:| false }
 		runtime.define_singleton_method( :git_capture! ) { |*| "abc123\n" }
 		runtime.define_singleton_method( :merged_pr_for_branch ) { |branch:, branch_tip_sha:| [ nil, nil ] }
 		runtime.define_singleton_method( :branch_has_open_pr? ) { |branch:| false }
@@ -129,13 +138,12 @@ class RuntimeHousekeepTest < Minitest::Test
 		assert_includes git_calls, [ "worktree", "remove", worktree_path ]
 		assert_includes git_calls, [ "branch", "-D", "feature/abandoned" ]
 		output = runtime.instance_variable_get( :@output ).string
-		assert_includes output, "reaped abandoned worktree: abandoned"
-		assert_includes output, "https://github.com/acme/widgets/pull/42"
+		assert_includes output, "Reaped worktree: abandoned (feature/abandoned) — closed abandoned PR #42"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
 	def test_reap_dead_worktrees_skips_abandoned_worktree_when_open_pr_exists
-		runtime, repo_root = build_runtime
+		runtime, repo_root = build_runtime( verbose: false )
 		worktree_path = File.join( repo_root, ".claude", "worktrees", "abandoned" )
 		FileUtils.mkdir_p( worktree_path )
 		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/abandoned" )
@@ -146,6 +154,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime.define_singleton_method( :gh_available? ) { true }
 		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
 		runtime.define_singleton_method( :worktree_list ) { [ worktree ] }
+		runtime.define_singleton_method( :branch_absorbed_into_main? ) { |branch:| false }
 		runtime.define_singleton_method( :git_capture! ) { |*| "abc123\n" }
 		runtime.define_singleton_method( :merged_pr_for_branch ) { |branch:, branch_tip_sha:| [ nil, nil ] }
 		runtime.define_singleton_method( :branch_has_open_pr? ) { |branch:| true }
@@ -160,10 +169,11 @@ class RuntimeHousekeepTest < Minitest::Test
 
 		runtime.reap_dead_worktrees!
 
-		assert_empty git_calls
+		refute_includes git_calls, [ "worktree", "remove", worktree_path ]
+		refute_includes git_calls, [ "branch", "-D", "feature/abandoned" ]
 		assert_equal 0, abandoned_calls
 		output = runtime.instance_variable_get( :@output ).string
-		refute_includes output, "reaped abandoned worktree"
+		assert_includes output, "Kept worktree: abandoned (feature/abandoned) — open PR exists"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 end

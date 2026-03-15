@@ -23,6 +23,17 @@ class RuntimeStatusTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_status_human_output_points_to_worktree_list_when_non_main_worktrees_exist
+		with_feature_worktree_runtimes(
+			branch_name: "codex/status-pointer",
+			worktree_name: "status-pointer"
+		) do |root_runtime, _worktree_runtime, _repo_root, _worktree_path|
+			root_runtime.status!
+			output = output_string( root_runtime )
+			assert_includes output, "Worktrees: 1 tracked outside main — run carson worktree list."
+		end
+	end
+
 	def test_status_json_reports_repository_and_branches
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )

@@ -65,6 +65,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def worktree_list!( json_output: false )
+			@calls << [ :worktree_list, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def sync!( json_output: false )
 			@calls << [ :sync, { json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
@@ -72,6 +77,11 @@ class CLITest < Minitest::Test
 
 		def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
 			@calls << [ :deliver, { title: title, body_file: body_file, commit_message: commit_message, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def abandon!( target:, json_output: false )
+			@calls << [ :abandon, { target: target, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -257,6 +267,37 @@ class CLITest < Minitest::Test
 		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--commit", "fix: harden deliver" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "fix: harden deliver", parsed.fetch( :commit_message )
+	end
+
+	def test_parse_args_abandon_with_json
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "abandon", "291", "--json" ], output: output, error: error )
+		assert_equal "abandon", parsed.fetch( :command )
+		assert_equal "291", parsed.fetch( :target )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_worktree_list
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "list", "--json" ], output: output, error: error )
+		assert_equal "worktree:list", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_dispatch_routes_worktree_list_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "worktree:list", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :worktree_list, { json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_abandon_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "abandon", target: "feature/stale", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :abandon, { target: "feature/stale", json_output: false } ] ], runtime.calls
 	end
 
 	def test_parse_args_deliver_rejects_blank_commit_message

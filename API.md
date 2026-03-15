@@ -25,13 +25,16 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson audit` | Evaluate governance status and generate report output. |
-| `carson deliver [--commit MESSAGE]` | Start autonomous branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first, then pushes, creates or refreshes the PR, records delivery state, and returns immediately. |
+| `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first, then Carson pushes, creates or refreshes the PR, waits for merge readiness, merges when clear, and syncs local `main`. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
+| `carson housekeep [--json] [--dry-run]` | Sync the current repo, reap dead worktrees, and prune stale branches. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
 | `carson status [--json]` | Show repository delivery state. Default output is Markdown/text; `--json` is the explicit machine contract. |
+| `carson abandon <pr_number\|pr_url\|branch> [--json]` | Close abandoned delivery work and clean up its PR, worktree, and branch when safe. |
 | `carson worktree create <name>` | Create an isolated worktree and branch for a new stream of work. |
+| `carson worktree list [--json]` | Show every registered worktree with PR state and Carson's cleanup recommendation. |
 | `carson worktree remove <path_or_name>` | Remove a worktree safely and clean up its branch when allowed. |
 
 ### Batch commands (Layer 2)

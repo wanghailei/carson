@@ -28,6 +28,25 @@ module Carson
 				Worktree.list( runtime: self )
 			end
 
+			# Human and JSON status surface for all registered worktrees.
+			def worktree_list!( json_output: false )
+				entries = worktree_inventory
+				result = {
+					command: "worktree list",
+					status: "ok",
+					worktrees: entries,
+					exit_code: EXIT_OK
+				}
+
+				if json_output
+					output.puts JSON.pretty_generate( result )
+				else
+					print_worktree_list( entries: entries )
+				end
+
+				EXIT_OK
+			end
+
 			# --- Methods that stay on Runtime ---
 
 			# Returns the branch checked out in the worktree that contains the process CWD,
@@ -86,6 +105,140 @@ module Carson
 				end
 
 				missing_segments.empty? ? base : File.join( base, *missing_segments )
+			end
+
+		private
+
+			def worktree_inventory
+				worktree_list.map { |worktree| worktree_inventory_entry( worktree: worktree ) }
+			end
+
+			def worktree_inventory_entry( worktree: )
+				cleanup = classify_worktree_cleanup( worktree: worktree )
+				pull_request = worktree_pull_request( branch: worktree.branch )
+
+				{
+					name: File.basename( worktree.path ),
+					branch: worktree.branch,
+					path: worktree.path,
+					main: worktree.path == main_worktree_root,
+					exists: worktree.exists?,
+					dirty: worktree.dirty?,
+					held_by_current_shell: worktree.holds_cwd?,
+					held_by_other_process: worktree.held_by_other_process?,
+					absorbed_into_main: cleanup.fetch( :absorbed, false ),
+					pull_request: pull_request,
+					cleanup: {
+						action: cleanup.fetch( :action ).to_s,
+						reason: cleanup.fetch( :reason )
+					}
+				}
+			end
+
+			# Shared cleanup classifier used by `worktree list` and `housekeep`.
+			def classify_worktree_cleanup( worktree: )
+				return { action: :skip, reason: "main worktree", absorbed: false } if worktree.path == main_worktree_root
+				return { action: :skip, reason: "detached HEAD", absorbed: false } if worktree.branch.to_s.strip.empty?
+				return { action: :skip, reason: "held by current shell", absorbed: false } if worktree.holds_cwd?
+				return { action: :skip, reason: "held by another process", absorbed: false } if worktree.held_by_other_process?
+				return { action: :reap, reason: "directory missing (destroyed externally)", absorbed: false } unless worktree.exists?
+				return { action: :skip, reason: "dirty worktree", absorbed: false } if worktree.dirty?
+
+				absorbed = branch_absorbed_into_main?( branch: worktree.branch )
+				return { action: :reap, reason: "content absorbed into main", absorbed: true } if absorbed
+				return { action: :skip, reason: "gh CLI not available for PR check", absorbed: false } unless gh_available?
+
+				tip_sha = worktree_branch_tip_sha( branch: worktree.branch )
+				return { action: :skip, reason: "cannot read branch tip SHA", absorbed: false } if tip_sha.nil?
+
+				merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
+				return { action: :reap, reason: "merged #{pr_short_ref( merged_pr.fetch( :url ) )}", absorbed: false } unless merged_pr.nil?
+				return { action: :skip, reason: "open PR exists", absorbed: false } if branch_has_open_pr?( branch: worktree.branch )
+
+				abandoned_pr, = abandoned_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
+				return { action: :reap, reason: "closed abandoned #{pr_short_ref( abandoned_pr.fetch( :url ) )}", absorbed: false } unless abandoned_pr.nil?
+
+				{ action: :skip, reason: "no evidence to reap", absorbed: false }
+			end
+
+			def worktree_branch_tip_sha( branch: )
+				git_capture!( "rev-parse", "--verify", branch ).strip
+			rescue StandardError
+				nil
+			end
+
+			def worktree_pull_request( branch: )
+				return { state: nil, number: nil, url: nil, error: nil } if branch.to_s.strip.empty?
+				return { state: nil, number: nil, url: nil, error: "gh unavailable" } unless gh_available?
+
+				owner, repo = repository_coordinates
+				stdout_text, stderr_text, success, = gh_run(
+					"api", "repos/#{owner}/#{repo}/pulls",
+					"--method", "GET",
+					"-f", "state=all",
+					"-f", "head=#{owner}:#{branch}",
+					"-f", "per_page=100"
+				)
+				unless success
+					error_text = gh_error_text(
+						stdout_text: stdout_text,
+						stderr_text: stderr_text,
+						fallback: "unable to read pull request for #{branch}"
+					)
+					return { state: nil, number: nil, url: nil, error: error_text }
+				end
+
+				entries = Array( JSON.parse( stdout_text ) )
+				return { state: nil, number: nil, url: nil, error: nil } if entries.empty?
+
+				chosen = entries.find { |entry| normalise_rest_pull_request_state( entry: entry ) == "OPEN" } ||
+					entries.max_by { |entry| parse_time_or_nil( text: entry[ "updated_at" ] ) || Time.at( 0 ) }
+
+				{
+					state: normalise_rest_pull_request_state( entry: chosen ),
+					number: chosen[ "number" ],
+					url: chosen[ "html_url" ].to_s,
+					error: nil
+				}
+			rescue JSON::ParserError => exception
+				{ state: nil, number: nil, url: nil, error: "invalid gh JSON response (#{exception.message})" }
+			rescue StandardError => exception
+				{ state: nil, number: nil, url: nil, error: exception.message }
+			end
+
+			def print_worktree_list( entries: )
+				puts_line "Worktrees:"
+				return puts_line "  none" if entries.empty?
+
+				entries.each do |entry|
+					label = entry.fetch( :main ) ? "#{entry.fetch( :name )} (main)" : entry.fetch( :name )
+					state = []
+					state << entry.fetch( :branch ) unless entry.fetch( :branch ).to_s.empty?
+					state << ( entry.fetch( :exists ) ? ( entry.fetch( :dirty ) ? "dirty" : "clean" ) : "missing" )
+					state << "held by current shell" if entry.fetch( :held_by_current_shell )
+					state << "held by another process" if entry.fetch( :held_by_other_process )
+					state << worktree_pull_request_text( pull_request: entry.fetch( :pull_request ) )
+					state << "absorbed into main" if entry.fetch( :absorbed_into_main )
+
+					recommendation = entry.fetch( :cleanup )
+					action = recommendation.fetch( :action ) == "reap" ? "reap" : "keep"
+					puts_line "- #{label}: #{state.join( ', ' )}"
+					puts_line "  Recommendation: #{action} — #{recommendation.fetch( :reason )}"
+				end
+			end
+
+			def worktree_pull_request_text( pull_request: )
+				return "PR unknown (#{pull_request.fetch( :error )})" unless pull_request.fetch( :error ).nil?
+				return "PR none" if pull_request.fetch( :number ).nil?
+
+				"PR ##{pull_request.fetch( :number )} #{pull_request.fetch( :state )}"
+			end
+
+			def pr_short_ref( url )
+				return "PR" if url.nil? || url.empty?
+
+				match = url.match( /\/pull\/(\d+)$/ )
+				match ? "PR ##{match[ 1 ]}" : "PR"
 			end
 		end
 

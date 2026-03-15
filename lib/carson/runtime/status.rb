@@ -70,6 +70,7 @@ module Carson
 						dirty_reason: dirty_worktree_reason,
 						sync: remote_sync_status( branch: branch.name )
 					},
+					worktrees: gather_worktree_summary,
 					branches: deliveries.map { |delivery| status_branch_entry( delivery: delivery ) },
 					stale_branches: gather_stale_branch_info
 				}
@@ -129,6 +130,13 @@ module Carson
 				{ count: gone_branches.size }
 			end
 
+			def gather_worktree_summary
+				all = worktree_list
+				main_root = main_worktree_root
+				non_main = all.reject { |worktree| worktree.path == main_root }
+				{ count: all.count, non_main_count: non_main.count }
+			end
+
 			def print_status( data: )
 				repo_name = data.dig( :repository, :name )
 				puts_line "Carson #{data.fetch( :version )} — #{repo_name}"
@@ -138,6 +146,8 @@ module Carson
 				branch_line += " (uncommitted changes)" if branch.fetch( :dirty )
 				branch_line += ", #{format_sync( sync: branch.fetch( :sync ) )}."
 				puts_line branch_line
+				worktree_summary = data.fetch( :worktrees )
+				puts_line "Worktrees: #{worktree_summary.fetch( :non_main_count )} tracked outside main — run carson worktree list." if worktree_summary.fetch( :non_main_count ).positive?
 
 				deliveries = data.fetch( :branches )
 				if deliveries.empty?
