@@ -106,8 +106,8 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep_loop!( json_output: false, loop_seconds: )
-			@calls << [ :housekeep_loop, { json_output: json_output, loop_seconds: loop_seconds } ]
+		def housekeep_loop!( json_output: false, loop_seconds:, dry_run: false )
+			@calls << [ :housekeep_loop, { json_output: json_output, loop_seconds: loop_seconds, dry_run: dry_run } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -904,7 +904,17 @@ class CLITest < Minitest::Test
 			runtime: runtime
 		)
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep_loop, { json_output: false, loop_seconds: 300 } ] ], runtime.calls
+		assert_equal [ [ :housekeep_loop, { json_output: false, loop_seconds: 300, dry_run: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_housekeep_all_loop_dry_run_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch(
+			parsed: { command: "housekeep:all", json: false, loop_seconds: 300, dry_run: true },
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :housekeep_loop, { json_output: false, loop_seconds: 300, dry_run: true } ] ], runtime.calls
 	end
 
 	# --- audit --all CLI tests ---

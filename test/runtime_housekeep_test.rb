@@ -209,13 +209,12 @@ class RuntimeHousekeepTest < Minitest::Test
 		FileUtils.mkdir_p( worktree_path )
 		git_calls = []
 
-		repository = Carson::Repository.new( path: repo_root, authority: "remote", runtime: runtime )
+		repository = Carson::Repository.new( path: repo_root, runtime: runtime )
 		delivery = runtime.ledger.upsert_delivery(
 			repository: repository,
 			branch_name: "feature/delivered",
 			head: "abc123",
 			worktree_path: worktree_path,
-			authority: "remote",
 			pr_number: 50,
 			pr_url: "https://github.com/test/repo/pull/50",
 			status: "integrated",
@@ -257,16 +256,16 @@ class RuntimeHousekeepTest < Minitest::Test
 		FileUtils.mkdir_p( worktree_path_f )
 		FileUtils.mkdir_p( worktree_path_s )
 
-		repository = Carson::Repository.new( path: repo_root, authority: "remote", runtime: runtime )
+		repository = Carson::Repository.new( path: repo_root, runtime: runtime )
 		d1 = runtime.ledger.upsert_delivery(
 			repository: repository, branch_name: "feature/fail", head: "f1",
-			worktree_path: worktree_path_f, authority: "remote",
+			worktree_path: worktree_path_f,
 			pr_number: 51, pr_url: "https://github.com/test/repo/pull/51",
 			status: "failed", summary: "failed", cause: nil
 		)
 		d2 = runtime.ledger.upsert_delivery(
 			repository: repository, branch_name: "feature/sup", head: "s1",
-			worktree_path: worktree_path_s, authority: "remote",
+			worktree_path: worktree_path_s,
 			pr_number: 52, pr_url: "https://github.com/test/repo/pull/52",
 			status: "superseded", summary: "superseded", cause: nil
 		)
@@ -288,7 +287,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		runtime, repo_root = build_runtime
 		cycle_count = 0
 
-		runtime.define_singleton_method( :housekeep_all! ) do |json_output: false|
+		runtime.define_singleton_method( :housekeep_all! ) do |json_output: false, dry_run: false|
 			cycle_count += 1
 			raise Interrupt if cycle_count >= 2
 			Carson::Runtime::EXIT_OK

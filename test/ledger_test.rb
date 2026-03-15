@@ -227,13 +227,12 @@ class LedgerTest < Minitest::Test
 	def test_integrated_deliveries_matches_worktree_repo_path
 		# Simulate a delivery created from within a worktree (legacy repo_path).
 		worktree_repo_path = "#{@tmp_dir}/.claude/worktrees/my-feature"
-		worktree_repo = Carson::Repository.new( path: worktree_repo_path, authority: "remote", runtime: nil )
+		worktree_repo = Carson::Repository.new( path: worktree_repo_path, runtime: nil )
 		delivery = @ledger.upsert_delivery(
 			repository: worktree_repo,
 			branch_name: "feature/wt-path",
 			head: "wtp1",
 			worktree_path: worktree_repo_path,
-			authority: "remote",
 			pr_number: 2,
 			pr_url: "https://github.com/test/repo/pull/2",
 			status: "integrated",

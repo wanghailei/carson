@@ -75,13 +75,13 @@ module Carson
 
 			# Runs housekeep_all! in a loop with sleep. Mirrors govern_loop!.
 			# Requires --all — single-repo loop is not supported.
-			def housekeep_loop!( json_output:, loop_seconds: )
+			def housekeep_loop!( json_output:, loop_seconds:, dry_run: false )
 				cycle_count = 0
 				loop do
 					cycle_count += 1
 					puts_line ""
 					puts_line "housekeep cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
-					housekeep_all!( json_output: json_output )
+					housekeep_all!( json_output: json_output, dry_run: dry_run )
 					sleep loop_seconds
 				end
 			rescue Interrupt
@@ -195,6 +195,10 @@ module Carson
 				# Layer 1: sweep agent-owned worktrees whose content is on main.
 				sweep_stale_worktrees!
 
+				# Layer 4: integrated delivery worktrees recorded in the ledger.
+				# Runs before gh-dependent layers so it works even without gh CLI.
+				reap_integrated_delivery_worktrees!( summary: summary )
+
 				# Layers 2 and 3: PR evidence for remaining worktrees.
 				return summary unless gh_available?
 
@@ -268,9 +272,6 @@ module Carson
 					summary[ :reaped ] += 1
 				end
 
-				# Layer 4: integrated delivery worktrees recorded in the ledger.
-				reap_integrated_delivery_worktrees!( summary: summary )
-
 				summary
 			end
 
@@ -283,7 +284,12 @@ module Carson
 
 				deliveries.each do |delivery|
 					next if delivery.worktree_path.nil? || delivery.worktree_path.empty?
-					next unless Dir.exist?( delivery.worktree_path )
+
+					# Directory already gone — null out the stale record so it is not re-scanned.
+					unless Dir.exist?( delivery.worktree_path )
+						ledger.update_delivery( delivery: delivery, worktree_path: nil )
+						next
+					end
 
 					worktree = Worktree.find( path: delivery.worktree_path, runtime: self )
 					next unless worktree

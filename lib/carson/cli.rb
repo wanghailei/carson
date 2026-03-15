@@ -797,7 +797,7 @@ module Carson
 			when "housekeep:all"
 				loop_seconds = parsed.fetch( :loop_seconds, nil )
 				if loop_seconds
-					runtime.housekeep_loop!( json_output: parsed.fetch( :json, false ), loop_seconds: loop_seconds )
+					runtime.housekeep_loop!( json_output: parsed.fetch( :json, false ), loop_seconds: loop_seconds, dry_run: parsed.fetch( :dry_run, false ) )
 				else
 					runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 				end
