@@ -82,7 +82,7 @@ module Carson
 				puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}"
 
 				reconciled = deliveries.map { |item| scoped_runtime.send( :reconcile_delivery!, delivery: item ) }
-				next_integration_id = reconciled.find( &:ready? )&.id
+				next_to_integrate = reconciled.find( &:ready? )&.key
 
 				reconciled.each do |delivery|
 					delivery_report = scoped_runtime.send(
@@ -90,7 +90,7 @@ module Carson
 						delivery: delivery,
 						repo_path: repo_path,
 						dry_run: dry_run,
-						next_integration_id: next_integration_id
+						next_to_integrate: next_to_integrate
 					)
 					repo_report[ :deliveries ] << delivery_report
 				end
@@ -138,9 +138,9 @@ module Carson
 				assess_delivery!( delivery: delivery, branch_name: delivery.branch )
 			end
 
-			def decide_delivery_action( delivery:, repo_path:, dry_run:, next_integration_id: )
+			def decide_delivery_action( delivery:, repo_path:, dry_run:, next_to_integrate: )
 				report = {
-					id: delivery.id,
+					key: delivery.key,
 					branch: delivery.branch,
 					status: delivery.status,
 					summary: delivery.summary,
@@ -152,7 +152,7 @@ module Carson
 					return report
 				end
 
-				if delivery.ready? && delivery.id == next_integration_id
+				if delivery.ready? && delivery.key == next_to_integrate
 					report[ :action ] = dry_run ? "would_integrate" : "integrate"
 					report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
 					return report
@@ -242,8 +242,7 @@ module Carson
 					updated = ledger.update_delivery(
 						delivery: delivery,
 						status: "gated",
-						summary: "revision #{revision.number} completed — waiting for reassessment",
-						revision_count: revision.number
+						summary: "revision #{revision.number} completed — waiting for reassessment"
 					)
 					return reconcile_delivery!( delivery: updated )
 				end
@@ -254,8 +253,7 @@ module Carson
 					ledger.update_delivery(
 						delivery: delivery,
 						status: "gated",
-						summary: "revision #{revision.number} failed: #{result.summary}",
-						revision_count: revision.number
+						summary: "revision #{revision.number} failed: #{result.summary}"
 					)
 				end
 			end
@@ -392,7 +390,7 @@ module Carson
 			end
 
 			def prior_attempt( delivery: )
-				revision = ledger.revisions_for_delivery( delivery_id: delivery.id ).last
+				revision = delivery.revisions.last
 				return nil unless revision&.failed?
 				{ summary: revision.summary.to_s, dispatched_at: revision.started_at.to_s }
 			end

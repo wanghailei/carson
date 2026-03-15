@@ -6,7 +6,7 @@
 
 **Architecture:** All fixes are surgical — no structural changes. Bug fixes are one-line corrections. Test coverage additions follow the existing Minitest + CarsonTestSupport pattern with isolated git repos and mock gh binaries. Housekeeping is separated into its own commit.
 
-**Tech Stack:** Ruby, Minitest, SQLite3, Open3, git CLI
+**Tech Stack:** Ruby, Minitest, JSON, Open3, git CLI
 
 ---
 
@@ -195,7 +195,7 @@ class LedgerTest < Minitest::Test
 
 	def setup
 		@tmp_dir = Dir.mktmpdir( "carson-ledger-test", carson_tmp_root )
-		@ledger = Carson::Ledger.new( path: File.join( @tmp_dir, "test-ledger.sqlite3" ) )
+		@ledger = Carson::Ledger.new( path: File.join( @tmp_dir, "test-ledger.json" ) )
 		@repository = Carson::Repository.new( path: @tmp_dir, authority: "remote", runtime: nil )
 	end
 

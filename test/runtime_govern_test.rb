@@ -104,9 +104,9 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		integrated = delivery_row( runtime: runtime, id: delivery.id )
-		assert_equal "integrated", integrated.fetch( "status" )
-		assert_equal "integrated into main", integrated.fetch( "summary" )
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "integrated", row.fetch( "status" )
+		assert_equal "integrated into main", row.fetch( "summary" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -127,9 +127,9 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		escalated = delivery_row( runtime: runtime, id: delivery.id )
-		assert_equal "escalated", escalated.fetch( "status" )
-		assert_includes escalated.fetch( "summary" ), "revision limit"
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "escalated", row.fetch( "status" )
+		assert_includes row.fetch( "summary" ), "revision limit"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -146,7 +146,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		row = delivery_row( runtime: runtime, id: delivery.id )
+		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
 		refute_nil row.fetch( "integrated_at" )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -165,7 +165,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		row = delivery_row( runtime: runtime, id: delivery.id )
+		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "failed", row.fetch( "status" )
 		assert_includes row.fetch( "summary" ), "closed without integration"
 		destroy_runtime_repo( repo_root: repo_root )
@@ -190,7 +190,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		row = delivery_row( runtime: runtime, id: delivery.id )
+		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "superseded", row.fetch( "status" )
 		refute_nil row.fetch( "superseded_at" )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -210,7 +210,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		row = delivery_row( runtime: runtime, id: delivery.id )
+		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "escalated", row.fetch( "status" )
 		assert_includes row.fetch( "summary" ), "no agent provider"
 		destroy_runtime_repo( repo_root: repo_root )
@@ -244,13 +244,23 @@ private
 			summary: summary,
 			cause: cause
 		)
-		runtime.ledger.update_delivery( delivery: delivery, revision_count: revision_count )
+		# Simulate prior revisions to reach the desired count
+		revision_count.times do |i|
+			runtime.ledger.record_revision(
+				delivery: delivery,
+				cause: cause || "ci",
+				provider: "codex",
+				status: "failed",
+				summary: "simulated revision #{i + 1}"
+			)
+		end
+		# Re-fetch to get the delivery with embedded revisions
+		runtime.ledger.active_delivery( repo_path: repository.path, branch_name: branch_name ) || delivery
 	end
 
-	def delivery_row( runtime:, id: )
-		runtime.ledger.send( :with_database ) do |database|
-			database.get_first_row( "SELECT * FROM deliveries WHERE id = ?", [ id ] )
-		end
+	def delivery_data( runtime:, key: )
+		state = JSON.parse( File.read( runtime.ledger.path ) )
+		state.dig( "deliveries", key )
 	end
 
 	def init_git_repo( repo_root )

@@ -58,7 +58,7 @@ module CarsonTestSupport
 			JSON.generate(
 				{
 					"govern" => {
-						"state_path" => File.join( repo_root, "carson-state.sqlite3" )
+						"state_path" => File.join( repo_root, "carson-state.json" )
 					}
 				}
 			)

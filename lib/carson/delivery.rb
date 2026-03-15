@@ -6,16 +6,17 @@ module Carson
 		READY_STATES = %w[queued].freeze
 		TERMINAL_STATES = %w[integrated failed superseded].freeze
 
-		attr_reader :id, :repository, :branch, :head, :worktree_path, :status,
-			:pull_request_number, :pull_request_url, :revision_count, :cause, :summary,
+		attr_reader :repo_path, :repository, :branch, :head, :worktree_path, :status,
+			:pull_request_number, :pull_request_url, :revisions, :cause, :summary,
 			:created_at, :updated_at, :integrated_at, :superseded_at
 
 		def initialize(
-			id:, repository:, branch:, head:, worktree_path:, status:,
-			pull_request_number:, pull_request_url:, revision_count:, cause:, summary:,
-			created_at:, updated_at:, integrated_at:, superseded_at:
+			repo_path:, branch:, head:, worktree_path:, status:,
+			pull_request_number:, pull_request_url:, cause:, summary:,
+			created_at:, updated_at:, integrated_at:, superseded_at:,
+			revisions: [], repository: nil
 		)
-			@id = id
+			@repo_path = repo_path
 			@repository = repository
 			@branch = branch
 			@head = head
@@ -23,13 +24,21 @@ module Carson
 			@status = status
 			@pull_request_number = pull_request_number
 			@pull_request_url = pull_request_url
-			@revision_count = revision_count
+			@revisions = revisions
 			@cause = cause
 			@summary = summary
 			@created_at = created_at
 			@updated_at = updated_at
 			@integrated_at = integrated_at
 			@superseded_at = superseded_at
+		end
+
+		def key
+			"#{repo_path}:#{branch}:#{head}"
+		end
+
+		def revision_count
+			revisions.length
 		end
 
 		def active?

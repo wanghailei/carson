@@ -7,12 +7,46 @@ class LedgerTest < Minitest::Test
 
 	def setup
 		@tmp_dir = Dir.mktmpdir( "carson-ledger-test", carson_tmp_root )
-		@ledger = Carson::Ledger.new( path: File.join( @tmp_dir, "test-ledger.sqlite3" ) )
+		@ledger = Carson::Ledger.new( path: File.join( @tmp_dir, "test-ledger.json" ) )
 		@repository = Carson::Repository.new( path: @tmp_dir, runtime: nil )
 	end
 
 	def teardown
 		FileUtils.remove_entry( @tmp_dir ) if File.directory?( @tmp_dir )
+	end
+
+	# --- bootstrap ---
+
+	def test_missing_json_file_bootstraps_as_empty
+		path = File.join( @tmp_dir, "nonexistent.json" )
+		ledger = Carson::Ledger.new( path: path )
+		assert_equal [], ledger.active_deliveries( repo_path: @tmp_dir )
+	end
+
+	def test_malformed_json_raises_actionable_error
+		path = File.join( @tmp_dir, "bad.json" )
+		File.write( path, "{invalid-json" )
+		ledger = Carson::Ledger.new( path: path )
+		error = assert_raises( RuntimeError ) { ledger.active_deliveries( repo_path: @tmp_dir ) }
+		assert_includes error.message, path
+	end
+
+	# --- upsert_delivery ---
+
+	def test_idempotent_upsert_for_same_identity
+		d1 = create_test_delivery
+		d2 = create_test_delivery
+		assert_equal d1.key, d2.key
+		assert_equal 1, @ledger.active_deliveries( repo_path: @tmp_dir ).length
+	end
+
+	def test_supersedes_older_active_deliveries_on_new_head
+		old = create_test_delivery( head: "old-head" )
+		assert old.active?
+		_new = create_test_delivery( head: "new-head" )
+		deliveries = @ledger.active_deliveries( repo_path: @tmp_dir )
+		assert_equal 1, deliveries.length
+		assert_equal "new-head", deliveries.first.head
 	end
 
 	# --- record_revision ---
@@ -62,6 +96,13 @@ class LedgerTest < Minitest::Test
 		assert_equal 1, updated.revision_count
 	end
 
+	def test_escalation_after_three_recorded_revisions
+		delivery = create_test_delivery( status: "gated" )
+		3.times { |i| @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "attempt #{i + 1}" ) }
+		updated = @ledger.active_delivery( repo_path: @tmp_dir, branch_name: "feature/test" )
+		assert_equal 3, updated.revision_count
+	end
+
 	# --- revisions_for_delivery ---
 
 	def test_revisions_for_delivery_returns_in_ascending_order
@@ -69,7 +110,8 @@ class LedgerTest < Minitest::Test
 		@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "first" )
 		@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "second" )
 
-		revisions = @ledger.revisions_for_delivery( delivery_id: delivery.id )
+		updated = @ledger.active_delivery( repo_path: @tmp_dir, branch_name: "feature/test" )
+		revisions = @ledger.revisions_for_delivery( delivery: updated )
 		assert_equal 2, revisions.length
 		assert_equal 1, revisions.first.number
 		assert_equal 2, revisions.last.number
@@ -80,9 +122,8 @@ class LedgerTest < Minitest::Test
 	# --- active_deliveries filtering ---
 
 	def test_active_deliveries_returns_only_active_state_deliveries
-		# Create deliveries in various states
-		active = create_test_delivery( branch_name: "feature/active", head: "aaa", status: "queued" )
-		gated = create_test_delivery( branch_name: "feature/gated", head: "bbb", status: "gated" )
+		create_test_delivery( branch_name: "feature/active", head: "aaa", status: "queued" )
+		create_test_delivery( branch_name: "feature/gated", head: "bbb", status: "gated" )
 		terminal = create_test_delivery( branch_name: "feature/done", head: "ccc", status: "queued" )
 		@ledger.update_delivery( delivery: terminal, status: "integrated" )
 
@@ -94,8 +135,6 @@ class LedgerTest < Minitest::Test
 	end
 
 	def test_active_deliveries_uses_same_states_as_delivery_model
-		# Verify that every state Delivery considers active is also
-		# returned by Ledger's active_deliveries query.
 		Carson::Delivery::ACTIVE_STATES.each_with_index do |state, index|
 			create_test_delivery(
 				branch_name: "feature/state-#{index}",
@@ -109,42 +148,6 @@ class LedgerTest < Minitest::Test
 		expected_statuses = Carson::Delivery::ACTIVE_STATES.sort
 		assert_equal expected_statuses, returned_statuses,
 			"Ledger active_deliveries must return all states that Delivery considers active"
-	end
-
-	def test_active_deliveries_reads_existing_database_without_wal_write_access
-		create_test_delivery( branch_name: "feature/readonly", head: "readonly-head", status: "queued" )
-		state_path = @ledger.path
-		FileUtils.rm_f( [ "#{state_path}-wal", "#{state_path}-shm" ] )
-		File.chmod( 0o444, state_path )
-		File.chmod( 0o555, @tmp_dir )
-
-		readonly_ledger = Carson::Ledger.new( path: state_path )
-		deliveries = readonly_ledger.active_deliveries( repo_path: @tmp_dir )
-		assert_equal [ "feature/readonly" ], deliveries.map( &:branch )
-	ensure
-		File.chmod( 0o755, @tmp_dir ) if Dir.exist?( @tmp_dir )
-		File.chmod( 0o644, state_path ) if state_path && File.exist?( state_path )
-	end
-
-	def test_readonly_fallback_when_wal_active_and_immutable_fails
-		create_test_delivery( branch_name: "feature/wal-active", head: "wal-head", status: "queued" )
-		state_path = @ledger.path
-
-		# Hold a WAL writer open so immutable=1 may fail to read.
-		writer = SQLite3::Database.new( state_path )
-		writer.execute( "PRAGMA journal_mode = WAL" )
-		writer.execute( "BEGIN IMMEDIATE" )
-		writer.execute( "UPDATE deliveries SET updated_at = datetime('now') WHERE branch_name = 'feature/wal-active'" )
-
-		# Directory is read-only so the writable open falls through to readonly.
-		File.chmod( 0o555, @tmp_dir )
-
-		readonly_ledger = Carson::Ledger.new( path: state_path )
-		deliveries = readonly_ledger.active_deliveries( repo_path: @tmp_dir )
-		assert_equal [ "feature/wal-active" ], deliveries.map( &:branch )
-	ensure
-		writer&.close
-		File.chmod( 0o755, @tmp_dir ) if Dir.exist?( @tmp_dir )
 	end
 
 	def test_active_deliveries_include_legacy_worktree_repo_path_rows_for_canonical_root
@@ -167,50 +170,6 @@ class LedgerTest < Minitest::Test
 
 			deliveries = root_runtime.ledger.active_deliveries( repo_path: repo_root )
 			assert_equal [ "codex/legacy-ledger-query" ], deliveries.map( &:branch )
-		end
-	end
-
-	def test_upsert_delivery_rekeys_legacy_worktree_repo_path_rows_to_canonical_root
-		with_feature_worktree_runtimes(
-			branch_name: "codex/legacy-ledger-upsert",
-			worktree_name: "legacy-ledger-upsert"
-		) do |root_runtime, worktree_runtime, repo_root, worktree_path|
-			canonical_repo_path = root_runtime.send( :repository_record ).path
-			legacy_repository = Carson::Repository.new( path: worktree_path, runtime: nil )
-			worktree_runtime.ledger.upsert_delivery(
-				repository: legacy_repository,
-				branch_name: "codex/legacy-ledger-upsert",
-				head: worktree_runtime.send( :current_head ),
-				worktree_path: worktree_path,
-				pr_number: 78,
-				pr_url: "https://github.com/test/repo/pull/78",
-				status: "queued",
-				summary: "ready to integrate into main",
-				cause: nil
-			)
-
-			canonical_delivery = root_runtime.ledger.upsert_delivery(
-				repository: root_runtime.send( :repository_record ),
-				branch_name: "codex/legacy-ledger-upsert",
-				head: worktree_runtime.send( :current_head ),
-				worktree_path: worktree_path,
-				pr_number: 79,
-				pr_url: "https://github.com/test/repo/pull/79",
-				status: "queued",
-				summary: "ready to integrate into main",
-				cause: nil
-			)
-
-			rows = root_runtime.ledger.send( :with_database ) do |database|
-				database.execute(
-					"SELECT repo_path, pr_number FROM deliveries WHERE branch_name = ? ORDER BY id ASC",
-					[ "codex/legacy-ledger-upsert" ]
-				)
-			end
-			assert_equal 1, rows.length
-			assert_equal canonical_repo_path, rows.first.fetch( "repo_path" )
-			assert_equal 79, rows.first.fetch( "pr_number" )
-			assert_equal canonical_repo_path, canonical_delivery.repository.path
 		end
 	end
 
