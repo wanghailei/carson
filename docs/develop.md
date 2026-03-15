@@ -1,8 +1,8 @@
-# Carson Development Guide
+# Carson Development Note
 
 ## Audience
 
-This document is for Hailei and coding agents who need architecture, runtime contract, and development workflow guidance.
+This document is a development note only. It is for WHL and coding agents who need architecture, runtime contract, and implementation guidance. It is not a public manual or a feature specification.
 
 ## Architectural Overview
 
