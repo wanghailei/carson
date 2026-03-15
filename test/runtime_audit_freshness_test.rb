@@ -89,7 +89,7 @@ private
 	def init_git_repo_with_remote( repo_root )
 		init_git_repo( repo_root )
 		bare_remote = "#{repo_root}-remote.git"
-		system( "git", "init", "--bare", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "init", "--bare", "-b", "main", bare_remote, out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "remote", "add", "origin", bare_remote, out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 	end
@@ -105,7 +105,7 @@ private
 		repo_root = Dir.mktmpdir( "carson-freshness-test", carson_tmp_root )
 		init_git_repo( repo_root )
 		bare_remote = "#{repo_root}-remote.git"
-		system( "git", "init", "--bare", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "init", "--bare", "-b", "main", bare_remote, out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "remote", "add", "origin", bare_remote, out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
@@ -129,6 +129,7 @@ private
 		# Clone the bare remote, commit, push — then the remote main is ahead.
 		tmp_clone = Dir.mktmpdir( "carson-freshness-advance", carson_tmp_root )
 		system( "git", "clone", remote_path, tmp_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", tmp_clone, "checkout", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", tmp_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
 		system( "git", "-C", tmp_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 		File.write( File.join( tmp_clone, "remote-change.txt" ), "new work on main" )

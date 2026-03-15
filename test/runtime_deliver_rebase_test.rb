@@ -117,7 +117,7 @@ private
 
 		# Create repo with a bare remote.
 		bare_remote = File.join( tmp_dir, "remote.git" )
-		system( "git", "init", "--bare", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "init", "--bare", "-b", "main", bare_remote, out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "init", "-b", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
@@ -193,6 +193,7 @@ private
 	def advance_remote_main( remote_path )
 		tmp_clone = Dir.mktmpdir( "carson-rebase-advance", carson_tmp_root )
 		system( "git", "clone", remote_path, tmp_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", tmp_clone, "checkout", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", tmp_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
 		system( "git", "-C", tmp_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 		File.write( File.join( tmp_clone, "remote-change.txt" ), "new work on main" )
@@ -205,6 +206,7 @@ private
 	def advance_remote_main_with_conflict( remote_path )
 		tmp_clone = Dir.mktmpdir( "carson-rebase-conflict", carson_tmp_root )
 		system( "git", "clone", remote_path, tmp_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", tmp_clone, "checkout", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", tmp_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
 		system( "git", "-C", tmp_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 		File.write( File.join( tmp_clone, "README.md" ), "# Remote conflict\n" )
