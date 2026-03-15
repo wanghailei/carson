@@ -311,10 +311,10 @@ module Carson
 			# Syncs main after a successful merge.
 			def sync_after_merge!( remote:, main:, result: )
 				main_root = main_worktree_root
-				_, pull_stderr, pull_success, = Open3.capture3(
+				_, pull_stderr, pull_status, = Open3.capture3(
 					"git", "-C", main_root, "pull", "--ff-only", remote, main
 				)
-				if pull_success
+				if pull_status.success?
 					result[ :synced ] = true
 					puts_verbose "synced #{main} in #{main_root} from #{remote}"
 				else
