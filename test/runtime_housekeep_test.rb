@@ -134,6 +134,40 @@ class RuntimeHousekeepTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_housekeep_one_entry_does_not_gate_reap_on_sync
+		# Verify the code path: reap_dead_worktrees! runs regardless of sync result.
+		# We stub at the Runtime class level to intercept the scoped runtime.
+		runtime, repo_root = build_runtime
+		reap_called = false
+		original_new = Carson::Runtime.method( :new )
+		Carson::Runtime.define_singleton_method( :new ) do |**kwargs|
+			scoped = original_new.call( **kwargs )
+			scoped.define_singleton_method( :sync! ) { |**| Carson::Runtime::EXIT_ERROR }
+			scoped.define_singleton_method( :reap_dead_worktrees! ) { reap_called = true; { reaped: 0, skipped: 0 } }
+			scoped.define_singleton_method( :prune! ) { |**| Carson::Runtime::EXIT_OK }
+			scoped
+		end
+
+		entry = runtime.send( :housekeep_one_entry, repo_path: repo_root )
+		assert reap_called, "reap_dead_worktrees! should run even when sync fails"
+		assert_equal "ok", entry[ :status ], "status should be ok when prune succeeds"
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Runtime.define_singleton_method( :new ) { |**kwargs| original_new.call( **kwargs ) } if original_new
+	end
+
+	def test_reap_dead_worktrees_returns_summary_hash
+		runtime, repo_root = build_runtime
+		runtime.define_singleton_method( :sweep_stale_worktrees! ) {}
+		runtime.define_singleton_method( :gh_available? ) { false }
+
+		summary = runtime.reap_dead_worktrees!
+		assert_kind_of Hash, summary
+		assert_equal 0, summary[ :reaped ]
+		assert_equal 0, summary[ :skipped ]
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_reap_dead_worktrees_skips_abandoned_worktree_when_open_pr_exists
 		runtime, repo_root = build_runtime
 		worktree_path = File.join( repo_root, ".claude", "worktrees", "abandoned" )

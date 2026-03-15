@@ -237,7 +237,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_housekeep_repo_skips_reap_and_prune_when_sync_fails
+	def test_housekeep_repo_runs_reap_and_prune_even_when_sync_fails
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		calls = []
@@ -254,7 +254,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		runtime.send( :housekeep_repo!, repo_path: repo_root )
 
-		assert_equal [ :sync ], calls
+		assert_equal [ :sync, :reap, :prune ], calls
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

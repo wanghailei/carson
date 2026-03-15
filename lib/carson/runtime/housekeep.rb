@@ -174,11 +174,13 @@ module Carson
 			#   3. Abandoned PR evidence: closed-but-unmerged PR on the exact branch tip,
 			#      but only when no open PR still exists for the branch.
 			def reap_dead_worktrees!
+				summary = { reaped: 0, skipped: 0 }
+
 				# Layer 1: sweep agent-owned worktrees whose content is on main.
 				sweep_stale_worktrees!
 
 				# Layers 2 and 3: PR evidence for remaining worktrees.
-				return unless gh_available?
+				return summary unless gh_available?
 
 				main_root = main_worktree_root
 				worktree_list.each do |worktree|
@@ -196,6 +198,7 @@ module Carson
 							git_run( "branch", "-D", worktree.branch )
 							puts_verbose "deleted branch: #{worktree.branch}"
 						end
+						summary[ :reaped ] += 1
 						next
 					end
 
@@ -206,7 +209,10 @@ module Carson
 					if !merged_pr.nil?
 						# Remove the worktree (no --force: refuses if dirty working tree).
 						_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
-						next unless rm_success
+						unless rm_success
+							summary[ :skipped ] += 1
+							next
+						end
 
 						puts_verbose "reaped dead worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
 
@@ -215,6 +221,7 @@ module Carson
 							git_run( "branch", "-D", worktree.branch )
 							puts_verbose "deleted branch: #{worktree.branch}"
 						end
+						summary[ :reaped ] += 1
 						next
 					end
 
@@ -225,7 +232,10 @@ module Carson
 
 					# Remove the worktree (no --force: refuses if dirty working tree).
 					_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
-					next unless rm_success
+					unless rm_success
+						summary[ :skipped ] += 1
+						next
+					end
 
 					puts_verbose "reaped abandoned worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch}, closed PR: #{abandoned_pr.fetch( :url )})"
 
@@ -234,7 +244,10 @@ module Carson
 						git_run( "branch", "-D", worktree.branch )
 						puts_verbose "deleted branch: #{worktree.branch}"
 					end
+					summary[ :reaped ] += 1
 				end
+
+				summary
 			end
 
 		private
@@ -259,13 +272,11 @@ module Carson
 				error_buffer = verbose? ? error : StringIO.new
 				scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
 
-				sync_status = scoped_runtime.sync!
-				if sync_status == EXIT_OK
-					scoped_runtime.reap_dead_worktrees!
-					prune_status = scoped_runtime.prune!
-				end
+				scoped_runtime.sync!
+				scoped_runtime.reap_dead_worktrees!
+				prune_status = scoped_runtime.prune!
 
-				ok = sync_status == EXIT_OK && prune_status == EXIT_OK
+				ok = prune_status == EXIT_OK
 				unless verbose? || silent
 					summary = strip_badge( buffer.string.lines.last.to_s.strip )
 					puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"

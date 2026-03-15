@@ -287,11 +287,9 @@ module Carson
 
 			def housekeep_repo!( repo_path: )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
-				sync_status = scoped_runtime.sync!
-				if sync_status == EXIT_OK
-					scoped_runtime.reap_dead_worktrees!
-					scoped_runtime.prune!
-				end
+				scoped_runtime.sync!
+				scoped_runtime.reap_dead_worktrees!
+				scoped_runtime.prune!
 			end
 
 			def select_agent_provider
