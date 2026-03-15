@@ -126,6 +126,27 @@ class LedgerTest < Minitest::Test
 		File.chmod( 0o644, state_path ) if state_path && File.exist?( state_path )
 	end
 
+	def test_readonly_fallback_when_wal_active_and_immutable_fails
+		create_test_delivery( branch_name: "feature/wal-active", head: "wal-head", status: "queued" )
+		state_path = @ledger.path
+
+		# Hold a WAL writer open so immutable=1 may fail to read.
+		writer = SQLite3::Database.new( state_path )
+		writer.execute( "PRAGMA journal_mode = WAL" )
+		writer.execute( "BEGIN IMMEDIATE" )
+		writer.execute( "UPDATE deliveries SET updated_at = datetime('now') WHERE branch_name = 'feature/wal-active'" )
+
+		# Directory is read-only so the writable open falls through to readonly.
+		File.chmod( 0o555, @tmp_dir )
+
+		readonly_ledger = Carson::Ledger.new( path: state_path )
+		deliveries = readonly_ledger.active_deliveries( repo_path: @tmp_dir )
+		assert_equal [ "feature/wal-active" ], deliveries.map( &:branch )
+	ensure
+		writer&.close
+		File.chmod( 0o755, @tmp_dir ) if Dir.exist?( @tmp_dir )
+	end
+
 	def test_active_deliveries_include_legacy_worktree_repo_path_rows_for_canonical_root
 		with_feature_worktree_runtimes(
 			branch_name: "codex/legacy-ledger-query",
