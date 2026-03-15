@@ -296,7 +296,7 @@ For both authorities:
 - `deliver` must use Carson's governed landing path, not a raw git or `gh` substitute
 - `deliver` must print the exact next clean-up command on success
 
-Carson 4 continues the current assumption that the change is already committed before delivery begins. Carson may validate that precondition, but the governed path begins at delivery, not at commit creation.
+Carson 4 keeps delivery intent explicit. Plain `deliver` still assumes the change is already committed before delivery begins. `deliver --commit "..."` is the explicit exception: Carson creates one all-dirty delivery commit first, then continues the governed delivery path.
 
 ### Remote authority deliver
 

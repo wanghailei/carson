@@ -70,8 +70,8 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def deliver!( title: nil, body_file: nil, json_output: false )
-			@calls << [ :deliver, { title: title, body_file: body_file, json_output: json_output } ]
+		def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
+			@calls << [ :deliver, { title: title, body_file: body_file, commit_message: commit_message, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -249,6 +249,38 @@ class CLITest < Minitest::Test
 		error = StringIO.new
 		parsed = Carson::CLI.parse_args( arguments: [ "-v" ], output: output, error: error )
 		assert_equal "version", parsed.fetch( :command )
+	end
+
+	def test_parse_args_deliver_with_commit_message
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--commit", "fix: harden deliver" ], output: output, error: error )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal "fix: harden deliver", parsed.fetch( :commit_message )
+	end
+
+	def test_parse_args_deliver_rejects_blank_commit_message
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--commit", "   " ], output: output, error: error )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "--commit requires a non-empty message"
+	end
+
+	def test_dispatch_routes_deliver_commit_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch(
+			parsed: {
+				command: "deliver",
+				title: nil,
+				body_file: nil,
+				commit_message: "fix: harden deliver",
+				json: false
+			},
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :deliver, { title: nil, body_file: nil, commit_message: "fix: harden deliver", json_output: false } ] ], runtime.calls
 	end
 
 	# --- refresh --all tests ---
@@ -543,7 +575,7 @@ class CLITest < Minitest::Test
 			command: "deliver", title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { title: nil, body_file: nil, json_output: false } ] ], runtime.calls
+		assert_equal [ [ :deliver, { title: nil, body_file: nil, commit_message: nil, json_output: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_deliver_with_title_and_body_to_runtime
@@ -552,7 +584,7 @@ class CLITest < Minitest::Test
 			command: "deliver", title: "T", body_file: "/tmp/b.md"
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { title: "T", body_file: "/tmp/b.md", json_output: false } ] ], runtime.calls
+		assert_equal [ [ :deliver, { title: "T", body_file: "/tmp/b.md", commit_message: nil, json_output: false } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_deliver_with_json_to_runtime
@@ -561,7 +593,7 @@ class CLITest < Minitest::Test
 			command: "deliver", json: true, title: nil, body_file: nil
 		}, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :deliver, { title: nil, body_file: nil, json_output: true } ] ], runtime.calls
+		assert_equal [ [ :deliver, { title: nil, body_file: nil, commit_message: nil, json_output: true } ] ], runtime.calls
 	end
 
 	# --- audit CLI tests ---

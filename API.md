@@ -25,7 +25,7 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson audit` | Evaluate governance status and generate report output. |
-| `carson deliver` | Start autonomous branch delivery for the current checkout: push, create or refresh PR, record delivery state, and return immediately. |
+| `carson deliver [--commit MESSAGE]` | Start autonomous branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first, then pushes, creates or refreshes the PR, records delivery state, and returns immediately. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |

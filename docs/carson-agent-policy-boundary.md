@@ -45,9 +45,9 @@ In a governed repository:
 
 Delivery boundary:
 
-- commit creation remains normal `git commit`
-- Carson begins at push, PR, and merge in governed repositories
-- `carson deliver` transports already-committed changes through the governed delivery path; it does not create commits
+- plain `carson deliver` transports already-committed changes through the governed delivery path
+- `carson deliver --commit "..."` explicitly moves commit creation into Carson for one all-dirty delivery commit
+- Carson still begins at delivery intent, not at ambient repo dirtiness: commit creation happens only when the caller asks for it explicitly
 
 ## Canonical Asset Model
 

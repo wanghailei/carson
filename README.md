@@ -60,15 +60,15 @@ carson onboard your/repo/path
 carson worktree create your-worktree
 cd your/repo/path/.claude/worktrees/your-worktree
 
-# work, test, commit
-carson deliver
+# work and test, then either commit yourself or let Carson create the delivery commit
+carson deliver --commit "fix: describe this delivery"
 carson status
 
 # keep govern running to advance queued deliveries
 carson govern --loop 300
 ```
 
-By default, repositories onboard as `remote`. `carson deliver` is the branch handoff: it pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. `carson status` shows the active branch deliveries, and `carson govern` advances queued work across the governed portfolio.
+By default, repositories onboard as `remote`. `carson deliver` is the branch handoff: it pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first. `carson status` shows the active branch deliveries, and `carson govern` advances queued work across the governed portfolio.
 
 ## Portfolio Layer
 
