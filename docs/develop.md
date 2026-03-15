@@ -354,7 +354,13 @@ Local setup:
 
 ```bash
 ruby -v
-gem build carson.gemspec
+```
+
+Package build check without leaving a repo-root artefact:
+
+```bash
+package_dir="$(mktemp -d "${TMPDIR:-/tmp}/carson-build-XXXXXX")"
+gem build carson.gemspec --output "$package_dir/carson-$(cat VERSION).gem"
 ```
 
 Run test suite:
@@ -376,6 +382,8 @@ Source installation for dogfooding:
 ./install.sh
 carson version
 ```
+
+`./install.sh` already builds into an ephemeral work directory. A leftover `carson-<version>.gem` in the repo root comes from a manual `gem build carson.gemspec` run, not from the installer.
 
 ## Release and Compatibility Notes
 
