@@ -453,4 +453,26 @@ class RuntimeHousekeepTest < Minitest::Test
 	ensure
 		Carson::Worktree.define_singleton_method( :find, original_find ) if original_find
 	end
+
+	def test_housekeep_loop_runs_housekeep_all_until_interrupt
+		runtime, repo_root = build_runtime( verbose: false )
+		cycle_count = 0
+		loop_calls = []
+
+		runtime.define_singleton_method( :housekeep_all! ) do |json_output:, dry_run:|
+			loop_calls << [ json_output, dry_run ]
+			cycle_count += 1
+			raise Interrupt if cycle_count >= 2
+			Carson::Runtime::EXIT_OK
+		end
+
+		result = runtime.housekeep_loop!( json_output: false, dry_run: true, loop_seconds: 0 )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal 2, cycle_count
+		assert_equal [ [ false, true ], [ false, true ] ], loop_calls
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "housekeep cycle 1"
+		assert_includes output, "housekeep loop stopped after 2 cycles"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
 end
