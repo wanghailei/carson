@@ -63,6 +63,8 @@ Governed integration is fixed to `squash`. Non-squash `govern.merge.method` valu
 
 After a live integration attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
 
+After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs stay held at gate with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash policy.
+
 ### Review commands
 
 | Command | Purpose |

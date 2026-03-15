@@ -312,6 +312,8 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
 
+After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs stay held at gate with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash policy.
+
 The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 
 ## Governed Integration Policy

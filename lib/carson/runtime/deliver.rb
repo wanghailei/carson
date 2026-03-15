@@ -200,10 +200,11 @@ module Carson
 			end
 
 			# Assesses delivery readiness and records Carson's current branch state.
-			def assess_delivery!( delivery:, branch_name: )
-				review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
-				ci = check_pr_ci( number: delivery.pull_request_number )
-				status, cause, summary = delivery_assessment( ci: ci, review: review )
+				def assess_delivery!( delivery:, branch_name: )
+					review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
+					ci = check_pr_ci( number: delivery.pull_request_number )
+					pr_state = pull_request_state( number: delivery.pull_request_number )
+					status, cause, summary = delivery_assessment( ci: ci, review: review, pr_state: pr_state )
 
 				ledger.update_delivery(
 					delivery: delivery,
@@ -305,16 +306,30 @@ module Carson
 				)
 			end
 
-			def delivery_assessment( ci:, review: )
-				return [ "gated", "ci", "waiting for CI checks" ] if ci == :pending
-				return [ "gated", "ci", "CI checks are failing" ] if ci == :fail
-				return [ "gated", "review", "review changes requested" ] if review.fetch( :review, :none ) == :changes_requested
-				return [ "gated", "review", "waiting for review" ] if review.fetch( :review, :none ) == :review_required
-				return [ "gated", "review", review.fetch( :detail ).to_s ] if review.fetch( :status, :pass ) == :fail
-				return [ "gated", "policy", "unable to assess review gate: #{review.fetch( :detail )}" ] if review.fetch( :status, :pass ) == :error
+				def delivery_assessment( ci:, review:, pr_state: )
+					return [ "gated", "ci", "waiting for CI checks" ] if ci == :pending
+					return [ "gated", "ci", "CI checks are failing" ] if ci == :fail
+					return [ "gated", "review", "review changes requested" ] if review.fetch( :review, :none ) == :changes_requested
+					return [ "gated", "review", "waiting for review" ] if review.fetch( :review, :none ) == :review_required
+					return [ "gated", "review", review.fetch( :detail ).to_s ] if review.fetch( :status, :pass ) == :fail
+					return [ "gated", "policy", "unable to assess review gate: #{review.fetch( :detail )}" ] if review.fetch( :status, :pass ) == :error
+					return mergeability_assessment( pr_state: pr_state ) if mergeability_assessment( pr_state: pr_state )
 
-				[ "queued", nil, "ready to integrate into #{config.main_branch}" ]
-			end
+					[ "queued", nil, "ready to integrate into #{config.main_branch}" ]
+				end
+
+				def mergeability_assessment( pr_state: )
+					return nil unless pr_state.is_a?( Hash )
+
+					mergeable = pr_state.fetch( "mergeable", "" ).to_s.upcase
+					merge_state = pr_state.fetch( "mergeStateStatus", "" ).to_s.upcase
+
+					return [ "gated", "merge", "pull request has merge conflicts" ] if mergeable == "CONFLICTING" || merge_state == "DIRTY" || merge_state == "CONFLICTING"
+					return [ "gated", "merge", "merge is blocked by repository policy" ] if merge_state == "BLOCKED"
+					return [ "queued", nil, "ready to integrate into #{config.main_branch} (branch is behind base but still mergeable)" ] if merge_state == "BEHIND"
+
+					nil
+				end
 
 			def delivery_payload( delivery: )
 				{
@@ -523,11 +538,11 @@ module Carson
 			end
 
 			# Returns the current PR state for govern reconciliation.
-			def pull_request_state( number: )
-				stdout, _, success, = gh_run(
-					"pr", "view", number.to_s,
-					"--json", "number,state,isDraft,url"
-				)
+				def pull_request_state( number: )
+					stdout, _, success, = gh_run(
+						"pr", "view", number.to_s,
+						"--json", "number,state,isDraft,url,mergeStateStatus,mergeable"
+					)
 				return nil unless success
 
 				JSON.parse( stdout )

@@ -152,6 +152,64 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
+	def test_assess_delivery_marks_conflicting_pr_as_merge_blocked
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/conflicting" )
+		repository = runtime.send( :repository_record )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/conflicting",
+			head: git_capture( repo_root, "rev-parse", "feature/conflicting" ),
+			worktree_path: repo_root,
+			pr_number: 99,
+			pr_url: "https://github.com/test/repo/pull/99",
+			status: "preparing",
+			summary: "delivery accepted",
+			cause: nil
+		)
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "CONFLICTING", "mergeStateStatus" => "DIRTY" }
+		end
+
+		updated = runtime.send( :assess_delivery!, delivery: delivery, branch_name: "feature/conflicting" )
+		assert_equal "gated", updated.status
+		assert_equal "merge", updated.cause
+		assert_equal "pull request has merge conflicts", updated.summary
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_assess_delivery_keeps_behind_pr_queued_with_explicit_summary
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/behind" )
+		repository = runtime.send( :repository_record )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/behind",
+			head: git_capture( repo_root, "rev-parse", "feature/behind" ),
+			worktree_path: repo_root,
+			pr_number: 99,
+			pr_url: "https://github.com/test/repo/pull/99",
+			status: "preparing",
+			summary: "delivery accepted",
+			cause: nil
+		)
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "BEHIND" }
+		end
+
+		updated = runtime.send( :assess_delivery!, delivery: delivery, branch_name: "feature/behind" )
+		assert_equal "queued", updated.status
+		assert_nil updated.cause
+		assert_includes updated.summary, "behind base"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_delivery_gate_waitable_returns_true_for_review_required
 		runtime, repo_root = build_runtime( verbose: false )
 		delivery = build_delivery( status: "gated", cause: "review", summary: "waiting for review" )
