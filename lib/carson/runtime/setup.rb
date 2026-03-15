@@ -364,13 +364,13 @@ module Carson
 
 			# Automatically registers the repo for portfolio governance during onboard.
 			def auto_register_govern!
-				expanded = File.expand_path( repo_root )
-				if config.govern_repos.include?( expanded )
-					puts_verbose "govern_registration: already registered #{expanded}"
+				canonical_root = realpath_safe( main_worktree_root )
+				if config.govern_repos.any? { |path| realpath_safe( path ) == canonical_root }
+					puts_verbose "govern_registration: already registered #{canonical_root}"
 					return
 				end
 
-				append_govern_repo!( repo_path: expanded )
+				append_govern_repo!( repo_path: canonical_root )
 				puts_line "Registered for portfolio governance."
 			end
 
@@ -395,7 +395,8 @@ module Carson
 
 				existing_data = load_existing_config( path: config_path )
 				repos = Array( existing_data.dig( "govern", "repos" ) )
-				updated = repos.reject { |entry| File.expand_path( entry ) == File.expand_path( repo_path ) }
+				target = realpath_safe( repo_path )
+				updated = repos.reject { |entry| realpath_safe( entry ) == target }
 				return if updated.length == repos.length
 
 				existing_data[ "govern" ] ||= {}
@@ -412,8 +413,11 @@ module Carson
 				existing_data = load_existing_config( path: config_path )
 				existing_data[ "govern" ] ||= {}
 				repos = Array( existing_data[ "govern" ][ "repos" ] )
-				repos << repo_path
-				existing_data[ "govern" ][ "repos" ] = repos.uniq
+				canonical_repo_path = realpath_safe( repo_path )
+				unless repos.any? { |entry| realpath_safe( entry ) == canonical_repo_path }
+					repos << repo_path
+				end
+				existing_data[ "govern" ][ "repos" ] = repos
 
 				FileUtils.mkdir_p( File.dirname( config_path ) )
 				File.write( config_path, JSON.pretty_generate( existing_data ) )

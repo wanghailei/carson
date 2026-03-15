@@ -234,7 +234,7 @@ class RuntimeSetupTest < Minitest::Test
 			config_path = File.join( @tmp_dir, ".carson", "config.json" )
 			saved = JSON.parse( File.read( config_path ) )
 			repos = saved.dig( "govern", "repos" ) || []
-			assert_includes repos, File.expand_path( @repo_root )
+			assert_includes repos, File.realpath( @repo_root )
 			assert_includes output.string, "Registered for portfolio governance."
 		end
 	end
@@ -249,7 +249,7 @@ class RuntimeSetupTest < Minitest::Test
 		config_dir = File.join( @tmp_dir, ".carson" )
 		FileUtils.mkdir_p( config_dir )
 		config_path = File.join( config_dir, "config.json" )
-		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ File.expand_path( @repo_root ) ] } } ) )
+		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ File.realpath( @repo_root ) ] } } ) )
 
 		# No setup prompts needed (config exists), no registration message expected
 		tty_input = build_tty_input( "" )
@@ -278,7 +278,37 @@ class RuntimeSetupTest < Minitest::Test
 			config_path = File.join( @tmp_dir, ".carson", "config.json" )
 			saved = JSON.parse( File.read( config_path ) )
 			repos = saved.dig( "govern", "repos" ) || []
-			assert_includes repos, File.expand_path( @repo_root )
+			assert_includes repos, File.realpath( @repo_root )
+		end
+	end
+
+	def test_onboard_from_worktree_registers_main_repo_root
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		worktree_path = File.join( @repo_root, ".claude", "worktrees", "feature-onboard" )
+		system( "git", "-C", @repo_root, "worktree", "add", "-b", "feature-onboard", worktree_path, out: File::NULL, err: File::NULL )
+
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			output = StringIO.new
+			runtime = Carson::Runtime.new(
+				repo_root: worktree_path,
+				tool_root: File.expand_path( "..", __dir__ ),
+				output: output,
+				error: StringIO.new,
+				in_stream: StringIO.new,
+				verbose: false
+			)
+			status = runtime.onboard!
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			config_path = File.join( @tmp_dir, ".carson", "config.json" )
+			saved = JSON.parse( File.read( config_path ) )
+			repos = saved.dig( "govern", "repos" ) || []
+			assert_includes repos, runtime.main_worktree_root
+			refute_includes repos, File.expand_path( worktree_path )
 		end
 	end
 
