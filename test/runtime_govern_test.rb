@@ -41,6 +41,57 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_summary_reports_held_at_gate_when_integration_fails
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/merge-blocked" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/merge-blocked",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		stub_reconciliation( runtime, delivery: delivery )
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			result[ :error ] = "merge conflict"
+			Carson::Runtime::EXIT_ERROR
+		end
+		runtime.define_singleton_method( :housekeep_repo! ) { |repo_path:| flunk "housekeep should not run when merge fails" }
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "held at gate"
+		refute_includes output, "integrated"
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "gated", row.fetch( "status" )
+		assert_equal "merge conflict", row.fetch( "summary" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_summary_reports_integrated_when_merge_succeeds
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/merge-clean" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/merge-clean",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		stub_reconciliation( runtime, delivery: delivery )
+		stub_integration( runtime )
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "integrated"
+		refute_includes output, "held at gate"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_dry_run_reconciles_with_private_method_path
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )

@@ -437,12 +437,23 @@ module Carson
 
 			def format_govern_action( status:, action: )
 				case action
-				when "integrate" then "integrated"
+				when "integrate"
+					format_govern_integration_outcome( status: status )
 				when "would_integrate" then "ready to integrate (dry run)"
 				when "revise" then "revision dispatched"
 				when "would_revise" then "would revise (dry run)"
 				when "escalate" then "escalated"
 				when "would_escalate" then "would escalate (dry run)"
+				else status
+				end
+			end
+
+			def format_govern_integration_outcome( status: )
+				case status
+				when "integrated" then "integrated"
+				when "gated" then "held at gate"
+				when "failed" then "integration failed"
+				when "escalated" then "integration escalated"
 				else status
 				end
 			end
