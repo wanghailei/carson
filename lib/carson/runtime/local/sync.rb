@@ -4,6 +4,15 @@ module Carson
 	class Runtime
 		module Local
 			def sync!( json_output: false )
+				# Sync always operates on the main worktree. When called from inside
+				# a worktree, delegate to a runtime rooted at the main tree so
+				# git switch main does not collide with the main tree's checkout.
+				main_root = main_worktree_root
+				if realpath_safe( repo_root ) != realpath_safe( main_root )
+					main_runtime = Runtime.new( repo_root: main_root, tool_root: tool_root, output: output, error: error, verbose: verbose? )
+					return main_runtime.sync!( json_output: json_output )
+				end
+
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 
