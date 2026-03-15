@@ -65,6 +65,46 @@ module CarsonTestSupport
 		)
 		path
 	end
+
+	def with_feature_worktree_runtimes( branch_name:, worktree_name: )
+		Dir.mktmpdir( "carson-worktree-runtime-test", carson_tmp_root ) do |tmp_dir|
+			remote_path = File.join( tmp_dir, "remote.git" )
+			repo_root = File.join( tmp_dir, "repo" )
+			worktree_path = File.join( repo_root, ".claude", "worktrees", worktree_name )
+
+			system( "git", "init", "--bare", "-b", "main", remote_path, out: File::NULL, err: File::NULL )
+			system( "git", "clone", remote_path, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "# Test" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_path, out: File::NULL, err: File::NULL )
+
+			config_path = write_test_config( repo_root: repo_root )
+			root_runtime = nil
+			worktree_runtime = nil
+			with_env( "CARSON_CONFIG_FILE" => config_path ) do
+				root_runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					output: StringIO.new,
+					error: StringIO.new,
+					verbose: false
+				)
+				worktree_runtime = Carson::Runtime.new(
+					repo_root: worktree_path,
+					tool_root: File.expand_path( "..", __dir__ ),
+					output: StringIO.new,
+					error: StringIO.new,
+					verbose: false
+				)
+			end
+
+			yield root_runtime, worktree_runtime, repo_root, worktree_path
+		end
+	end
 end
 
 ENV["CARSON_CONFIG_FILE"] = File.join( Dir.tmpdir, "carson-nonexistent-test-config.json" )

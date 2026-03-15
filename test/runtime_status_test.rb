@@ -65,6 +65,35 @@ class RuntimeStatusTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_status_json_from_worktree_uses_canonical_repository_path_and_lists_active_delivery
+		with_feature_worktree_runtimes(
+			branch_name: "codex/status-worktree",
+			worktree_name: "status-worktree"
+		) do |root_runtime, worktree_runtime, repo_root, worktree_path|
+			root_runtime.ledger.upsert_delivery(
+				repository: root_runtime.send( :repository_record ),
+				branch_name: "codex/status-worktree",
+				head: worktree_runtime.send( :current_head ),
+				worktree_path: worktree_path,
+				authority: "remote",
+				pr_number: 21,
+				pr_url: "https://github.com/test/repo/pull/21",
+				status: "queued",
+				summary: "ready to integrate into main",
+				cause: nil
+			)
+
+			worktree_runtime.status!( json_output: true )
+			data = JSON.parse( output_string( worktree_runtime ) )
+			assert_equal root_runtime.send( :repository_record ).path, data.dig( "repository", "path" )
+			assert_equal "repo", data.dig( "repository", "name" )
+			entry = data.fetch( "branches" ).find { |row| row.fetch( "branch" ) == "codex/status-worktree" }
+			refute_nil entry
+			assert_equal worktree_path, entry.fetch( "worktree_path" )
+			assert_equal "queued", entry.fetch( "delivery_state" )
+		end
+	end
+
 private
 
 	def init_git_repo( repo_root )

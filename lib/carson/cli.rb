@@ -550,22 +550,29 @@ module Carson
 				return { command: :invalid }
 			end
 
-			options = { json: false, title: nil, body_file: nil }
+			options = { json: false, title: nil, body_file: nil, commit_message: nil }
 			deliver_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson deliver [--json] [--title TITLE] [--body-file PATH]"
+				parser.banner = "Usage: carson deliver [--json] [--title TITLE] [--body-file PATH] [--commit MESSAGE]"
 				parser.separator ""
 				parser.separator "Push the current branch, create or refresh the pull request, and hand the branch to Carson."
-				parser.separator "Carson records delivery state and continues from there."
+				parser.separator "Use --commit to create one all-dirty delivery commit before Carson pushes and opens the PR."
 				parser.separator ""
 				parser.separator "Options:"
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.on( "--title TITLE", "PR title (defaults to branch name)" ) { |value| options[ :title ] = value }
 				parser.on( "--body-file PATH", "File containing PR body text" ) { |value| options[ :body_file ] = value }
+				parser.on( "--commit MESSAGE", "Commit all dirty user changes before delivery" ) { |value| options[ :commit_message ] = value }
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson deliver               Push, open a PR, and register delivery state"
+				parser.separator "    carson deliver                               Deliver existing commits"
+				parser.separator "    carson deliver --commit \"fix: harden flow\"   Commit dirty changes, then deliver"
 			end
 			deliver_parser.parse!( arguments )
+			if options.fetch( :commit_message, nil ).to_s.strip.empty? && !options.fetch( :commit_message, nil ).nil?
+				error.puts "#{BADGE} --commit requires a non-empty message"
+				error.puts deliver_parser
+				return { command: :invalid }
+			end
 			unless arguments.empty?
 				error.puts "#{BADGE} Unexpected arguments for deliver: #{arguments.join( ' ' )}"
 				error.puts deliver_parser
@@ -575,7 +582,8 @@ module Carson
 				command: "deliver",
 				json: options.fetch( :json ),
 				title: options[ :title ],
-				body_file: options[ :body_file ]
+				body_file: options[ :body_file ],
+				commit_message: options[ :commit_message ]
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -763,6 +771,7 @@ module Carson
 				runtime.deliver!(
 					title: parsed.fetch( :title, nil ),
 					body_file: parsed.fetch( :body_file, nil ),
+					commit_message: parsed.fetch( :commit_message, nil ),
 					json_output: parsed.fetch( :json, false )
 				)
 			when "review:gate"

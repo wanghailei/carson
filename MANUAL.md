@@ -152,12 +152,14 @@ carson worktree create my-feature
 cd /path/to/.claude/worktrees/my-feature
 ```
 
-**2. Work** — make changes, commit, iterate.
+**2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. In remote authority Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Managed template drift is corrected and committed automatically before push (3.23.0+).
+**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. In remote authority Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
+# or, if the worktree is still dirty:
+carson deliver --commit "fix: describe this delivery"
 # Output: PR #N, Delivery: queued|gated
 #   Next: carson status
 ```

@@ -5,7 +5,8 @@ module Carson
 		module Deliver
 			# Entry point for `carson deliver`.
 			# Pushes the current branch, ensures a PR exists, records delivery state, and returns.
-			def deliver!( title: nil, body_file: nil, json_output: false )
+			# When --commit is supplied, Carson creates one all-dirty agent-authored commit first.
+			def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
 				branch_name = current_branch
 				main_branch = config.main_branch
 				remote_name = config.git_remote
@@ -17,10 +18,37 @@ module Carson
 					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
+				initial_dirty = working_tree_dirty?
+				if initial_dirty && commit_message.to_s.strip.empty?
+					result[ :error ] = "working tree is dirty"
+					result[ :recovery ] = "carson deliver --commit \"describe this delivery\""
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+
+				if !initial_dirty && !commit_message.to_s.strip.empty?
+					result[ :commit ] = blocked_commit_payload(
+						message: commit_message,
+						summary: "blocked — working tree is already clean"
+					)
+					result[ :error ] = "working tree is already clean"
+					result[ :recovery ] = "carson deliver"
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+
 				sync_exit, sync_diagnostics = deliver_template_sync
 				if sync_exit == EXIT_ERROR
 					result[ :error ] = sync_diagnostics.to_s.strip.empty? ? "template sync failed" : sync_diagnostics.strip
 					return deliver_finish( result: result, exit_code: sync_exit, json_output: json_output )
+				end
+				template_sync_committed = sync_exit == EXIT_BLOCK
+
+				unless commit_message.to_s.strip.empty?
+					commit_exit = prepare_delivery_commit!(
+						commit_message: commit_message,
+						template_sync_committed: template_sync_committed,
+						result: result
+					)
+					return deliver_finish( result: result, exit_code: commit_exit, json_output: json_output ) unless commit_exit == EXIT_OK
 				end
 
 				push_exit = push_branch!( branch: branch_name, remote: remote_name, result: result )
@@ -60,6 +88,93 @@ module Carson
 			end
 
 		private
+
+			def prepare_delivery_commit!( commit_message:, template_sync_committed:, result: )
+				if working_tree_dirty?
+					return create_delivery_commit!( commit_message: commit_message, result: result )
+				end
+
+				if template_sync_committed
+					result[ :commit ] = skipped_commit_payload(
+						message: commit_message,
+						summary: "skipped — template sync committed all pending changes"
+					)
+					return EXIT_OK
+				end
+
+				# The caller blocks the ordinary clean-tree case before template sync.
+				# Keep this branch as a post-sync safety net so future sequencing changes
+				# do not silently turn a clean tree into a successful no-op commit request.
+				result[ :commit ] = blocked_commit_payload(
+					message: commit_message,
+					summary: "blocked — working tree is already clean"
+				)
+				result[ :error ] = "working tree is already clean"
+				result[ :recovery ] = "carson deliver"
+				EXIT_BLOCK
+			end
+
+			def create_delivery_commit!( commit_message:, result: )
+				_, add_stderr, add_success, = git_run( "add", "-A" )
+				unless add_success
+					error_text = add_stderr.to_s.strip
+					error_text = "git add failed" if error_text.empty?
+					result[ :commit ] = blocked_commit_payload(
+						message: commit_message,
+						summary: "blocked — #{error_text}"
+					)
+					result[ :error ] = error_text
+					result[ :recovery ] = "git status"
+					return EXIT_ERROR
+				end
+
+				commit_stdout, commit_stderr, commit_success, = git_run( "commit", "-m", commit_message )
+				unless commit_success
+					error_text = [ commit_stderr.to_s.strip, commit_stdout.to_s.strip ].reject( &:empty? ).join( " | " )
+					error_text = "git commit failed" if error_text.empty?
+					result[ :commit ] = blocked_commit_payload(
+						message: commit_message,
+						summary: "blocked — #{error_text}"
+					)
+					result[ :error ] = error_text
+					result[ :recovery ] = "git status"
+					return EXIT_ERROR
+				end
+
+				result[ :commit ] = created_commit_payload(
+					message: commit_message,
+					head: current_head,
+					summary: "created agent-authored commit"
+				)
+				EXIT_OK
+			end
+
+			def created_commit_payload( message:, head:, summary: )
+				{
+					status: "created",
+					message: message,
+					head: head,
+					summary: summary
+				}
+			end
+
+			def skipped_commit_payload( message:, summary: )
+				{
+					status: "skipped",
+					message: message,
+					head: nil,
+					summary: summary
+				}
+			end
+
+			def blocked_commit_payload( message:, summary: )
+				{
+					status: "blocked",
+					message: message,
+					head: nil,
+					summary: summary
+				}
+			end
 
 			def deliver_template_sync
 				saved_output, saved_error = @output, @error
@@ -135,6 +250,9 @@ module Carson
 					return
 				end
 
+				if result[ :commit ]
+					puts_line "Commit: #{result.dig( :commit, :summary )}"
+				end
 				puts_line "PR: ##{result[ :pr_number ]} #{result[ :pr_url ]}" if result[ :pr_number ]
 				if result[ :delivery ]
 					puts_line "Delivery: #{result.dig( :delivery, :status )}"

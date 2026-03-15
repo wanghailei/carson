@@ -54,7 +54,7 @@ module Carson
 			def gather_status
 				repository = repository_record
 				branch = branch_record
-				deliveries = ledger.active_deliveries( repo_path: main_worktree_root )
+				deliveries = ledger.active_deliveries( repo_path: repository.path )
 
 				{
 					version: Carson::VERSION,

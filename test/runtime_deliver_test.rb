@@ -14,6 +14,103 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_blocks_when_worktree_is_dirty_without_commit_flag
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/dirty-block" )
+		File.write( File.join( repo_root, "README.md" ), "# Dirty\n" )
+
+		result = runtime.deliver!
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		output = output_string( runtime )
+		assert_includes output, "working tree is dirty"
+		assert_includes output, "carson deliver --commit"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_with_commit_json_reports_created_commit_for_all_dirty_changes
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/commit-all" )
+		stub_ready_assessment( runtime )
+
+		File.write( File.join( repo_root, "README.md" ), "# Updated\n" )
+		File.write( File.join( repo_root, "notes.txt" ), "fresh\n" )
+		system( "git", "-C", repo_root, "rm", "feature.txt", out: File::NULL, err: File::NULL )
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( commit_message: "fix: commit dirty tree", json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "created", data.dig( "commit", "status" )
+		assert_equal "fix: commit dirty tree", data.dig( "commit", "message" )
+		assert_equal "fix: commit dirty tree", git_capture( repo_root, "log", "-1", "--pretty=%s" )
+		changed_files = git_capture( repo_root, "show", "--pretty=", "--name-only", "HEAD" ).split( "\n" )
+		assert_includes changed_files, "README.md"
+		assert_includes changed_files, "notes.txt"
+		assert_includes changed_files, "feature.txt"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_with_commit_blocks_when_tree_is_clean_even_with_unpushed_commits
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/clean-commit-block" )
+
+		result = runtime.deliver!( commit_message: "fix: should block" )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		output = output_string( runtime )
+		assert_includes output, "working tree is already clean"
+		assert_includes output, "carson deliver"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_with_commit_creates_agent_commit_after_template_sync_commit
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/template-then-agent" )
+		stub_ready_assessment( runtime )
+
+		File.write( File.join( repo_root, "README.md" ), "# User change\n" )
+		FileUtils.mkdir_p( File.join( repo_root, ".github" ) )
+		File.write( File.join( repo_root, ".github", "carson.md" ), "managed\n" )
+		runtime.define_singleton_method( :deliver_template_sync ) do
+			system( "git", "-C", repo_root, "add", ".github/carson.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "chore: sync Carson managed files", out: File::NULL, err: File::NULL )
+			[ Carson::Runtime::EXIT_BLOCK, "Carson committed managed file updates. Push again to include them." ]
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( commit_message: "fix: user delivery", json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "created", data.dig( "commit", "status" )
+		assert_equal [ "fix: user delivery", "chore: sync Carson managed files" ], git_log_subjects( repo_root, count: 2 )
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_with_commit_skips_agent_commit_when_template_sync_consumes_all_pending_changes
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/template-only" )
+		stub_ready_assessment( runtime )
+
+		FileUtils.mkdir_p( File.join( repo_root, ".github" ) )
+		File.write( File.join( repo_root, ".github", "carson.md" ), "managed\n" )
+		runtime.define_singleton_method( :deliver_template_sync ) do
+			system( "git", "-C", repo_root, "add", ".github/carson.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "chore: sync Carson managed files", out: File::NULL, err: File::NULL )
+			[ Carson::Runtime::EXIT_BLOCK, "Carson committed managed file updates. Push again to include them." ]
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( commit_message: "fix: should skip", json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "skipped", data.dig( "commit", "status" )
+		assert_includes data.dig( "commit", "summary" ), "template sync"
+		assert_equal "chore: sync Carson managed files", git_capture( repo_root, "log", "-1", "--pretty=%s" )
+		FileUtils.remove_entry( tmp_dir )
+	end
+
 	def test_deliver_registers_queued_delivery_when_branch_is_ready
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
@@ -182,7 +279,7 @@ private
 
 		output = StringIO.new
 		error = StringIO.new
-		config_path = write_test_config( repo_root: repo_root )
+		config_path = write_runtime_config( tmp_dir: tmp_dir )
 		runtime = nil
 		with_env( "CARSON_CONFIG_FILE" => config_path ) do
 			runtime = Carson::Runtime.new(
@@ -280,7 +377,7 @@ private
 
 		output = StringIO.new
 		error = StringIO.new
-		config_path = write_test_config( repo_root: repo_root )
+		config_path = write_runtime_config( tmp_dir: tmp_dir )
 		runtime = nil
 		with_env( "CARSON_CONFIG_FILE" => config_path ) do
 			runtime = Carson::Runtime.new(
@@ -293,5 +390,30 @@ private
 
 	def output_string( runtime )
 		runtime.instance_variable_get( :@output ).string
+	end
+
+	def git_capture( repo_root, *args )
+		stdout, _stderr, status = Open3.capture3( "git", "-C", repo_root, *args )
+		raise "git #{args.join( ' ' )} failed" unless status.success?
+		stdout.strip
+	end
+
+	def git_log_subjects( repo_root, count: )
+		git_capture( repo_root, "log", "-n", count.to_s, "--pretty=%s" ).split( "\n" )
+	end
+
+	def write_runtime_config( tmp_dir: )
+		config_path = File.join( tmp_dir, "carson-config.json" )
+		File.write(
+			config_path,
+			JSON.generate(
+				{
+					"govern" => {
+						"state_path" => File.join( tmp_dir, "carson-state.sqlite3" )
+					}
+				}
+			)
+		)
+		config_path
 	end
 end
