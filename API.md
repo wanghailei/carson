@@ -134,7 +134,7 @@ Environment overrides:
 
 `govern` semantics:
 - `repos`: list of local repo paths to govern (empty = current repo only).
-- `authority`: `"remote"` (default) or `"local"`.
+- `authority`: `"remote"` (default). Local authority is reserved for future use.
 - `agent.provider`: `"auto"`, `"codex"`, or `"claude"`.
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).

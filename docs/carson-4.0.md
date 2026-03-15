@@ -2,9 +2,11 @@
 
 ## Status
 
-This document is the implementation spec for Carson 4.
+**Deferred.** The authority model described here was evaluated on 2026-03-15 and deferred. No scar drove local authority — the complexity (per-repo config, dual deliver/govern paths, deferred-backup state) was speculative.
 
-README and MANUAL describe the intended Carson 4 model for users. This document defines the product contract that implementation must satisfy.
+Worktree-first governance (invariant 1) ships as a 3.x feature without the authority model. The authority concept remains as groundwork in config and ledger, but local authority is not implemented or documented as current behaviour.
+
+This spec is retained as a future reference for when a real failure demonstrates the need for local authority.
 
 ## Theme
 
