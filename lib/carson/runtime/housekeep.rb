@@ -144,19 +144,26 @@ module Carson
 				scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
 
 				sync_status = scoped_runtime.sync!
-				if sync_status == EXIT_OK
-					scoped_runtime.reap_dead_worktrees!
-					prune_status = scoped_runtime.prune!
-				end
+				reap_status = housekeep_reap_status( scoped_runtime: scoped_runtime )
+				prune_status = scoped_runtime.prune!
 
-				ok = sync_status == EXIT_OK && prune_status == EXIT_OK
+				ok = sync_status == EXIT_OK && reap_status == EXIT_OK && prune_status == EXIT_OK
 				unless verbose? || silent
 					puts_line "#{repo_name}:"
 					output.print buffer.string
 					puts_line "  OK" if buffer.string.to_s.strip.empty?
 				end
 
-				{ name: repo_name, path: repo_path, status: ok ? "ok" : "error" }
+				entry = {
+					name: repo_name,
+					path: repo_path,
+					status: ok ? "ok" : "error",
+					sync_status: housekeep_step_status( exit_code: sync_status ),
+					reap_status: housekeep_step_status( exit_code: reap_status ),
+					prune_status: housekeep_step_status( exit_code: prune_status )
+				}
+				entry[ :error ] = housekeep_failure_summary( entry: entry ) unless ok
+				entry
 			rescue StandardError => exception
 				puts_line "#{repo_name}: did not complete (#{exception.message})" unless silent
 				{ name: repo_name, path: repo_path, status: "error", error: exception.message }
@@ -256,6 +263,29 @@ module Carson
 			def print_branch_plan_item( item:, name_width:, reason_width: )
 				action_str = item[ :action ] == :delete ? "→ would delete" : "→ skip"
 				puts_line "    #{item[ :branch ].ljust( name_width )}  #{item[ :reason ].ljust( reason_width )}  #{action_str}"
+			end
+
+			def housekeep_reap_status( scoped_runtime: )
+				scoped_runtime.reap_dead_worktrees!
+				EXIT_OK
+			rescue StandardError
+				EXIT_ERROR
+			end
+
+			def housekeep_step_status( exit_code: )
+				case exit_code
+				when EXIT_OK then "ok"
+				when EXIT_BLOCK then "block"
+				else "error"
+				end
+			end
+
+			def housekeep_failure_summary( entry: )
+				failures = []
+				failures << "sync #{entry.fetch( :sync_status )}" unless entry.fetch( :sync_status ) == "ok"
+				failures << "reap #{entry.fetch( :reap_status )}" unless entry.fetch( :reap_status ) == "ok"
+				failures << "prune #{entry.fetch( :prune_status )}" unless entry.fetch( :prune_status ) == "ok"
+				failures.join( ", " )
 			end
 
 			def reap_one_worktree!( worktree:, reason: )

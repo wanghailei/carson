@@ -181,6 +181,8 @@ carson worktree list
 carson housekeep
 ```
 
+`housekeep` still performs safe reaping and branch pruning when `sync` cannot complete. A blocked sync no longer prevents cleanup work that has its own safety evidence.
+
 When you need to abandon a stale branch or PR instead of landing it:
 
 ```bash
