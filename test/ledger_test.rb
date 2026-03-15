@@ -173,6 +173,56 @@ class LedgerTest < Minitest::Test
 		end
 	end
 
+	def test_integrated_deliveries_returns_only_integrated_with_worktree_path
+		integrated = create_test_delivery( branch_name: "feature/integrated", head: "int1", status: "queued" )
+		@ledger.update_delivery(
+			delivery: integrated,
+			status: "integrated",
+			worktree_path: File.join( @tmp_dir, ".claude", "worktrees", "integrated" )
+		)
+
+		failed = create_test_delivery( branch_name: "feature/failed", head: "fail1", status: "queued" )
+		@ledger.update_delivery(
+			delivery: failed,
+			status: "failed",
+			worktree_path: File.join( @tmp_dir, ".claude", "worktrees", "failed" )
+		)
+
+		missing_path = create_test_delivery( branch_name: "feature/no-worktree", head: "nw1", status: "queued" )
+		@ledger.update_delivery(
+			delivery: missing_path,
+			status: "integrated",
+			worktree_path: nil
+		)
+
+		results = @ledger.integrated_deliveries( repo_path: @tmp_dir )
+		assert_equal [ "feature/integrated" ], results.map( &:branch )
+		assert_equal "integrated", results.first.status
+	end
+
+	def test_integrated_deliveries_include_legacy_worktree_repo_path_rows_for_canonical_root
+		with_feature_worktree_runtimes(
+			branch_name: "codex/legacy-integrated-query",
+			worktree_name: "legacy-integrated-query"
+		) do |root_runtime, worktree_runtime, repo_root, worktree_path|
+			legacy_repository = Carson::Repository.new( path: worktree_path, runtime: nil )
+			delivery = worktree_runtime.ledger.upsert_delivery(
+				repository: legacy_repository,
+				branch_name: "codex/legacy-integrated-query",
+				head: worktree_runtime.send( :current_head ),
+				worktree_path: worktree_path,
+				pr_number: 78,
+				pr_url: "https://github.com/test/repo/pull/78",
+				status: "integrated",
+				summary: "integrated into main",
+				cause: nil
+			)
+
+			deliveries = root_runtime.ledger.integrated_deliveries( repo_path: repo_root )
+			assert_equal [ delivery.branch ], deliveries.map( &:branch )
+		end
+	end
+
 private
 
 	def create_test_delivery( branch_name: "feature/test", head: "abc123", status: "queued" )

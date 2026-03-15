@@ -84,6 +84,21 @@ module Carson
 				.map { |key, data| build_delivery( key: key, data: data ) }
 		end
 
+		# Lists integrated deliveries that still retain a worktree path.
+		def integrated_deliveries( repo_path: )
+			state = load_state
+			repo_paths = repo_identity_paths( repo_path: repo_path )
+
+			state[ "deliveries" ]
+				.select do |_key, data|
+					repo_paths.include?( data[ "repo_path" ] ) &&
+						data[ "status" ] == "integrated" &&
+						!data[ "worktree_path" ].to_s.strip.empty?
+				end
+				.sort_by { |key, data| [ data[ "integrated_at" ].to_s, data[ "updated_at" ].to_s, key ] }
+				.map { |key, data| build_delivery( key: key, data: data ) }
+		end
+
 		# Updates a delivery record in place.
 		def update_delivery(
 			delivery:,

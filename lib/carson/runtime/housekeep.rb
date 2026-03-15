@@ -119,6 +119,8 @@ module Carson
 
 					reap_one_worktree!( worktree: worktree, reason: classification.fetch( :reason ) )
 				end
+
+				reap_integrated_delivery_worktrees!
 			end
 
 		private
@@ -288,6 +290,56 @@ module Carson
 				failures.join( ", " )
 			end
 
+			def reap_integrated_delivery_worktrees!
+				ledger.integrated_deliveries( repo_path: main_worktree_root ).each do |delivery|
+					worktree_path = delivery.worktree_path.to_s
+					next if worktree_path.strip.empty?
+
+					unless Dir.exist?( worktree_path )
+						clear_integrated_delivery_worktree_path!( delivery: delivery, reason: "directory missing" )
+						next
+					end
+
+					worktree = Worktree.find( path: worktree_path, runtime: self )
+					next if worktree.nil?
+
+					current_head = integrated_delivery_worktree_head( worktree_path: worktree.path )
+					if current_head && current_head != delivery.head
+						clear_integrated_delivery_worktree_path!( delivery: delivery, reason: "worktree moved beyond integrated head" )
+						next
+					end
+
+					if worktree.holds_cwd?
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — held by current shell" unless verbose?
+						next
+					end
+
+					if worktree.held_by_other_process?
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — held by another process" unless verbose?
+						next
+					end
+
+					if worktree.dirty?
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — dirty worktree" unless verbose?
+						next
+					end
+
+					next unless current_head == delivery.head
+
+					reason = "integrated delivery recorded in ledger"
+					reaped = reap_one_worktree!( worktree: worktree, reason: reason )
+					next unless reaped
+
+					if worktree.branch.to_s.strip.empty? &&
+						!delivery.branch.to_s.strip.empty? &&
+						worktree_branch_tip_sha( branch: delivery.branch ) == delivery.head
+						delete_branch_after_reap!( branch: delivery.branch )
+					end
+
+					clear_integrated_delivery_worktree_path!( delivery: delivery, reason: reason )
+				end
+			end
+
 			def reap_one_worktree!( worktree:, reason: )
 				label = worktree_housekeep_label( worktree: worktree )
 
@@ -295,17 +347,18 @@ module Carson
 					git_run( "worktree", "prune" )
 					delete_branch_after_reap!( branch: worktree.branch )
 					puts_line "Reaped worktree: #{label} — #{reason}" unless verbose?
-					return
+					return true
 				end
 
 				_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
 				unless rm_success
 					puts_line "Kept worktree: #{label} — removal failed" unless verbose?
-					return
+					return false
 				end
 
 				delete_branch_after_reap!( branch: worktree.branch )
 				puts_line "Reaped worktree: #{label} — #{reason}" unless verbose?
+				true
 			end
 
 			def delete_branch_after_reap!( branch: )
@@ -314,6 +367,21 @@ module Carson
 
 				git_run( "branch", "-D", branch )
 				puts_verbose "deleted branch: #{branch}"
+			end
+
+			def clear_integrated_delivery_worktree_path!( delivery:, reason: )
+				ledger.update_delivery( delivery: delivery, worktree_path: nil )
+				puts_verbose "cleared integrated delivery worktree path: #{delivery.branch} (#{reason})"
+			end
+
+			def integrated_delivery_worktree_head( worktree_path: )
+				stdout_text, _stderr_text, status = Open3.capture3( "git", "-C", worktree_path, "rev-parse", "HEAD" )
+				return nil unless status.success?
+
+				head = stdout_text.to_s.strip
+				head.empty? ? nil : head
+			rescue StandardError
+				nil
 			end
 
 			def worktree_housekeep_label( worktree: )

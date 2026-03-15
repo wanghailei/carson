@@ -275,4 +275,83 @@ class RuntimeHousekeepTest < Minitest::Test
 		assert_includes output, "Kept worktree: abandoned (feature/abandoned) — open PR exists"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
+
+	def test_reap_integrated_delivery_worktrees_reaps_matching_integrated_worktree
+		runtime, repo_root = build_runtime( verbose: false )
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "delivered" )
+		FileUtils.mkdir_p( worktree_path )
+		git_calls = []
+
+		repository = Carson::Repository.new( path: repo_root, runtime: nil )
+		runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/delivered",
+			head: "abc123",
+			worktree_path: worktree_path,
+			pr_number: 50,
+			pr_url: "https://github.com/test/repo/pull/50",
+			status: "integrated",
+			summary: "integrated into main",
+			cause: nil
+		)
+
+		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/delivered" )
+		original_find = Carson::Worktree.method( :find )
+		Carson::Worktree.define_singleton_method( :find ) { |path:, runtime:| worktree }
+		runtime.define_singleton_method( :integrated_delivery_worktree_head ) { |worktree_path:| "abc123" }
+		runtime.define_singleton_method( :git_run ) do |*args|
+			git_calls << args
+			[ "", "", true, 0 ]
+		end
+
+		runtime.send( :reap_integrated_delivery_worktrees! )
+
+		assert_includes git_calls, [ "worktree", "remove", worktree_path ]
+		assert_includes git_calls, [ "branch", "-D", "feature/delivered" ]
+		assert_empty runtime.ledger.integrated_deliveries( repo_path: repo_root )
+
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "Reaped worktree: delivered (feature/delivered) — integrated delivery recorded in ledger"
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Worktree.define_singleton_method( :find, original_find ) if original_find
+	end
+
+	def test_reap_integrated_delivery_worktrees_clears_stale_path_when_worktree_head_has_moved
+		runtime, repo_root = build_runtime( verbose: false )
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "reused" )
+		FileUtils.mkdir_p( worktree_path )
+		git_calls = []
+
+		repository = Carson::Repository.new( path: repo_root, runtime: nil )
+		runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/reused",
+			head: "old-head",
+			worktree_path: worktree_path,
+			pr_number: 51,
+			pr_url: "https://github.com/test/repo/pull/51",
+			status: "integrated",
+			summary: "integrated into main",
+			cause: nil
+		)
+
+		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/reused" )
+		original_find = Carson::Worktree.method( :find )
+		Carson::Worktree.define_singleton_method( :find ) { |path:, runtime:| worktree }
+		runtime.define_singleton_method( :integrated_delivery_worktree_head ) { |worktree_path:| "new-head" }
+		runtime.define_singleton_method( :git_run ) do |*args|
+			git_calls << args
+			[ "", "", true, 0 ]
+		end
+
+		runtime.send( :reap_integrated_delivery_worktrees! )
+
+		refute_includes git_calls, [ "worktree", "remove", worktree_path ]
+		refute_includes git_calls, [ "branch", "-D", "feature/reused" ]
+		assert_empty runtime.ledger.integrated_deliveries( repo_path: repo_root )
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Worktree.define_singleton_method( :find, original_find ) if original_find
+	end
 end
