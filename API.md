@@ -61,6 +61,8 @@ All batch commands operate across every governed repository registered in `gover
 
 Governed integration is fixed to `squash`. Non-squash `govern.merge.method` values are rejected by config validation.
 
+After a live integration attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
+
 ### Review commands
 
 | Command | Purpose |

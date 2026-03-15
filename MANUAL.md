@@ -310,6 +310,8 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 `carson govern` dispatches coding agents (Codex or Claude) when an active delivery is blocked by CI, review, or policy feedback. The agent receives the failure context and attempts a revision. If the agent succeeds, the delivery re-enters the governance pipeline. If it fails repeatedly or times out, the delivery is escalated for human attention.
 
+After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
+
 The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 
 ## Governed Integration Policy
