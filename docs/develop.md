@@ -1,12 +1,8 @@
-# Carson Development Guide
+# Carson Development Note
 
 ## Audience
 
-This document is for Carson contributors and internal maintainers who need architecture, runtime contract, and development workflow guidance.
-
-## Active implementation specs
-
-- [Carson 4.0](./carson-4.0.md)
+This document is a development note only. It is for WHL and coding agents who need architecture, runtime contract, and implementation guidance. It is not a public manual or a feature specification.
 
 ## Architectural Overview
 
