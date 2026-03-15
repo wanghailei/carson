@@ -42,6 +42,42 @@ Each PR must:
 
 ---
 
+## PR 0 — Remove obsolete delivery helpers
+
+### Problem
+
+`deliver.rb` still contains helper methods that are no longer used by the current delivery flow.
+
+These methods increase noise in the very file that later recovery PRs need to modify:
+
+- `wait_for_delivery_readiness!`
+- `integrate_delivery_now!`
+- `deliver_next_step`
+
+### Files
+
+- `lib/carson/runtime/deliver.rb`
+- `test/runtime_deliver_test.rb`
+
+### Change
+
+Delete the obsolete helper methods and any test scaffolding that exists only for them.
+
+This PR stays deliberately narrow. It is cleanup only, with no behaviour change intended.
+
+### Acceptance criteria
+
+- the obsolete helper methods are removed
+- stale test scaffolding for those methods is removed
+- `carson deliver` behaviour remains unchanged
+
+### Verification
+
+- repository-wide grep confirms no remaining callers
+- targeted deliver tests still pass
+
+---
+
 ## PR 1 — Fix govern result reporting
 
 ### Problem
@@ -97,17 +133,18 @@ Expected state mapping:
 - `CLEAN` → eligible for `queued` if CI and review also pass
 - `CONFLICTING` → blocked state with explicit conflict cause
 - `BLOCKED` / policy-blocked state → blocked state with explicit summary
-- `BEHIND` → choose explicit policy: either blocked pending rebase or queued only if merge implementation can handle it safely
+- `BEHIND` → still eligible for `queued`, with explicit summary that the head branch is behind base but merge remains eligible under Carson's current merge policy
 
 ### Acceptance criteria
 
 - a conflicting PR is never assessed as `queued`
+- a `BEHIND` PR can still be assessed as `queued` when CI and review pass
 - govern does not attempt to merge a PR known to be conflicting
 - delivery summary explains why the PR is blocked
 
 ### Verification
 
-- assessment tests for `CLEAN`, `CONFLICTING`, and blocked merge states
+- assessment tests for `CLEAN`, `CONFLICTING`, `BEHIND`, and blocked merge states
 - govern test proving a conflicting PR is not chosen as next-to-integrate
 
 ---
@@ -335,15 +372,16 @@ Only start this PR after PRs 1–4 land.
 
 ## Suggested Order
 
-1. PR 1 — govern result reporting
-2. PR 2 — mergeability-aware assessment
-3. PR 3 — queue-safe blocked handling
-4. PR 4 — stale integrating recovery
-5. PR 5 — complete post-merge cleanup
-6. PR 6 — decouple cleanup from sync success
-7. PR 7 — JSON-ledger-aware reap
-8. PR 8 — CI sqlite cleanup
-9. PR 9 — targeted integration UX, only if still justified
+1. PR 0 — remove obsolete delivery helpers
+2. PR 1 — govern result reporting
+3. PR 2 — mergeability-aware assessment
+4. PR 3 — queue-safe blocked handling
+5. PR 4 — stale integrating recovery
+6. PR 5 — complete post-merge cleanup
+7. PR 6 — decouple cleanup from sync success
+8. PR 7 — JSON-ledger-aware reap
+9. PR 8 — CI sqlite cleanup
+10. PR 9 — targeted integration UX, only if still justified
 
 ---
 
