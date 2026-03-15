@@ -6,7 +6,7 @@ require "time"
 module Carson
 	class Ledger
 		UNSET = Object.new
-		ACTIVE_DELIVERY_STATES = %w[preparing gated queued integrating escalated].freeze
+		ACTIVE_DELIVERY_STATES = Delivery::ACTIVE_STATES
 
 		def initialize( path: )
 			@path = File.expand_path( path )
@@ -75,16 +75,16 @@ module Carson
 					[ repository.path, branch_name, head ]
 				)
 
-					if row
-						database.execute(
-							<<~SQL,
-							UPDATE deliveries
-							SET worktree_path = ?, authority = ?, status = ?, pr_number = ?, pr_url = ?,
-							cause = ?, summary = ?, updated_at = ?
-							WHERE id = ?
-							SQL
-							[ worktree_path, authority, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
-						)
+				if row
+					database.execute(
+						<<~SQL,
+						UPDATE deliveries
+						SET worktree_path = ?, authority = ?, status = ?, pr_number = ?, pr_url = ?,
+						cause = ?, summary = ?, updated_at = ?
+						WHERE id = ?
+						SQL
+						[ worktree_path, authority, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
+					)
 					return fetch_delivery( database: database, id: row.fetch( "id" ), repository: repository )
 				end
 
@@ -283,15 +283,15 @@ module Carson
 			)
 		end
 
-			def supersede_branch!( database:, repository:, branch_name:, timestamp: )
-				database.execute(
-					<<~SQL,
-					UPDATE deliveries
-					SET status = ?, superseded_at = ?, updated_at = ?
-					WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
-					SQL
-					[ "superseded", timestamp, timestamp, repository.path, branch_name, *ACTIVE_DELIVERY_STATES ]
-				)
+		def supersede_branch!( database:, repository:, branch_name:, timestamp: )
+			database.execute(
+				<<~SQL,
+				UPDATE deliveries
+				SET status = ?, superseded_at = ?, updated_at = ?
+				WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
+				SQL
+				[ "superseded", timestamp, timestamp, repository.path, branch_name, *ACTIVE_DELIVERY_STATES ]
+			)
 		end
 
 		def active_state_placeholders
