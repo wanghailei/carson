@@ -107,7 +107,6 @@ Environment overrides:
 - `CARSON_REVIEW_SWEEP_STATES`
 - `CARSON_WORKFLOW_STYLE`
 - `CARSON_GOVERN_REPOS`
-- `CARSON_GOVERN_AUTHORITY`
 - `CARSON_GOVERN_AGENT_PROVIDER`
 - `CARSON_GOVERN_CHECK_WAIT`
 
@@ -117,7 +116,6 @@ Environment overrides:
 {
   "govern": {
     "repos": ["~/Dev/project-a", "~/Dev/project-b"],
-    "authority": "remote",
     "agent": {
       "provider": "auto",
       "codex": {},
@@ -134,7 +132,6 @@ Environment overrides:
 
 `govern` semantics:
 - `repos`: list of local repo paths to govern (empty = current repo only).
-- `authority`: `"remote"` (default). Local authority is reserved for future use.
 - `agent.provider`: `"auto"`, `"codex"`, or `"claude"`.
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).

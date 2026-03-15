@@ -30,7 +30,7 @@ module Carson
 			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
 			:audit_advisory_check_names,
 			:workflow_style,
-			:govern_repos, :govern_authority, :govern_merge_method,
+			:govern_repos, :govern_merge_method,
 			:govern_agent_provider, :govern_state_path,
 			:govern_check_wait
 
@@ -83,7 +83,6 @@ module Carson
 				},
 				"govern" => {
 					"repos" => [],
-					"authority" => "remote",
 					"merge" => {
 						"method" => "squash"
 					},
@@ -171,8 +170,6 @@ module Carson
 			govern = fetch_hash_section( data: copy, key: "govern" )
 			govern_repos = env_string_array( key: "CARSON_GOVERN_REPOS" )
 			govern[ "repos" ] = govern_repos unless govern_repos.empty?
-			govern_authority = ENV.fetch( "CARSON_GOVERN_AUTHORITY", "" ).to_s.strip
-			govern[ "authority" ] = govern_authority unless govern_authority.empty?
 			govern_method = ENV.fetch( "CARSON_GOVERN_MERGE_METHOD", "" ).to_s.strip
 			unless govern_method.empty?
 				govern[ "merge" ] ||= {}
@@ -243,7 +240,6 @@ module Carson
 
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |path| safe_expand_path( path ) }
-			@govern_authority = fetch_string( hash: govern_hash, key: "authority" ).downcase
 			govern_merge_hash = fetch_hash( hash: govern_hash, key: "merge" )
 			@govern_merge_method = fetch_string( hash: govern_merge_hash, key: "method" ).downcase
 			govern_agent_hash = fetch_hash( hash: govern_hash, key: "agent" )
@@ -272,7 +268,6 @@ module Carson
 				raise ConfigError, "review.tracking_issue.title cannot be empty" if review_tracking_issue_title.empty?
 				raise ConfigError, "review.tracking_issue.label cannot be empty" if review_tracking_issue_label.empty?
 				raise ConfigError, "workflow.style must be one of trunk, branch" unless [ "trunk", "branch" ].include?( workflow_style )
-				raise ConfigError, "govern.authority must be one of remote, local" unless [ "remote", "local" ].include?( govern_authority )
 				raise ConfigError, "govern.merge.method must be squash" unless govern_merge_method == "squash"
 				raise ConfigError, "govern.agent.provider must be one of auto, codex, claude" unless [ "auto", "codex", "claude" ].include?( govern_agent_provider )
 			end

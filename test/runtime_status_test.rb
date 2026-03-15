@@ -12,13 +12,12 @@ class RuntimeStatusTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_status_human_output_reports_repository_authority_and_branch
+	def test_status_human_output_reports_repository_and_branch
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		runtime.status!
 		output = output_string( runtime )
 		assert_includes output, Carson::VERSION
-		assert_includes output, "Authority: remote"
 		assert_includes output, "Branch: main"
 		assert_includes output, "Deliveries: none"
 		destroy_runtime_repo( repo_root: repo_root )
@@ -30,7 +29,6 @@ class RuntimeStatusTest < Minitest::Test
 		runtime.status!( json_output: true )
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal Carson::VERSION, data.fetch( "version" )
-		assert_equal "remote", data.dig( "repository", "authority" )
 		assert_equal "main", data.dig( "branch", "name" )
 		assert_equal [], data.fetch( "branches" )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -47,7 +45,6 @@ class RuntimeStatusTest < Minitest::Test
 			branch_name: "feature/status",
 			head: runtime.send( :current_head ),
 			worktree_path: repo_root,
-			authority: "remote",
 			pr_number: 12,
 			pr_url: "https://github.com/test/repo/pull/12",
 			status: "queued",
@@ -75,7 +72,6 @@ class RuntimeStatusTest < Minitest::Test
 				branch_name: "codex/status-worktree",
 				head: worktree_runtime.send( :current_head ),
 				worktree_path: worktree_path,
-				authority: "remote",
 				pr_number: 21,
 				pr_url: "https://github.com/test/repo/pull/21",
 				status: "queued",

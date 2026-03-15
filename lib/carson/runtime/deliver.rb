@@ -68,7 +68,6 @@ module Carson
 					branch_name: branch.name,
 					head: branch.head || current_head,
 					worktree_path: branch.worktree || repo_root,
-					authority: config.govern_authority,
 					pr_number: pr_number,
 					pr_url: pr_url,
 					status: "preparing",
