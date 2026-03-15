@@ -70,6 +70,14 @@ module Carson
 					puts_verbose "ACTION: local #{config.main_branch} is in sync with #{config.git_remote}/#{config.main_branch}."
 				end
 				puts_verbose ""
+				puts_verbose "[Branch Freshness]"
+				branch_freshness = audit_branch_freshness_report
+				if branch_freshness.fetch( :status ) == "block"
+					puts_verbose "ACTION: #{branch_freshness.fetch( :error )}; #{branch_freshness.fetch( :recovery )}."
+					audit_state = "block"
+					audit_concise_problems << "Branch freshness: #{branch_freshness.fetch( :error )} — #{branch_freshness.fetch( :recovery )}."
+				end
+				puts_verbose ""
 				puts_verbose "[PR and Required Checks (gh)]"
 				monitor_report = pr_and_check_report
 				audit_state = "attention" if audit_state == "ok" && !%w[ok skipped].include?( monitor_report.fetch( :status ) )
@@ -137,6 +145,7 @@ module Carson
 						working_tree: working_tree,
 						hooks: { status: hooks_status },
 						main_sync: main_sync,
+						branch_freshness: branch_freshness,
 						pr: monitor_report[ :pr ],
 						checks: monitor_report.fetch( :checks ),
 						baseline: {
@@ -244,6 +253,47 @@ module Carson
 					else
 						{ dirty: true, context: dirty_reason, status: "ok" }
 					end
+				end
+
+				def audit_branch_freshness_report
+					branch = current_branch
+					main = config.main_branch
+					remote = config.git_remote
+
+					# Only check on feature branches, not main itself.
+					if branch == main
+						puts_verbose "on #{main} — freshness check skipped"
+						return { status: "ok", behind: 0, context: "on main" }
+					end
+
+					# Best-effort fetch to update remote tracking ref.
+					# Network failure is not a commit blocker.
+					_, _, fetch_success, = git_run( "fetch", remote, main, "--quiet" )
+					unless fetch_success
+						puts_verbose "freshness fetch failed — skipping check"
+						return { status: "ok", behind: 0, context: "fetch failed" }
+					end
+
+					# Count commits on remote/main not reachable from HEAD.
+					behind_stdout, _, behind_success, = git_run( "rev-list", "--count", "HEAD..#{remote}/#{main}" )
+					unless behind_success
+						puts_verbose "freshness rev-list failed — skipping check"
+						return { status: "ok", behind: 0, context: "rev-list failed" }
+					end
+
+					behind = behind_stdout.to_s.strip.to_i
+					if behind.zero?
+						puts_verbose "branch is up to date with #{remote}/#{main}"
+						return { status: "ok", behind: 0, context: "up to date" }
+					end
+
+					puts_verbose "branch is #{behind} commit(s) behind #{remote}/#{main}"
+					{
+						status: "block",
+						behind: behind,
+						error: "branch is #{behind} commit#{plural_suffix( count: behind )} behind #{remote}/#{main}",
+						recovery: "git rebase #{remote}/#{main}"
+					}
 				end
 
 				def pr_and_check_report

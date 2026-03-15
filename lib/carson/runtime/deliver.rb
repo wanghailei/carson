@@ -52,6 +52,9 @@ module Carson
 					return deliver_finish( result: result, exit_code: commit_exit, json_output: json_output ) unless commit_exit == EXIT_OK
 				end
 
+				rebase_exit = sync_and_rebase_before_push!( branch: branch_name, remote: remote_name, result: result )
+				return deliver_finish( result: result, exit_code: rebase_exit, json_output: json_output ) unless rebase_exit == EXIT_OK
+
 				push_exit = push_branch!( branch: branch_name, remote: remote_name, result: result )
 				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
 
@@ -347,6 +350,9 @@ module Carson
 				if result[ :commit ]
 					puts_line "Committed: #{result.dig( :commit, :summary )}"
 				end
+				if result[ :rebased ]
+					puts_line "Rebased onto #{result[ :main_branch ] || 'main'} (was #{result[ :rebased_behind ]} behind)."
+				end
 				puts_line "PR ##{result[ :pr_number ]}  #{result[ :pr_url ]}" if result[ :pr_number ]
 				if result[ :delivery ]
 					status = result.dig( :delivery, :status )
@@ -372,6 +378,44 @@ module Carson
 					end
 				end
 				puts_line "Check back with #{result[ :next_step ]}" if result[ :next_step ]
+			end
+
+			# Fetches remote main and rebases the feature branch onto it before push.
+			# Reduces merge conflicts by keeping the branch fresh relative to main.
+			# Best-effort: fetch failure skips the rebase silently.
+			def sync_and_rebase_before_push!( branch:, remote:, result: )
+				main = config.main_branch
+
+				# Fetch remote main to get latest state.
+				_, _, fetch_success, = git_run( "fetch", remote, main, "--quiet" )
+				unless fetch_success
+					puts_verbose "pre-push sync skipped — fetch failed"
+					return EXIT_OK
+				end
+
+				# Check if branch is behind remote main.
+				behind_stdout, _, behind_success, = git_run( "rev-list", "--count", "HEAD..#{remote}/#{main}" )
+				return EXIT_OK unless behind_success
+				behind = behind_stdout.to_s.strip.to_i
+				return EXIT_OK if behind.zero?
+
+				# Rebase onto remote main.
+				puts_verbose "branch is #{behind} commit(s) behind #{remote}/#{main} — rebasing before push"
+				_, rebase_stderr, rebase_success, = git_run( "rebase", "#{remote}/#{main}" )
+				if rebase_success
+					puts_verbose "rebased #{branch} onto #{remote}/#{main}"
+					result[ :rebased ] = true
+					result[ :rebased_behind ] = behind
+					return EXIT_OK
+				end
+
+				# Rebase failed — abort and report.
+				git_run( "rebase", "--abort" )
+				error_text = rebase_stderr.to_s.strip
+				error_text = "rebase conflicts with #{main}" if error_text.empty?
+				result[ :error ] = error_text
+				result[ :recovery ] = "git rebase #{remote}/#{main}, resolve conflicts, then carson deliver"
+				EXIT_ERROR
 			end
 
 			# Pushes the branch to the remote with tracking.
