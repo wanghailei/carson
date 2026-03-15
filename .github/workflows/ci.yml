@@ -26,9 +26,6 @@ jobs:
         with:
           ruby-version: "4.0"
 
-      - name: Install runtime dependencies
-        run: gem install sqlite3 --no-document
-
       - name: Refresh
         run: ruby exe/carson refresh
 
@@ -60,9 +57,6 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
-
-      - name: Install runtime dependencies
-        run: gem install sqlite3 --no-document
 
       - name: Ruby syntax check
         run: |
