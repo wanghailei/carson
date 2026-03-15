@@ -20,53 +20,12 @@ module Carson
 			FileUtils.mkdir_p( File.dirname( path ) )
 
 			with_database do |database|
-				database.execute_batch( <<~SQL )
-					CREATE TABLE IF NOT EXISTS deliveries (
-						id INTEGER PRIMARY KEY AUTOINCREMENT,
-						repo_path TEXT NOT NULL,
-						branch_name TEXT NOT NULL,
-						head TEXT NOT NULL,
-						worktree_path TEXT,
-						status TEXT NOT NULL,
-						pr_number INTEGER,
-						pr_url TEXT,
-						revision_count INTEGER NOT NULL DEFAULT 0,
-						cause TEXT,
-						summary TEXT,
-						created_at TEXT NOT NULL,
-						updated_at TEXT NOT NULL,
-						integrated_at TEXT,
-						superseded_at TEXT
-					);
-
-					CREATE UNIQUE INDEX IF NOT EXISTS index_deliveries_on_identity
-						ON deliveries ( repo_path, branch_name, head );
-
-					CREATE INDEX IF NOT EXISTS index_deliveries_on_state
-						ON deliveries ( repo_path, status, created_at );
-
-					CREATE TABLE IF NOT EXISTS revisions (
-						id INTEGER PRIMARY KEY AUTOINCREMENT,
-						delivery_id INTEGER NOT NULL,
-						number INTEGER NOT NULL,
-						cause TEXT NOT NULL,
-						provider TEXT NOT NULL,
-						status TEXT NOT NULL,
-						started_at TEXT NOT NULL,
-						finished_at TEXT,
-						summary TEXT,
-						FOREIGN KEY ( delivery_id ) REFERENCES deliveries ( id )
-					);
-
-					CREATE UNIQUE INDEX IF NOT EXISTS index_revisions_on_delivery_number
-						ON revisions ( delivery_id, number );
-				SQL
-
-				# Migration: drop authority column added in pre-4.0 groundwork.
-				columns = database.execute( "PRAGMA table_info(deliveries)" ).map { |row| row[ "name" ] || row[ 1 ] }
-				if columns.include?( "authority" )
-					database.execute( "ALTER TABLE deliveries DROP COLUMN authority" )
-				end
+				ensure_schema!( database: database )
+			rescue SQLite3::ReadOnlyException, SQLite3::CantOpenException
+				readonly_database = open_readonly_database
+				raise unless schema_present?( database: readonly_database )
+			ensure
+				readonly_database&.close
 			end
 		end
 
@@ -75,20 +34,27 @@ module Carson
 			timestamp = now_utc
 
 			with_database do |database|
+				repo_paths = repo_identity_paths( repo_path: repository.path )
 				row = database.get_first_row(
-					"SELECT * FROM deliveries WHERE repo_path = ? AND branch_name = ? AND head = ? LIMIT 1",
-					[ repository.path, branch_name, head ]
+					<<~SQL,
+					SELECT * FROM deliveries
+					WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
+						AND branch_name = ? AND head = ?
+					ORDER BY updated_at DESC, id DESC
+					LIMIT 1
+					SQL
+					[ *repo_paths, branch_name, head ]
 				)
 
 				if row
 					database.execute(
 						<<~SQL,
 						UPDATE deliveries
-						SET worktree_path = ?, status = ?, pr_number = ?, pr_url = ?,
+						SET repo_path = ?, worktree_path = ?, status = ?, pr_number = ?, pr_url = ?,
 						cause = ?, summary = ?, updated_at = ?
 						WHERE id = ?
 						SQL
-						[ worktree_path, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
+						[ repository.path, worktree_path, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
 					)
 					return fetch_delivery( database: database, id: row.fetch( "id" ), repository: repository )
 				end
@@ -113,14 +79,16 @@ module Carson
 		# Looks up the active delivery for a branch, if one exists.
 		def active_delivery( repo_path:, branch_name: )
 			with_database do |database|
+				repo_paths = repo_identity_paths( repo_path: repo_path )
 				row = database.get_first_row(
 					<<~SQL,
 					SELECT * FROM deliveries
-					WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
+					WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
+						AND branch_name = ? AND status IN ( #{active_state_placeholders} )
 					ORDER BY updated_at DESC
 					LIMIT 1
 					SQL
-					[ repo_path, branch_name, *ACTIVE_DELIVERY_STATES ]
+					[ *repo_paths, branch_name, *ACTIVE_DELIVERY_STATES ]
 				)
 				build_delivery( row: row ) if row
 			end
@@ -129,13 +97,15 @@ module Carson
 		# Lists active deliveries for a repository in creation order.
 		def active_deliveries( repo_path: )
 			with_database do |database|
+				repo_paths = repo_identity_paths( repo_path: repo_path )
 				rows = database.execute(
 					<<~SQL,
 					SELECT * FROM deliveries
-					WHERE repo_path = ? AND status IN ( #{active_state_placeholders} )
+					WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
+						AND status IN ( #{active_state_placeholders} )
 					ORDER BY created_at ASC, id ASC
 					SQL
-					[ repo_path, *ACTIVE_DELIVERY_STATES ]
+					[ *repo_paths, *ACTIVE_DELIVERY_STATES ]
 				)
 				rows.map { |row| build_delivery( row: row ) }
 			end
@@ -144,9 +114,10 @@ module Carson
 		# Lists queued deliveries ready for integration.
 		def queued_deliveries( repo_path: )
 			with_database do |database|
+				repo_paths = repo_identity_paths( repo_path: repo_path )
 				database.execute(
-					"SELECT * FROM deliveries WHERE repo_path = ? AND status = ? ORDER BY created_at ASC, id ASC",
-					[ repo_path, "queued" ]
+					"SELECT * FROM deliveries WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} ) AND status = ? ORDER BY created_at ASC, id ASC",
+					[ *repo_paths, "queued" ]
 				).map { |row| build_delivery( row: row ) }
 			end
 		end
@@ -229,13 +200,95 @@ module Carson
 	private
 
 		def with_database
-			database = SQLite3::Database.new( path )
-			database.results_as_hash = true
-			database.busy_timeout = 5_000
-			database.execute( "PRAGMA journal_mode = WAL" )
+			database = open_database
 			yield database
 		ensure
 			database&.close
+		end
+
+		def open_database
+			database = SQLite3::Database.new( path )
+			configure_database( database: database, readonly: false )
+			database
+		rescue SQLite3::ReadOnlyException, SQLite3::CantOpenException
+			database&.close
+			open_readonly_database
+		end
+
+		def configure_database( database:, readonly: )
+			database.results_as_hash = true
+			database.busy_timeout = 5_000
+			database.execute( "PRAGMA journal_mode = WAL" ) unless readonly
+		end
+
+		def open_readonly_database
+			database = SQLite3::Database.new( "file:#{path}?immutable=1", readonly: true, uri: true )
+			configure_database( database: database, readonly: true )
+			database
+		end
+
+		def ensure_schema!( database: )
+			database.execute_batch( <<~SQL )
+				CREATE TABLE IF NOT EXISTS deliveries (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					repo_path TEXT NOT NULL,
+					branch_name TEXT NOT NULL,
+					head TEXT NOT NULL,
+					worktree_path TEXT,
+					status TEXT NOT NULL,
+					pr_number INTEGER,
+					pr_url TEXT,
+					revision_count INTEGER NOT NULL DEFAULT 0,
+					cause TEXT,
+					summary TEXT,
+					created_at TEXT NOT NULL,
+					updated_at TEXT NOT NULL,
+					integrated_at TEXT,
+					superseded_at TEXT
+				);
+
+				CREATE UNIQUE INDEX IF NOT EXISTS index_deliveries_on_identity
+					ON deliveries ( repo_path, branch_name, head );
+
+				CREATE INDEX IF NOT EXISTS index_deliveries_on_state
+					ON deliveries ( repo_path, status, created_at );
+
+				CREATE TABLE IF NOT EXISTS revisions (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					delivery_id INTEGER NOT NULL,
+					number INTEGER NOT NULL,
+					cause TEXT NOT NULL,
+					provider TEXT NOT NULL,
+					status TEXT NOT NULL,
+					started_at TEXT NOT NULL,
+					finished_at TEXT,
+					summary TEXT,
+					FOREIGN KEY ( delivery_id ) REFERENCES deliveries ( id )
+				);
+
+				CREATE UNIQUE INDEX IF NOT EXISTS index_revisions_on_delivery_number
+					ON revisions ( delivery_id, number );
+			SQL
+
+			# Migration: drop authority column added in pre-4.0 groundwork.
+			columns = delivery_columns( database: database )
+			if columns.include?( "authority" )
+				database.execute( "ALTER TABLE deliveries DROP COLUMN authority" )
+			end
+		end
+
+		def schema_present?( database: )
+			tables = database.execute(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)",
+				[ "deliveries", "revisions" ]
+			).map { |row| row[ "name" ] || row[ 0 ] }
+			return false unless tables.sort == [ "deliveries", "revisions" ]
+
+			delivery_columns( database: database ).include?( "repo_path" )
+		end
+
+		def delivery_columns( database: )
+			database.execute( "PRAGMA table_info(deliveries)" ).map { |row| row[ "name" ] || row[ 1 ] }
 		end
 
 		def fetch_delivery( database:, id:, repository: nil )
@@ -287,14 +340,58 @@ module Carson
 		end
 
 		def supersede_branch!( database:, repository:, branch_name:, timestamp: )
+			repo_paths = repo_identity_paths( repo_path: repository.path )
 			database.execute(
 				<<~SQL,
 				UPDATE deliveries
 				SET status = ?, superseded_at = ?, updated_at = ?
-				WHERE repo_path = ? AND branch_name = ? AND status IN ( #{active_state_placeholders} )
+				WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
+					AND branch_name = ? AND status IN ( #{active_state_placeholders} )
 				SQL
-				[ "superseded", timestamp, timestamp, repository.path, branch_name, *ACTIVE_DELIVERY_STATES ]
+				[ "superseded", timestamp, timestamp, *repo_paths, branch_name, *ACTIVE_DELIVERY_STATES ]
 			)
+		end
+
+		def repo_identity_paths( repo_path: )
+			canonical_path = File.expand_path( repo_path )
+			canonical_realpath = realpath_or_nil( path: canonical_path )
+			worktree_gitdirs = Dir.glob( File.join( canonical_path, ".git", "worktrees", "*", "gitdir" ) )
+			paths = worktree_gitdirs.each_with_object( path_aliases( path: canonical_path ) ) do |gitdir_path, identities|
+				worktree_git_path = File.read( gitdir_path ).to_s.strip
+				next if worktree_git_path.empty?
+
+				worktree_path = File.dirname( File.expand_path( worktree_git_path, File.dirname( gitdir_path ) ) )
+				identities.concat( path_aliases( path: worktree_path ) )
+
+				worktree_realpath = realpath_or_nil( path: worktree_path )
+				next unless canonical_realpath && worktree_realpath
+
+				canonical_prefix = File.join( canonical_realpath, "" )
+				next unless worktree_realpath.start_with?( canonical_prefix )
+
+				relative_path = worktree_realpath.delete_prefix( canonical_prefix )
+				identities << File.join( canonical_path, relative_path ) unless relative_path.empty?
+			end
+			paths.uniq
+		rescue StandardError
+			[ File.expand_path( repo_path ) ]
+		end
+
+		def path_aliases( path: )
+			expanded_path = File.expand_path( path )
+			aliases = [ expanded_path, realpath_or_nil( path: expanded_path ) ]
+			aliases << expanded_path.delete_prefix( "/private" ) if expanded_path.start_with?( "/private/" )
+			aliases.compact.uniq
+		end
+
+		def realpath_or_nil( path: )
+			File.realpath( path )
+		rescue StandardError
+			nil
+		end
+
+		def repo_path_placeholders( count: )
+			Array.new( count, "?" ).join( ", " )
 		end
 
 		def active_state_placeholders

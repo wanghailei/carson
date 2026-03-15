@@ -111,6 +111,88 @@ class LedgerTest < Minitest::Test
 			"Ledger active_deliveries must return all states that Delivery considers active"
 	end
 
+	def test_active_deliveries_reads_existing_database_without_wal_write_access
+		create_test_delivery( branch_name: "feature/readonly", head: "readonly-head", status: "queued" )
+		state_path = @ledger.path
+		FileUtils.rm_f( [ "#{state_path}-wal", "#{state_path}-shm" ] )
+		File.chmod( 0o444, state_path )
+		File.chmod( 0o555, @tmp_dir )
+
+		readonly_ledger = Carson::Ledger.new( path: state_path )
+		deliveries = readonly_ledger.active_deliveries( repo_path: @tmp_dir )
+		assert_equal [ "feature/readonly" ], deliveries.map( &:branch )
+	ensure
+		File.chmod( 0o755, @tmp_dir ) if Dir.exist?( @tmp_dir )
+		File.chmod( 0o644, state_path ) if state_path && File.exist?( state_path )
+	end
+
+	def test_active_deliveries_include_legacy_worktree_repo_path_rows_for_canonical_root
+		with_feature_worktree_runtimes(
+			branch_name: "codex/legacy-ledger-query",
+			worktree_name: "legacy-ledger-query"
+		) do |root_runtime, worktree_runtime, repo_root, worktree_path|
+			legacy_repository = Carson::Repository.new( path: worktree_path, runtime: nil )
+			worktree_runtime.ledger.upsert_delivery(
+				repository: legacy_repository,
+				branch_name: "codex/legacy-ledger-query",
+				head: worktree_runtime.send( :current_head ),
+				worktree_path: worktree_path,
+				pr_number: 77,
+				pr_url: "https://github.com/test/repo/pull/77",
+				status: "queued",
+				summary: "ready to integrate into main",
+				cause: nil
+			)
+
+			deliveries = root_runtime.ledger.active_deliveries( repo_path: repo_root )
+			assert_equal [ "codex/legacy-ledger-query" ], deliveries.map( &:branch )
+		end
+	end
+
+	def test_upsert_delivery_rekeys_legacy_worktree_repo_path_rows_to_canonical_root
+		with_feature_worktree_runtimes(
+			branch_name: "codex/legacy-ledger-upsert",
+			worktree_name: "legacy-ledger-upsert"
+		) do |root_runtime, worktree_runtime, repo_root, worktree_path|
+			canonical_repo_path = root_runtime.send( :repository_record ).path
+			legacy_repository = Carson::Repository.new( path: worktree_path, runtime: nil )
+			worktree_runtime.ledger.upsert_delivery(
+				repository: legacy_repository,
+				branch_name: "codex/legacy-ledger-upsert",
+				head: worktree_runtime.send( :current_head ),
+				worktree_path: worktree_path,
+				pr_number: 78,
+				pr_url: "https://github.com/test/repo/pull/78",
+				status: "queued",
+				summary: "ready to integrate into main",
+				cause: nil
+			)
+
+			canonical_delivery = root_runtime.ledger.upsert_delivery(
+				repository: root_runtime.send( :repository_record ),
+				branch_name: "codex/legacy-ledger-upsert",
+				head: worktree_runtime.send( :current_head ),
+				worktree_path: worktree_path,
+				pr_number: 79,
+				pr_url: "https://github.com/test/repo/pull/79",
+				status: "queued",
+				summary: "ready to integrate into main",
+				cause: nil
+			)
+
+			rows = root_runtime.ledger.send( :with_database ) do |database|
+				database.execute(
+					"SELECT repo_path, pr_number FROM deliveries WHERE branch_name = ? ORDER BY id ASC",
+					[ "codex/legacy-ledger-upsert" ]
+				)
+			end
+			assert_equal 1, rows.length
+			assert_equal canonical_repo_path, rows.first.fetch( "repo_path" )
+			assert_equal 79, rows.first.fetch( "pr_number" )
+			assert_equal canonical_repo_path, canonical_delivery.repository.path
+		end
+	end
+
 private
 
 	def create_test_delivery( branch_name: "feature/test", head: "abc123", status: "queued" )
