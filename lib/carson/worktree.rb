@@ -103,6 +103,15 @@ module Carson
 				)
 			end
 
+			unless creation_verified?( path: worktree_path, branch: name, runtime: runtime )
+				return finish(
+					result: { command: "worktree create", status: "error", name: name, path: worktree_path, branch: name,
+						error: "git reported success but Carson could not verify the worktree and branch",
+						recovery: "git worktree list && git branch --list '#{name}'" },
+					exit_code: Runtime::EXIT_ERROR, runtime: runtime, json_output: json_output
+				)
+			end
+
 			finish(
 				result: { command: "worktree create", status: "ok", name: name, path: worktree_path, branch: name },
 				exit_code: Runtime::EXIT_OK, runtime: runtime, json_output: json_output
@@ -373,6 +382,17 @@ module Carson
 			exit_code
 		end
 		private_class_method :finish
+
+		def self.creation_verified?( path:, branch:, runtime: )
+			registered?( path: path, runtime: runtime ) && branch_exists?( branch: branch, runtime: runtime )
+		end
+		private_class_method :creation_verified?
+
+		def self.branch_exists?( branch:, runtime: )
+			_, _, success, = runtime.git_run( "show-ref", "--verify", "--quiet", "refs/heads/#{branch}" )
+			success
+		end
+		private_class_method :branch_exists?
 
 		# Human-readable output for worktree results.
 		def self.print_human( result:, runtime: )

@@ -65,6 +65,51 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_worktree_create_supports_slash_scoped_name
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		result = runtime.worktree_create!( name: "codex/slash-test" )
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "codex", "slash-test" )
+		assert Dir.exist?( wt_path ), "Slash-scoped worktree directory should exist"
+
+		branch_output, = Open3.capture3( "git", "branch", "--list", "codex/slash-test", chdir: repo_root )
+		assert_includes branch_output, "codex/slash-test"
+
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_errors_when_success_cannot_be_verified
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		worktree_name = "codex/ghost-worktree"
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "codex", "ghost-worktree" )
+		original_git_run = runtime.method( :git_run )
+
+		runtime.define_singleton_method( :git_run ) do |*args|
+			if args[ 0, 2 ] == [ "worktree", "add" ]
+				[ "", "", true, 0 ]
+			else
+				original_git_run.call( *args )
+			end
+		end
+
+		result = runtime.worktree_create!( name: worktree_name, json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_equal "error", json[ "status" ]
+		assert_includes json[ "error" ], "could not verify"
+		assert_includes json[ "recovery" ], "git worktree list"
+		refute Dir.exist?( worktree_path ), "Verification failure must not report a real worktree path as created"
+
+		branch_output, = Open3.capture3( "git", "branch", "--list", worktree_name, chdir: repo_root )
+		assert_equal "", branch_output.strip
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- JSON output tests ---
 
 	def test_worktree_create_json_success
