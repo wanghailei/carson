@@ -32,16 +32,6 @@ Carson lives on your workstation and in CI, never inside the repositories it gov
 
 The outsider boundary still matters: Carson governs repositories without becoming a runtime dependency inside them.
 
-## Two Authorities
-
-Each governed repo chooses one integration authority.
-
-**Remote** — remote `main` is the integration authority. Agents still work in local worktrees, but completed work rejoins through remote `main`.
-
-**Local** — local `main` is the integration authority. Agents still work in local worktrees, but completed work rejoins through local `main`, then `main` is pushed to the remote as backup.
-
-This is about where completed work rejoins shared truth, not about team size. Both authorities use worktrees. The authority changes how work lands, not whether Carson is needed.
-
 ## Principles
 
 - **Worktree-first** — substantive work happens in worktrees, not on `main`.
@@ -68,7 +58,7 @@ carson status
 carson govern --loop 300
 ```
 
-By default, repositories onboard as `remote`. `carson deliver` is the branch handoff: it pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first. `carson status` shows the active branch deliveries, and `carson govern` advances queued work across the governed portfolio.
+`carson deliver` is the branch handoff: it pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first. `carson status` shows the active branch deliveries, and `carson govern` advances queued work across the governed portfolio.
 
 ## Portfolio Layer
 

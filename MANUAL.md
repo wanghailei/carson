@@ -117,8 +117,8 @@ These strategies are the audit lens for Carson. If behaviour departs from them, 
 ### Git Strategist
 
 - **Worktree-first discipline** — substantive work happens in worktrees, never on the main working tree. This keeps concurrent agent work isolated and makes cleanup explicit.
-- **Deterministic base selection** — new work starts from the repo's chosen integration authority, not from whatever branch state happens to be lying around.
-- **Single landing path per authority** — in `remote`, completed work rejoins through remote `main`; in `local`, completed work rejoins through local `main` and then pushes `main` as backup.
+- **Deterministic base selection** — new work starts from a synced remote baseline, not from whatever branch state happens to be lying around.
+- **Single landing path** — completed work rejoins through remote `main` via PR-based delivery.
 - **Content-aware merge detection** — Carson proves whether a branch's content is already on `main` without relying on commit SHAs, so squash and rebase merges are handled correctly.
 - **Worktree-aware delivery** — Carson lands work without assuming `main` can be checked out in the active worktree, and cleanup is deferred to the correct context.
 - **Exact post-merge guidance** — after a successful landing, Carson tells the caller the next clean-up command instead of leaving the lifecycle half-finished.
@@ -127,7 +127,7 @@ These strategies are the audit lens for Carson. If behaviour departs from them, 
 
 - **Outsider boundary** — Carson governs repositories without writing Carson-specific config, scripts, or runtime payloads into them.
 - **Command ownership** — in governed repositories, Carson owns worktree and delivery operations so agents do not mix raw git flows with governed ones.
-- **Authority enforcement** — every governed repo has one integration authority at a time. That authority determines how work starts and how it returns to shared truth.
+- **Governed delivery** — completed work returns to shared truth through remote `main` via PR-based delivery. Carson owns the landing path.
 - **Active review gating** — when the repo uses PR-based delivery, review findings must be acknowledged before merge. Feedback is never silently buried.
 - **Portfolio triage** — `carson govern` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
 - **Template propagation** — Carson treats canonical policy files as managed infrastructure and keeps them consistent across repos.
@@ -145,7 +145,7 @@ These strategies are the audit lens for Carson. If behaviour departs from them, 
 
 The core workflow for coding agents using Carson. One command per step, full lifecycle.
 
-**1. Create a worktree** — Carson starts new work from the repo's chosen integration authority rather than from the caller's current HEAD. When that authority requires sync, Carson checks it before branching:
+**1. Create a worktree** — Carson syncs remote `main` and starts new work from that baseline rather than from the caller's current HEAD:
 
 ```bash
 carson worktree create my-feature
@@ -154,7 +154,7 @@ cd /path/to/.claude/worktrees/my-feature
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. In remote authority Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
+**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
@@ -375,15 +375,6 @@ Whether reviewer findings require acknowledgement.
 
 Change: `CARSON_REVIEW_DISPOSITION`.
 
-#### Delivery authority
-
-Where completed work rejoins shared truth.
-
-- **`remote`** (default) — the PR lands on remote `main`.
-- **`local`** — Carson integrates through local `main`, then pushes `main` as backup.
-
-Change: `govern.authority` in config.
-
 #### Output verbosity
 
 How much Carson prints.
@@ -411,7 +402,7 @@ Common environment overrides:
 | `CARSON_REVIEW_SWEEP_WINDOW_DAYS` | Lookback window for review sweep. |
 | `CARSON_REVIEW_SWEEP_STATES` | PR states to include in sweep. |
 | `CARSON_REVIEW_BOT_USERNAMES` | Comma-separated bot usernames to ignore in review gate and sweep. |
-| `CARSON_GOVERN_AUTHORITY` | Override delivery authority (`remote` or `local`). |
+| `CARSON_GOVERN_AUTHORITY` | Delivery authority (currently `remote` only). |
 | `CARSON_WORKFLOW_STYLE` | Workflow style override (`branch` or `trunk`). |
 | `CARSON_RUBY_INDENTATION` | Ruby indentation policy (`tabs`, `spaces`, or `either`). |
 
