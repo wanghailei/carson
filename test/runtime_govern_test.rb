@@ -24,7 +24,7 @@ class RuntimeGovernTest < Minitest::Test
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		text = output_string( runtime )
-		assert_includes text, "queued -> would_integrate"
+		assert_includes text, "ready to integrate (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -37,7 +37,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_includes output_string( runtime ), "gated -> would_revise"
+		assert_includes output_string( runtime ), "would revise (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -52,7 +52,7 @@ class RuntimeGovernTest < Minitest::Test
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		refute_includes output_string( runtime ), "private method `reconcile_delivery!`"
-		assert_includes output_string( runtime ), "queued -> would_integrate"
+		assert_includes output_string( runtime ), "ready to integrate (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -66,7 +66,7 @@ class RuntimeGovernTest < Minitest::Test
 
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_includes output_string( runtime ), "queued -> would_integrate"
+		assert_includes output_string( runtime ), "ready to integrate (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
