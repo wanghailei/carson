@@ -117,7 +117,11 @@ module Carson
 						next
 					end
 
-					reap_one_worktree!( worktree: worktree, reason: classification.fetch( :reason ) )
+					reap_one_worktree!(
+						worktree: worktree,
+						reason: classification.fetch( :reason ),
+						force: classification.fetch( :force, false )
+					)
 				end
 
 				reap_integrated_delivery_worktrees!
@@ -340,7 +344,7 @@ module Carson
 				end
 			end
 
-			def reap_one_worktree!( worktree:, reason: )
+			def reap_one_worktree!( worktree:, reason:, force: false )
 				label = worktree_housekeep_label( worktree: worktree )
 
 				unless worktree.exists?
@@ -351,6 +355,11 @@ module Carson
 				end
 
 				_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
+				if !rm_success && force
+					_, _, rm_success, = git_run( "worktree", "remove", "--force", worktree.path )
+					puts_verbose "force-reaped dirty worktree: #{File.basename( worktree.path )}" if rm_success
+				end
+
 				unless rm_success
 					puts_line "Kept worktree: #{label} — removal failed" unless verbose?
 					return false

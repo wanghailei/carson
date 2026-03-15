@@ -142,7 +142,20 @@ module Carson
 				return { action: :skip, reason: "held by current shell", absorbed: false } if worktree.holds_cwd?
 				return { action: :skip, reason: "held by another process", absorbed: false } if worktree.held_by_other_process?
 				return { action: :reap, reason: "directory missing (destroyed externally)", absorbed: false } unless worktree.exists?
-				return { action: :skip, reason: "dirty worktree", absorbed: false } if worktree.dirty?
+
+				if worktree.dirty?
+					absorbed = branch_absorbed_into_main?( branch: worktree.branch )
+					return { action: :reap, reason: "dirty worktree with content absorbed into main", absorbed: true, force: true } if absorbed
+					return { action: :skip, reason: "gh CLI not available for PR check", absorbed: false } unless gh_available?
+
+					tip_sha = worktree_branch_tip_sha( branch: worktree.branch )
+					return { action: :skip, reason: "cannot read branch tip SHA", absorbed: false } if tip_sha.nil?
+
+					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
+					return { action: :reap, reason: "dirty worktree with merged #{pr_short_ref( merged_pr.fetch( :url ) )}", absorbed: false, force: true } unless merged_pr.nil?
+
+					return { action: :skip, reason: "dirty worktree", absorbed: false }
+				end
 
 				absorbed = branch_absorbed_into_main?( branch: worktree.branch )
 				return { action: :reap, reason: "content absorbed into main", absorbed: true } if absorbed
