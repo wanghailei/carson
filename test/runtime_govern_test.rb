@@ -161,6 +161,30 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_runs_full_housekeep_entry_after_successful_merge
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/housekeep" )
+		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/housekeep", status: "queued", summary: "ready to integrate into main" )
+		stub_reconciliation( runtime, delivery: delivery )
+		housekeep_calls = []
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			result[ :merge_method ] = "squash"
+			Carson::Runtime::EXIT_OK
+		end
+		runtime.define_singleton_method( :housekeep_one_entry ) do |repo_path:, silent:|
+			housekeep_calls << [ repo_path, silent ]
+			{ status: "ok" }
+		end
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ File.realpath( repo_root ), true ] ], housekeep_calls
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "integrated", row.fetch( "status" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_escalates_delivery_after_three_revisions
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )

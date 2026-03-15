@@ -314,6 +314,8 @@ After a live merge attempt, govern reports the actual outcome. Failed merges sta
 
 After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs stay held at gate with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash policy.
 
+After a successful govern merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
+
 The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 
 ## Governed Integration Policy

@@ -293,10 +293,9 @@ module Carson
 				end
 
 				def housekeep_repo!( repo_path: )
-				scoped_runtime = repo_runtime_for( repo_path: repo_path )
-				sync_status = scoped_runtime.sync!
-				scoped_runtime.prune! if sync_status == EXIT_OK
-			end
+					scoped_runtime = repo_runtime_for( repo_path: repo_path )
+					scoped_runtime.send( :housekeep_one_entry, repo_path: repo_path, silent: true )
+				end
 
 			def select_agent_provider
 				provider = config.govern_agent_provider
