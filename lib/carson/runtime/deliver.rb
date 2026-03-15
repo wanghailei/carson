@@ -1,10 +1,11 @@
-# Branch delivery lifecycle — push, create/update PR, and register Carson-owned delivery state.
-# `carson deliver` is now the async handoff point. It does not wait for merge.
+# Branch delivery lifecycle — push, create/update PR, wait for merge readiness, and integrate when clear.
+# `carson deliver` owns the synchronous happy path for single-branch delivery.
 module Carson
 	class Runtime
 		module Deliver
 			# Entry point for `carson deliver`.
-			# Pushes the current branch, ensures a PR exists, records delivery state, and returns.
+			# Pushes the current branch, ensures a PR exists, records delivery state,
+			# waits for merge readiness, and integrates when the path is clear.
 			# When --commit is supplied, Carson creates one all-dirty agent-authored commit first.
 			def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
 				branch_name = current_branch
@@ -75,14 +76,22 @@ module Carson
 					cause: nil
 				)
 				delivery = assess_delivery!( delivery: delivery, branch_name: branch.name )
+				delivery = wait_for_delivery_readiness!( delivery: delivery, branch_name: branch.name )
+				delivery = integrate_delivery_now!(
+					delivery: delivery,
+					branch_name: branch.name,
+					remote: remote_name,
+					main: main_branch,
+					result: result
+				) if delivery.ready?
 
 				result[ :pr_number ] = pr_number
 				result[ :pr_url ] = pr_url
-				result[ :ci ] = check_pr_ci( number: pr_number ).to_s
+				result[ :ci ] = delivery.integrated? ? "pass" : check_pr_ci( number: pr_number ).to_s
 				result[ :delivery ] = delivery_payload( delivery: delivery )
 				result[ :main_branch ] = main_branch
 				result[ :summary ] = delivery.summary
-				result[ :next_step ] = "carson status"
+				result[ :next_step ] = deliver_next_step( delivery: delivery, result: result )
 
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
@@ -207,6 +216,86 @@ module Carson
 				)
 			end
 
+			def wait_for_delivery_readiness!( delivery:, branch_name: )
+				return delivery unless delivery.status == "gated" && delivery.cause == "ci"
+				return delivery unless config.govern_check_wait.positive?
+
+				deadline = Process.clock_gettime( Process::CLOCK_MONOTONIC ) + config.govern_check_wait
+				interval = deliver_ci_poll_seconds
+				puts_verbose "waiting up to #{config.govern_check_wait}s for CI to settle"
+
+				loop do
+					remaining = deadline - Process.clock_gettime( Process::CLOCK_MONOTONIC )
+					break if remaining <= 0
+
+					sleep [ interval, remaining ].min
+					delivery = assess_delivery!( delivery: delivery, branch_name: branch_name )
+					break unless delivery.status == "gated" && delivery.cause == "ci"
+				end
+
+				delivery
+			end
+
+			def deliver_ci_poll_seconds
+				seconds = config.review_poll_seconds.to_i
+				seconds.positive? ? seconds : 5
+			end
+
+			def integrate_delivery_now!( delivery:, branch_name:, remote:, main:, result: )
+				pr_state = pull_request_state( number: delivery.pull_request_number )
+				if pr_state && pr_state[ "state" ] == "MERGED"
+					integrated = ledger.update_delivery(
+						delivery: delivery,
+						status: "integrated",
+						integrated_at: Time.now.utc.iso8601,
+						summary: "integrated into #{main}"
+					)
+					sync_after_merge!( remote: remote, main: main, result: result )
+					return integrated
+				end
+
+				if pr_state && pr_state[ "state" ] == "CLOSED"
+					return ledger.update_delivery(
+						delivery: delivery,
+						status: "failed",
+						cause: "policy",
+						summary: "pull request closed without integration"
+					)
+				end
+
+				prepared = ledger.update_delivery(
+					delivery: delivery,
+					status: "integrating",
+					summary: "integrating into #{main}"
+				)
+				merge_exit = merge_pr!( number: prepared.pull_request_number, result: result )
+				if merge_exit == EXIT_OK
+					integrated = ledger.update_delivery(
+						delivery: prepared,
+						status: "integrated",
+						integrated_at: Time.now.utc.iso8601,
+						summary: "integrated into #{main}"
+					)
+					sync_after_merge!( remote: remote, main: main, result: result )
+					return integrated
+				end
+
+				merge_error = result.delete( :error )
+				merge_recovery = result.delete( :recovery )
+				result[ :merge ] = {
+					status: "blocked",
+					summary: merge_error || "merge failed",
+					recovery: merge_recovery,
+					method: result[ :merge_method ]
+				}
+				ledger.update_delivery(
+					delivery: prepared,
+					status: "gated",
+					cause: "policy",
+					summary: result.dig( :merge, :summary )
+				)
+			end
+
 			def delivery_assessment( ci:, review: )
 				return [ "gated", "ci", "waiting for CI checks" ] if ci == :pending
 				return [ "gated", "ci", "CI checks are failing" ] if ci == :fail
@@ -227,6 +316,14 @@ module Carson
 					revision_count: delivery.revision_count,
 					cause: delivery.cause
 				}
+			end
+
+			def deliver_next_step( delivery:, result: )
+				return "carson sync" if delivery.integrated? && result[ :synced ] == false
+				return "carson housekeep" if delivery.integrated?
+				return "carson status" if delivery.blocked?
+
+				nil
 			end
 
 			# Outputs the final result — JSON or human-readable — and returns exit code.
@@ -263,8 +360,22 @@ module Carson
 				if result[ :delivery ]
 					status = result.dig( :delivery, :status )
 					summary = result[ :summary ]
-					if status == "gated"
+					if status == "integrated"
+						if result[ :merge_method ]
+							puts_line "Merged into #{main} with #{result[ :merge_method ]}."
+						else
+							puts_line "Merged into #{main}."
+						end
+						if result[ :synced ] == false
+							puts_line "Local #{main} sync failed — #{result[ :sync_error ]}."
+						elsif result[ :synced ]
+							puts_line "Synced local #{main}."
+						end
+					elsif status == "gated"
 						puts_line "Held at gate — #{summary}."
+						puts_line "  → #{result.dig( :merge, :recovery )}" if result.dig( :merge, :recovery )
+					elsif status == "failed"
+						puts_line "Delivery failed — #{summary}."
 					else
 						puts_line "All clear — #{summary}."
 					end

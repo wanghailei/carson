@@ -64,6 +64,7 @@ module Carson
 				parser.separator "    status       Show repository delivery state"
 				parser.separator "    setup        Initialise Carson configuration"
 				parser.separator "    audit        Run pre-commit health checks"
+				parser.separator "    abandon      Close and clean up abandoned delivery work"
 				parser.separator "    sync         Sync local main with remote"
 				parser.separator "    deliver      Start autonomous branch delivery"
 				parser.separator "    prune        Remove stale local branches"
@@ -120,6 +121,8 @@ module Carson
 				parse_review_subcommand( arguments: arguments, error: error )
 			when "audit"
 				parse_audit_command( arguments: arguments, error: error )
+			when "abandon"
+				parse_abandon_command( arguments: arguments, error: error )
 			when "sync"
 				parse_sync_command( arguments: arguments, error: error )
 			when "status"
@@ -303,7 +306,7 @@ module Carson
 		def self.parse_worktree_subcommand( arguments:, error: )
 			options = { json: false, force: false }
 			worktree_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson worktree <create|remove> <name> [options]"
+				parser.banner = "Usage: carson worktree <create|list|remove> <name> [options]"
 				parser.separator ""
 				parser.separator "Manage isolated worktrees for coding agents."
 				parser.separator "Create auto-syncs main before branching. Remove guards against"
@@ -311,6 +314,7 @@ module Carson
 				parser.separator ""
 				parser.separator "Subcommands:"
 				parser.separator "    create <name>              Create a new worktree with a fresh branch"
+				parser.separator "    list                       List registered worktrees with cleanup status"
 				parser.separator "    remove <name> [--force]    Remove a worktree (--force skips safety checks)"
 				parser.separator ""
 				parser.separator "Options:"
@@ -319,6 +323,7 @@ module Carson
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson worktree create feature-x    Create an isolated worktree"
+				parser.separator "    carson worktree list                Show registered worktrees"
 				parser.separator "    carson worktree remove feature-x    Remove after work is pushed"
 			end
 			worktree_parser.parse!( arguments )
@@ -338,6 +343,8 @@ module Carson
 					return { command: :invalid }
 				end
 				{ command: "worktree:create", worktree_name: name, json: options[ :json ] }
+			when "list"
+				{ command: "worktree:list", json: options[ :json ] }
 			when "remove"
 				worktree_path = arguments.shift
 				if worktree_path.to_s.strip.empty?
@@ -475,6 +482,38 @@ module Carson
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts audit_parser
+			{ command: :invalid }
+		end
+
+		# --- abandon ---
+
+		def self.parse_abandon_command( arguments:, error: )
+			options = { json: false }
+			abandon_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson abandon <pr-number|pr-url|branch> [--json]"
+				parser.separator ""
+				parser.separator "Close an abandoned delivery and clean up its worktree and branch when safe."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson abandon 301"
+				parser.separator "    carson abandon https://github.com/acme/widgets/pull/301"
+				parser.separator "    carson abandon codex/feature-branch"
+			end
+			abandon_parser.parse!( arguments )
+			target = arguments.shift.to_s.strip
+			if target.empty? || !arguments.empty?
+				error.puts "#{BADGE} Use: carson abandon <pr-number|pr-url|branch>"
+				error.puts abandon_parser
+				return { command: :invalid }
+			end
+
+			{ command: "abandon", target: target, json: options.fetch( :json ) }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts abandon_parser
 			{ command: :invalid }
 		end
 
@@ -745,6 +784,8 @@ module Carson
 				runtime.setup!( cli_choices: parsed.fetch( :cli_choices, {} ) )
 			when "audit"
 				runtime.audit!( json_output: parsed.fetch( :json, false ) )
+			when "abandon"
+				runtime.abandon!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ) )
 			when "sync"
 				runtime.sync!( json_output: parsed.fetch( :json, false ) )
 			when "prune"
@@ -753,6 +794,8 @@ module Carson
 				runtime.prune_all!
 			when "worktree:create"
 				runtime.worktree_create!( name: parsed.fetch( :worktree_name ), json_output: parsed.fetch( :json, false ) )
+			when "worktree:list"
+				runtime.worktree_list!( json_output: parsed.fetch( :json, false ) )
 			when "worktree:remove"
 				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ), json_output: parsed.fetch( :json, false ) )
 			when "onboard"

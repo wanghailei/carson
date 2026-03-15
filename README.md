@@ -52,13 +52,14 @@ cd your/repo/path/.claude/worktrees/your-worktree
 
 # work and test, then either commit yourself or let Carson create the delivery commit
 carson deliver --commit "fix: describe this delivery"
-carson status
 
-# keep govern running to advance queued deliveries
-carson govern --loop 300
+# inspect cleanup recommendations once the work is landed
+carson worktree list
 ```
 
-`carson deliver` is the branch handoff: it pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first. `carson status` shows the active branch deliveries, and `carson govern` advances queued work across the governed portfolio.
+`carson deliver` owns the normal branch-delivery path: it pushes the branch, creates or refreshes the PR, waits for the review and CI gates Carson can observe, merges when clear, and syncs local `main`. If CI or review is still pending after Carson's configured wait windows, `deliver` returns a gated state instead of merging. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first.
+
+`carson worktree list` is the visibility surface for cleanup: it shows every registered worktree, the branch, PR state, whether the content is already on `main`, and Carson's keep or reap recommendation. When work needs to be abandoned instead of landed, use `carson abandon <pr-number|pr-url|branch>` to close the PR and clean up the branch/worktree safely.
 
 ## Portfolio Layer
 
@@ -70,7 +71,7 @@ carson refresh --all
 carson govern --dry-run
 ```
 
-`carson govern` is the portfolio layer. It advances queued deliveries, dispatches revision work for blocked branches, and surfaces what needs human judgement. Governed integration is squash-only and happens one repository at a time.
+`carson govern` is the portfolio layer. It reassesses active deliveries across governed repositories, dispatches revision work for blocked branches, and surfaces what needs human judgement. Governed integration is squash-only and happens one repository at a time.
 
 ## Where to Read Next
 

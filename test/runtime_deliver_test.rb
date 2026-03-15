@@ -1,4 +1,4 @@
-# Tests for the async branch-delivery contract.
+# Tests for the synchronous branch-delivery contract.
 require_relative "test_helper"
 
 class RuntimeDeliverTest < Minitest::Test
@@ -123,13 +123,14 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_includes output, "PR #99"
 		assert_includes output, "Delivery #"
 		assert_includes output, "feature/queued → main"
-		assert_includes output, "All clear"
+		assert_includes output, "Merged into main with squash."
+		assert_includes output, "Synced local main."
 
-		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/queued" )
+		delivery = delivery_row_for( runtime: runtime, branch_name: "feature/queued" )
 		refute_nil delivery
-		assert_equal "queued", delivery.status
-		assert_equal "ready to integrate into main", delivery.summary
-		assert_equal 99, delivery.pull_request_number
+		assert_equal "integrated", delivery.fetch( "status" )
+		assert_equal "integrated into main", delivery.fetch( "summary" )
+		assert_equal 99, delivery.fetch( "pr_number" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -138,6 +139,7 @@ class RuntimeDeliverTest < Minitest::Test
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/gated" )
 		stub_assessment( runtime, ci: :pending, review: { status: :pass, review: :approved, detail: "" } )
+		runtime.define_singleton_method( :wait_for_delivery_readiness! ) { |delivery:, branch_name:| delivery }
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
@@ -158,8 +160,8 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, result
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal 42, data.fetch( "pr_number" )
-		assert_equal "queued", data.dig( "delivery", "status" )
-		assert_equal "carson status", data.fetch( "next_step" )
+		assert_equal "integrated", data.dig( "delivery", "status" )
+		assert_equal "carson housekeep", data.fetch( "next_step" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -174,9 +176,9 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, first
 		assert_equal Carson::Runtime::EXIT_OK, second
 
-		deliveries = runtime.ledger.active_deliveries( repo_path: runtime.main_worktree_root )
+		deliveries = delivery_rows_for( runtime: runtime, branch_name: "feature/idempotent" )
 		assert_equal 1, deliveries.size
-		assert_equal "feature/idempotent", deliveries.first.branch
+		assert_equal "integrated", deliveries.first.fetch( "status" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -187,7 +189,7 @@ class RuntimeDeliverTest < Minitest::Test
 		stub_ready_assessment( runtime )
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
-		first_delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
+		first_delivery = delivery_row_for( runtime: runtime, branch_name: "feature/supersede" )
 
 		File.write( File.join( repo_root, "feature.txt" ), "updated" )
 		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
@@ -195,12 +197,12 @@ class RuntimeDeliverTest < Minitest::Test
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
 
-		active = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
-		refute_equal first_delivery.head, active.head
+		active = delivery_row_for( runtime: runtime, branch_name: "feature/supersede" )
+		refute_equal first_delivery.fetch( "head" ), active.fetch( "head" )
 		all = runtime.ledger.send( :with_database ) do |database|
 			database.execute( "SELECT status FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id ASC", [ runtime.main_worktree_root, "feature/supersede" ] )
 		end
-		assert_equal [ "superseded", "queued" ], all.map { |row| row.fetch( "status" ) }
+		assert_equal [ "integrated", "integrated" ], all.map { |row| row.fetch( "status" ) }
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -299,6 +301,13 @@ private
 		<<~BASH
 			#!/usr/bin/env bash
 			if [[ "$1" == "pr" && "$2" == "view" ]]; then
+				if [[ "$3" =~ ^[0-9]+$ ]]; then
+					number="$3"
+					cat <<JSON
+			{"number":${number},"url":"https://github.com/test/repo/pull/${number}","state":"OPEN","isDraft":false}
+			JSON
+					exit 0
+				fi
 				if #{existing_pr ? "true" : "false"}; then
 					cat <<'JSON'
 			{"number":42,"url":"https://github.com/test/repo/pull/42","state":"OPEN"}
@@ -311,6 +320,10 @@ private
 
 			if [[ "$1" == "pr" && "$2" == "create" ]]; then
 				echo "https://github.com/test/repo/pull/99"
+				exit 0
+			fi
+
+			if [[ "$1" == "pr" && "$2" == "merge" ]]; then
 				exit 0
 			fi
 
@@ -392,6 +405,24 @@ private
 
 	def output_string( runtime )
 		runtime.instance_variable_get( :@output ).string
+	end
+
+	def delivery_row_for( runtime:, branch_name: )
+		runtime.ledger.send( :with_database ) do |database|
+			database.get_first_row(
+				"SELECT * FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id DESC LIMIT 1",
+				[ runtime.main_worktree_root, branch_name ]
+			)
+		end
+	end
+
+	def delivery_rows_for( runtime:, branch_name: )
+		runtime.ledger.send( :with_database ) do |database|
+			database.execute(
+				"SELECT * FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id ASC",
+				[ runtime.main_worktree_root, branch_name ]
+			)
+		end
 	end
 
 	def git_capture( repo_root, *args )

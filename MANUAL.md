@@ -157,30 +157,41 @@ On the governed main working tree, Carson blocks raw `git add` / `git commit` an
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
+**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Carson pushes the branch, creates or refreshes the PR, waits for the CI and review signals it can observe, merges when the path is clear, and syncs local `main`. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
 # or, if the worktree is still dirty:
 carson deliver --commit "fix: describe this delivery"
-# Output: PR #N, Delivery: queued|gated
-#   Next: carson status
+# Output: merged into main, or held at gate with the next command
 ```
 
-**4. Monitor and advance** — `status` is the delivery surface. It shows the current branch plus active deliveries for the repository. Keep `govern` running to advance queued deliveries and revisions across governed repositories:
+**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, `status` shows the current branch plus active deliveries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
 
 ```bash
 carson status
 carson govern --loop 300
 ```
 
-**5. Clean up landed work** — once the delivery is integrated, use Carson cleanup commands from the main worktree:
+**5. Clean up landed work** — once the delivery is integrated, use Carson cleanup commands from the main worktree. `worktree list` shows every registered worktree with PR state, absorbed-into-main detection, and Carson's cleanup recommendation:
 
 ```bash
 cd /path/to/repo
-carson worktree remove my-feature
-carson prune
+carson worktree list
+carson housekeep
 ```
+
+When you need to abandon a stale branch or PR instead of landing it:
+
+```bash
+carson abandon 291
+# or:
+carson abandon https://github.com/owner/repo/pull/291
+# or:
+carson abandon feature/stale-work
+```
+
+`abandon` closes the PR when it is still open, removes the matching worktree when safe, deletes the local and remote branch refs when allowed, and marks the delivery as failed in Carson's ledger.
 
 **Safety guards** — `worktree remove` blocks when:
 - Shell CWD is inside the worktree (prevents session crash).
@@ -188,7 +199,7 @@ carson prune
 
 After squash or rebase merge, the content matches main — removal proceeds without `--force`.
 
-**Stale worktree recovery** — if a worktree directory is destroyed externally (for example by a raw GitHub merge/delete flow), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use Carson's `deliver` + `govern` flow instead of raw `gh pr merge --delete-branch` so the worktree directory stays intact for orderly cleanup.
+**Stale worktree recovery** — if a worktree directory is destroyed externally (for example by a raw GitHub merge/delete flow), `worktree remove`, `worktree list`, `housekeep`, and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error when Carson has enough evidence. Use Carson's delivery and cleanup commands instead of raw `gh pr merge --delete-branch` so the worktree directory stays intact for orderly cleanup.
 
 ### Carson vs Claude Code EnterWorktree
 
