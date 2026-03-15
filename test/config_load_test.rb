@@ -64,7 +64,7 @@ class ConfigLoadTest < Minitest::Test
 			with_env( "CARSON_CONFIG_FILE" => config_path, "HOME" => "relative-home", "TMPDIR" => tmpdir ) do
 				config = Carson::Config.load( repo_root: dir )
 				assert_equal File.join( tmpdir, "carson", "hooks" ), config.hooks_path
-				assert_equal File.join( tmpdir, "carson", "state.sqlite3" ), config.govern_state_path
+				assert_equal File.join( tmpdir, "carson", "state.json" ), config.govern_state_path
 			end
 		end
 	end
@@ -76,7 +76,7 @@ class ConfigLoadTest < Minitest::Test
 
 			with_env( "CARSON_CONFIG_FILE" => config_path, "HOME" => "relative-home", "TMPDIR" => "relative-tmpdir" ) do
 				config = Carson::Config.load( repo_root: dir )
-				assert_equal "/tmp/carson/state.sqlite3", config.govern_state_path
+				assert_equal "/tmp/carson/state.json", config.govern_state_path
 			end
 		end
 	end

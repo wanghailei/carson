@@ -91,7 +91,7 @@ module Carson
 						"codex" => {},
 						"claude" => {}
 					},
-					"state_path" => "~/.carson/state.sqlite3",
+					"state_path" => "~/.carson/state.json",
 					"check_wait" => 30
 				}
 			}
@@ -246,7 +246,7 @@ module Carson
 			@govern_agent_provider = fetch_string( hash: govern_agent_hash, key: "provider" ).downcase
 			@govern_state_path = resolve_runtime_path(
 				path: govern_hash.fetch( "state_path" ).to_s,
-				fallback_leaf: "state.sqlite3"
+				fallback_leaf: "state.json"
 			)
 			@govern_check_wait = fetch_non_negative_integer( hash: govern_hash, key: "check_wait" )
 

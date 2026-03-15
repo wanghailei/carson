@@ -136,7 +136,7 @@ Environment overrides:
     "merge": {
       "method": "squash"
     },
-    "state_path": "~/.carson/state.sqlite3"
+    "state_path": "~/.carson/state.json"
   }
 }
 ```
@@ -147,7 +147,7 @@ Environment overrides:
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
 - `merge.method`: `"squash"` only in governed mode.
-- `state_path`: SQLite ledger path for active deliveries and revisions.
+- `state_path`: JSON file path for active deliveries and revisions.
 
 `template` schema:
 

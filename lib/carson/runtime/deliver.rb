@@ -76,22 +76,14 @@ module Carson
 					cause: nil
 				)
 				delivery = assess_delivery!( delivery: delivery, branch_name: branch.name )
-				delivery = wait_for_delivery_readiness!( delivery: delivery, branch_name: branch.name )
-				delivery = integrate_delivery_now!(
-					delivery: delivery,
-					branch_name: branch.name,
-					remote: remote_name,
-					main: main_branch,
-					result: result
-				) if delivery.ready?
 
 				result[ :pr_number ] = pr_number
 				result[ :pr_url ] = pr_url
-				result[ :ci ] = delivery.integrated? ? "pass" : check_pr_ci( number: pr_number ).to_s
+				result[ :ci ] = check_pr_ci( number: pr_number ).to_s
 				result[ :delivery ] = delivery_payload( delivery: delivery )
 				result[ :main_branch ] = main_branch
 				result[ :summary ] = delivery.summary
-				result[ :next_step ] = deliver_next_step( delivery: delivery, result: result )
+				result[ :next_step ] = "carson status"
 
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
@@ -309,7 +301,7 @@ module Carson
 
 			def delivery_payload( delivery: )
 				{
-					id: delivery.id,
+					key: delivery.key,
 					status: delivery.status,
 					head: delivery.head,
 					worktree_path: delivery.worktree_path,
@@ -348,10 +340,9 @@ module Carson
 				end
 
 				if result[ :delivery ]
-					delivery_id = result.dig( :delivery, :id )
 					branch = result[ :branch ]
 					main = result[ :main_branch ] || "main"
-					puts_line "Delivery ##{delivery_id}  #{branch} → #{main}"
+					puts_line "Delivery: #{branch} → #{main}"
 				end
 				if result[ :commit ]
 					puts_line "Committed: #{result.dig( :commit, :summary )}"

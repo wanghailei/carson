@@ -1,5 +1,6 @@
 # Tests for abandoning delivery work and cleaning up safely.
 require_relative "test_helper"
+require "json"
 
 class RuntimeAbandonTest < Minitest::Test
 	include CarsonTestSupport
@@ -182,11 +183,11 @@ private
 	end
 
 	def delivery_row_for( runtime:, branch_name: )
-		runtime.ledger.send( :with_database ) do |database|
-			database.get_first_row(
-				"SELECT * FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id DESC LIMIT 1",
-				[ runtime.main_worktree_root, branch_name ]
-			)
-		end
+		state = JSON.parse( File.read( runtime.ledger.path ) )
+		repo_path = runtime.main_worktree_root
+		_key, data = state[ "deliveries" ]
+			.select { |_k, d| d[ "repo_path" ] == repo_path && d[ "branch_name" ] == branch_name }
+			.max_by { |_k, d| d[ "updated_at" ].to_s }
+		data
 	end
 end
