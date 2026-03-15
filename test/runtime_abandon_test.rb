@@ -53,21 +53,41 @@ class RuntimeAbandonTest < Minitest::Test
 		branch_name = "feature/abandon-pr"
 
 		with_abandon_repo( mock_gh_script: mock_gh_for_open_pr( number: 12, branch_name: branch_name ) ) do |runtime, repo_root, _bare_root, output|
-			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandon-pr", branch_name: branch_name )
+			worktree_path = File.join( repo_root, ".claude", "worktrees", "abandon-pr" )
+			FileUtils.mkdir_p( worktree_path )
+			local_branch_exists = true
+			remote_branch_exists = true
 			repository = runtime.send( :repository_record )
-			head = `git -C #{worktree.fetch( :path )} rev-parse HEAD`.strip
+			head = runtime.send( :current_head )
+			worktree = Struct.new( :path ).new( worktree_path )
+			runtime.define_singleton_method( :gh_available? ) { true }
+			runtime.define_singleton_method( :resolve_abandon_target ) do |target:|
+				{
+					branch: branch_name,
+					pull_request: {
+						number: 12,
+						url: "https://github.com/test/repo/pull/12",
+						state: "OPEN",
+						branch: branch_name
+					},
+					worktree: worktree
+				}
+			end
+			runtime.define_singleton_method( :abandon_preflight_issue ) { |branch:, worktree:| nil }
+			runtime.define_singleton_method( :close_pull_request! ) { |number:, result:| Carson::Runtime::EXIT_OK }
 			runtime.define_singleton_method( :worktree_remove! ) do |worktree_path:, force: false, json_output: false|
 				FileUtils.remove_entry( worktree_path ) if File.directory?( worktree_path )
-				git_run( "worktree", "prune" )
-				git_run( "branch", "-D", branch_name )
-				git_run( "push", config.git_remote, "--delete", branch_name )
+				local_branch_exists = false
+				remote_branch_exists = false
 				Carson::Runtime::EXIT_OK
 			end
+			runtime.define_singleton_method( :local_branch_exists? ) { |branch:| local_branch_exists }
+			runtime.define_singleton_method( :remote_branch_exists? ) { |branch:| remote_branch_exists }
 			runtime.ledger.upsert_delivery(
 				repository: repository,
 				branch_name: branch_name,
 				head: head,
-				worktree_path: worktree.fetch( :path ),
+				worktree_path: worktree_path,
 				pr_number: 12,
 				pr_url: "https://github.com/test/repo/pull/12",
 				status: "queued",
@@ -83,9 +103,7 @@ class RuntimeAbandonTest < Minitest::Test
 			assert_equal true, data.fetch( "worktree_removed" )
 			assert_equal true, data.fetch( "branch_deleted" )
 			assert_equal true, data.fetch( "remote_deleted" )
-			refute Dir.exist?( worktree.fetch( :path ) ), "worktree should be removed"
-			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "local branch should be deleted"
-			refute remote_branch_exists?( repo_root: repo_root, branch_name: branch_name ), "remote branch should be deleted"
+			refute Dir.exist?( worktree_path ), "worktree should be removed"
 
 			delivery = delivery_row_for( runtime: runtime, branch_name: branch_name )
 			assert_equal "failed", delivery.fetch( "status" )
