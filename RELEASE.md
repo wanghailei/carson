@@ -5,6 +5,14 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.23.3
+
+### What changed
+
+- **Fix: review gate failed with "accepts at most 1 arg(s), received 3"** — `current_pull_request_for_branch` placed `--json` after the `--` end-of-options separator, causing `gh pr view` to treat it as a positional argument instead of a flag. Flags now precede `--`.
+
+### No migration required
+
 ## 3.23.2
 
 ### What changed
