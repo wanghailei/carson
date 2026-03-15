@@ -10,10 +10,17 @@ module Carson
 	class Runtime
 		module Housekeep
 			# Serves the current repo: sync + prune.
+			# Resolves to the canonical main worktree root so the command works
+			# correctly when invoked from inside an agent worktree.
 			def housekeep!( json_output: false, dry_run: false )
-				return housekeep_one_dry_run if dry_run
+				canonical = main_worktree_root
 
-				housekeep_one( repo_path: repo_root, json_output: json_output )
+				if dry_run
+					scoped = Runtime.new( repo_root: canonical, tool_root: tool_root, output: output, error: error, verbose: verbose? )
+					return scoped.housekeep_one_dry_run
+				end
+
+				housekeep_one( repo_path: canonical, json_output: json_output )
 			end
 
 			# Resolves a target name to a governed repo, then serves it.
