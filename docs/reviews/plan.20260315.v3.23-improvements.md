@@ -97,8 +97,40 @@ Adds regression test that stubs audit! to raise and verifies the
 
 **Files:**
 - Modify: `lib/carson/runtime/deliver.rb:314-317`
+- Modify: `test/runtime_deliver_test.rb`
 
-- [ ] **Step 1: Fix the bug**
+- [ ] **Step 1: Write the failing regression test**
+
+Add to `RuntimeDeliverTest`:
+
+```ruby
+def test_sync_after_merge_detects_pull_failure
+	runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+	init_git_repo_with_remote( repo_root )
+
+	result = {}
+	# Call sync_after_merge! against the repo whose remote has no new
+	# commits — git pull --ff-only will succeed, so we need to break it.
+	# Remove the remote to force a failure.
+	system( "git", "-C", repo_root, "remote", "remove", "origin", out: File::NULL, err: File::NULL )
+
+	runtime.send( :sync_after_merge!, remote: "origin", main: "main", result: result )
+
+	assert_equal false, result[ :synced ]
+	refute_nil result[ :sync_error ]
+	FileUtils.remove_entry( tmp_dir )
+end
+```
+
+- [ ] **Step 2: Run test to verify it fails (proves the bug)**
+
+```bash
+ruby -Ilib -Itest test/runtime_deliver_test.rb --name test_sync_after_merge_detects_pull_failure
+```
+
+Expected: FAIL — `Process::Status` is always truthy, so `result[:synced]` is `true` and the assertion fails.
+
+- [ ] **Step 3: Fix the bug**
 
 Change lines 314-317 from:
 
@@ -120,19 +152,24 @@ if pull_status.success?
 
 Rename `pull_success` to `pull_status` to match the convention used elsewhere (e.g. `worktree.rb:87`).
 
-- [ ] **Step 2: Verify by reading**
-
-Read `lib/carson/runtime/deliver.rb:312-325` and confirm `.success?` is called on the status object.
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Run test to verify it passes**
 
 ```bash
-git add lib/carson/runtime/deliver.rb
+ruby -Ilib -Itest test/runtime_deliver_test.rb --name test_sync_after_merge_detects_pull_failure
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/carson/runtime/deliver.rb test/runtime_deliver_test.rb
 git commit -m "fix: check Process::Status with .success? in sync_after_merge!
 
 Open3.capture3 returns a Process::Status object which is always truthy.
-The condition never took the false branch. Currently dead code but
-prevents a trap for future callers."
+The condition never took the false branch. Adds regression test that
+removes the git remote and calls sync_after_merge!, verifying it
+correctly reports synced: false."
 ```
 
 ---
@@ -436,12 +473,12 @@ previously stubbed out entirely."
 
 The existing deliver tests use a mock `gh` binary (the right approach for gh interactions). For push failure, we stub `git_run` at the adapter boundary — the same layer Carson uses internally — rather than replacing `push_branch!` which would skip the actual error-handling logic in `push_branch!` (lines 147-161) and `force_push_with_lease!` (lines 164-183).
 
-- [ ] **Step 1: Write test for push failure with recovery message**
+- [ ] **Step 1: Write test for push failure**
 
 Add to `RuntimeDeliverTest`:
 
 ```ruby
-def test_deliver_reports_push_failure_with_recovery
+def test_deliver_reports_push_failure
 	runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 	init_git_repo_with_remote( repo_root )
 	create_feature_branch( repo_root, "feature/push-fail" )
@@ -465,10 +502,10 @@ def test_deliver_reports_push_failure_with_recovery
 end
 ```
 
-- [ ] **Step 2: Write test for PR creation failure with recovery**
+- [ ] **Step 2: Write test for PR creation failure**
 
 ```ruby
-def test_deliver_reports_pr_creation_failure_with_recovery
+def test_deliver_reports_pr_creation_failure
 	runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh_failing_create
 	init_git_repo_with_remote( repo_root )
 	create_feature_branch( repo_root, "feature/no-pr" )
@@ -543,9 +580,9 @@ git add test/runtime_deliver_test.rb
 git commit -m "test: cover deliver error paths at adapter boundary
 
 Push failure test stubs git_run to return non-zero exit, exercising
-push_branch!'s actual stderr handling and error reporting.
+push_branch!'s actual stderr handling and error text extraction.
 PR creation failure test uses a mock gh binary that rejects pr create,
-exercising create_pr!'s recovery message construction."
+exercising create_pr!'s error and recovery message construction."
 ```
 
 ---
