@@ -81,6 +81,7 @@ module Carson
 				result[ :pr_url ] = pr_url
 				result[ :ci ] = check_pr_ci( number: pr_number ).to_s
 				result[ :delivery ] = delivery_payload( delivery: delivery )
+				result[ :main_branch ] = main_branch
 				result[ :summary ] = delivery.summary
 				result[ :next_step ] = "carson status"
 
@@ -250,15 +251,26 @@ module Carson
 					return
 				end
 
+				if result[ :delivery ]
+					delivery_id = result.dig( :delivery, :id )
+					branch = result[ :branch ]
+					main = result[ :main_branch ] || "main"
+					puts_line "Delivery ##{delivery_id}  #{branch} → #{main}"
+				end
 				if result[ :commit ]
 					puts_line "Commit: #{result.dig( :commit, :summary )}"
 				end
-				puts_line "PR: ##{result[ :pr_number ]} #{result[ :pr_url ]}" if result[ :pr_number ]
+				puts_line "PR ##{result[ :pr_number ]}  #{result[ :pr_url ]}" if result[ :pr_number ]
 				if result[ :delivery ]
-					puts_line "Delivery: #{result.dig( :delivery, :status )}"
+					status = result.dig( :delivery, :status )
+					summary = result[ :summary ]
+					if status == "gated"
+						puts_line "Held at gate — #{summary}"
+					else
+						puts_line "All clear — #{summary}"
+					end
 				end
-				puts_line "Summary: #{result[ :summary ]}" if result[ :summary ]
-				puts_line "  Next: #{result[ :next_step ]}" if result[ :next_step ]
+				puts_line "Next: #{result[ :next_step ]}" if result[ :next_step ]
 			end
 
 			# Pushes the branch to the remote with tracking.
