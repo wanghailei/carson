@@ -400,7 +400,23 @@ class RuntimeReviewHelpersTest < Minitest::Test
 			assert_equal 2, call_count
 		end
 
-		def test_bot_username_matches_with_and_without_bot_suffix
+		def test_current_pull_request_for_branch_places_flags_before_double_dash
+		captured_args = nil
+		@runtime.define_singleton_method( :gh_run ) do |*args|
+			captured_args = args
+			[ "", "no pull requests found for branch", false, 1 ]
+		end
+
+		@runtime.send( :current_pull_request_for_branch, branch_name: "feature/test" )
+
+		json_index = captured_args.index( "--json" )
+		separator_index = captured_args.index( "--" )
+		assert json_index, "--json flag must be present"
+		assert separator_index, "-- separator must be present"
+		assert json_index < separator_index, "--json must precede -- so it is parsed as a flag, not a positional arg"
+	end
+
+	def test_bot_username_matches_with_and_without_bot_suffix
 			# GraphQL returns "gemini-code-assist"; REST returns "gemini-code-assist[bot]".
 			# Both must match against the config default "gemini-code-assist[bot]".
 			assert @runtime.send( :bot_username?, author: "gemini-code-assist[bot]" )

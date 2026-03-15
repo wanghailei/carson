@@ -121,7 +121,7 @@ module Carson
 
 				# Pull request selected by current branch; nil is returned when no PR exists.
 				def current_pull_request_for_branch( branch_name: )
-					stdout_text, stderr_text, success, = gh_run( "pr", "view", "--", branch_name, "--json", "number,title,url,state" )
+					stdout_text, stderr_text, success, = gh_run( "pr", "view", "--json", "number,title,url,state", "--", branch_name )
 					unless success
 						error_text = gh_error_text( stdout_text: stdout_text, stderr_text: stderr_text, fallback: "unable to read PR for branch #{branch_name}" )
 						return nil if error_text.downcase.include?( "no pull requests found" )
