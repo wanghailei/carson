@@ -549,12 +549,12 @@ if [[ "$govern_ready_output" != *"ready"* ]]; then
 	echo "actual output: $govern_ready_output" >&2
 	exit 1
 fi
-if [[ "$govern_ready_output" != *"would_integrate"* ]]; then
-	echo "FAIL: govern --dry-run did not recommend would_integrate for ready PR" >&2
+if [[ "$govern_ready_output" != *"ready to integrate (dry run)"* ]]; then
+	echo "FAIL: govern --dry-run did not recommend integration for ready PR" >&2
 	echo "actual output: $govern_ready_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run classifies ready PR and recommends would_integrate"
+echo "PASS: govern --dry-run classifies ready PR and recommends integration"
 
 # Govern with failing CI PR.
 cat > "$mock_bin/gh" <<'GHEOF'
@@ -582,8 +582,8 @@ GHEOF
 chmod +x "$mock_bin/gh"
 
 govern_fail_output="$(run_carson_with_mock_gh govern --dry-run)"
-if [[ "$govern_fail_output" != *"would_revise"* ]]; then
-	echo "FAIL: govern --dry-run did not recommend would_revise for CI-failing PR" >&2
+if [[ "$govern_fail_output" != *"would revise (dry run)"* ]]; then
+	echo "FAIL: govern --dry-run did not recommend revision for CI-failing PR" >&2
 	echo "actual output: $govern_fail_output" >&2
 	exit 1
 fi
@@ -592,7 +592,7 @@ if [[ "$govern_fail_output" != *"CI checks are failing"* ]]; then
 	echo "actual output: $govern_fail_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run classifies CI-failing PR and recommends would_revise"
+echo "PASS: govern --dry-run classifies CI-failing PR and recommends revision"
 
 # Restore original mock gh for remaining tests.
 cat > "$mock_bin/gh" <<'EOF'
