@@ -203,6 +203,71 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_reconciles_stale_integrating_open_pr_back_to_queued
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/stale-open" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/stale-open",
+			status: "integrating",
+			summary: "integrating into main"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" } }
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "queued", row.fetch( "status" )
+		assert_equal "ready to integrate into main", row.fetch( "summary" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_reconciles_stale_integrating_merged_pr_as_integrated
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/stale-merged" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/stale-merged",
+			status: "integrating",
+			summary: "integrating into main"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "integrated", row.fetch( "status" )
+		refute_nil row.fetch( "integrated_at" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_reconciles_stale_integrating_closed_pr_as_failed
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/stale-closed" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/stale-closed",
+			status: "integrating",
+			summary: "integrating into main"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "CLOSED" } }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "failed", row.fetch( "status" )
+		assert_includes row.fetch( "summary" ), "closed without integration"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_reconciles_closed_pr_as_failed
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
