@@ -87,7 +87,7 @@ module Carson
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
 
-			private
+		private
 
 			def prepare_delivery_commit!( commit_message:, template_sync_committed:, result: )
 				if working_tree_dirty?
