@@ -166,7 +166,7 @@ carson deliver --commit "fix: describe this delivery"
 # Output: merged into main, or held at gate with the next command
 ```
 
-**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, `status` shows the current branch plus active deliveries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
+**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, `status` shows the current branch, the next queued delivery, and any blocked-delivery summaries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
 
 ```bash
 carson status
