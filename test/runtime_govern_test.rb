@@ -70,6 +70,31 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_dry_run_from_root_sees_delivery_created_in_worktree
+		with_feature_worktree_runtimes(
+			branch_name: "codex/govern-worktree",
+			worktree_name: "govern-worktree"
+		) do |root_runtime, worktree_runtime, _repo_root, worktree_path|
+			worktree_runtime.ledger.upsert_delivery(
+				repository: worktree_runtime.send( :repository_record ),
+				branch_name: "codex/govern-worktree",
+				head: worktree_runtime.send( :current_head ),
+				worktree_path: worktree_path,
+				authority: "remote",
+				pr_number: 84,
+				pr_url: "https://github.com/test/repo/pull/84",
+				status: "queued",
+				summary: "ready to integrate into main",
+				cause: nil
+			)
+			stub_reconciliation( root_runtime, delivery: nil )
+
+			result = root_runtime.govern!( dry_run: true )
+			assert_equal Carson::Runtime::EXIT_OK, result
+			assert_includes output_string( root_runtime ), "queued -> would_integrate"
+		end
+	end
+
 	def test_govern_integrates_first_ready_delivery
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
@@ -195,7 +220,8 @@ class RuntimeGovernTest < Minitest::Test
 private
 
 	def stub_reconciliation( runtime, delivery: )
-		runtime.define_singleton_method( :reconcile_delivery! ) { |delivery:| delivery }
+		expected_delivery = delivery
+		runtime.define_singleton_method( :reconcile_delivery! ) { |delivery:| expected_delivery || delivery }
 	end
 
 	def stub_integration( runtime )

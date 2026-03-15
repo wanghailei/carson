@@ -18,7 +18,7 @@ module Carson
 			def govern_cycle!( dry_run:, json_output: )
 				print_header "Carson Govern"
 				repositories = governed_repo_paths
-				repositories = [ main_worktree_root ] if repositories.empty?
+				repositories = [ repository_record.path ] if repositories.empty?
 				puts_line "governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}"
 
 				report = {
@@ -64,7 +64,7 @@ module Carson
 			end
 
 			def govern_repo!( repo_path:, dry_run: )
-				scoped_runtime = repo_path == main_worktree_root ? self : build_scoped_runtime( repo_path: repo_path )
+				scoped_runtime = repo_runtime_for( repo_path: repo_path )
 				repository = Repository.new( path: repo_path, authority: scoped_runtime.config.govern_authority, runtime: scoped_runtime )
 				deliveries = scoped_runtime.ledger.active_deliveries( repo_path: repo_path )
 
@@ -288,7 +288,7 @@ module Carson
 			end
 
 			def housekeep_repo!( repo_path: )
-				scoped_runtime = repo_path == main_worktree_root ? self : build_scoped_runtime( repo_path: repo_path )
+				scoped_runtime = repo_runtime_for( repo_path: repo_path )
 				sync_status = scoped_runtime.sync!
 				scoped_runtime.prune! if sync_status == EXIT_OK
 			end
@@ -373,7 +373,7 @@ module Carson
 			end
 
 			def review_evidence( delivery:, repo_path: )
-				repo_runtime = repo_path == main_worktree_root ? self : build_scoped_runtime( repo_path: repo_path )
+				repo_runtime = repo_runtime_for( repo_path: repo_path )
 				owner, repo = repo_runtime.send( :repository_coordinates )
 				details = repo_runtime.send( :pull_request_details, owner: owner, repo: repo, pr_number: delivery.pull_request_number )
 				pr_author = details.dig( :author, :login ).to_s
@@ -397,6 +397,10 @@ module Carson
 				revision = ledger.revisions_for_delivery( delivery_id: delivery.id ).last
 				return nil unless revision&.failed?
 				{ summary: revision.summary.to_s, dispatched_at: revision.started_at.to_s }
+			end
+
+			def repo_runtime_for( repo_path: )
+				realpath_safe( repo_path ) == realpath_safe( repo_root ) ? self : build_scoped_runtime( repo_path: repo_path )
 			end
 
 			def thread_body( details:, url: )
