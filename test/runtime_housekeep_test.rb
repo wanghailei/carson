@@ -4,8 +4,8 @@ require_relative "test_helper"
 class RuntimeHousekeepTest < Minitest::Test
 	include CarsonTestSupport
 
-	def build_housekeep_worktree( path:, branch:, holds_cwd: false, held_by_other_process: false )
-		Struct.new( :path, :branch, :holds_cwd_flag, :held_flag ) do
+	def build_housekeep_worktree( path:, branch:, holds_cwd: false, held_by_other_process: false, dirty: false )
+		Struct.new( :path, :branch, :holds_cwd_flag, :held_flag, :dirty_flag ) do
 			def holds_cwd?
 				holds_cwd_flag
 			end
@@ -19,9 +19,9 @@ class RuntimeHousekeepTest < Minitest::Test
 			end
 
 			def dirty?
-				false
+				dirty_flag
 			end
-		end.new( path, branch, holds_cwd, held_by_other_process )
+		end.new( path, branch, holds_cwd, held_by_other_process, dirty )
 	end
 
 	# --- housekeep --all ---
@@ -273,6 +273,105 @@ class RuntimeHousekeepTest < Minitest::Test
 		assert_equal 0, abandoned_calls
 		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "Kept worktree: abandoned (feature/abandoned) — open PR exists"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_reap_dead_worktrees_force_reaps_dirty_absorbed_worktree
+		runtime, repo_root = build_runtime( verbose: false )
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "absorbed" )
+		FileUtils.mkdir_p( worktree_path )
+		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/absorbed", dirty: true )
+		git_calls = []
+
+		runtime.define_singleton_method( :sweep_stale_worktrees! ) {}
+		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
+		runtime.define_singleton_method( :worktree_list ) { [ worktree ] }
+		runtime.define_singleton_method( :branch_absorbed_into_main? ) { |branch:| true }
+		runtime.define_singleton_method( :git_run ) do |*args|
+			git_calls << args
+			case args
+			when [ "worktree", "remove", worktree_path ]
+				[ "", "contains modified or untracked files", false, 1 ]
+			when [ "worktree", "remove", "--force", worktree_path ]
+				[ "", "", true, 0 ]
+			else
+				[ "", "", true, 0 ]
+			end
+		end
+
+		runtime.reap_dead_worktrees!
+
+		assert_includes git_calls, [ "worktree", "remove", worktree_path ]
+		assert_includes git_calls, [ "worktree", "remove", "--force", worktree_path ]
+		assert_includes git_calls, [ "branch", "-D", "feature/absorbed" ]
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "Reaped worktree: absorbed (feature/absorbed) — dirty worktree with content absorbed into main"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_reap_dead_worktrees_force_reaps_dirty_worktree_with_merged_pr_evidence
+		runtime, repo_root = build_runtime( verbose: false )
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "merged" )
+		FileUtils.mkdir_p( worktree_path )
+		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/merged", dirty: true )
+		git_calls = []
+
+		runtime.define_singleton_method( :sweep_stale_worktrees! ) {}
+		runtime.define_singleton_method( :gh_available? ) { true }
+		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
+		runtime.define_singleton_method( :worktree_list ) { [ worktree ] }
+		runtime.define_singleton_method( :branch_absorbed_into_main? ) { |branch:| false }
+		runtime.define_singleton_method( :git_capture! ) { |*| "abc123\n" }
+		runtime.define_singleton_method( :merged_pr_for_branch ) do |branch:, branch_tip_sha:|
+			[ { number: 42, url: "https://github.com/acme/widgets/pull/42", merged_at: "2026-03-11T12:00:00Z", head_sha: branch_tip_sha }, nil ]
+		end
+		runtime.define_singleton_method( :git_run ) do |*args|
+			git_calls << args
+			case args
+			when [ "worktree", "remove", worktree_path ]
+				[ "", "contains modified or untracked files", false, 1 ]
+			when [ "worktree", "remove", "--force", worktree_path ]
+				[ "", "", true, 0 ]
+			else
+				[ "", "", true, 0 ]
+			end
+		end
+
+		runtime.reap_dead_worktrees!
+
+		assert_includes git_calls, [ "worktree", "remove", worktree_path ]
+		assert_includes git_calls, [ "worktree", "remove", "--force", worktree_path ]
+		assert_includes git_calls, [ "branch", "-D", "feature/merged" ]
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "Reaped worktree: merged (feature/merged) — dirty worktree with merged PR #42"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_reap_dead_worktrees_keeps_dirty_worktree_without_merge_evidence
+		runtime, repo_root = build_runtime( verbose: false )
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "dirty" )
+		FileUtils.mkdir_p( worktree_path )
+		worktree = build_housekeep_worktree( path: worktree_path, branch: "feature/dirty", dirty: true )
+		git_calls = []
+
+		runtime.define_singleton_method( :sweep_stale_worktrees! ) {}
+		runtime.define_singleton_method( :gh_available? ) { true }
+		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
+		runtime.define_singleton_method( :worktree_list ) { [ worktree ] }
+		runtime.define_singleton_method( :branch_absorbed_into_main? ) { |branch:| false }
+		runtime.define_singleton_method( :git_capture! ) { |*| "abc123\n" }
+		runtime.define_singleton_method( :merged_pr_for_branch ) { |branch:, branch_tip_sha:| [ nil, nil ] }
+		runtime.define_singleton_method( :git_run ) do |*args|
+			git_calls << args
+			[ "", "", true, 0 ]
+		end
+
+		runtime.reap_dead_worktrees!
+
+		refute_includes git_calls, [ "worktree", "remove", worktree_path ]
+		refute_includes git_calls, [ "worktree", "remove", "--force", worktree_path ]
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "Kept worktree: dirty (feature/dirty) — dirty worktree"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
