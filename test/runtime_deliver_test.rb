@@ -26,7 +26,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_includes output, "PR: #99"
 		assert_includes output, "Delivery: queued"
 
-		delivery = runtime.ledger.active_delivery( repo_path: repo_root, branch_name: "feature/queued" )
+		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/queued" )
 		refute_nil delivery
 		assert_equal "queued", delivery.status
 		assert_equal "ready to integrate into main", delivery.summary
@@ -42,7 +42,7 @@ class RuntimeDeliverTest < Minitest::Test
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
-		delivery = runtime.ledger.active_delivery( repo_path: repo_root, branch_name: "feature/gated" )
+		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/gated" )
 		assert_equal "gated", delivery.status
 		assert_equal "ci", delivery.cause
 		assert_includes delivery.summary, "waiting for CI"
@@ -75,7 +75,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, first
 		assert_equal Carson::Runtime::EXIT_OK, second
 
-		deliveries = runtime.ledger.active_deliveries( repo_path: repo_root )
+		deliveries = runtime.ledger.active_deliveries( repo_path: runtime.main_worktree_root )
 		assert_equal 1, deliveries.size
 		assert_equal "feature/idempotent", deliveries.first.branch
 		FileUtils.remove_entry( tmp_dir )
@@ -88,7 +88,7 @@ class RuntimeDeliverTest < Minitest::Test
 		stub_ready_assessment( runtime )
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
-		first_delivery = runtime.ledger.active_delivery( repo_path: repo_root, branch_name: "feature/supersede" )
+		first_delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
 
 		File.write( File.join( repo_root, "feature.txt" ), "updated" )
 		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
@@ -96,10 +96,10 @@ class RuntimeDeliverTest < Minitest::Test
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
 
-		active = runtime.ledger.active_delivery( repo_path: repo_root, branch_name: "feature/supersede" )
+		active = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
 		refute_equal first_delivery.head, active.head
 		all = runtime.ledger.send( :with_database ) do |database|
-			database.execute( "SELECT status FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id ASC", [ repo_root, "feature/supersede" ] )
+			database.execute( "SELECT status FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id ASC", [ runtime.main_worktree_root, "feature/supersede" ] )
 		end
 		assert_equal [ "superseded", "queued" ], all.map { |row| row.fetch( "status" ) }
 		FileUtils.remove_entry( tmp_dir )

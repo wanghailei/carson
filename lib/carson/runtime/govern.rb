@@ -18,7 +18,7 @@ module Carson
 			def govern_cycle!( dry_run:, json_output: )
 				print_header "Carson Govern"
 				repositories = governed_repo_paths
-				repositories = [ repo_root ] if repositories.empty?
+				repositories = [ main_worktree_root ] if repositories.empty?
 				puts_line "governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}"
 
 				report = {
@@ -64,7 +64,7 @@ module Carson
 			end
 
 			def govern_repo!( repo_path:, dry_run: )
-				scoped_runtime = repo_path == repo_root ? self : build_scoped_runtime( repo_path: repo_path )
+				scoped_runtime = repo_path == main_worktree_root ? self : build_scoped_runtime( repo_path: repo_path )
 				repository = Repository.new( path: repo_path, authority: scoped_runtime.config.govern_authority, runtime: scoped_runtime )
 				deliveries = scoped_runtime.ledger.active_deliveries( repo_path: repo_path )
 
@@ -108,7 +108,7 @@ module Carson
 			end
 
 			def reconcile_delivery!( delivery: )
-				branch = Repository.new( path: repo_root, authority: config.govern_authority, runtime: self ).branch( delivery.branch ).reload
+				branch = repository_record.branch( delivery.branch ).reload
 				if branch.head && branch.head != delivery.head
 					return ledger.update_delivery(
 						delivery: delivery,
@@ -288,7 +288,7 @@ module Carson
 			end
 
 			def housekeep_repo!( repo_path: )
-				scoped_runtime = repo_path == repo_root ? self : build_scoped_runtime( repo_path: repo_path )
+				scoped_runtime = repo_path == main_worktree_root ? self : build_scoped_runtime( repo_path: repo_path )
 				sync_status = scoped_runtime.sync!
 				scoped_runtime.prune! if sync_status == EXIT_OK
 			end
@@ -373,7 +373,7 @@ module Carson
 			end
 
 			def review_evidence( delivery:, repo_path: )
-				repo_runtime = repo_path == repo_root ? self : build_scoped_runtime( repo_path: repo_path )
+				repo_runtime = repo_path == main_worktree_root ? self : build_scoped_runtime( repo_path: repo_path )
 				owner, repo = repo_runtime.send( :repository_coordinates )
 				details = repo_runtime.send( :pull_request_details, owner: owner, repo: repo, pr_number: delivery.pull_request_number )
 				pr_author = details.dig( :author, :login ).to_s

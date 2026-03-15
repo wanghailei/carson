@@ -87,8 +87,11 @@ module Carson
 		end
 
 		# Passive repository record for the current runtime context.
+		# Uses main_worktree_root so the repo_path stored in the ledger is always the
+		# canonical main tree path, regardless of which worktree the command runs from.
+		# This ensures govern (which looks up by main tree path) finds worktree deliveries.
 		def repository_record
-			Repository.new( path: repo_root, authority: config.govern_authority, runtime: self )
+			Repository.new( path: main_worktree_root, authority: config.govern_authority, runtime: self )
 		end
 
 		# Passive branch record for the current checkout.
