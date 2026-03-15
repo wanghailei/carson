@@ -105,6 +105,23 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
+	def test_sync_after_merge_detects_pull_failure
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+
+		result = {}
+		# Call sync_after_merge! against the repo whose remote has no new
+		# commits — git pull --ff-only will succeed, so we need to break it.
+		# Remove the remote to force a failure.
+		system( "git", "-C", repo_root, "remote", "remove", "origin", out: File::NULL, err: File::NULL )
+
+		runtime.send( :sync_after_merge!, remote: "origin", main: "main", result: result )
+
+		assert_equal false, result[ :synced ]
+		refute_nil result[ :sync_error ]
+		FileUtils.remove_entry( tmp_dir )
+	end
+
 private
 
 	def stub_ready_assessment( runtime )
