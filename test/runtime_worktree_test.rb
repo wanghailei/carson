@@ -386,19 +386,20 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
-	def test_sweep_stale_worktrees_skips_dirty_worktree
-		with_worktree_repo do |runtime, repo_root, _bare_root, _out|
+	def test_sweep_stale_worktrees_force_removes_dirty_absorbed_worktree
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
 			worktree = create_worktree( repo_root: repo_root, worktree_name: "dirty-sweep" )
 			branch = worktree.fetch( :branch )
 
 			# Merge into main so content is absorbed.
 			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
 
-			# Add uncommitted changes — git worktree remove will refuse.
-			File.write( File.join( worktree.fetch( :path ), "unsaved.txt" ), "precious work\n" )
+			# Add untracked file — git worktree remove will refuse, but force-retry should succeed.
+			File.write( File.join( worktree.fetch( :path ), "unsaved.txt" ), "leftover\n" )
 
 			runtime.sweep_stale_worktrees!
-			assert Dir.exist?( worktree.fetch( :path ) ), "dirty worktree must be preserved even if absorbed"
+			refute Dir.exist?( worktree.fetch( :path ) ), "dirty absorbed worktree should be force-removed"
+			assert_includes output.string, "force-reaped dirty worktree: dirty-sweep"
 		end
 	end
 

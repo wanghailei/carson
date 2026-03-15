@@ -269,8 +269,13 @@ module Carson
 				next if worktree.held_by_other_process?
 				next unless runtime.branch_absorbed_into_main?( branch: worktree.branch )
 
-				# Remove the worktree (no --force: refuses if dirty working tree).
+				# Remove the worktree. Content is confirmed absorbed into main,
+				# so force-retry if initial remove fails (e.g. untracked files).
 				_, _, rm_success, = runtime.git_run( "worktree", "remove", worktree.path )
+				unless rm_success
+					_, _, rm_success, = runtime.git_run( "worktree", "remove", "--force", worktree.path )
+					runtime.puts_verbose "force-reaped dirty worktree: #{File.basename( worktree.path )}" if rm_success
+				end
 				next unless rm_success
 
 				runtime.puts_verbose "swept stale worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch})"

@@ -207,8 +207,13 @@ module Carson
 
 					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
 					if !merged_pr.nil?
-						# Remove the worktree (no --force: refuses if dirty working tree).
+						# Remove the worktree. Merged PR proves content is on main,
+						# so force-retry if initial remove fails (e.g. untracked files).
 						_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
+						unless rm_success
+							_, _, rm_success, = git_run( "worktree", "remove", "--force", worktree.path )
+							puts_verbose "force-reaped dirty worktree: #{File.basename( worktree.path )}" if rm_success
+						end
 						unless rm_success
 							summary[ :skipped ] += 1
 							next
