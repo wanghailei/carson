@@ -79,6 +79,14 @@ Governed integration is fixed to `squash`. Non-squash `govern.merge.method` valu
 
 Automation and CI integrations should treat exit `2` as an expected policy failure signal.
 
+## Governance guard contract
+
+In a Carson-governed repository:
+- Raw `git worktree add` and `git worktree remove` are blocked. Use `carson worktree create` and `carson worktree remove`.
+- Raw `git pull --rebase` is blocked. Use `carson sync`.
+- Raw `gh pr create` and `gh pr merge` are blocked. Use `carson deliver`.
+- On the governed main working tree, raw `git add` and `git commit` are blocked until a Carson worktree exists for the task.
+
 ## Repository boundary contract
 
 Blocked Carson artefacts in host repositories:

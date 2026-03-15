@@ -35,7 +35,7 @@ The outsider boundary still matters: Carson governs repositories without becomin
 ## Principles
 
 - **Worktree-first** — substantive work happens in worktrees, not on `main`.
-- **Carson-owned operations** — Carson owns worktree and delivery operations in governed repositories.
+- **Carson-owned operations** — Carson owns worktree and delivery operations in governed repositories. Raw `git worktree add/remove`, raw `git pull --rebase`, and raw `gh pr create/merge` are blocked, and `git add` / `git commit` are blocked on the main working tree until you create a Carson worktree.
 - **Self-diagnosing output** — every block should say what happened and the exact next command.
 - **Outsider boundary** — Carson governs repositories without becoming a host-repository runtime dependency.
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Carson command guard — Claude Code PreToolUse hook.
 #
-# Blocks raw `gh pr create` and `gh pr merge` in Carson-governed repositories.
-# Agents should use `carson deliver` instead.
+# Blocks raw worktree and delivery commands in Carson-governed repositories,
+# plus `git add` / `git commit` on the main working tree.
+# Agents should use Carson's governed path instead.
 #
 # Claude Code sends JSON on stdin: {"tool_name": "Bash", "tool_input": {"command": "..."}}
 # To block: print reason to stderr, exit 2.
@@ -22,6 +23,14 @@
 #   ]
 set -euo pipefail
 
+block_command() {
+	local summary="$1"
+	local recovery="$2"
+	echo "$summary" >&2
+	echo "$recovery" >&2
+	exit 2
+}
+
 # Read the tool call JSON from stdin.
 input="$(cat)"
 
@@ -32,14 +41,6 @@ tool_name="$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 command_text="$(echo "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 [ -n "$command_text" ] || exit 0
 
-# Check for gh pr commands that Carson replaces.
-# Match only at command position: start of line, or after a shell operator (&&, ||, ;, |).
-# This avoids false positives from gh pr references inside commit messages or string arguments.
-guarded_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(create|merge)'
-if ! echo "$command_text" | grep -qE "$guarded_pattern"; then
-	exit 0
-fi
-
 # Check if the current directory is inside a governed repository.
 config_file="${HOME}/.carson/config.json"
 [ -f "$config_file" ] || exit 0
@@ -47,12 +48,55 @@ config_file="${HOME}/.carson/config.json"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
 [ -n "$repo_root" ] || exit 0
 
-normalised="$(cd "$repo_root" && pwd -P)"
-if ! grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
+current_root="$(cd "$repo_root" && pwd -P)"
+common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "")"
+if [ -n "$common_dir" ]; then
+	governed_root="$(cd "$(dirname "$common_dir")" && pwd -P)"
+else
+	governed_root="$current_root"
+fi
+
+if ! grep -qF "\"$governed_root\"" "$config_file" 2>/dev/null; then
 	exit 0
 fi
 
-# This is a raw gh pr command in a governed repo — block it.
-echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`gh pr\`." >&2
-echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
-exit 2
+main_branch="$(jq -r '.git.main_branch // "main"' "$config_file" 2>/dev/null || echo "main")"
+[ -n "$main_branch" ] || main_branch="main"
+current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+on_main_worktree=false
+on_main_branch=false
+[ "$current_root" = "$governed_root" ] && on_main_worktree=true
+[ "$current_branch" = "$main_branch" ] && on_main_branch=true
+
+# Match only at command position: start of line, or after a shell operator (&&, ||, ;, |).
+# This avoids false positives from mentions inside commit messages or string arguments.
+delivery_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(create|merge)\b'
+worktree_pattern='(^|&&|\|\||;|\|)\s*git\s+worktree\s+(add|remove)\b'
+pull_rebase_pattern='(^|&&|\|\||;|\|)\s*git\s+pull([^;&|]|\\\|)*--rebase\b'
+main_mutation_pattern='(^|&&|\|\||;|\|)\s*git\s+(add|commit)\b'
+
+if grep -qE "$delivery_pattern" <<<"$command_text"; then
+	block_command \
+		"This repo is Carson-governed — use \`carson deliver\` instead of raw \`gh pr\`." \
+		"Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards."
+fi
+
+if grep -qE "$worktree_pattern" <<<"$command_text"; then
+	block_command \
+		"This repo is Carson-governed — use \`carson worktree\` instead of raw \`git worktree\`." \
+		"Use \`carson worktree create <name>\` or \`carson worktree remove <name>\` instead."
+fi
+
+if grep -qE "$pull_rebase_pattern" <<<"$command_text"; then
+	block_command \
+		"This repo is Carson-governed — use \`carson sync\` instead of raw \`git pull --rebase\`." \
+		"Use \`carson sync\` instead — it owns main-branch alignment in governed repos."
+fi
+
+if [ "$on_main_worktree" = true ] && [ "$on_main_branch" = true ] && grep -qE "$main_mutation_pattern" <<<"$command_text"; then
+	block_command \
+		"Main working tree is read-only in this Carson-governed repo." \
+		"Use \`carson worktree create <name>\` first, then run \`git add\` or \`git commit\` inside that worktree."
+fi
+
+exit 0

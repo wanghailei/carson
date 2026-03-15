@@ -127,6 +127,7 @@ These strategies are the audit lens for Carson. If behaviour departs from them, 
 
 - **Outsider boundary** — Carson governs repositories without writing Carson-specific config, scripts, or runtime payloads into them.
 - **Command ownership** — in governed repositories, Carson owns worktree and delivery operations so agents do not mix raw git flows with governed ones.
+- **Main-tree protection** — on the governed main working tree, Carson blocks `git add` and `git commit` until the agent creates a Carson worktree for the task.
 - **Governed delivery** — completed work returns to shared truth through remote `main` via PR-based delivery. Carson owns the landing path.
 - **Active review gating** — when the repo uses PR-based delivery, review findings must be acknowledged before merge. Feedback is never silently buried.
 - **Portfolio triage** — `carson govern` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
@@ -151,6 +152,8 @@ The core workflow for coding agents using Carson. One command per step, full lif
 carson worktree create my-feature
 cd /path/to/.claude/worktrees/my-feature
 ```
+
+On the governed main working tree, Carson blocks raw `git add` / `git commit` and blocks raw `git worktree add/remove`, raw `git pull --rebase`, and raw `gh pr create/merge`. Use `carson worktree create`, `carson sync`, and `carson deliver` instead.
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
