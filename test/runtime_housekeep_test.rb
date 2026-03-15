@@ -151,6 +151,62 @@ class RuntimeHousekeepTest < Minitest::Test
 		Carson::Runtime.define_singleton_method( :new, original_new ) if original_new
 	end
 
+	def test_housekeep_one_entry_continues_cleanup_when_sync_blocks
+		runtime, repo_root = build_runtime( verbose: false )
+		scoped_calls = []
+		original_new = Carson::Runtime.method( :new )
+		Carson::Runtime.define_singleton_method( :new ) do |**kwargs|
+			instance = original_new.call( **kwargs )
+			instance.define_singleton_method( :sync! ) do
+				scoped_calls << :sync
+				Carson::Runtime::EXIT_BLOCK
+			end
+			instance.define_singleton_method( :reap_dead_worktrees! ) do
+				scoped_calls << :reap
+			end
+			instance.define_singleton_method( :prune! ) do
+				scoped_calls << :prune
+				Carson::Runtime::EXIT_OK
+			end
+			instance
+		end
+
+		entry = runtime.send( :housekeep_one_entry, repo_path: repo_root, silent: true )
+
+		assert_equal [ :sync, :reap, :prune ], scoped_calls
+		assert_equal "error", entry.fetch( :status )
+		assert_equal "block", entry.fetch( :sync_status )
+		assert_equal "ok", entry.fetch( :reap_status )
+		assert_equal "ok", entry.fetch( :prune_status )
+		assert_includes entry.fetch( :error ), "sync block"
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Runtime.define_singleton_method( :new, original_new ) if original_new
+	end
+
+	def test_housekeep_one_entry_reports_all_step_statuses_when_everything_passes
+		runtime, repo_root = build_runtime( verbose: false )
+		original_new = Carson::Runtime.method( :new )
+		Carson::Runtime.define_singleton_method( :new ) do |**kwargs|
+			instance = original_new.call( **kwargs )
+			instance.define_singleton_method( :sync! ) { |_json_output = false| Carson::Runtime::EXIT_OK }
+			instance.define_singleton_method( :reap_dead_worktrees! ) {}
+			instance.define_singleton_method( :prune! ) { |_json_output = false| Carson::Runtime::EXIT_OK }
+			instance
+		end
+
+		entry = runtime.send( :housekeep_one_entry, repo_path: repo_root, silent: true )
+
+		assert_equal "ok", entry.fetch( :status )
+		assert_equal "ok", entry.fetch( :sync_status )
+		assert_equal "ok", entry.fetch( :reap_status )
+		assert_equal "ok", entry.fetch( :prune_status )
+		refute entry.key?( :error )
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Runtime.define_singleton_method( :new, original_new ) if original_new
+	end
+
 	# --- reap_dead_worktrees! ---
 
 	def test_reap_dead_worktrees_reaps_abandoned_worktree_without_open_pr

@@ -28,7 +28,7 @@ carson <command> [subcommand] [arguments]
 | `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first, then Carson pushes, creates or refreshes the PR, waits for merge readiness, merges when clear, and syncs local `main`. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
-| `carson housekeep [--json] [--dry-run]` | Sync the current repo, reap dead worktrees, and prune stale branches. |
+| `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap dead worktrees and prune stale branches. Safe cleanup still runs when sync is blocked. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
 | `carson status [--json]` | Show repository delivery state. Default output is Markdown/text; `--json` is the explicit machine contract. |
@@ -49,7 +49,7 @@ All batch commands operate across every governed repository registered in `gover
 | `carson prune --all` | Remove stale branches across all governed repos. |
 | `carson status --all [--json]` | Portfolio-wide delivery overview per governed repository. |
 | `carson template check --all` | Read-only template drift detection across all governed repos. |
-| `carson housekeep --all` | Sync, reap dead worktrees, and prune across all governed repos. |
+| `carson housekeep --all` | Attempt sync, then reap dead worktrees and prune across all governed repos. Safe cleanup still runs when sync is blocked. |
 
 ### Govern commands
 
