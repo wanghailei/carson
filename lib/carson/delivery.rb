@@ -1,4 +1,4 @@
-# Passive ledger record for one branch-to-authority delivery attempt.
+# Passive ledger record for one branch delivery attempt.
 module Carson
 	class Delivery
 		ACTIVE_STATES = %w[preparing gated queued integrating escalated].freeze
@@ -6,12 +6,12 @@ module Carson
 		READY_STATES = %w[queued].freeze
 		TERMINAL_STATES = %w[integrated failed superseded].freeze
 
-		attr_reader :id, :repository, :branch, :head, :worktree_path, :authority, :status,
+		attr_reader :id, :repository, :branch, :head, :worktree_path, :status,
 			:pull_request_number, :pull_request_url, :revision_count, :cause, :summary,
 			:created_at, :updated_at, :integrated_at, :superseded_at
 
 		def initialize(
-			id:, repository:, branch:, head:, worktree_path:, authority:, status:,
+			id:, repository:, branch:, head:, worktree_path:, status:,
 			pull_request_number:, pull_request_url:, revision_count:, cause:, summary:,
 			created_at:, updated_at:, integrated_at:, superseded_at:
 		)
@@ -20,7 +20,6 @@ module Carson
 			@branch = branch
 			@head = head
 			@worktree_path = worktree_path
-			@authority = authority
 			@status = status
 			@pull_request_number = pull_request_number
 			@pull_request_url = pull_request_url

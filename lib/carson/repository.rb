@@ -1,11 +1,10 @@
 # Passive repository record reconstructed from git state and Carson's ledger.
 module Carson
 	class Repository
-		attr_reader :path, :authority
+		attr_reader :path
 
-		def initialize( path:, authority:, runtime: )
+		def initialize( path:, runtime: )
 			@path = File.expand_path( path )
-			@authority = authority
 			@runtime = runtime
 		end
 
@@ -35,7 +34,6 @@ module Carson
 			{
 				name: name,
 				path: path,
-				authority: authority,
 				branches: runtime.ledger.active_deliveries( repo_path: path ).map { |delivery| delivery.branch }
 			}
 		end

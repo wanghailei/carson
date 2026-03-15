@@ -27,7 +27,6 @@ module Carson
 						branch_name TEXT NOT NULL,
 						head TEXT NOT NULL,
 						worktree_path TEXT,
-						authority TEXT NOT NULL,
 						status TEXT NOT NULL,
 						pr_number INTEGER,
 						pr_url TEXT,
@@ -62,11 +61,17 @@ module Carson
 					CREATE UNIQUE INDEX IF NOT EXISTS index_revisions_on_delivery_number
 						ON revisions ( delivery_id, number );
 				SQL
+
+				# Migration: drop authority column added in pre-4.0 groundwork.
+				columns = database.execute( "PRAGMA table_info(deliveries)" ).map { |row| row[ "name" ] || row[ 1 ] }
+				if columns.include?( "authority" )
+					database.execute( "ALTER TABLE deliveries DROP COLUMN authority" )
+				end
 			end
 		end
 
 		# Creates or refreshes a delivery for the same branch head.
-		def upsert_delivery( repository:, branch_name:, head:, worktree_path:, authority:, pr_number:, pr_url:, status:, summary:, cause: )
+		def upsert_delivery( repository:, branch_name:, head:, worktree_path:, pr_number:, pr_url:, status:, summary:, cause: )
 			timestamp = now_utc
 
 			with_database do |database|
@@ -79,11 +84,11 @@ module Carson
 					database.execute(
 						<<~SQL,
 						UPDATE deliveries
-						SET worktree_path = ?, authority = ?, status = ?, pr_number = ?, pr_url = ?,
+						SET worktree_path = ?, status = ?, pr_number = ?, pr_url = ?,
 						cause = ?, summary = ?, updated_at = ?
 						WHERE id = ?
 						SQL
-						[ worktree_path, authority, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
+						[ worktree_path, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
 					)
 					return fetch_delivery( database: database, id: row.fetch( "id" ), repository: repository )
 				end
@@ -92,12 +97,12 @@ module Carson
 				database.execute(
 					<<~SQL,
 						INSERT INTO deliveries (
-							repo_path, branch_name, head, worktree_path, authority, status,
+							repo_path, branch_name, head, worktree_path, status,
 							pr_number, pr_url, revision_count, cause, summary, created_at, updated_at
-						) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ? )
+						) VALUES ( ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ? )
 					SQL
 					[
-						repository.path, branch_name, head, worktree_path, authority, status,
+						repository.path, branch_name, head, worktree_path, status,
 						pr_number, pr_url, cause, summary, timestamp, timestamp
 					]
 				)
@@ -243,7 +248,6 @@ module Carson
 
 			repository ||= Repository.new(
 				path: row.fetch( "repo_path" ),
-				authority: row.fetch( "authority" ),
 				runtime: nil
 			)
 
@@ -253,7 +257,6 @@ module Carson
 				branch: row.fetch( "branch_name" ),
 				head: row.fetch( "head" ),
 				worktree_path: row.fetch( "worktree_path" ),
-				authority: row.fetch( "authority" ),
 				status: row.fetch( "status" ),
 				pull_request_number: row.fetch( "pr_number" ),
 				pull_request_url: row.fetch( "pr_url" ),

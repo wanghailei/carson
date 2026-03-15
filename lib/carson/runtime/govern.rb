@@ -65,13 +65,12 @@ module Carson
 
 			def govern_repo!( repo_path:, dry_run: )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
-				repository = Repository.new( path: repo_path, authority: scoped_runtime.config.govern_authority, runtime: scoped_runtime )
+				repository = Repository.new( path: repo_path, runtime: scoped_runtime )
 				deliveries = scoped_runtime.ledger.active_deliveries( repo_path: repo_path )
 
 				repo_report = {
 					repository: repository.name,
 					path: repo_path,
-					authority: repository.authority,
 					deliveries: [],
 					error: nil
 				}

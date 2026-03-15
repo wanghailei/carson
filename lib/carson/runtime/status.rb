@@ -60,8 +60,7 @@ module Carson
 					version: Carson::VERSION,
 					repository: {
 						name: repository.name,
-						path: repository.path,
-						authority: repository.authority
+						path: repository.path
 					},
 					branch: {
 						name: branch.name,
@@ -133,7 +132,6 @@ module Carson
 			def print_status( data: )
 				puts_line "Carson #{data.fetch( :version )}"
 				puts_line "Repository: #{data.dig( :repository, :name )}"
-				puts_line "Authority: #{data.dig( :repository, :authority )}"
 
 				branch = data.fetch( :branch )
 				branch_line = "Branch: #{branch.fetch( :name )}"
@@ -170,7 +168,7 @@ module Carson
 				else
 					counts.map { |state, count| "#{count} #{state}" }.join( ", " )
 				end
-				puts_line "#{result.fetch( :name )}: #{result.dig( :repository, :authority )} — #{summary}"
+				puts_line "#{result.fetch( :name )}: #{summary}"
 			end
 
 			def format_sync( sync: )

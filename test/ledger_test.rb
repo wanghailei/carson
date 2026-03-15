@@ -8,7 +8,7 @@ class LedgerTest < Minitest::Test
 	def setup
 		@tmp_dir = Dir.mktmpdir( "carson-ledger-test", carson_tmp_root )
 		@ledger = Carson::Ledger.new( path: File.join( @tmp_dir, "test-ledger.sqlite3" ) )
-		@repository = Carson::Repository.new( path: @tmp_dir, authority: "remote", runtime: nil )
+		@repository = Carson::Repository.new( path: @tmp_dir, runtime: nil )
 	end
 
 	def teardown
@@ -119,7 +119,6 @@ private
 			branch_name: branch_name,
 			head: head,
 			worktree_path: @tmp_dir,
-			authority: "remote",
 			pr_number: 1,
 			pr_url: "https://github.com/test/repo/pull/1",
 			status: status,
