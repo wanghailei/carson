@@ -109,6 +109,89 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_reconciles_merged_pr_as_integrated
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/merged" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/merged", status: "queued",
+			summary: "awaiting integration"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_row( runtime: runtime, id: delivery.id )
+		assert_equal "integrated", row.fetch( "status" )
+		refute_nil row.fetch( "integrated_at" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_reconciles_closed_pr_as_failed
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/closed" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/closed", status: "queued",
+			summary: "awaiting integration"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "CLOSED" } }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_row( runtime: runtime, id: delivery.id )
+		assert_equal "failed", row.fetch( "status" )
+		assert_includes row.fetch( "summary" ), "closed without integration"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_reconciles_advanced_head_as_superseded
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/advanced" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/advanced", status: "queued",
+			summary: "original head"
+		)
+
+		# Advance the branch head after creating the delivery
+		system( "git", "-C", repo_root, "checkout", "feature/advanced", out: File::NULL, err: File::NULL )
+		File.write( File.join( repo_root, "feature.txt" ), "updated content" )
+		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "advance head", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_row( runtime: runtime, id: delivery.id )
+		assert_equal "superseded", row.fetch( "status" )
+		refute_nil row.fetch( "superseded_at" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_escalates_when_no_agent_provider
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/no-agent" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/no-agent", status: "gated",
+			summary: "CI failing", cause: "ci"
+		)
+		stub_reconciliation( runtime, delivery: delivery )
+		runtime.define_singleton_method( :select_agent_provider ) { nil }
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_row( runtime: runtime, id: delivery.id )
+		assert_equal "escalated", row.fetch( "status" )
+		assert_includes row.fetch( "summary" ), "no agent provider"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def stub_reconciliation( runtime, delivery: )
