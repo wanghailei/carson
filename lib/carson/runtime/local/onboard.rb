@@ -230,8 +230,9 @@ module Carson
 					end
 				end
 				remove_empty_offboard_directories!
-				remove_govern_repo!( repo_path: File.expand_path( repo_root ) )
-				puts_verbose "govern_deregistered: #{File.expand_path( repo_root )}"
+				canonical_root = realpath_safe( main_worktree_root )
+				remove_govern_repo!( repo_path: canonical_root )
+				puts_verbose "govern_deregistered: #{canonical_root}"
 				puts_verbose "offboard_summary: removed=#{removed_count} missing=#{missing_count}"
 				if verbose?
 					puts_line "OK: Carson offboard completed for #{repo_root}."
