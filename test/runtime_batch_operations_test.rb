@@ -200,7 +200,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				runtime, repo_root = build_runtime
 				result = runtime.status_all!
 				output = runtime.instance_variable_get( :@output ).string
-				assert_includes output, "repo-a:"
+				assert_includes output, "repo-a"
 				assert_includes output, "gone-repo: not found"
 				assert_equal Carson::Runtime::EXIT_OK, result
 				destroy_runtime_repo( repo_root: repo_root )
@@ -220,8 +220,8 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				result = runtime.status_all!
 				output = runtime.instance_variable_get( :@output ).string
 				assert_includes output, "Portfolio (2 repos)"
-				assert_includes output, "repo-a:"
-				assert_includes output, "repo-b:"
+				assert_includes output, "repo-a"
+				assert_includes output, "repo-b"
 				assert_equal Carson::Runtime::EXIT_OK, result
 				destroy_runtime_repo( repo_root: repo_root )
 			end

@@ -91,7 +91,7 @@ class RuntimeGovernTest < Minitest::Test
 
 			result = root_runtime.govern!( dry_run: true )
 			assert_equal Carson::Runtime::EXIT_OK, result
-			assert_includes output_string( root_runtime ), "queued -> would_integrate"
+			assert_includes output_string( root_runtime ), "ready to integrate (dry run)"
 		end
 	end
 

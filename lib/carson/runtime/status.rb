@@ -131,29 +131,29 @@ module Carson
 			end
 
 			def print_status( data: )
-				puts_line "Carson #{data.fetch( :version )}"
-				puts_line "Repository: #{data.dig( :repository, :name )}"
-				puts_line "Authority: #{data.dig( :repository, :authority )}"
+				repo_name = data.dig( :repository, :name )
+				authority = data.dig( :repository, :authority )
+				puts_line "Carson #{data.fetch( :version )} — #{repo_name} (#{authority})"
 
 				branch = data.fetch( :branch )
-				branch_line = "Branch: #{branch.fetch( :name )}"
-				branch_line += " (dirty #{branch.fetch( :dirty_reason )})" if branch.fetch( :dirty )
-				branch_line += " [#{format_sync( sync: branch.fetch( :sync ) )}]"
+				branch_line = "On #{branch.fetch( :name )}"
+				branch_line += " (uncommitted changes)" if branch.fetch( :dirty )
+				branch_line += ", #{format_sync( sync: branch.fetch( :sync ) )}."
 				puts_line branch_line
 
 				deliveries = data.fetch( :branches )
 				if deliveries.empty?
-					puts_line "Deliveries: none"
+					puts_line "No active deliveries."
 					return
 				end
 
-				puts_line "Deliveries:"
+				count = deliveries.length
+				puts_line "#{count} active deliver#{count == 1 ? 'y' : 'ies'}:"
 				deliveries.each do |delivery|
-					line = "- #{delivery.fetch( :delivery_state )}: #{delivery.fetch( :branch )}"
 					pr_number = delivery.fetch( :pr_number )
-					line += " (#{"PR ##{pr_number}"} )" if pr_number
-					puts_line line.gsub( " )", ")" )
-					puts_line "  #{delivery.fetch( :summary )}" unless delivery.fetch( :summary ).to_s.empty?
+					pr_ref = pr_number ? " (PR ##{pr_number})" : ""
+					puts_line "  #{delivery.fetch( :branch )}#{pr_ref} — #{delivery.fetch( :delivery_state )}"
+					puts_line "  #{delivery.fetch( :summary )}." unless delivery.fetch( :summary ).to_s.empty?
 				end
 			end
 
@@ -170,17 +170,17 @@ module Carson
 				else
 					counts.map { |state, count| "#{count} #{state}" }.join( ", " )
 				end
-				puts_line "#{result.fetch( :name )}: #{result.dig( :repository, :authority )} — #{summary}"
+				puts_line "#{result.fetch( :name )} (#{result.dig( :repository, :authority )}) — #{summary}"
 			end
 
 			def format_sync( sync: )
 				case sync
-				when :in_sync then "in sync"
-				when :ahead then "ahead"
-				when :behind then "behind"
-				when :diverged then "diverged"
-				when :no_remote then "no remote"
-				else "unknown"
+				when :in_sync then "in sync with remote"
+				when :ahead then "ahead of remote"
+				when :behind then "behind remote"
+				when :diverged then "diverged from remote"
+				when :no_remote then "no remote tracking"
+				else "sync unknown"
 				end
 			end
 		end
