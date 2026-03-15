@@ -23,7 +23,7 @@ Primary runtime structure:
 - `lib/carson/adapters/agent.rb`, `lib/carson/adapters/prompt.rb`: agent work order definitions and shared prompt builder.
 - `lib/carson/adapters/codex.rb`, `lib/carson/adapters/claude.rb`: coding agent dispatch adapters.
 - `lib/carson/repository.rb`, `lib/carson/branch.rb`, `lib/carson/delivery.rb`, `lib/carson/revision.rb`: passive domain objects for repository, branch, delivery, and revision state.
-- `lib/carson/ledger.rb`: SQLite-backed ledger for active deliveries and revisions.
+- `lib/carson/ledger.rb`: JSON file-backed ledger for active deliveries and revisions.
 
 ## Architecture rationale
 

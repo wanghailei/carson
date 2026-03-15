@@ -1,6 +1,6 @@
-# SQLite-backed ledger for Carson's deliveries and revisions.
+# JSON file-backed ledger for Carson's deliveries and revisions.
 require "fileutils"
-require "sqlite3"
+require "json"
 require "time"
 
 module Carson
@@ -10,116 +10,78 @@ module Carson
 
 		def initialize( path: )
 			@path = File.expand_path( path )
-			prepare!
+			FileUtils.mkdir_p( File.dirname( @path ) )
 		end
 
 		attr_reader :path
-
-		# Ensures the SQLite schema exists before Carson uses the ledger.
-		def prepare!
-			FileUtils.mkdir_p( File.dirname( path ) )
-
-			with_database do |database|
-				ensure_schema!( database: database )
-			rescue SQLite3::ReadOnlyException, SQLite3::CantOpenException
-				readonly_database = open_readonly_database
-				raise unless schema_present?( database: readonly_database )
-			ensure
-				readonly_database&.close
-			end
-		end
 
 		# Creates or refreshes a delivery for the same branch head.
 		def upsert_delivery( repository:, branch_name:, head:, worktree_path:, pr_number:, pr_url:, status:, summary:, cause: )
 			timestamp = now_utc
 
-			with_database do |database|
-				repo_paths = repo_identity_paths( repo_path: repository.path )
-				row = database.get_first_row(
-					<<~SQL,
-					SELECT * FROM deliveries
-					WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
-						AND branch_name = ? AND head = ?
-					ORDER BY updated_at DESC, id DESC
-					LIMIT 1
-					SQL
-					[ *repo_paths, branch_name, head ]
-				)
+			with_state do |state|
+				key = delivery_key( repo_path: repository.path, branch_name: branch_name, head: head )
+				existing = state[ "deliveries" ][ key ]
 
-				if row
-					database.execute(
-						<<~SQL,
-						UPDATE deliveries
-						SET repo_path = ?, worktree_path = ?, status = ?, pr_number = ?, pr_url = ?,
-						cause = ?, summary = ?, updated_at = ?
-						WHERE id = ?
-						SQL
-						[ repository.path, worktree_path, status, pr_number, pr_url, cause, summary, timestamp, row.fetch( "id" ) ]
-					)
-					return fetch_delivery( database: database, id: row.fetch( "id" ), repository: repository )
+				if existing
+					existing[ "repo_path" ] = repository.path
+					existing[ "worktree_path" ] = worktree_path
+					existing[ "status" ] = status
+					existing[ "pr_number" ] = pr_number
+					existing[ "pr_url" ] = pr_url
+					existing[ "cause" ] = cause
+					existing[ "summary" ] = summary
+					existing[ "updated_at" ] = timestamp
+					return build_delivery( key: key, data: existing, repository: repository )
 				end
 
-				supersede_branch!( database: database, repository: repository, branch_name: branch_name, timestamp: timestamp )
-				database.execute(
-					<<~SQL,
-						INSERT INTO deliveries (
-							repo_path, branch_name, head, worktree_path, status,
-							pr_number, pr_url, revision_count, cause, summary, created_at, updated_at
-						) VALUES ( ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ? )
-					SQL
-					[
-						repository.path, branch_name, head, worktree_path, status,
-						pr_number, pr_url, cause, summary, timestamp, timestamp
-					]
-				)
-				fetch_delivery( database: database, id: database.last_insert_row_id, repository: repository )
+				supersede_branch!( state: state, repo_path: repository.path, branch_name: branch_name, timestamp: timestamp )
+				state[ "deliveries" ][ key ] = {
+					"repo_path" => repository.path,
+					"branch_name" => branch_name,
+					"head" => head,
+					"worktree_path" => worktree_path,
+					"status" => status,
+					"pr_number" => pr_number,
+					"pr_url" => pr_url,
+					"cause" => cause,
+					"summary" => summary,
+					"created_at" => timestamp,
+					"updated_at" => timestamp,
+					"integrated_at" => nil,
+					"superseded_at" => nil,
+					"revisions" => []
+				}
+				build_delivery( key: key, data: state[ "deliveries" ][ key ], repository: repository )
 			end
 		end
 
 		# Looks up the active delivery for a branch, if one exists.
 		def active_delivery( repo_path:, branch_name: )
-			with_database do |database|
-				repo_paths = repo_identity_paths( repo_path: repo_path )
-				row = database.get_first_row(
-					<<~SQL,
-					SELECT * FROM deliveries
-					WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
-						AND branch_name = ? AND status IN ( #{active_state_placeholders} )
-					ORDER BY updated_at DESC
-					LIMIT 1
-					SQL
-					[ *repo_paths, branch_name, *ACTIVE_DELIVERY_STATES ]
-				)
-				build_delivery( row: row ) if row
+			state = load_state
+			repo_paths = repo_identity_paths( repo_path: repo_path )
+
+			candidates = state[ "deliveries" ].select do |_key, data|
+				repo_paths.include?( data[ "repo_path" ] ) &&
+					data[ "branch_name" ] == branch_name &&
+					ACTIVE_DELIVERY_STATES.include?( data[ "status" ] )
 			end
+
+			return nil if candidates.empty?
+
+			key, data = candidates.max_by { |k, d| [ d[ "updated_at" ].to_s, k ] }
+			build_delivery( key: key, data: data )
 		end
 
 		# Lists active deliveries for a repository in creation order.
 		def active_deliveries( repo_path: )
-			with_database do |database|
-				repo_paths = repo_identity_paths( repo_path: repo_path )
-				rows = database.execute(
-					<<~SQL,
-					SELECT * FROM deliveries
-					WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
-						AND status IN ( #{active_state_placeholders} )
-					ORDER BY created_at ASC, id ASC
-					SQL
-					[ *repo_paths, *ACTIVE_DELIVERY_STATES ]
-				)
-				rows.map { |row| build_delivery( row: row ) }
-			end
-		end
+			state = load_state
+			repo_paths = repo_identity_paths( repo_path: repo_path )
 
-		# Lists queued deliveries ready for integration.
-		def queued_deliveries( repo_path: )
-			with_database do |database|
-				repo_paths = repo_identity_paths( repo_path: repo_path )
-				database.execute(
-					"SELECT * FROM deliveries WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} ) AND status = ? ORDER BY created_at ASC, id ASC",
-					[ *repo_paths, "queued" ]
-				).map { |row| build_delivery( row: row ) }
-			end
+			state[ "deliveries" ]
+				.select { |_key, data| repo_paths.include?( data[ "repo_path" ] ) && ACTIVE_DELIVERY_STATES.include?( data[ "status" ] ) }
+				.sort_by { |key, data| [ data[ "created_at" ].to_s, key ] }
+				.map { |key, data| build_delivery( key: key, data: data ) }
 		end
 
 		# Updates a delivery record in place.
@@ -131,225 +93,150 @@ module Carson
 			cause: UNSET,
 			summary: UNSET,
 			worktree_path: UNSET,
-			revision_count: UNSET,
 			integrated_at: UNSET,
 			superseded_at: UNSET
 		)
-			updates = {}
-			updates[ "status" ] = status unless status.equal?( UNSET )
-			updates[ "pr_number" ] = pr_number unless pr_number.equal?( UNSET )
-			updates[ "pr_url" ] = pr_url unless pr_url.equal?( UNSET )
-			updates[ "cause" ] = cause unless cause.equal?( UNSET )
-			updates[ "summary" ] = summary unless summary.equal?( UNSET )
-			updates[ "worktree_path" ] = worktree_path unless worktree_path.equal?( UNSET )
-			updates[ "revision_count" ] = revision_count unless revision_count.equal?( UNSET )
-			updates[ "integrated_at" ] = integrated_at unless integrated_at.equal?( UNSET )
-			updates[ "superseded_at" ] = superseded_at unless superseded_at.equal?( UNSET )
-			updates[ "updated_at" ] = now_utc
+			with_state do |state|
+				data = state[ "deliveries" ][ delivery.key ]
+				raise "delivery not found: #{delivery.key}" unless data
 
-			with_database do |database|
-				assignments = updates.keys.map { |key| "#{key} = ?" }.join( ", " )
-				database.execute(
-					"UPDATE deliveries SET #{assignments} WHERE id = ?",
-					updates.values + [ delivery.id ]
-				)
-				fetch_delivery( database: database, id: delivery.id, repository: delivery.repository )
+				data[ "status" ] = status unless status.equal?( UNSET )
+				data[ "pr_number" ] = pr_number unless pr_number.equal?( UNSET )
+				data[ "pr_url" ] = pr_url unless pr_url.equal?( UNSET )
+				data[ "cause" ] = cause unless cause.equal?( UNSET )
+				data[ "summary" ] = summary unless summary.equal?( UNSET )
+				data[ "worktree_path" ] = worktree_path unless worktree_path.equal?( UNSET )
+				data[ "integrated_at" ] = integrated_at unless integrated_at.equal?( UNSET )
+				data[ "superseded_at" ] = superseded_at unless superseded_at.equal?( UNSET )
+				data[ "updated_at" ] = now_utc
+
+				build_delivery( key: delivery.key, data: data, repository: delivery.repository )
 			end
 		end
 
-		# Records one revision cycle against a delivery and bumps the delivery counter.
+		# Records one revision cycle against a delivery.
 		def record_revision( delivery:, cause:, provider:, status:, summary: )
 			timestamp = now_utc
 
-			with_database do |database|
-				next_number = database.get_first_value(
-					"SELECT COALESCE( MAX(number), 0 ) + 1 FROM revisions WHERE delivery_id = ?",
-					[ delivery.id ]
-				).to_i
-				database.execute(
-					<<~SQL,
-						INSERT INTO revisions ( delivery_id, number, cause, provider, status, started_at, finished_at, summary )
-						VALUES ( ?, ?, ?, ?, ?, ?, ?, ? )
-					SQL
-					[
-						delivery.id, next_number, cause, provider, status, timestamp,
-						( status == "completed" || status == "failed" || status == "stalled" ) ? timestamp : nil,
-						summary
-					]
-				)
-				database.execute(
-					"UPDATE deliveries SET revision_count = ?, updated_at = ? WHERE id = ?",
-					[ next_number, timestamp, delivery.id ]
-				)
-				build_revision(
-					row: database.get_first_row( "SELECT * FROM revisions WHERE id = ?", [ database.last_insert_row_id ] )
-				)
+			with_state do |state|
+				data = state[ "deliveries" ][ delivery.key ]
+				raise "delivery not found: #{delivery.key}" unless data
+
+				revisions = data[ "revisions" ] ||= []
+				next_number = ( revisions.map { |r| r[ "number" ].to_i }.max || 0 ) + 1
+				finished = %w[completed failed stalled].include?( status ) ? timestamp : nil
+
+				revision_data = {
+					"number" => next_number,
+					"cause" => cause,
+					"provider" => provider,
+					"status" => status,
+					"started_at" => timestamp,
+					"finished_at" => finished,
+					"summary" => summary
+				}
+				revisions << revision_data
+				data[ "updated_at" ] = timestamp
+
+				build_revision( data: revision_data )
 			end
 		end
 
-		# Lists revisions for a delivery in ascending order.
-		def revisions_for_delivery( delivery_id: )
-			with_database do |database|
-				database.execute(
-					"SELECT * FROM revisions WHERE delivery_id = ? ORDER BY number ASC, id ASC",
-					[ delivery_id ]
-				).map { |row| build_revision( row: row ) }
-			end
+		# Returns revisions for a delivery in ascending order.
+		def revisions_for_delivery( delivery: )
+			delivery.revisions.sort_by( &:number )
 		end
 
 	private
 
-		def with_database
-			database = open_database
-			yield database
-		ensure
-			database&.close
-		end
+		# Acquires file lock, loads state, yields for mutation, saves atomically, releases lock.
+		def with_state
+			lock_path = "#{path}.lock"
+			FileUtils.mkdir_p( File.dirname( lock_path ) )
+			FileUtils.touch( lock_path )
 
-		def open_database
-			database = SQLite3::Database.new( path )
-			configure_database( database: database, readonly: false )
-			database
-		rescue SQLite3::ReadOnlyException, SQLite3::CantOpenException
-			database&.close
-			open_readonly_database
-		end
-
-		def configure_database( database:, readonly: )
-			database.results_as_hash = true
-			database.busy_timeout = 5_000
-			database.execute( "PRAGMA journal_mode = WAL" ) unless readonly
-		end
-
-		def open_readonly_database
-			database = SQLite3::Database.new( "file:#{path}?immutable=1", readonly: true, uri: true )
-			configure_database( database: database, readonly: true )
-			database
-		end
-
-		def ensure_schema!( database: )
-			database.execute_batch( <<~SQL )
-				CREATE TABLE IF NOT EXISTS deliveries (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					repo_path TEXT NOT NULL,
-					branch_name TEXT NOT NULL,
-					head TEXT NOT NULL,
-					worktree_path TEXT,
-					status TEXT NOT NULL,
-					pr_number INTEGER,
-					pr_url TEXT,
-					revision_count INTEGER NOT NULL DEFAULT 0,
-					cause TEXT,
-					summary TEXT,
-					created_at TEXT NOT NULL,
-					updated_at TEXT NOT NULL,
-					integrated_at TEXT,
-					superseded_at TEXT
-				);
-
-				CREATE UNIQUE INDEX IF NOT EXISTS index_deliveries_on_identity
-					ON deliveries ( repo_path, branch_name, head );
-
-				CREATE INDEX IF NOT EXISTS index_deliveries_on_state
-					ON deliveries ( repo_path, status, created_at );
-
-				CREATE TABLE IF NOT EXISTS revisions (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					delivery_id INTEGER NOT NULL,
-					number INTEGER NOT NULL,
-					cause TEXT NOT NULL,
-					provider TEXT NOT NULL,
-					status TEXT NOT NULL,
-					started_at TEXT NOT NULL,
-					finished_at TEXT,
-					summary TEXT,
-					FOREIGN KEY ( delivery_id ) REFERENCES deliveries ( id )
-				);
-
-				CREATE UNIQUE INDEX IF NOT EXISTS index_revisions_on_delivery_number
-					ON revisions ( delivery_id, number );
-			SQL
-
-			# Migration: drop authority column added in pre-4.0 groundwork.
-			columns = delivery_columns( database: database )
-			if columns.include?( "authority" )
-				database.execute( "ALTER TABLE deliveries DROP COLUMN authority" )
+			File.open( lock_path, File::RDWR | File::CREAT ) do |lock_file|
+				lock_file.flock( File::LOCK_EX )
+				state = load_state
+				result = yield state
+				save_state!( state )
+				result
 			end
 		end
 
-		def schema_present?( database: )
-			tables = database.execute(
-				"SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (?, ?)",
-				[ "deliveries", "revisions" ]
-			).map { |row| row[ "name" ] || row[ 0 ] }
-			return false unless tables.sort == [ "deliveries", "revisions" ]
+		def load_state
+			return { "deliveries" => {} } unless File.exist?( path )
 
-			delivery_columns( database: database ).include?( "repo_path" )
+			raw = File.read( path )
+			return { "deliveries" => {} } if raw.strip.empty?
+
+			parsed = JSON.parse( raw )
+			raise "state file must contain a JSON object at #{path}" unless parsed.is_a?( Hash )
+			parsed[ "deliveries" ] ||= {}
+			parsed
+		rescue JSON::ParserError => exception
+			raise "invalid JSON in state file #{path}: #{exception.message}"
 		end
 
-		def delivery_columns( database: )
-			database.execute( "PRAGMA table_info(deliveries)" ).map { |row| row[ "name" ] || row[ 1 ] }
+		def save_state!( state )
+			tmp_path = "#{path}.tmp"
+			File.write( tmp_path, JSON.pretty_generate( state ) + "\n" )
+			File.rename( tmp_path, path )
 		end
 
-		def fetch_delivery( database:, id:, repository: nil )
-			row = database.get_first_row( "SELECT * FROM deliveries WHERE id = ?", [ id ] )
-			build_delivery( row: row, repository: repository )
+		def delivery_key( repo_path:, branch_name:, head: )
+			"#{repo_path}:#{branch_name}:#{head}"
 		end
 
-		def build_delivery( row:, repository: nil )
-			return nil unless row
+		def build_delivery( key:, data:, repository: nil )
+			return nil unless data
 
-			repository ||= Repository.new(
-				path: row.fetch( "repo_path" ),
-				runtime: nil
-			)
+			revisions = Array( data[ "revisions" ] ).map { |r| build_revision( data: r ) }
 
 			Delivery.new(
-				id: row.fetch( "id" ),
+				repo_path: data.fetch( "repo_path" ),
 				repository: repository,
-				branch: row.fetch( "branch_name" ),
-				head: row.fetch( "head" ),
-				worktree_path: row.fetch( "worktree_path" ),
-				status: row.fetch( "status" ),
-				pull_request_number: row.fetch( "pr_number" ),
-				pull_request_url: row.fetch( "pr_url" ),
-				revision_count: row.fetch( "revision_count" ).to_i,
-				cause: row.fetch( "cause" ),
-				summary: row.fetch( "summary" ),
-				created_at: row.fetch( "created_at" ),
-				updated_at: row.fetch( "updated_at" ),
-				integrated_at: row.fetch( "integrated_at" ),
-				superseded_at: row.fetch( "superseded_at" )
+				branch: data.fetch( "branch_name" ),
+				head: data.fetch( "head" ),
+				worktree_path: data[ "worktree_path" ],
+				status: data.fetch( "status" ),
+				pull_request_number: data[ "pr_number" ],
+				pull_request_url: data[ "pr_url" ],
+				revisions: revisions,
+				cause: data[ "cause" ],
+				summary: data[ "summary" ],
+				created_at: data.fetch( "created_at" ),
+				updated_at: data.fetch( "updated_at" ),
+				integrated_at: data[ "integrated_at" ],
+				superseded_at: data[ "superseded_at" ]
 			)
 		end
 
-		def build_revision( row: )
-			return nil unless row
+		def build_revision( data: )
+			return nil unless data
 
 			Revision.new(
-				id: row.fetch( "id" ),
-				delivery_id: row.fetch( "delivery_id" ),
-				number: row.fetch( "number" ).to_i,
-				cause: row.fetch( "cause" ),
-				provider: row.fetch( "provider" ),
-				status: row.fetch( "status" ),
-				started_at: row.fetch( "started_at" ),
-				finished_at: row.fetch( "finished_at" ),
-				summary: row.fetch( "summary" )
+				number: data.fetch( "number" ).to_i,
+				cause: data.fetch( "cause" ),
+				provider: data.fetch( "provider" ),
+				status: data.fetch( "status" ),
+				started_at: data.fetch( "started_at" ),
+				finished_at: data[ "finished_at" ],
+				summary: data[ "summary" ]
 			)
 		end
 
-		def supersede_branch!( database:, repository:, branch_name:, timestamp: )
-			repo_paths = repo_identity_paths( repo_path: repository.path )
-			database.execute(
-				<<~SQL,
-				UPDATE deliveries
-				SET status = ?, superseded_at = ?, updated_at = ?
-				WHERE repo_path IN ( #{repo_path_placeholders( count: repo_paths.length )} )
-					AND branch_name = ? AND status IN ( #{active_state_placeholders} )
-				SQL
-				[ "superseded", timestamp, timestamp, *repo_paths, branch_name, *ACTIVE_DELIVERY_STATES ]
-			)
+		def supersede_branch!( state:, repo_path:, branch_name:, timestamp: )
+			repo_paths = repo_identity_paths( repo_path: repo_path )
+			state[ "deliveries" ].each do |_key, data|
+				next unless repo_paths.include?( data[ "repo_path" ] )
+				next unless data[ "branch_name" ] == branch_name
+				next unless ACTIVE_DELIVERY_STATES.include?( data[ "status" ] )
+
+				data[ "status" ] = "superseded"
+				data[ "superseded_at" ] = timestamp
+				data[ "updated_at" ] = timestamp
+			end
 		end
 
 		def repo_identity_paths( repo_path: )
@@ -388,14 +275,6 @@ module Carson
 			File.realpath( path )
 		rescue StandardError
 			nil
-		end
-
-		def repo_path_placeholders( count: )
-			Array.new( count, "?" ).join( ", " )
-		end
-
-		def active_state_placeholders
-			ACTIVE_DELIVERY_STATES.map { "?" }.join( ", " )
 		end
 
 		def now_utc

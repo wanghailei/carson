@@ -1,11 +1,9 @@
 # Passive ledger record for one feedback-driven revision cycle.
 module Carson
 	class Revision
-		attr_reader :id, :delivery_id, :number, :cause, :provider, :status, :started_at, :finished_at, :summary
+		attr_reader :number, :cause, :provider, :status, :started_at, :finished_at, :summary
 
-		def initialize( id:, delivery_id:, number:, cause:, provider:, status:, started_at:, finished_at:, summary: )
-			@id = id
-			@delivery_id = delivery_id
+		def initialize( number:, cause:, provider:, status:, started_at:, finished_at:, summary: )
 			@number = number
 			@cause = cause
 			@provider = provider

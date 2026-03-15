@@ -220,7 +220,7 @@ module Carson
 
 			def delivery_payload( delivery: )
 				{
-					id: delivery.id,
+					key: delivery.key,
 					status: delivery.status,
 					head: delivery.head,
 					worktree_path: delivery.worktree_path,
@@ -251,10 +251,9 @@ module Carson
 				end
 
 				if result[ :delivery ]
-					delivery_id = result.dig( :delivery, :id )
 					branch = result[ :branch ]
 					main = result[ :main_branch ] || "main"
-					puts_line "Delivery ##{delivery_id}  #{branch} → #{main}"
+					puts_line "Delivery: #{branch} → #{main}"
 				end
 				if result[ :commit ]
 					puts_line "Committed: #{result.dig( :commit, :summary )}"

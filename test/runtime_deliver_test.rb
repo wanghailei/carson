@@ -121,7 +121,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "PR #99"
-		assert_includes output, "Delivery #"
+		assert_includes output, "Delivery:"
 		assert_includes output, "feature/queued → main"
 		assert_includes output, "All clear"
 
@@ -197,10 +197,12 @@ class RuntimeDeliverTest < Minitest::Test
 
 		active = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
 		refute_equal first_delivery.head, active.head
-		all = runtime.ledger.send( :with_database ) do |database|
-			database.execute( "SELECT status FROM deliveries WHERE repo_path = ? AND branch_name = ? ORDER BY id ASC", [ runtime.main_worktree_root, "feature/supersede" ] )
-		end
-		assert_equal [ "superseded", "queued" ], all.map { |row| row.fetch( "status" ) }
+		state = JSON.parse( File.read( runtime.ledger.path ) )
+		statuses = state[ "deliveries" ]
+			.select { |_k, d| d[ "branch_name" ] == "feature/supersede" }
+			.sort_by { |_k, d| d[ "created_at" ] }
+			.map { |_k, d| d[ "status" ] }
+		assert_equal [ "superseded", "queued" ], statuses
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -411,7 +413,7 @@ private
 			JSON.generate(
 				{
 					"govern" => {
-						"state_path" => File.join( tmp_dir, "carson-state.sqlite3" )
+						"state_path" => File.join( tmp_dir, "carson-state.json" )
 					}
 				}
 			)
