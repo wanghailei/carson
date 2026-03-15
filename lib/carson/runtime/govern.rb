@@ -81,7 +81,7 @@ module Carson
 					return repo_report
 				end
 
-				puts_line "#{repository.name}: #{deliveries.length} active deliver#{plural_suffix( count: deliveries.length )}"
+				puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}"
 
 				reconciled = deliveries.map { |item| scoped_runtime.send( :reconcile_delivery!, delivery: item ) }
 				next_integration_id = reconciled.find( &:ready? )&.id
