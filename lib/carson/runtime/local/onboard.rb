@@ -295,7 +295,7 @@ module Carson
 				audit_error = nil
 				audit_status = with_captured_output { audit! }
 			rescue StandardError => exception
-				audit_error = e
+				audit_error = exception
 				audit_status = EXIT_OK
 			ensure
 				return onboard_print_audit_result( status: audit_status, error: audit_error )

@@ -600,6 +600,26 @@ class RuntimeSetupTest < Minitest::Test
 		end
 	end
 
+	def test_onboard_reports_audit_error_when_audit_raises
+		remote_dir = File.join( @tmp_dir, "remote.git" )
+		system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+
+		tty_input = build_tty_input( "\n\n\n\n" )
+		with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+			output = StringIO.new
+			runtime = build_onboard_runtime( input: tty_input, output_stream: output )
+			# Force audit! to raise so onboard_run_audit! exercises its rescue path
+			runtime.define_singleton_method( :audit! ) { |**_| raise StandardError, "simulated audit failure" }
+
+			status = runtime.onboard!
+
+			assert_equal Carson::Runtime::EXIT_OK, status
+			assert_includes output.string, "Audit skipped"
+		end
+	end
+
 private
 
 	def build_setup_runtime( input:, output_stream: nil )
