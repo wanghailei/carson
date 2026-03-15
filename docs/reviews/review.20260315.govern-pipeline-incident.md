@@ -56,6 +56,8 @@ The codebase is in reasonable shape but has specific issues.
 - `deliver_next_step` (line 313, 7 lines) — never called.
 - Plus a dead stub in `test/runtime_deliver_test.rb` line 141 that stubs a method that is never called.
 
+[Correction — 2026-03-16]: These methods were later restored to live code by PRs #313 and #319, which reintroduced synchronous deliver as Carson's targeted single-PR merge path. This warning was accurate when written on 2026-03-15, but it is no longer current.
+
 ### Info
 
 - `docs/reviews/plan.20260315.v3.23-improvements.md` has stale pre-migration API references (`delivery.id`, `with_database`).
@@ -139,7 +141,7 @@ Reimplement as 4–5 small, independent PRs against current main. Not one 28-fil
 
 | Feature | What | Where |
 |---|---|---|
-| **Remove dead code** | Delete `wait_for_delivery_readiness!`, `integrate_delivery_now!`, `deliver_next_step` | `deliver.rb` |
+| **Remove dead code** | Delete `wait_for_delivery_readiness!`, `integrate_delivery_now!`, `deliver_next_step` — superseded on 2026-03-16 because PRs #313 and #319 made them live code again | `deliver.rb` |
 | **Remove CI sqlite3 install** | Delete `gem install sqlite3` from both CI jobs | `ci.yml` |
 | **Ledger visibility** | `carson ledger list` showing all entries with worktree existence status | New command |
 
