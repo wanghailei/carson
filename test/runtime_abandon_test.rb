@@ -108,6 +108,7 @@ class RuntimeAbandonTest < Minitest::Test
 
 			delivery = delivery_row_for( runtime: runtime, branch_name: branch_name )
 			assert_equal "failed", delivery.fetch( "status" )
+			assert_equal "abandoned", delivery.fetch( "cause" )
 			assert_equal "abandoned by carson abandon", delivery.fetch( "summary" )
 		end
 	end

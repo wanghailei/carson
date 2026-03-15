@@ -201,7 +201,7 @@ module Carson
 				ledger.update_delivery(
 					delivery: delivery,
 					status: "failed",
-					cause: "policy",
+					cause: "abandoned",
 					summary: "abandoned by carson abandon"
 				)
 			end
