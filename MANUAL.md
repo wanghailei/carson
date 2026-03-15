@@ -183,6 +183,8 @@ carson housekeep
 
 `housekeep` still performs safe reaping and branch pruning when `sync` cannot complete. A blocked sync no longer prevents cleanup work that has its own safety evidence.
 
+`housekeep` also reconciles integrated delivery worktree records from the ledger. If the recorded worktree is already gone, Carson clears the stale ledger path. If the worktree still points at the integrated head and is safe to remove, Carson reaps it and clears the ledger path in the same pass.
+
 When you need to abandon a stale branch or PR instead of landing it:
 
 ```bash
