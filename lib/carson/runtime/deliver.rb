@@ -76,14 +76,22 @@ module Carson
 					cause: nil
 				)
 				delivery = assess_delivery!( delivery: delivery, branch_name: branch.name )
+				delivery = wait_for_delivery_readiness!( delivery: delivery, branch_name: branch.name )
+				delivery = integrate_delivery_now!(
+					delivery: delivery,
+					branch_name: branch.name,
+					remote: remote_name,
+					main: main_branch,
+					result: result
+				) if delivery.ready?
 
 				result[ :pr_number ] = pr_number
 				result[ :pr_url ] = pr_url
-				result[ :ci ] = check_pr_ci( number: pr_number ).to_s
+				result[ :ci ] = delivery.integrated? ? "pass" : check_pr_ci( number: pr_number ).to_s
 				result[ :delivery ] = delivery_payload( delivery: delivery )
 				result[ :main_branch ] = main_branch
 				result[ :summary ] = delivery.summary
-				result[ :next_step ] = "carson status"
+				result[ :next_step ] = deliver_next_step( delivery: delivery, result: result )
 
 				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
 			end
@@ -209,12 +217,12 @@ module Carson
 			end
 
 			def wait_for_delivery_readiness!( delivery:, branch_name: )
-				return delivery unless delivery.status == "gated" && delivery.cause == "ci"
+				return delivery unless delivery_gate_waitable?( delivery: delivery )
 				return delivery unless config.govern_check_wait.positive?
 
 				deadline = Process.clock_gettime( Process::CLOCK_MONOTONIC ) + config.govern_check_wait
 				interval = deliver_ci_poll_seconds
-				puts_verbose "waiting up to #{config.govern_check_wait}s for CI to settle"
+				puts_verbose "waiting up to #{config.govern_check_wait}s for delivery gates to settle"
 
 				loop do
 					remaining = deadline - Process.clock_gettime( Process::CLOCK_MONOTONIC )
@@ -222,13 +230,22 @@ module Carson
 
 					sleep [ interval, remaining ].min
 					delivery = assess_delivery!( delivery: delivery, branch_name: branch_name )
-					break unless delivery.status == "gated" && delivery.cause == "ci"
+					break unless delivery_gate_waitable?( delivery: delivery )
 				end
 
 				delivery
 			end
 
+			def delivery_gate_waitable?( delivery: )
+				return false unless delivery.status == "gated"
+				return true if delivery.cause == "ci"
+
+				delivery.cause == "review" && delivery.summary == "waiting for review"
+			end
+
 			def deliver_ci_poll_seconds
+				# Reuse the review poll interval for CI/review delivery polling.
+				# The config key predates the synchronous deliver loop.
 				seconds = config.review_poll_seconds.to_i
 				seconds.positive? ? seconds : 5
 			end
