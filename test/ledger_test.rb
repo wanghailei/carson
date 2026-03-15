@@ -193,6 +193,60 @@ class LedgerTest < Minitest::Test
 		end
 	end
 
+	# --- integrated_deliveries ---
+
+	def test_integrated_deliveries_returns_integrated_with_worktree_path
+		delivery = create_test_delivery( branch_name: "feature/int", head: "int1", status: "queued" )
+		@ledger.update_delivery( delivery: delivery, status: "integrated", worktree_path: "/tmp/wt" )
+
+		results = @ledger.integrated_deliveries( repo_path: @tmp_dir )
+		assert_equal 1, results.length
+		assert_equal "feature/int", results.first.branch
+		assert_equal "integrated", results.first.status
+	end
+
+	def test_integrated_deliveries_excludes_failed_and_superseded
+		d1 = create_test_delivery( branch_name: "feature/fail", head: "fail1", status: "queued" )
+		@ledger.update_delivery( delivery: d1, status: "failed", worktree_path: "/tmp/wt1" )
+
+		d2 = create_test_delivery( branch_name: "feature/sup", head: "sup1", status: "queued" )
+		@ledger.update_delivery( delivery: d2, status: "superseded", worktree_path: "/tmp/wt2" )
+
+		results = @ledger.integrated_deliveries( repo_path: @tmp_dir )
+		assert_empty results
+	end
+
+	def test_integrated_deliveries_excludes_nil_worktree_path
+		delivery = create_test_delivery( branch_name: "feature/no-wt", head: "nw1", status: "queued" )
+		@ledger.update_delivery( delivery: delivery, status: "integrated", worktree_path: nil )
+
+		results = @ledger.integrated_deliveries( repo_path: @tmp_dir )
+		assert_empty results
+	end
+
+	def test_integrated_deliveries_matches_worktree_repo_path
+		# Simulate a delivery created from within a worktree (legacy repo_path).
+		worktree_repo_path = "#{@tmp_dir}/.claude/worktrees/my-feature"
+		worktree_repo = Carson::Repository.new( path: worktree_repo_path, authority: "remote", runtime: nil )
+		delivery = @ledger.upsert_delivery(
+			repository: worktree_repo,
+			branch_name: "feature/wt-path",
+			head: "wtp1",
+			worktree_path: worktree_repo_path,
+			authority: "remote",
+			pr_number: 2,
+			pr_url: "https://github.com/test/repo/pull/2",
+			status: "integrated",
+			summary: "test",
+			cause: nil
+		)
+
+		# Query using the main repo root — should still find the delivery.
+		results = @ledger.integrated_deliveries( repo_path: @tmp_dir )
+		assert_equal 1, results.length
+		assert_equal "feature/wt-path", results.first.branch
+	end
+
 private
 
 	def create_test_delivery( branch_name: "feature/test", head: "abc123", status: "queued" )

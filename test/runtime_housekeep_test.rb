@@ -200,4 +200,85 @@ class RuntimeHousekeepTest < Minitest::Test
 		refute_includes output, "reaped abandoned worktree"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
+
+	# --- reap_integrated_delivery_worktrees! ---
+
+	def test_reap_integrated_delivery_worktrees_cleans_up_integrated
+		runtime, repo_root = build_runtime
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "delivered" )
+		FileUtils.mkdir_p( worktree_path )
+		git_calls = []
+
+		repository = Carson::Repository.new( path: repo_root, authority: "remote", runtime: runtime )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/delivered",
+			head: "abc123",
+			worktree_path: worktree_path,
+			authority: "remote",
+			pr_number: 50,
+			pr_url: "https://github.com/test/repo/pull/50",
+			status: "integrated",
+			summary: "integrated into main",
+			cause: nil
+		)
+
+		wt_entry = build_housekeep_worktree( path: worktree_path, branch: "feature/delivered" )
+		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
+		original_find = Carson::Worktree.method( :find )
+		Carson::Worktree.define_singleton_method( :find ) { |path:, runtime:| wt_entry }
+		runtime.define_singleton_method( :git_run ) do |*args|
+			git_calls << args
+			[ "", "", true, 0 ]
+		end
+
+		summary = { reaped: 0, skipped: 0 }
+		runtime.reap_integrated_delivery_worktrees!( summary: summary )
+
+		assert_equal 1, summary[ :reaped ]
+		assert_includes git_calls, [ "worktree", "remove", worktree_path ]
+		assert_includes git_calls, [ "branch", "-D", "feature/delivered" ]
+
+		# Verify worktree_path was nulled in the ledger.
+		updated = runtime.ledger.integrated_deliveries( repo_path: repo_root )
+		assert_empty updated, "integrated delivery should have worktree_path nulled"
+
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "reaped integrated delivery worktree: delivered"
+		destroy_runtime_repo( repo_root: repo_root )
+	ensure
+		Carson::Worktree.define_singleton_method( :find, original_find ) if original_find
+	end
+
+	def test_reap_integrated_delivery_worktrees_skips_failed_and_superseded
+		runtime, repo_root = build_runtime
+		worktree_path_f = File.join( repo_root, ".claude", "worktrees", "failed-wt" )
+		worktree_path_s = File.join( repo_root, ".claude", "worktrees", "superseded-wt" )
+		FileUtils.mkdir_p( worktree_path_f )
+		FileUtils.mkdir_p( worktree_path_s )
+
+		repository = Carson::Repository.new( path: repo_root, authority: "remote", runtime: runtime )
+		d1 = runtime.ledger.upsert_delivery(
+			repository: repository, branch_name: "feature/fail", head: "f1",
+			worktree_path: worktree_path_f, authority: "remote",
+			pr_number: 51, pr_url: "https://github.com/test/repo/pull/51",
+			status: "failed", summary: "failed", cause: nil
+		)
+		d2 = runtime.ledger.upsert_delivery(
+			repository: repository, branch_name: "feature/sup", head: "s1",
+			worktree_path: worktree_path_s, authority: "remote",
+			pr_number: 52, pr_url: "https://github.com/test/repo/pull/52",
+			status: "superseded", summary: "superseded", cause: nil
+		)
+
+		runtime.define_singleton_method( :main_worktree_root ) { repo_root }
+
+		summary = { reaped: 0, skipped: 0 }
+		runtime.reap_integrated_delivery_worktrees!( summary: summary )
+
+		assert_equal 0, summary[ :reaped ]
+		assert Dir.exist?( worktree_path_f ), "failed delivery worktree should be preserved"
+		assert Dir.exist?( worktree_path_s ), "superseded delivery worktree should be preserved"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
 end

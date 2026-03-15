@@ -252,7 +252,50 @@ module Carson
 					summary[ :reaped ] += 1
 				end
 
+				# Layer 4: integrated delivery worktrees recorded in the ledger.
+				reap_integrated_delivery_worktrees!( summary: summary )
+
 				summary
+			end
+
+			# Removes worktrees for integrated deliveries whose worktree_path still exists.
+			# Only integrated deliveries are reaped — failed and superseded are NOT.
+			# Force-removal is gated on branch tip matching delivery.head (no newer commits).
+			def reap_integrated_delivery_worktrees!( summary: )
+				deliveries = ledger.integrated_deliveries( repo_path: main_worktree_root )
+				return if deliveries.empty?
+
+				deliveries.each do |delivery|
+					next if delivery.worktree_path.nil? || delivery.worktree_path.empty?
+					next unless Dir.exist?( delivery.worktree_path )
+
+					worktree = Worktree.find( path: delivery.worktree_path, runtime: self )
+					next unless worktree
+					next if worktree.holds_cwd?
+					next if worktree.held_by_other_process?
+
+					_, _, rm_success, = git_run( "worktree", "remove", delivery.worktree_path )
+					unless rm_success
+						# Force only if branch tip still equals delivery.head (no newer commits).
+						tip_sha = git_capture!( "rev-parse", "--verify", delivery.branch ).strip rescue nil
+						if tip_sha && tip_sha == delivery.head
+							_, _, rm_success, = git_run( "worktree", "remove", "--force", delivery.worktree_path )
+							puts_verbose "force-reaped integrated delivery worktree: #{File.basename( delivery.worktree_path )}" if rm_success
+						end
+					end
+
+					if rm_success
+						puts_verbose "reaped integrated delivery worktree: #{File.basename( delivery.worktree_path )} (branch: #{delivery.branch})"
+						if !config.protected_branches.include?( delivery.branch )
+							git_run( "branch", "-D", delivery.branch )
+							puts_verbose "deleted branch: #{delivery.branch}"
+						end
+						ledger.update_delivery( delivery: delivery, worktree_path: nil )
+						summary[ :reaped ] += 1
+					else
+						summary[ :skipped ] += 1
+					end
+				end
 			end
 
 		private

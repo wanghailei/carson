@@ -187,6 +187,23 @@ module Carson
 			end
 		end
 
+		# Lists integrated deliveries that still have a worktree_path recorded.
+		# Query-side normalisation handles legacy records where repo_path is a
+		# worktree path rather than the canonical main root.
+		def integrated_deliveries( repo_path: )
+			with_database do |database|
+				database.execute(
+					<<~SQL,
+					SELECT * FROM deliveries
+					WHERE ( repo_path = ? OR repo_path LIKE ? OR repo_path LIKE ? )
+					AND status = ?
+					AND worktree_path IS NOT NULL
+					SQL
+					[ repo_path, "#{repo_path}/.claude/worktrees/%", "#{repo_path}/.codex/worktrees/%", "integrated" ]
+				).map { |row| build_delivery( row: row ) }
+			end
+		end
+
 		# Lists revisions for a delivery in ascending order.
 		def revisions_for_delivery( delivery_id: )
 			with_database do |database|
