@@ -5,6 +5,15 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.24.0
+
+### What changed
+
+- **Govern now finds worktree-created deliveries** — `repository_record` stored the worktree CWD as `repo_path` in the ledger, but `govern` looked up deliveries by the main tree path from config. The SQL query never matched, so `carson govern` always reported "no active deliveries" for worktree-created PRs. Now `repository_record` uses `main_worktree_root` so the ledger key is always the canonical main tree path. Also fixed the govern fallback path, `reconcile_delivery!`, `housekeep_repo!`, and `review_evidence` for the same mismatch.
+- **Status shows canonical repository name** — `carson status` from a worktree displayed the worktree folder name (e.g. `feature-branch`) as `Repository:` instead of the actual repository name. Now correctly shows the canonical name.
+
+### No migration required
+
 ## 3.23.3
 
 ### What changed
