@@ -247,6 +247,34 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_dry_run_does_not_mark_conflicting_pr_as_ready
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/conflicting" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/conflicting",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "CONFLICTING", "mergeStateStatus" => "DIRTY" }
+		end
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		refute_includes output, "ready to integrate (dry run)"
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "gated", row.fetch( "status" )
+		assert_equal "merge", row.fetch( "cause" )
+		assert_includes row.fetch( "summary" ), "merge conflicts"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_escalates_when_no_agent_provider
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
