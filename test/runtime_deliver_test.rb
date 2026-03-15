@@ -122,6 +122,43 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
+	def test_deliver_reports_push_failure
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/push-fail" )
+		stub_ready_assessment( runtime )
+
+		# Stub git_run at the adapter boundary to simulate push rejection
+		original_git_run = runtime.method( :git_run )
+		runtime.define_singleton_method( :git_run ) do |*args|
+			if args.include?( "push" )
+				[ "", "fatal: could not push\n", false, 1 ]
+			else
+				original_git_run.call( *args )
+			end
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		output = output_string( runtime )
+		assert_includes output, "could not push"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_reports_pr_creation_failure
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh_failing_create
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/no-pr" )
+		stub_ready_assessment( runtime )
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		output = output_string( runtime )
+		assert_includes output, "authentication required"
+		assert_includes output, "gh pr create"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
 private
 
 	def stub_ready_assessment( runtime )
@@ -213,6 +250,45 @@ private
 		File.write( File.join( repo_root, "feature.txt" ), branch_name )
 		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "commit", "-m", "feature", out: File::NULL, err: File::NULL )
+	end
+
+	def build_runtime_with_mock_gh_failing_create
+		tmp_dir = Dir.mktmpdir( "carson-deliver-test", carson_tmp_root )
+		repo_root = File.join( tmp_dir, "repo" )
+		FileUtils.mkdir_p( repo_root )
+
+		mock_bin = File.join( tmp_dir, "mock-bin" )
+		FileUtils.mkdir_p( mock_bin )
+		File.write( File.join( mock_bin, "gh" ), <<~BASH )
+			#!/usr/bin/env bash
+			if [[ "$1" == "pr" && "$2" == "view" ]]; then
+				echo "not found" >&2
+				exit 1
+			fi
+			if [[ "$1" == "pr" && "$2" == "create" ]]; then
+				echo "authentication required" >&2
+				exit 1
+			fi
+			if [[ "$1" == "--version" ]]; then
+				echo "gh version mock"
+				exit 0
+			fi
+			echo "unsupported: $*" >&2
+			exit 1
+		BASH
+		FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+
+		output = StringIO.new
+		error = StringIO.new
+		config_path = write_test_config( repo_root: repo_root )
+		runtime = nil
+		with_env( "CARSON_CONFIG_FILE" => config_path ) do
+			runtime = Carson::Runtime.new(
+				repo_root: repo_root, tool_root: File.expand_path( "..", __dir__ ),
+				output: output, error: error, verbose: false
+			)
+		end
+		[ runtime, repo_root, "#{mock_bin}:#{ENV.fetch( 'PATH' )}", tmp_dir ]
 	end
 
 	def output_string( runtime )
