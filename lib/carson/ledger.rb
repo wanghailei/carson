@@ -225,6 +225,11 @@ module Carson
 			database = SQLite3::Database.new( "file:#{path}?immutable=1", readonly: true, uri: true )
 			configure_database( database: database, readonly: true )
 			database
+		rescue SQLite3::CantOpenException
+			database&.close
+			database = SQLite3::Database.new( path, readonly: true )
+			configure_database( database: database, readonly: true )
+			database
 		end
 
 		def ensure_schema!( database: )
