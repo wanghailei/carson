@@ -282,9 +282,12 @@ carson audit --all             # governance audit across all repos
 carson prune --all             # remove stale branches across all repos
 carson template check --all    # detect template drift across all repos
 carson housekeep --all         # full maintenance cycle across all repos
+carson housekeep --all --loop 300   # housekeep every 5 minutes
 ```
 
 `refresh --all` checks each repo for safety before operating: repos with active worktrees or uncommitted changes are skipped with clear reasons. Other batch commands attempt each repo and report failures without stopping.
+
+`housekeep --all --loop SECONDS` runs the full housekeep cycle continuously, sleeping SECONDS between passes. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` with a cycle count summary.
 
 **Periodic maintenance:**
 
