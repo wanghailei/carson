@@ -216,6 +216,48 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_housekeep_repo_calls_reap_after_sync_succeeds
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		calls = []
+
+		runtime.define_singleton_method( :sync! ) do |**|
+			calls << :sync
+			Carson::Runtime::EXIT_OK
+		end
+		runtime.define_singleton_method( :reap_dead_worktrees! ) { calls << :reap }
+		runtime.define_singleton_method( :prune! ) do |**|
+			calls << :prune
+			Carson::Runtime::EXIT_OK
+		end
+
+		runtime.send( :housekeep_repo!, repo_path: repo_root )
+
+		assert_equal [ :sync, :reap, :prune ], calls
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_housekeep_repo_skips_reap_and_prune_when_sync_fails
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		calls = []
+
+		runtime.define_singleton_method( :sync! ) do |**|
+			calls << :sync
+			Carson::Runtime::EXIT_ERROR
+		end
+		runtime.define_singleton_method( :reap_dead_worktrees! ) { calls << :reap }
+		runtime.define_singleton_method( :prune! ) do |**|
+			calls << :prune
+			Carson::Runtime::EXIT_OK
+		end
+
+		runtime.send( :housekeep_repo!, repo_path: repo_root )
+
+		assert_equal [ :sync ], calls
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def stub_reconciliation( runtime, delivery: )
