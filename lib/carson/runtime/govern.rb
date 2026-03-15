@@ -16,10 +16,9 @@ module Carson
 			end
 
 			def govern_cycle!( dry_run:, json_output: )
-				print_header "Carson Govern"
 				repositories = governed_repo_paths
 				repositories = [ repository_record.path ] if repositories.empty?
-				puts_line "governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}"
+				print_header "Governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}"
 
 				report = {
 					cycle_at: Time.now.utc.iso8601,
@@ -428,15 +427,25 @@ module Carson
 						next
 					end
 
-					if repo_report[ :deliveries ].empty?
-						puts_line "#{repo_report[ :repository ]}: no active deliveries"
-						next
-					end
+					next if repo_report[ :deliveries ].empty?
 
 					repo_report[ :deliveries ].each do |delivery|
-						puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]}: #{delivery[ :status ]} -> #{delivery[ :action ]}"
+						action_text = format_govern_action( status: delivery[ :status ], action: delivery[ :action ] )
+						puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]} — #{action_text}"
 						puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
 					end
+				end
+			end
+
+			def format_govern_action( status:, action: )
+				case action
+				when "integrate" then "integrated"
+				when "would_integrate" then "ready to integrate (dry run)"
+				when "revise" then "revision dispatched"
+				when "would_revise" then "would revise (dry run)"
+				when "escalate" then "escalated"
+				when "would_escalate" then "would escalate (dry run)"
+				else status
 				end
 			end
 		end

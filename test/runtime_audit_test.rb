@@ -99,8 +99,8 @@ class RuntimeAuditTest < Minitest::Test
 
 		runtime.audit!( json_output: false )
 		output = output_string( runtime )
-		# Human output should contain "Audit:" line, not JSON.
-		assert_includes output, "Audit:"
+		# Human output should contain audit result, not JSON.
+		assert_includes output, "Audit"
 		refute output.strip.start_with?( "{" ), "Human output should not be JSON"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -115,7 +115,7 @@ class RuntimeAuditTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		assert_includes output, "Working tree: main working tree has uncommitted changes"
 		assert_includes output, "carson worktree create <name>"
-		assert_includes output, "Audit: block"
+		assert_includes output, "Audit blocked."
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

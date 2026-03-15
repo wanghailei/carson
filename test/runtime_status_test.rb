@@ -18,8 +18,8 @@ class RuntimeStatusTest < Minitest::Test
 		runtime.status!
 		output = output_string( runtime )
 		assert_includes output, Carson::VERSION
-		assert_includes output, "Branch: main"
-		assert_includes output, "Deliveries: none"
+		assert_includes output, "On main"
+		assert_includes output, "No active deliveries."
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

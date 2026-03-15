@@ -239,7 +239,7 @@ module Carson
 					puts_line "Removed #{removed_count} file#{plural_suffix( count: removed_count )}. Offboard complete."
 				end
 				puts_line ""
-				puts_line "Next: commit the removals and push to finalise offboarding."
+				puts_line "Commit the removals and push to finalise offboarding."
 				EXIT_OK
 			end
 

@@ -38,7 +38,7 @@ module Carson
 				hooks_status = hooks_ok ? "ok" : "mismatch"
 				unless hooks_ok
 					audit_state = "block"
-					audit_concise_problems << "Hooks: mismatch — run carson refresh."
+					audit_concise_problems << "Hooks don't match — run carson refresh."
 				end
 				puts_verbose ""
 				puts_verbose "[Main Sync Status]"
@@ -158,7 +158,7 @@ module Carson
 					puts_verbose( audit_state == "block" ? "ACTION: local policy block must be resolved before commit/push." : "ACTION: no local hard block detected." )
 					unless verbose?
 						audit_concise_problems.each { |problem| puts_line problem }
-						puts_line "Audit: #{audit_state}"
+						puts_line format_audit_state( audit_state )
 					end
 				end
 				exit_code
@@ -219,6 +219,16 @@ module Carson
 			# rubocop:disable Layout/AccessModifierIndentation -- tab-width calculation produces unfixable mixed tabs+spaces
 			private
 			# rubocop:enable Layout/AccessModifierIndentation
+
+				def format_audit_state( state )
+					case state
+					when "ok" then "Audit passed."
+					when "block" then "Audit blocked."
+					when "attention" then "Audit: needs attention."
+					else "Audit: #{state}"
+					end
+				end
+
 				def audit_working_tree_report
 					dirty_reason = dirty_worktree_reason
 					return { dirty: false, context: nil, status: "ok" } if dirty_reason.nil?
