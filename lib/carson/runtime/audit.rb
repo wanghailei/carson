@@ -268,7 +268,7 @@ module Carson
 
 					# Best-effort fetch to update remote tracking ref.
 					# Network failure is not a commit blocker.
-					_, _, fetch_success, = git_run( "fetch", remote, main, "--quiet" )
+					_, _, fetch_success, = git_run( "fetch", remote, "--quiet" )
 					unless fetch_success
 						puts_verbose "freshness fetch failed — skipping check"
 						return { status: "ok", behind: 0, context: "fetch failed" }

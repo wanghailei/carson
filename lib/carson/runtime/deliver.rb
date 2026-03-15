@@ -387,7 +387,7 @@ module Carson
 				main = config.main_branch
 
 				# Fetch remote main to get latest state.
-				_, _, fetch_success, = git_run( "fetch", remote, main, "--quiet" )
+				_, _, fetch_success, = git_run( "fetch", remote, "--quiet" )
 				unless fetch_success
 					puts_verbose "pre-push sync skipped — fetch failed"
 					return EXIT_OK

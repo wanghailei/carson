@@ -23,7 +23,7 @@ class RuntimeAuditFreshnessTest < Minitest::Test
 		# Advance main on the remote so the feature branch falls behind.
 		advance_remote_main( remote_path )
 		# Fetch to update tracking refs (simulates the freshness check having connectivity).
-		system( "git", "-C", repo_root, "fetch", "origin", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "fetch", "origin", out: File::NULL, err: File::NULL )
 
 		result = runtime.audit!( json_output: true )
 		json = JSON.parse( output_string( runtime ).strip )
@@ -40,7 +40,7 @@ class RuntimeAuditFreshnessTest < Minitest::Test
 		runtime, repo_root, remote_path = build_runtime_with_bare_remote
 		create_feature_branch( repo_root, "feature/stale-human" )
 		advance_remote_main( remote_path )
-		system( "git", "-C", repo_root, "fetch", "origin", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "fetch", "origin", out: File::NULL, err: File::NULL )
 
 		result = runtime.audit!( json_output: false )
 		output = output_string( runtime )
