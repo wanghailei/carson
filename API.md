@@ -31,7 +31,7 @@ carson <command> [subcommand] [arguments]
 | `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap dead worktrees, reconcile integrated delivery worktree records from the ledger, and prune stale branches. Safe cleanup still runs when sync is blocked. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
-| `carson status [--json]` | Show repository delivery state. Default output is Markdown/text; `--json` is the explicit machine contract. |
+| `carson status [--json]` | Show repository delivery state, including the next queued delivery and blocked-delivery summaries. Default output is Markdown/text; `--json` is the explicit machine contract. |
 | `carson abandon <pr_number\|pr_url\|branch> [--json]` | Close abandoned delivery work and clean up its PR, worktree, and branch when safe. |
 | `carson worktree create <name>` | Create an isolated worktree and branch for a new stream of work. |
 | `carson worktree list [--json]` | Show every registered worktree with PR state and Carson's cleanup recommendation. |

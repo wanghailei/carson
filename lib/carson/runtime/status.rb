@@ -51,12 +51,13 @@ module Carson
 
 		private
 
-			def gather_status
-				repository = repository_record
-				branch = branch_record
-				deliveries = ledger.active_deliveries( repo_path: repository.path )
+				def gather_status
+					repository = repository_record
+					branch = branch_record
+					deliveries = ledger.active_deliveries( repo_path: repository.path )
+					next_delivery_key = deliveries.find( &:ready? )&.key
 
-				{
+					{
 					version: Carson::VERSION,
 					repository: {
 						name: repository.name,
@@ -71,23 +72,24 @@ module Carson
 						sync: remote_sync_status( branch: branch.name )
 					},
 					worktrees: gather_worktree_summary,
-					branches: deliveries.map { |delivery| status_branch_entry( delivery: delivery ) },
-					stale_branches: gather_stale_branch_info
-				}
-			end
+						branches: deliveries.map { |delivery| status_branch_entry( delivery: delivery, next_to_integrate: delivery.key == next_delivery_key ) },
+						stale_branches: gather_stale_branch_info
+					}
+				end
 
-			def status_branch_entry( delivery: )
-				{
-					branch: delivery.branch,
-					worktree_path: delivery.worktree_path,
+				def status_branch_entry( delivery:, next_to_integrate: )
+					{
+						branch: delivery.branch,
+						worktree_path: delivery.worktree_path,
 					head: delivery.head,
 					pr_number: delivery.pull_request_number,
 					delivery_state: delivery.status,
 					revision_count: delivery.revision_count,
-					summary: delivery.summary,
-					updated_at: delivery.updated_at
-				}
-			end
+						summary: delivery.summary,
+						next_to_integrate: next_to_integrate,
+						updated_at: delivery.updated_at
+					}
+				end
 
 			def working_tree_dirty?
 				stdout, _, success, = git_run( "status", "--porcelain" )
@@ -155,11 +157,16 @@ module Carson
 					return
 				end
 
-				count = deliveries.length
-				puts_line "#{count} active deliver#{count == 1 ? 'y' : 'ies'}:"
-				deliveries.each do |delivery|
-					pr_number = delivery.fetch( :pr_number )
-					pr_ref = pr_number ? " (PR ##{pr_number})" : ""
+					count = deliveries.length
+					puts_line "#{count} active deliver#{count == 1 ? 'y' : 'ies'}:"
+					if (next_delivery = deliveries.find { |delivery| delivery.fetch( :next_to_integrate, false ) })
+						pr_number = next_delivery.fetch( :pr_number )
+						pr_ref = pr_number ? " (PR ##{pr_number})" : ""
+						puts_line "Next delivery: #{next_delivery.fetch( :branch )}#{pr_ref}."
+					end
+					deliveries.each do |delivery|
+						pr_number = delivery.fetch( :pr_number )
+						pr_ref = pr_number ? " (PR ##{pr_number})" : ""
 					puts_line "  #{delivery.fetch( :branch )}#{pr_ref} — #{delivery.fetch( :delivery_state )}"
 					puts_line "  #{delivery.fetch( :summary )}." unless delivery.fetch( :summary ).to_s.empty?
 				end
