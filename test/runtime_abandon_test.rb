@@ -56,6 +56,13 @@ class RuntimeAbandonTest < Minitest::Test
 			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandon-pr", branch_name: branch_name )
 			repository = runtime.send( :repository_record )
 			head = `git -C #{worktree.fetch( :path )} rev-parse HEAD`.strip
+			runtime.define_singleton_method( :worktree_remove! ) do |worktree_path:, force: false, json_output: false|
+				FileUtils.remove_entry( worktree_path ) if File.directory?( worktree_path )
+				git_run( "worktree", "prune" )
+				git_run( "branch", "-D", branch_name )
+				git_run( "push", config.git_remote, "--delete", branch_name )
+				Carson::Runtime::EXIT_OK
+			end
 			runtime.ledger.upsert_delivery(
 				repository: repository,
 				branch_name: branch_name,
