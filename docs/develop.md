@@ -2,11 +2,7 @@
 
 ## Audience
 
-This document is for Carson contributors and internal maintainers who need architecture, runtime contract, and development workflow guidance.
-
-## Active implementation specs
-
-- [Carson 4.0](./carson-4.0.md)
+This document is for Hailei and coding agents who need architecture, runtime contract, and development workflow guidance.
 
 ## Architectural Overview
 
