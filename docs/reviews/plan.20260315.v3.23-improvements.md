@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix 3 confirmed bugs and add test coverage for 4 critical gaps identified in the v3.23.0+v3.23.1 code review.
+**Goal:** Fix 2 confirmed bugs, add regression and coverage tests for critical gaps, and clean up housekeeping items — all identified from the v3.23.0+v3.23.1 code review.
 
-**Architecture:** All fixes are surgical — no structural changes. Bug fixes are one-line corrections. Test coverage additions follow the existing Minitest + CarsonTestSupport pattern with isolated git repos and mock gh binaries.
+**Architecture:** All fixes are surgical — no structural changes. Bug fixes are one-line corrections. Test coverage additions follow the existing Minitest + CarsonTestSupport pattern with isolated git repos and mock gh binaries. Housekeeping is separated into its own commit.
 
 **Tech Stack:** Ruby, Minitest, SQLite3, Open3, git CLI
 
@@ -15,145 +15,110 @@
 | File | Action | Responsibility |
 |------|--------|----------------|
 | `lib/carson/runtime/local/onboard.rb` | Modify line 298 | Fix `e` -> `exception` NameError |
-| `lib/carson/ledger.rb` | Modify line 9 | Reference `Delivery::ACTIVE_STATES` instead of duplicate constant |
-| `lib/carson/ledger.rb` | Modify lines 286-295 | Fix indentation of `supersede_branch!` |
 | `lib/carson/runtime/deliver.rb` | Modify line 317 | Fix `Process::Status` truthiness bug |
-| `lib/carson/runtime/govern.rb` | Modify line 84 | Fix "deliver" -> "delivery" pluralisation |
-| `test/ledger_test.rb` | Create | Unit tests for `record_revision` and `revisions_for_delivery` |
-| `test/runtime_govern_test.rb` | Modify | Add reconciliation and revision tests |
-| `test/runtime_deliver_test.rb` | Modify | Add error path tests |
+| `test/runtime_setup_test.rb` | Modify | Regression test for onboard audit exception path |
+| `test/ledger_test.rb` | Create | Unit tests for revision recording and active-state filtering |
+| `test/runtime_govern_test.rb` | Modify | Reconciliation state transition tests |
+| `test/runtime_deliver_test.rb` | Modify | Deliver error path tests at adapter boundary |
+| `lib/carson/ledger.rb` | Modify | Deduplicate constant + fix indentation (housekeeping) |
+| `lib/carson/runtime/govern.rb` | Modify line 84 | Fix pluralisation (housekeeping) |
 
 ---
 
-## Task 1: Fix onboard rescue NameError
+## Task 1: Fix onboard rescue NameError with regression test
 
 **Files:**
 - Modify: `lib/carson/runtime/local/onboard.rb:298`
+- Modify: `test/runtime_setup_test.rb`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing regression test**
 
-No dedicated onboard test file exists and onboard requires complex setup (full `carson setup` flow). This is a one-character fix with clear visual proof. Skip TDD — fix directly and verify by inspection.
-
-- [ ] **Step 2: Fix the bug**
-
-Change line 298 from `audit_error = e` to `audit_error = exception`:
+Add to `RuntimeSetupTest`, using the existing `build_onboard_runtime` helper (line 625):
 
 ```ruby
-# Before:
-rescue StandardError => exception
-	audit_error = e
+def test_onboard_reports_audit_error_when_audit_raises
+	remote_dir = File.join( @tmp_dir, "remote.git" )
+	system( "git", "init", "--bare", remote_dir, out: File::NULL, err: File::NULL )
+	system( "git", "-C", @repo_root, "remote", "add", "origin", remote_dir, out: File::NULL, err: File::NULL )
+	system( "git", "-C", @repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 
-# After:
-rescue StandardError => exception
-	audit_error = exception
+	tty_input = build_tty_input( "\n\n\n\n" )
+	with_env( "HOME" => @tmp_dir, "CARSON_CONFIG_FILE" => "" ) do
+		output = StringIO.new
+		runtime = build_onboard_runtime( input: tty_input, output_stream: output )
+		# Force audit! to raise so onboard_run_audit! exercises its rescue path
+		runtime.define_singleton_method( :audit! ) { |**_| raise StandardError, "simulated audit failure" }
+
+		status = runtime.onboard!
+
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_includes output.string, "Audit skipped"
+	end
+end
 ```
 
-- [ ] **Step 3: Verify by reading the fixed code**
-
-Read `lib/carson/runtime/local/onboard.rb:294-302` and confirm the rescue variable name matches.
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 2: Run test to verify it fails (proves the bug)**
 
 ```bash
-git add lib/carson/runtime/local/onboard.rb
+ruby -Ilib -Itest test/runtime_setup_test.rb --name test_onboard_reports_audit_error_when_audit_raises
+```
+
+Expected: FAIL — `NameError: undefined local variable or method 'e'` is raised inside `onboard_run_audit!`, but the `ensure` block's `return` swallows it. The ensure calls `onboard_print_audit_result(status: nil, error: nil)`, which does not print "Audit skipped", so the assertion fails.
+
+- [ ] **Step 3: Fix the bug**
+
+Change line 298 of `lib/carson/runtime/local/onboard.rb` from `audit_error = e` to `audit_error = exception`.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```bash
+ruby -Ilib -Itest test/runtime_setup_test.rb --name test_onboard_reports_audit_error_when_audit_raises
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/carson/runtime/local/onboard.rb test/runtime_setup_test.rb
 git commit -m "fix: rescue variable NameError in onboard_run_audit!
 
 audit_error = e referenced undefined variable; should be exception.
 When audit! raised during onboard, the NameError was silently swallowed
-by the ensure block, giving the user no diagnostic."
+by the ensure block, giving the user no diagnostic.
+
+Adds regression test that stubs audit! to raise and verifies the
+'Audit skipped' message appears in onboard output."
 ```
 
 ---
 
-## Task 2: Deduplicate ACTIVE_STATES constant
+## Task 2: Fix Process::Status truthiness in sync_after_merge!
 
 **Files:**
-- Modify: `lib/carson/ledger.rb:9`
+- Modify: `lib/carson/runtime/deliver.rb:314-317`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Fix the bug**
 
-```ruby
-# In test/ledger_test.rb (new file — created in Task 5)
-def test_active_delivery_states_matches_delivery_constant
-	assert_equal Carson::Delivery::ACTIVE_STATES, Carson::Ledger::ACTIVE_DELIVERY_STATES,
-		"Ledger and Delivery active-state definitions must agree"
-end
-```
-
-- [ ] **Step 2: Run test to verify it passes (baseline)**
-
-```bash
-ruby -Ilib -Itest test/ledger_test.rb --name test_active_delivery_states_matches_delivery_constant
-```
-
-Expected: PASS (they currently match by coincidence).
-
-- [ ] **Step 3: Replace the duplicate constant with a reference**
-
-Change line 9 of `lib/carson/ledger.rb` from:
+Change lines 314-317 from:
 
 ```ruby
-ACTIVE_DELIVERY_STATES = %w[preparing gated queued integrating escalated].freeze
+_, pull_stderr, pull_success, = Open3.capture3(
+	"git", "-C", main_root, "pull", "--ff-only", remote, main
+)
+if pull_success
 ```
 
 to:
 
 ```ruby
-ACTIVE_DELIVERY_STATES = Delivery::ACTIVE_STATES
-```
-
-- [ ] **Step 4: Verify the test still passes**
-
-```bash
-ruby -Ilib -Itest test/ledger_test.rb --name test_active_delivery_states_matches_delivery_constant
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Run full test suite to confirm no regressions**
-
-```bash
-ruby -Ilib -Itest -e "Dir.glob('test/**/*_test.rb').each { |f| require File.expand_path(f) }"
-```
-
-Expected: all tests pass.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add lib/carson/ledger.rb
-git commit -m "fix: deduplicate ACTIVE_STATES between Delivery and Ledger
-
-Ledger now references Delivery::ACTIVE_STATES instead of maintaining
-its own copy. Prevents silent divergence if the state list changes."
-```
-
----
-
-## Task 3: Fix Process::Status truthiness in sync_after_merge!
-
-**Files:**
-- Modify: `lib/carson/runtime/deliver.rb:317`
-
-- [ ] **Step 1: Fix the bug**
-
-Change line 317 from `if pull_success` to `if pull_success.success?`:
-
-```ruby
-# Before:
-_, pull_stderr, pull_success, = Open3.capture3(
-	"git", "-C", main_root, "pull", "--ff-only", remote, main
-)
-if pull_success
-
-# After:
 _, pull_stderr, pull_status, = Open3.capture3(
 	"git", "-C", main_root, "pull", "--ff-only", remote, main
 )
 if pull_status.success?
 ```
 
-Also rename the variable from `pull_success` to `pull_status` to match the convention used elsewhere in the codebase (e.g. `worktree.rb:87`).
+Rename `pull_success` to `pull_status` to match the convention used elsewhere (e.g. `worktree.rb:87`).
 
 - [ ] **Step 2: Verify by reading**
 
@@ -172,49 +137,14 @@ prevents a trap for future callers."
 
 ---
 
-## Task 4: Fix "deliver" pluralisation in govern output
+## Task 3: Add Ledger unit tests
 
 **Files:**
-- Modify: `lib/carson/runtime/govern.rb:84`
-
-- [ ] **Step 1: Fix the wording**
-
-Change line 84 from:
-
-```ruby
-puts_line "#{repository.name}: #{deliveries.length} active deliver#{plural_suffix( count: deliveries.length )}"
-```
-
-to:
-
-```ruby
-puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}"
-```
-
-- [ ] **Step 2: Commit**
-
-```bash
-git add lib/carson/runtime/govern.rb
-git commit -m "fix: correct pluralisation of 'delivery' in govern output"
-```
-
----
-
-## Task 5: Fix Ledger indentation and add Ledger unit tests
-
-**Files:**
-- Modify: `lib/carson/ledger.rb:78,286-295`
 - Create: `test/ledger_test.rb`
 
-- [ ] **Step 1: Fix indentation — upsert_delivery `if row` block**
+These tests verify the behavioural contracts of Ledger's revision and delivery operations.
 
-Align the `if row` block at line 78 to the same level as the surrounding `with_database` block body (two tabs from module scope, matching the `INSERT` block below it).
-
-- [ ] **Step 2: Fix indentation — `supersede_branch!` private method**
-
-Align `supersede_branch!` (lines 286-295) to two tabs from module scope, matching the other private methods (`build_delivery`, `build_revision`, `active_state_placeholders`, `now_utc`).
-
-- [ ] **Step 3: Write the test file skeleton**
+- [ ] **Step 1: Write the test file**
 
 Create `test/ledger_test.rb`:
 
@@ -236,7 +166,103 @@ class LedgerTest < Minitest::Test
 		FileUtils.remove_entry( @tmp_dir ) if File.directory?( @tmp_dir )
 	end
 
-	private
+	# --- record_revision ---
+
+	def test_record_revision_creates_first_revision_with_number_one
+		delivery = create_test_delivery
+		revision = @ledger.record_revision(
+			delivery: delivery,
+			cause: "ci",
+			provider: "codex",
+			status: "completed",
+			summary: "fixed CI"
+		)
+		assert_equal 1, revision.number
+		assert_equal "completed", revision.status
+		assert_equal "ci", revision.cause
+		assert_equal "codex", revision.provider
+		refute_nil revision.finished_at
+	end
+
+	def test_record_revision_increments_number_sequentially
+		delivery = create_test_delivery
+		r1 = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "attempt 1" )
+		r2 = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "attempt 2" )
+		r3 = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "attempt 3" )
+		assert_equal 1, r1.number
+		assert_equal 2, r2.number
+		assert_equal 3, r3.number
+	end
+
+	def test_record_revision_sets_finished_at_for_terminal_statuses
+		delivery = create_test_delivery
+		running = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "running", summary: "in progress" )
+		assert_nil running.finished_at
+
+		failed = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "broke" )
+		refute_nil failed.finished_at
+
+		stalled = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "stalled", summary: "timeout" )
+		refute_nil stalled.finished_at
+	end
+
+	def test_record_revision_bumps_delivery_revision_count
+		delivery = create_test_delivery
+		@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "done" )
+		updated = @ledger.active_delivery( repo_path: @tmp_dir, branch_name: "feature/test" )
+		assert_equal 1, updated.revision_count
+	end
+
+	# --- revisions_for_delivery ---
+
+	def test_revisions_for_delivery_returns_in_ascending_order
+		delivery = create_test_delivery
+		@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "first" )
+		@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "second" )
+
+		revisions = @ledger.revisions_for_delivery( delivery_id: delivery.id )
+		assert_equal 2, revisions.length
+		assert_equal 1, revisions.first.number
+		assert_equal 2, revisions.last.number
+		assert_equal "first", revisions.first.summary
+		assert_equal "second", revisions.last.summary
+	end
+
+	# --- active_deliveries filtering ---
+
+	def test_active_deliveries_returns_only_active_state_deliveries
+		# Create deliveries in various states
+		active = create_test_delivery( branch_name: "feature/active", head: "aaa", status: "queued" )
+		gated = create_test_delivery( branch_name: "feature/gated", head: "bbb", status: "gated" )
+		terminal = create_test_delivery( branch_name: "feature/done", head: "ccc", status: "queued" )
+		@ledger.update_delivery( delivery: terminal, status: "integrated" )
+
+		actives = @ledger.active_deliveries( repo_path: @tmp_dir )
+		active_branches = actives.map( &:branch ).sort
+		assert_includes active_branches, "feature/active"
+		assert_includes active_branches, "feature/gated"
+		refute_includes active_branches, "feature/done"
+	end
+
+	def test_active_deliveries_uses_same_states_as_delivery_model
+		# Verify that every state Delivery considers active is also
+		# returned by Ledger's active_deliveries query.
+		Carson::Delivery::ACTIVE_STATES.each_with_index do |state, index|
+			create_test_delivery(
+				branch_name: "feature/state-#{index}",
+				head: "head#{index}",
+				status: state
+			)
+		end
+
+		actives = @ledger.active_deliveries( repo_path: @tmp_dir )
+		returned_statuses = actives.map( &:status ).uniq.sort
+		expected_statuses = Carson::Delivery::ACTIVE_STATES.sort
+		assert_equal expected_statuses, returned_statuses,
+			"Ledger active_deliveries must return all states that Delivery considers active"
+	end
+
+private
 
 	def create_test_delivery( branch_name: "feature/test", head: "abc123", status: "queued" )
 		@ledger.upsert_delivery(
@@ -255,102 +281,7 @@ class LedgerTest < Minitest::Test
 end
 ```
 
-- [ ] **Step 4: Write test for `record_revision` — first revision**
-
-```ruby
-def test_record_revision_creates_first_revision_with_number_one
-	delivery = create_test_delivery
-	revision = @ledger.record_revision(
-		delivery: delivery,
-		cause: "ci",
-		provider: "codex",
-		status: "completed",
-		summary: "fixed CI"
-	)
-	assert_equal 1, revision.number
-	assert_equal "completed", revision.status
-	assert_equal "ci", revision.cause
-	assert_equal "codex", revision.provider
-	refute_nil revision.finished_at
-end
-```
-
-- [ ] **Step 5: Run to verify it passes**
-
-```bash
-ruby -Ilib -Itest test/ledger_test.rb --name test_record_revision_creates_first_revision_with_number_one
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Write test for sequential revision numbering**
-
-```ruby
-def test_record_revision_increments_number_sequentially
-	delivery = create_test_delivery
-	r1 = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "attempt 1" )
-	r2 = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "attempt 2" )
-	r3 = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "attempt 3" )
-	assert_equal 1, r1.number
-	assert_equal 2, r2.number
-	assert_equal 3, r3.number
-end
-```
-
-- [ ] **Step 7: Write test for `finished_at` only on terminal statuses**
-
-```ruby
-def test_record_revision_sets_finished_at_for_terminal_statuses
-	delivery = create_test_delivery
-	running = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "running", summary: "in progress" )
-	assert_nil running.finished_at
-
-	failed = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "broke" )
-	refute_nil failed.finished_at
-
-	stalled = @ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "stalled", summary: "timeout" )
-	refute_nil stalled.finished_at
-end
-```
-
-- [ ] **Step 8: Write test for revision_count bump on delivery**
-
-```ruby
-def test_record_revision_bumps_delivery_revision_count
-	delivery = create_test_delivery
-	@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "done" )
-	updated = @ledger.active_delivery( repo_path: @tmp_dir, branch_name: "feature/test" )
-	assert_equal 1, updated.revision_count
-end
-```
-
-- [ ] **Step 9: Write test for `revisions_for_delivery` ordering**
-
-```ruby
-def test_revisions_for_delivery_returns_in_ascending_order
-	delivery = create_test_delivery
-	@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "failed", summary: "first" )
-	@ledger.record_revision( delivery: delivery, cause: "ci", provider: "codex", status: "completed", summary: "second" )
-
-	revisions = @ledger.revisions_for_delivery( delivery_id: delivery.id )
-	assert_equal 2, revisions.length
-	assert_equal 1, revisions.first.number
-	assert_equal 2, revisions.last.number
-	assert_equal "first", revisions.first.summary
-	assert_equal "second", revisions.last.summary
-end
-```
-
-- [ ] **Step 10: Write test for constant agreement**
-
-```ruby
-def test_active_delivery_states_matches_delivery_constant
-	assert_equal Carson::Delivery::ACTIVE_STATES, Carson::Ledger::ACTIVE_DELIVERY_STATES,
-		"Ledger and Delivery active-state definitions must agree"
-end
-```
-
-- [ ] **Step 11: Run all ledger tests**
+- [ ] **Step 2: Run all ledger tests**
 
 ```bash
 ruby -Ilib -Itest test/ledger_test.rb
@@ -358,21 +289,20 @@ ruby -Ilib -Itest test/ledger_test.rb
 
 Expected: all pass.
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add lib/carson/ledger.rb test/ledger_test.rb
-git commit -m "test: add Ledger unit tests for revision recording and retrieval
+git add test/ledger_test.rb
+git commit -m "test: add Ledger unit tests for revision recording and active filtering
 
 Covers record_revision (numbering, finished_at, counter bump),
-revisions_for_delivery ordering, and constant agreement with Delivery.
-Also fixes inconsistent indentation in upsert_delivery and
-supersede_branch!."
+revisions_for_delivery ordering, and behavioural verification that
+active_deliveries returns exactly the states Delivery considers active."
 ```
 
 ---
 
-## Task 6: Add govern reconciliation and revision tests
+## Task 4: Add govern reconciliation tests
 
 **Files:**
 - Modify: `test/runtime_govern_test.rb`
@@ -402,22 +332,14 @@ def test_govern_reconciles_merged_pr_as_integrated
 end
 ```
 
-- [ ] **Step 2: Run test**
-
-```bash
-ruby -Ilib -Itest test/runtime_govern_test.rb --name test_govern_reconciles_merged_pr_as_integrated
-```
-
-Expected: PASS.
-
-- [ ] **Step 3: Write test for reconcile — PR CLOSED**
+- [ ] **Step 2: Write test for reconcile — PR CLOSED**
 
 ```ruby
 def test_govern_reconciles_closed_pr_as_failed
 	runtime, repo_root = build_runtime( verbose: false )
 	init_git_repo( repo_root )
 	create_feature_branch( repo_root, "feature/closed" )
-	create_delivery(
+	delivery = create_delivery(
 		runtime: runtime, repo_root: repo_root,
 		branch_name: "feature/closed", status: "queued",
 		summary: "awaiting integration"
@@ -426,14 +348,14 @@ def test_govern_reconciles_closed_pr_as_failed
 
 	result = runtime.govern!( dry_run: true )
 	assert_equal Carson::Runtime::EXIT_OK, result
-	row = delivery_row( runtime: runtime, id: 1 )
+	row = delivery_row( runtime: runtime, id: delivery.id )
 	assert_equal "failed", row.fetch( "status" )
 	assert_includes row.fetch( "summary" ), "closed without integration"
 	destroy_runtime_repo( repo_root: repo_root )
 end
 ```
 
-- [ ] **Step 4: Write test for reconcile — head advanced supersession**
+- [ ] **Step 3: Write test for reconcile — head advanced supersession**
 
 ```ruby
 def test_govern_reconciles_advanced_head_as_superseded
@@ -462,7 +384,7 @@ def test_govern_reconciles_advanced_head_as_superseded
 end
 ```
 
-- [ ] **Step 5: Write test for revise — no agent provider escalates**
+- [ ] **Step 4: Write test for revise — no agent provider escalates**
 
 ```ruby
 def test_govern_escalates_when_no_agent_provider
@@ -486,7 +408,7 @@ def test_govern_escalates_when_no_agent_provider
 end
 ```
 
-- [ ] **Step 6: Run all govern tests**
+- [ ] **Step 5: Run all govern tests**
 
 ```bash
 ruby -Ilib -Itest test/runtime_govern_test.rb
@@ -494,7 +416,7 @@ ruby -Ilib -Itest test/runtime_govern_test.rb
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add test/runtime_govern_test.rb
@@ -507,48 +429,72 @@ previously stubbed out entirely."
 
 ---
 
-## Task 7: Add deliver error path tests
+## Task 5: Add deliver error path tests at adapter boundary
 
 **Files:**
 - Modify: `test/runtime_deliver_test.rb`
 
-- [ ] **Step 1: Write test for push failure**
+The existing deliver tests use a mock `gh` binary (the right approach for gh interactions). For push failure, we stub `git_run` at the adapter boundary — the same layer Carson uses internally — rather than replacing `push_branch!` which would skip the actual error-handling logic in `push_branch!` (lines 147-161) and `force_push_with_lease!` (lines 164-183).
+
+- [ ] **Step 1: Write test for push failure with recovery message**
 
 Add to `RuntimeDeliverTest`:
 
 ```ruby
-def test_deliver_reports_push_failure
+def test_deliver_reports_push_failure_with_recovery
 	runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 	init_git_repo_with_remote( repo_root )
 	create_feature_branch( repo_root, "feature/push-fail" )
 	stub_ready_assessment( runtime )
 
-	# Stub push to fail by making remote unreachable
-	runtime.define_singleton_method( :push_branch! ) do |remote:, branch:, result:|
-		result[ :error ] = "failed to push"
-		result[ :recovery ] = "git fetch #{remote} #{branch} && carson deliver"
-		Carson::Runtime::EXIT_ERROR
+	# Stub git_run at the adapter boundary to simulate push rejection
+	original_git_run = runtime.method( :git_run )
+	runtime.define_singleton_method( :git_run ) do |*args|
+		if args.include?( "push" )
+			[ "", "fatal: could not push\n", false, 1 ]
+		else
+			original_git_run.call( *args )
+		end
 	end
 
 	result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 	assert_equal Carson::Runtime::EXIT_ERROR, result
 	output = output_string( runtime )
-	assert_includes output, "failed to push"
+	assert_includes output, "could not push"
 	FileUtils.remove_entry( tmp_dir )
 end
 ```
 
-- [ ] **Step 2: Write test for PR creation failure**
+- [ ] **Step 2: Write test for PR creation failure with recovery**
 
 ```ruby
-def test_deliver_reports_pr_creation_failure
+def test_deliver_reports_pr_creation_failure_with_recovery
+	runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh_failing_create
+	init_git_repo_with_remote( repo_root )
+	create_feature_branch( repo_root, "feature/no-pr" )
+	stub_ready_assessment( runtime )
+
+	result = with_env( "PATH" => mock_path ) { runtime.deliver! }
+	assert_equal Carson::Runtime::EXIT_ERROR, result
+	output = output_string( runtime )
+	assert_includes output, "authentication required"
+	assert_includes output, "gh pr create"
+	FileUtils.remove_entry( tmp_dir )
+end
+```
+
+- [ ] **Step 3: Add the mock helper for failing PR creation**
+
+Add to the private section of `RuntimeDeliverTest`:
+
+```ruby
+def build_runtime_with_mock_gh_failing_create
 	tmp_dir = Dir.mktmpdir( "carson-deliver-test", carson_tmp_root )
 	repo_root = File.join( tmp_dir, "repo" )
 	FileUtils.mkdir_p( repo_root )
 
 	mock_bin = File.join( tmp_dir, "mock-bin" )
 	FileUtils.mkdir_p( mock_bin )
-	# gh pr view fails (no existing PR) and gh pr create also fails
 	File.write( File.join( mock_bin, "gh" ), <<~BASH )
 		#!/usr/bin/env bash
 		if [[ "$1" == "pr" && "$2" == "view" ]]; then
@@ -556,7 +502,7 @@ def test_deliver_reports_pr_creation_failure
 			exit 1
 		fi
 		if [[ "$1" == "pr" && "$2" == "create" ]]; then
-			echo "error creating PR" >&2
+			echo "authentication required" >&2
 			exit 1
 		fi
 		if [[ "$1" == "--version" ]]; then
@@ -578,18 +524,11 @@ def test_deliver_reports_pr_creation_failure
 			output: output, error: error, verbose: false
 		)
 	end
-
-	init_git_repo_with_remote( repo_root )
-	create_feature_branch( repo_root, "feature/no-pr" )
-	stub_ready_assessment( runtime )
-
-	result = with_env( "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) { runtime.deliver! }
-	assert_equal Carson::Runtime::EXIT_ERROR, result
-	FileUtils.remove_entry( tmp_dir )
+	[ runtime, repo_root, "#{mock_bin}:#{ENV.fetch( 'PATH' )}", tmp_dir ]
 end
 ```
 
-- [ ] **Step 3: Run all deliver tests**
+- [ ] **Step 4: Run all deliver tests**
 
 ```bash
 ruby -Ilib -Itest test/runtime_deliver_test.rb
@@ -597,19 +536,85 @@ ruby -Ilib -Itest test/runtime_deliver_test.rb
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add test/runtime_deliver_test.rb
-git commit -m "test: cover deliver error paths for push and PR creation failure
+git commit -m "test: cover deliver error paths at adapter boundary
 
-Verifies that push failure sets error/recovery in result and that
-PR creation failure returns EXIT_ERROR."
+Push failure test stubs git_run to return non-zero exit, exercising
+push_branch!'s actual stderr handling and error reporting.
+PR creation failure test uses a mock gh binary that rejects pr create,
+exercising create_pr!'s recovery message construction."
 ```
 
 ---
 
-## Task 8: Run full suite and deliver
+## Task 6: Housekeeping (separate commit)
+
+**Files:**
+- Modify: `lib/carson/ledger.rb:9,78,286-295`
+- Modify: `lib/carson/runtime/govern.rb:84`
+
+- [ ] **Step 1: Deduplicate ACTIVE_STATES constant**
+
+Change line 9 of `lib/carson/ledger.rb` from:
+
+```ruby
+ACTIVE_DELIVERY_STATES = %w[preparing gated queued integrating escalated].freeze
+```
+
+to:
+
+```ruby
+ACTIVE_DELIVERY_STATES = Delivery::ACTIVE_STATES
+```
+
+- [ ] **Step 2: Fix indentation — upsert_delivery `if row` block**
+
+Align the `if row` block at line 78 to the same level as the surrounding `with_database` block body.
+
+- [ ] **Step 3: Fix indentation — `supersede_branch!` private method**
+
+Align `supersede_branch!` (lines 286-295) to two tabs from module scope, matching the other private methods.
+
+- [ ] **Step 4: Fix "delivery" pluralisation**
+
+Change line 84 of `lib/carson/runtime/govern.rb` from:
+
+```ruby
+puts_line "#{repository.name}: #{deliveries.length} active deliver#{plural_suffix( count: deliveries.length )}"
+```
+
+to:
+
+```ruby
+puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}"
+```
+
+- [ ] **Step 5: Run full test suite**
+
+```bash
+ruby -Ilib -Itest -e "Dir.glob('test/**/*_test.rb').each { |f| require File.expand_path(f) }"
+```
+
+Expected: all pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/carson/ledger.rb lib/carson/runtime/govern.rb
+git commit -m "chore: deduplicate active-state constant, fix indentation and pluralisation
+
+Ledger now references Delivery::ACTIVE_STATES instead of maintaining
+its own copy. Fixes inconsistent indentation in upsert_delivery and
+supersede_branch!. Corrects 'deliver/delivers' to 'delivery/deliveries'
+in govern output."
+```
+
+---
+
+## Task 7: Run full suite and deliver
 
 - [ ] **Step 1: Run full test suite**
 
