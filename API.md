@@ -65,6 +65,8 @@ After a live integration attempt, govern reports the actual outcome. Failed merg
 
 After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs stay held at gate with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash policy.
 
+After a successful govern merge, Carson runs the same cleanup path as `housekeep`: sync, reap safe worktrees, then prune.
+
 ### Review commands
 
 | Command | Purpose |
