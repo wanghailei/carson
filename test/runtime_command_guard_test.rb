@@ -294,33 +294,19 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
-	def test_command_guard_allows_gh_pr_mention_in_commit_message
+	def test_command_guard_allows_gh_pr_mention_in_commit_message_inside_worktree
 		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
 		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+		worktree_path = create_worktree( repo_root, "feature/commit-message-mention" )
 
-		normalised = File.realpath( repo_root )
-		carson_dir = File.join( repo_root, ".carson" )
-		FileUtils.mkdir_p( carson_dir )
-		File.write(
-			File.join( carson_dir, "config.json" ),
-			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
+		_stdout, _stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git commit -m 'Document gh pr create hook'",
+			chdir: worktree_path
 		)
 
-		guard_path = File.join( tool_root_path, "hooks", "command-guard" )
-		# The command contains "gh pr create" inside a commit message string — not an actual command.
-		input = JSON.generate( {
-			tool_name: "Bash",
-			tool_input: { command: "git commit -m 'Document gh pr create hook'" }
-		} )
-
-		stdout, stderr, status = Open3.capture3(
-			{ "HOME" => repo_root },
-			"bash", guard_path,
-			stdin_data: input,
-			chdir: repo_root
-		)
-
-		assert status.success?, "command-guard should not block gh pr mentions inside commit messages"
+		assert status.success?, "command-guard should not block gh pr mentions inside commit messages when the commit itself is allowed"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
@@ -357,10 +343,161 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
+	def test_command_guard_blocks_gh_pr_create_in_governed_worktree
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+		worktree_path = create_worktree( repo_root, "feature/guard-worktree" )
+
+		_stdout, stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "gh pr create --title 'test'",
+			chdir: worktree_path
+		)
+
+		refute status.success?, "command-guard should block raw gh pr create inside governed worktree"
+		assert_includes stderr, "carson deliver"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_git_worktree_add_in_governed_repo
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+
+		_stdout, stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git worktree add ../wt -b feature main"
+		)
+
+		refute status.success?, "command-guard should block raw git worktree add in governed repo"
+		assert_includes stderr, "carson worktree"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_git_worktree_remove_in_governed_repo
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+
+		_stdout, stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git worktree remove ../wt"
+		)
+
+		refute status.success?, "command-guard should block raw git worktree remove in governed repo"
+		assert_includes stderr, "carson worktree"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_git_pull_rebase_in_governed_repo
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+
+		_stdout, stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git pull --rebase github main"
+		)
+
+		refute status.success?, "command-guard should block raw git pull --rebase in governed repo"
+		assert_includes stderr, "carson sync"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_git_add_on_main_worktree
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+
+		_stdout, stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git add README.md"
+		)
+
+		refute status.success?, "command-guard should block git add on governed main worktree"
+		assert_includes stderr, "Main working tree is read-only"
+		assert_includes stderr, "carson worktree create"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_blocks_git_commit_on_main_worktree
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+
+		_stdout, stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git commit -m 'test'"
+		)
+
+		refute status.success?, "command-guard should block git commit on governed main worktree"
+		assert_includes stderr, "Main working tree is read-only"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_allows_git_add_and_commit_in_feature_worktree
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+		worktree_path = create_worktree( repo_root, "feature/allowed-worktree" )
+
+		_stdout, _stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "git add README.md && git commit -m 'test'",
+			chdir: worktree_path
+		)
+
+		assert status.success?, "command-guard should allow git add and git commit inside non-main worktree"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
 private
 
 	def tool_root_path
 		File.expand_path( "../..", __FILE__ )
+	end
+
+	def write_governed_config( repo_root, main_branch: "main", governed_paths: [ File.realpath( repo_root ) ] )
+		carson_dir = File.join( repo_root, ".carson" )
+		FileUtils.mkdir_p( carson_dir )
+		File.write(
+			File.join( carson_dir, "config.json" ),
+			JSON.generate(
+				{
+					"git" => { "main_branch" => main_branch },
+					"govern" => { "repos" => governed_paths }
+				}
+			)
+		)
+	end
+
+	def run_command_guard( repo_root:, command:, chdir: repo_root )
+		guard_path = File.join( tool_root_path, "hooks", "command-guard" )
+		input = JSON.generate( {
+			tool_name: "Bash",
+			tool_input: { command: command }
+		} )
+
+		Open3.capture3(
+			{ "HOME" => repo_root },
+			"bash", guard_path,
+			stdin_data: input,
+			chdir: chdir
+		)
+	end
+
+	def create_worktree( repo_root, branch_name )
+		worktree_path = File.join( repo_root, ".claude", "worktrees", File.basename( branch_name ) )
+		system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_path, out: File::NULL, err: File::NULL )
+		worktree_path
 	end
 
 	def init_git_repo( repo_root )
