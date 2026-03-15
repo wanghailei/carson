@@ -120,8 +120,10 @@ class RuntimeDeliverTest < Minitest::Test
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
-		assert_includes output, "PR: #99"
-		assert_includes output, "Delivery: queued"
+		assert_includes output, "PR #99"
+		assert_includes output, "Delivery #"
+		assert_includes output, "feature/queued → main"
+		assert_includes output, "All clear"
 
 		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/queued" )
 		refute_nil delivery
