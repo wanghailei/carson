@@ -258,19 +258,19 @@ module Carson
 					puts_line "Delivery ##{delivery_id}  #{branch} → #{main}"
 				end
 				if result[ :commit ]
-					puts_line "Commit: #{result.dig( :commit, :summary )}"
+					puts_line "Committed: #{result.dig( :commit, :summary )}"
 				end
 				puts_line "PR ##{result[ :pr_number ]}  #{result[ :pr_url ]}" if result[ :pr_number ]
 				if result[ :delivery ]
 					status = result.dig( :delivery, :status )
 					summary = result[ :summary ]
 					if status == "gated"
-						puts_line "Held at gate — #{summary}"
+						puts_line "Held at gate — #{summary}."
 					else
-						puts_line "All clear — #{summary}"
+						puts_line "All clear — #{summary}."
 					end
 				end
-				puts_line "Next: #{result[ :next_step ]}" if result[ :next_step ]
+				puts_line "Check back with #{result[ :next_step ]}" if result[ :next_step ]
 			end
 
 			# Pushes the branch to the remote with tracking.
