@@ -41,6 +41,34 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_dry_run_requires_refresh_for_freshness_blocked_delivery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/refresh-required" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/refresh-required",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		blocked_freshness = freshness_assessment( status: :behind, remote_ref: "origin/main" )
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN" } }
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
+			blocked_freshness
+		end
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "would require refresh (dry run)"
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "gated", row.fetch( "status" )
+		assert_equal "freshness", row.fetch( "cause" )
+		assert_includes row.fetch( "summary" ), "behind origin/main"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_summary_reports_held_at_gate_when_integration_fails
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
@@ -158,6 +186,37 @@ class RuntimeGovernTest < Minitest::Test
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
 		assert_equal "integrated into main", row.fetch( "summary" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_rechecks_freshness_before_merge
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/freshness-recheck" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/freshness-recheck",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		stub_reconciliation( runtime, delivery: delivery )
+		blocked_freshness = freshness_assessment( status: :behind, remote_ref: "origin/main" )
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
+			blocked_freshness
+		end
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			raise "merge should not run when freshness blocks integration"
+		end
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "refresh required"
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "gated", row.fetch( "status" )
+		assert_equal "freshness", row.fetch( "cause" )
+		assert_includes row.fetch( "summary" ), "behind origin/main"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -491,6 +550,11 @@ private
 		File.write( readme, "# Test" )
 		system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+
+		bare_remote = "#{repo_root}-remote.git"
+		system( "git", "init", "--bare", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "remote", "add", "origin", bare_remote, out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
 	end
 
 	def create_feature_branch( repo_root, branch_name )
@@ -507,5 +571,17 @@ private
 
 	def output_string( runtime )
 		runtime.instance_variable_get( :@output ).string
+	end
+
+	def freshness_assessment( status:, remote_ref:, detail: nil )
+		assessment = {
+			ready: status == :fresh,
+			status: status,
+			reason: status == :fresh ? "freshness_fresh" : "freshness_#{status}",
+			summary: status == :fresh ? "verified freshness against #{remote_ref}" : "branch is behind #{remote_ref}",
+			remote_ref: remote_ref
+		}
+		assessment[ :detail ] = detail if detail
+		assessment
 	end
 end

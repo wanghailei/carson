@@ -25,7 +25,7 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson audit` | Evaluate governance status and generate report output. |
-| `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first, then Carson pushes, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, and syncs local `main`. Non-integrated exits report `Merge deferred` or `Merge blocked` with explicit handoff commands. |
+| `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first. Before push, Carson verifies the branch is fresh against the configured remote `main`; behind or unknown freshness blocks delivery without creating or refreshing a PR. If freshness is good, Carson pushes, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, and syncs local `main`. Non-integrated exits report `Merge deferred` or `Merge blocked` with explicit handoff commands. |
 | `carson recover --check NAME [--json]` | Run the exceptional governed recovery path when one governance-owned required check is already red on the default branch. Carson proves the named baseline failure, keeps every other gate intact, merges through the recovery path, and records a machine-readable audit event. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
@@ -66,7 +66,7 @@ Governed integration is fixed to `squash`. Non-squash `govern.merge.method` valu
 
 After a live integration attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
 
-After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash-only governed merge contract.
+After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary. `BEHIND` is treated as freshness failure: Carson blocks and requires a branch refresh before it will continue.
 
 In `--json` mode, `deliver` still suppresses human output. Every JSON result now includes `watch_window_seconds`, `waited_seconds`, and `merge_attempted`; deferred and blocked exits also include a `handoff` object with `reason`, `expectation`, and ordered `next_steps`.
 

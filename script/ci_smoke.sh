@@ -522,6 +522,15 @@ if [[ "$govern_output" != *"dry_run"* ]]; then
 fi
 echo "PASS: govern --dry-run --json produces structured output"
 
+# Govern with mock PR data: recreate a fresh active delivery first so the dry-run
+# path is assessing a current branch, not the stale smoke delivery from earlier.
+git switch -c feature/deliver-smoke >/dev/null
+printf "govern ready smoke\n" > govern_ready_smoke.txt
+git add govern_ready_smoke.txt
+git -c core.hooksPath=.git/hooks commit -m "govern ready smoke" >/dev/null
+expect_exit 0 "deliver refreshes active delivery for govern ready smoke" run_carson_with_mock_gh deliver
+git switch main >/dev/null
+
 # Govern with mock PR data: ready PR in dry-run.
 cat > "$mock_bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
@@ -533,6 +542,18 @@ fi
 if [[ "${1:-}" == "pr" && "${2:-}" == "list" ]]; then
 	cat <<'JSON'
 [{"number":42,"title":"Ready PR","headRefName":"feature/ready","url":"https://github.com/mock/mock-repo/pull/42","statusCheckRollup":[{"state":"SUCCESS","conclusion":"SUCCESS"}],"reviewDecision":"APPROVED"}]
+	JSON
+	exit 0
+fi
+if [[ "${1:-}" == "pr" && "${2:-}" == "checks" ]]; then
+	cat <<'JSON'
+[{"name":"CI","bucket":"pass"}]
+JSON
+	exit 0
+fi
+if [[ "${1:-}" == "pr" && "${2:-}" == "view" ]]; then
+	cat <<'JSON'
+{"number":77,"url":"https://github.com/mock/mock-repo/pull/77","state":"OPEN","isDraft":false,"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE"}
 JSON
 	exit 0
 fi
