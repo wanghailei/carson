@@ -41,6 +41,7 @@ Within the existing bounded wait budget, Carson should:
 This spec does not define:
 
 - a new CLI command,
+- a new config key,
 - a new persisted delivery state,
 - a broad `carson status` redesign,
 - a long-running watch mode inside `deliver`,
@@ -61,6 +62,8 @@ Carson uses `govern.check_wait` as the total settle budget.
 ### Poll interval
 
 Carson uses `review.poll_seconds` as the reassessment interval.
+
+This spec deliberately reuses the existing review poll interval. It does not introduce a delivery-specific poll setting.
 
 ### End conditions
 
@@ -92,6 +95,7 @@ Carson exits immediately as blocked for these cases:
 - CI failing,
 - review changes requested,
 - review gate error,
+- draft PR,
 - PR closed without integration,
 - merge conflict,
 - repository policy block.
@@ -124,11 +128,17 @@ These states remain eligible for integration if CI and review also pass:
 - `mergeStateStatus = CLEAN`
 - `mergeStateStatus = BEHIND`
 
-`BEHIND` remains eligible under Carson's current squash policy, but the summary must say that the branch is behind base.
+`BEHIND` remains eligible because governed integration is fixed to `squash` in Carson today.
+
+If Carson later supports a non-squash governed merge method, this rule must be revisited before implementation changes.
+
+The summary must say that the branch is behind base.
 
 ### Unsettled mergeability
 
-If CI and review pass but GitHub mergeability is still unset, unknown, or transiently not ready, Carson may attempt merge and continue reassessing within the remaining settle budget.
+If CI and review pass but GitHub mergeability is still unset, unknown, or transiently not ready, Carson must wait at least one reassessment interval before the first merge attempt.
+
+After one successful reassessment without a hard blocker, Carson must make a probe merge attempt even if mergeability remains unknown, subject to the merge-attempt cap.
 
 ## Merge-attempt rules
 
@@ -136,9 +146,28 @@ If CI and review pass but GitHub mergeability is still unset, unknown, or transi
 
 Carson must track whether a merge was attempted during the current invocation.
 
+### Attempt cap
+
+Carson must make at most 3 merge attempts per invocation, including the first ordinary or probe attempt.
+
 ### Retry rule
 
-If a merge attempt fails without a known hard-block reason and time remains in the settle budget, Carson reassesses and retries within the same invocation.
+If a merge attempt fails without a known hard-block reason, Carson reassesses and retries within the same invocation only when both of these are true:
+
+- time remains in the settle budget,
+- the merge-attempt cap is not exhausted.
+
+Retries happen on the next reassessment interval. Carson does not spin in a tight merge loop.
+
+### API failure handling
+
+Failures from PR-state, CI, or review queries are transient within the settle budget.
+
+Carson retries them on the next reassessment interval and does not count them as merge attempts.
+
+If no successful reassessment occurs before the settle budget expires, Carson exits as deferred with an explicit assessment-unavailable handoff reason.
+
+Unknown merge-command failures are also treated as transient unless they match a known hard-block reason. They remain subject to the same settle budget and merge-attempt cap.
 
 ### No hidden long-running watch
 
@@ -209,6 +238,12 @@ Keep the existing JSON shape compatible and add these fields:
 - `handoff.expectation`: plain-language explanation of what happens next
 - `handoff.next_steps`: ordered command list
 
+The flat fields remain present on every JSON result.
+
+The nested `handoff` object is present only on deferred and blocked exits. It is omitted on integrated exits.
+
+`--json` continues to suppress human output. Human-only watching and retrying status lines do not appear in JSON mode.
+
 ## Persistence rule
 
 Do not add a new ledger state for settling.
@@ -223,6 +258,9 @@ This spec is satisfied when all of the following are true:
 - a second manual `carson deliver` is not needed for the short-settling case,
 - hard blockers still stop promptly and truthfully,
 - deferred exits clearly distinguish timeout from hard block,
+- draft PRs are treated as blocked, not as settle-wait cases,
+- merge attempts never exceed 3 per invocation,
+- transient GitHub API failures within the settle budget do not surface as false hard blocks,
 - human output states whether merge was attempted,
 - JSON output includes bounded-wait and handoff fields,
 - docs describe `deliver` as a bounded settle loop rather than a single merge attempt.
