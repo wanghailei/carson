@@ -18,12 +18,12 @@ module Carson
 			def govern_cycle!( dry_run:, json_output: )
 				repositories = governed_repo_paths
 				repositories = [ repository_record.path ] if repositories.empty?
-				print_header "Governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}"
+				print_header "Governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}" unless json_output
 
 				report = {
 					cycle_at: Time.now.utc.iso8601,
 					dry_run: dry_run,
-					repositories: repositories.map { |path| govern_repo!( repo_path: path, dry_run: dry_run ) }
+					repositories: repositories.map { |path| govern_repo!( repo_path: path, dry_run: dry_run, silent: json_output ) }
 				}
 
 				if json_output
@@ -62,7 +62,7 @@ module Carson
 				end.compact
 			end
 
-			def govern_repo!( repo_path:, dry_run: )
+			def govern_repo!( repo_path:, dry_run:, silent: false )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
 				repository = Repository.new( path: repo_path, runtime: scoped_runtime )
 				deliveries = scoped_runtime.ledger.active_deliveries( repo_path: repo_path )
@@ -75,11 +75,11 @@ module Carson
 				}
 
 				if deliveries.empty?
-					puts_line "#{repository.name}: no active deliveries"
+					puts_line "#{repository.name}: no active deliveries" unless silent
 					return repo_report
 				end
 
-				puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}"
+				puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}" unless silent
 
 				reconciled = deliveries.map { |item| scoped_runtime.send( :reconcile_delivery!, delivery: item ) }
 				next_to_integrate = reconciled.find( &:ready? )&.key
@@ -122,7 +122,10 @@ module Carson
 						delivery: delivery,
 						status: "integrated",
 						integrated_at: Time.now.utc.iso8601,
-						summary: "integrated into #{config.main_branch}"
+						summary: "integrated into #{config.main_branch}",
+						pull_request_state: "MERGED",
+						pull_request_draft: false,
+						pull_request_merged_at: pr_state[ "mergedAt" ]
 					)
 				end
 
@@ -131,7 +134,10 @@ module Carson
 						delivery: delivery,
 						status: "failed",
 						cause: "policy",
-						summary: "pull request closed without integration"
+						summary: "pull request closed without integration",
+						pull_request_state: "CLOSED",
+						pull_request_draft: pr_state[ "isDraft" ],
+						pull_request_merged_at: pr_state[ "mergedAt" ]
 					)
 				end
 
@@ -160,6 +166,7 @@ module Carson
 							report[ :status ] = updated.status
 							report[ :cause ] = updated.cause
 							report[ :summary ] = updated.summary
+							report[ :merge_proof ] = merge_proof_payload( proof: updated.merge_proof ) if updated.integrated? && updated.merge_proof
 						end
 						return report
 					end
@@ -234,10 +241,24 @@ module Carson
 						delivery: prepared,
 						status: "integrated",
 						integrated_at: Time.now.utc.iso8601,
-						summary: "integrated into #{config.main_branch}"
+						summary: "integrated into #{config.main_branch}",
+						pull_request_state: "MERGED",
+						pull_request_draft: false,
+						pull_request_merged_at: Time.now.utc.iso8601
 					)
-					housekeep_repo!( repo_path: repo_path )
-					integrated
+					housekeep_result = housekeep_repo!( repo_path: repo_path )
+					proof = if housekeep_result.is_a?( Hash ) && housekeep_result[ :sync_status ] != "ok"
+						merge_proof_unavailable(
+							main_ref: config.main_branch,
+							summary: "proof unavailable — local #{config.main_branch} sync did not complete."
+						)
+					else
+						merge_proof_for_branch( branch: integrated.branch, main_ref: config.main_branch )
+					end
+					ledger.update_delivery(
+						delivery: integrated,
+						merge_proof: proof
+					)
 				else
 					ledger.update_delivery(
 						delivery: prepared,
@@ -469,6 +490,7 @@ module Carson
 							action_text = format_govern_action( status: delivery[ :status ], action: delivery[ :action ], cause: delivery[ :cause ] )
 							puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]} — #{action_text}"
 							puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
+							puts_line "  Merge proof: #{delivery.dig( :merge_proof, :summary )}" if delivery[ :merge_proof ]
 						end
 					end
 				end

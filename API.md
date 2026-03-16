@@ -25,14 +25,14 @@ carson <command> [subcommand] [arguments]
 | Command | Purpose |
 |---|---|
 | `carson audit` | Evaluate governance status and generate report output. |
-| `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first. Before push, Carson verifies the branch is fresh against the configured remote `main`; behind or unknown freshness blocks delivery without creating or refreshing a PR. If freshness is good, Carson pushes, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, and syncs local `main`. Non-integrated exits report `Merge deferred` or `Merge blocked` with explicit handoff commands. |
+| `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first. Before push, Carson verifies the branch is fresh against the configured remote `main`; behind or unknown freshness blocks delivery without creating or refreshing a PR. If freshness is good, Carson pushes, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, syncs local `main`, and reports merge proof for the delivered branch. Non-integrated exits report `Merge deferred` or `Merge blocked` with explicit handoff commands. |
 | `carson recover --check NAME [--json]` | Run the exceptional governed recovery path when one governance-owned required check is already red on the default branch. Carson proves the named baseline failure, keeps every other gate intact, merges through the recovery path, and records a machine-readable audit event. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap worktrees with strong abandonment evidence, reconcile integrated delivery worktree records from the ledger, and prune stale branches. Safe cleanup still runs when sync is blocked. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
-| `carson status [--json]` | Show repository delivery state, including the next queued delivery and blocked-delivery summaries. Default output is Markdown/text; `--json` is the explicit machine contract. |
+| `carson status [--json]` | Show repository delivery state, including the next queued delivery and blocked-delivery summaries. For the current branch, status also reports Carson's last observed PR state and merge proof when the branch has a Carson delivery record. Default output is Markdown/text; `--json` is the explicit machine contract. |
 | `carson abandon <pr_number\|pr_url\|branch> [--json]` | Close abandoned delivery work and clean up its PR, worktree, and branch when safe. |
 | `carson worktree create <name>` | Create an isolated worktree and branch for a new stream of work. |
 | `carson worktree list [--json]` | Show every registered worktree with PR state and Carson's cleanup recommendation. |
@@ -58,7 +58,7 @@ All batch commands operate across every governed repository registered in `gover
 
 | Command | Purpose |
 |---|---|
-| `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level delivery oversight: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. |
+| `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level delivery oversight: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. Live integrated rows include merge proof. |
 
 `--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
@@ -68,7 +68,32 @@ After a live integration attempt, govern reports the actual outcome. Failed merg
 
 After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary. `BEHIND` is treated as freshness failure: Carson blocks and requires a branch refresh before it will continue.
 
-In `--json` mode, `deliver` still suppresses human output. Every JSON result now includes `watch_window_seconds`, `waited_seconds`, and `merge_attempted`; deferred and blocked exits also include a `handoff` object with `reason`, `expectation`, and ordered `next_steps`.
+In `--json` mode, `deliver` still suppresses human output. Every JSON result now includes `watch_window_seconds`, `waited_seconds`, and `merge_attempted`; integrated exits also include a `merge_proof` object; deferred and blocked exits also include a `handoff` object with `reason`, `expectation`, and ordered `next_steps`.
+
+`status --json` extends the `branch` object with:
+
+```json
+{
+  "pull_request": {
+    "number": 299,
+    "url": "https://github.com/example/repo/pull/299",
+    "state": "MERGED",
+    "draft": false,
+    "merged_at": "2026-03-16T09:00:00Z",
+    "summary": "PR #299 is merged."
+  },
+  "merge_proof": {
+    "applicable": true,
+    "proven": true,
+    "basis": "content_identical",
+    "summary": "proven on main — 6 changed files already match main.",
+    "main_branch": "main",
+    "changed_files_count": 6
+  }
+}
+```
+
+On `main`, `branch.merge_proof` is still present with `basis: "not_applicable"`. On non-main branches with no Carson delivery record, `branch.pull_request` and `branch.merge_proof` are `null`. `status --all` remains summary-only in v1 and does not include per-repo merge proof.
 
 After a successful govern merge, Carson runs the same cleanup path as `housekeep`: sync, reap safe worktrees, then prune.
 

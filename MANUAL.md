@@ -157,7 +157,7 @@ On the governed main working tree, Carson blocks raw `git add` / `git commit` an
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Before any push, Carson verifies the branch is fresh against the configured remote `main`. If freshness is behind or unknown, delivery stops immediately and no PR is created or refreshed. If freshness is good, Carson pushes the branch, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when the path is clear, and syncs local `main`. If the window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff that states whether merge was attempted and what to run next. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
+**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Before any push, Carson verifies the branch is fresh against the configured remote `main`. If freshness is behind or unknown, delivery stops immediately and no PR is created or refreshed. If freshness is good, Carson pushes the branch, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when the path is clear, syncs local `main`, and then reports merge proof for the delivered branch. If the window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff that states whether merge was attempted and what to run next. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
@@ -166,7 +166,7 @@ carson deliver --commit "fix: describe this delivery"
 # Output: merged into main, or an explicit deferred/blocked handoff
 ```
 
-**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, Carson tells you whether the PR was deferred or blocked, whether merge was attempted, and which command to run next. `status` still shows the current branch, the next queued delivery, and blocked-delivery summaries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
+**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, Carson tells you whether the PR was deferred or blocked, whether merge was attempted, and which command to run next. `status` still shows the current branch, the next queued delivery, and blocked-delivery summaries for the repository. When the current branch has a Carson delivery record, `status` also shows Carson's last observed PR state and merge proof. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
 
 ```bash
 carson status
@@ -325,7 +325,7 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 `carson govern` dispatches coding agents (Codex or Claude) when an active delivery is blocked by CI, review, or policy feedback. The agent receives the failure context and attempts a revision. If the agent succeeds, the delivery re-enters the governance pipeline. If it fails repeatedly or times out, the delivery is escalated for human attention.
 
-After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
+After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated. Successful integrations also report merge proof for the landed branch.
 
 After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary. `BEHIND` is treated as a freshness failure, not a harmless squash detail: Carson blocks and requires a branch refresh before it will continue.
 

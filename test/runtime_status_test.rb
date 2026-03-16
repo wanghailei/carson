@@ -41,11 +41,13 @@ class RuntimeStatusTest < Minitest::Test
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal Carson::VERSION, data.fetch( "version" )
 		assert_equal "main", data.dig( "branch", "name" )
+		assert_equal false, data.dig( "branch", "merge_proof", "applicable" )
+		assert_equal "not_applicable", data.dig( "branch", "merge_proof", "basis" )
 		assert_equal [], data.fetch( "branches" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_status_json_lists_active_deliveries_from_ledger
+	def test_status_json_lists_active_deliveries_from_ledger_and_current_branch_proof
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/status" )
@@ -60,16 +62,77 @@ class RuntimeStatusTest < Minitest::Test
 			pr_url: "https://github.com/test/repo/pull/12",
 			status: "queued",
 			summary: "ready to integrate into main",
-			cause: nil
+			cause: nil,
+			pull_request_state: "OPEN",
+			pull_request_draft: false,
+			merge_proof: {
+				applicable: true,
+				proven: false,
+				basis: "content_differs",
+				summary: "not proven on main — 1 changed file still differs from main.",
+				main_branch: "main",
+				changed_files_count: 1
+			}
 		)
 
 		runtime.status!( json_output: true )
 		data = JSON.parse( output_string( runtime ) )
+		assert_equal "feature/status", data.dig( "branch", "name" )
+		assert_equal 12, data.dig( "branch", "pull_request", "number" )
+		assert_equal "OPEN", data.dig( "branch", "pull_request", "state" )
+		assert_equal "not proven on main — 1 changed file still differs from main.", data.dig( "branch", "merge_proof", "summary" )
 		entry = data.fetch( "branches" ).find { |row| row.fetch( "branch" ) == delivery.branch }
 		refute_nil entry
 		assert_equal "queued", entry.fetch( "delivery_state" )
 		assert_equal 12, entry.fetch( "pr_number" )
 		assert_equal "ready to integrate into main", entry.fetch( "summary" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_status_skips_proof_for_untracked_feature_branch
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/untracked-status" )
+
+		runtime.status!( json_output: true )
+		data = JSON.parse( output_string( runtime ) )
+		assert_nil data.dig( "branch", "pull_request" )
+		assert_nil data.dig( "branch", "merge_proof" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_status_human_output_reports_current_branch_pull_request_and_merge_proof
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/status-human" )
+		repository = runtime.send( :repository_record )
+		runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/status-human",
+			head: runtime.send( :current_head ),
+			worktree_path: repo_root,
+			pr_number: 24,
+			pr_url: "https://github.com/test/repo/pull/24",
+			status: "integrated",
+			summary: "integrated into main",
+			cause: nil,
+			pull_request_state: "MERGED",
+			pull_request_draft: false,
+			pull_request_merged_at: Time.now.utc.iso8601,
+			merge_proof: {
+				applicable: true,
+				proven: true,
+				basis: "content_identical",
+				summary: "proven on main — 1 changed file already matches main.",
+				main_branch: "main",
+				changed_files_count: 1
+			}
+		)
+
+		runtime.status!
+		output = output_string( runtime )
+		assert_includes output, "PR #24 is merged."
+		assert_includes output, "Merge proof: proven on main — 1 changed file already matches main."
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

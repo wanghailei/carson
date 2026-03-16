@@ -116,7 +116,33 @@ class RuntimeGovernTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "integrated"
+		assert_includes output, "Merge proof: proven on main"
 		refute_includes output, "held at gate"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_json_reports_merge_proof_after_integration
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/merge-proof-json" )
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/merge-proof-json",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		stub_reconciliation( runtime, delivery: delivery )
+		stub_integration( runtime )
+
+		result = runtime.govern!( dry_run: false, json_output: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		row = data.fetch( "repositories" ).first.fetch( "deliveries" ).first
+		assert_equal "integrate", row.fetch( "action" )
+		assert_equal "integrated", row.fetch( "status" )
+		assert_equal true, row.dig( "merge_proof", "proven" )
+		assert_equal "content_identical", row.dig( "merge_proof", "basis" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -507,7 +533,17 @@ private
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK
 		end
-		runtime.define_singleton_method( :housekeep_repo! ) { |repo_path:| Carson::Runtime::EXIT_OK }
+		runtime.define_singleton_method( :housekeep_repo! ) { |repo_path:| { status: "ok", sync_status: "ok" } }
+		runtime.define_singleton_method( :merge_proof_for_branch ) do |branch:, main_ref:|
+			{
+				applicable: true,
+				proven: true,
+				basis: "content_identical",
+				summary: "proven on main — 1 changed file already matches #{main_ref}.",
+				main_branch: main_ref,
+				changed_files_count: 1
+			}
+		end
 	end
 
 	def create_delivery( runtime:, repo_root:, branch_name:, status:, summary:, cause: nil, revision_count: 0 )

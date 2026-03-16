@@ -18,7 +18,10 @@ module Carson
 		attr_reader :path
 
 		# Creates or refreshes a delivery for the same branch head.
-		def upsert_delivery( repository:, branch_name:, head:, worktree_path:, pr_number:, pr_url:, status:, summary:, cause: )
+		def upsert_delivery(
+			repository:, branch_name:, head:, worktree_path:, pr_number:, pr_url:, status:, summary:, cause:,
+			pull_request_state: nil, pull_request_draft: nil, pull_request_merged_at: nil, merge_proof: nil
+		)
 			timestamp = now_utc
 
 			with_state do |state|
@@ -45,6 +48,10 @@ module Carson
 					"status" => status,
 					"pr_number" => pr_number,
 					"pr_url" => pr_url,
+					"pull_request_state" => pull_request_state,
+					"pull_request_draft" => pull_request_draft,
+					"pull_request_merged_at" => pull_request_merged_at,
+					"merge_proof" => serialise_merge_proof( merge_proof: merge_proof ),
 					"cause" => cause,
 					"summary" => summary,
 					"created_at" => created_at,
@@ -66,6 +73,22 @@ module Carson
 				repo_paths.include?( data[ "repo_path" ] ) &&
 					data[ "branch_name" ] == branch_name &&
 					ACTIVE_DELIVERY_STATES.include?( data[ "status" ] )
+			end
+
+			return nil if candidates.empty?
+
+			key, data = candidates.max_by { |k, d| [ d[ "updated_at" ].to_s, delivery_sequence( data: d ), k ] }
+			build_delivery( key: key, data: data )
+		end
+
+		# Looks up the newest delivery for a branch across active and terminal states.
+		def latest_delivery( repo_path:, branch_name: )
+			state = load_state
+			repo_paths = repo_identity_paths( repo_path: repo_path )
+
+			candidates = state[ "deliveries" ].select do |_key, data|
+				repo_paths.include?( data[ "repo_path" ] ) &&
+					data[ "branch_name" ] == branch_name
 			end
 
 			return nil if candidates.empty?
@@ -106,6 +129,10 @@ module Carson
 			status: UNSET,
 			pr_number: UNSET,
 			pr_url: UNSET,
+			pull_request_state: UNSET,
+			pull_request_draft: UNSET,
+			pull_request_merged_at: UNSET,
+			merge_proof: UNSET,
 			cause: UNSET,
 			summary: UNSET,
 			worktree_path: UNSET,
@@ -118,6 +145,10 @@ module Carson
 				data[ "status" ] = status unless status.equal?( UNSET )
 				data[ "pr_number" ] = pr_number unless pr_number.equal?( UNSET )
 				data[ "pr_url" ] = pr_url unless pr_url.equal?( UNSET )
+				data[ "pull_request_state" ] = pull_request_state unless pull_request_state.equal?( UNSET )
+				data[ "pull_request_draft" ] = pull_request_draft unless pull_request_draft.equal?( UNSET )
+				data[ "pull_request_merged_at" ] = pull_request_merged_at unless pull_request_merged_at.equal?( UNSET )
+				data[ "merge_proof" ] = serialise_merge_proof( merge_proof: merge_proof ) unless merge_proof.equal?( UNSET )
 				data[ "cause" ] = cause unless cause.equal?( UNSET )
 				data[ "summary" ] = summary unless summary.equal?( UNSET )
 				data[ "worktree_path" ] = worktree_path unless worktree_path.equal?( UNSET )
@@ -214,6 +245,10 @@ module Carson
 				status: data.fetch( "status" ),
 				pull_request_number: data[ "pr_number" ],
 				pull_request_url: data[ "pr_url" ],
+				pull_request_state: data[ "pull_request_state" ],
+				pull_request_draft: data[ "pull_request_draft" ],
+				pull_request_merged_at: data[ "pull_request_merged_at" ],
+				merge_proof: deserialise_merge_proof( merge_proof: data[ "merge_proof" ] ),
 				revisions: revisions,
 				cause: data[ "cause" ],
 				summary: data[ "summary" ],
@@ -321,6 +356,10 @@ module Carson
 					"status" => row.fetch( "status" ),
 					"pr_number" => row.fetch( "pr_number" ),
 					"pr_url" => row.fetch( "pr_url" ),
+					"pull_request_state" => nil,
+					"pull_request_draft" => nil,
+					"pull_request_merged_at" => nil,
+					"merge_proof" => nil,
 					"cause" => row.fetch( "cause" ),
 					"summary" => row.fetch( "summary" ),
 					"created_at" => row.fetch( "created_at" ),
@@ -367,6 +406,7 @@ module Carson
 			sequence_counts = Hash.new( 0 )
 			deliveries.each_value do |data|
 				data[ "revisions" ] = Array( data[ "revisions" ] )
+				data[ "merge_proof" ] = serialise_merge_proof( merge_proof: data[ "merge_proof" ] ) if data.key?( "merge_proof" )
 				sequence = integer_or_nil( value: data[ "sequence" ] )
 				sequence_counts[ sequence ] += 1 unless sequence.nil? || sequence <= 0
 			end
@@ -509,6 +549,32 @@ module Carson
 			File.realpath( path )
 		rescue StandardError
 			nil
+		end
+
+		def serialise_merge_proof( merge_proof: )
+			return nil unless merge_proof.is_a?( Hash )
+
+			{
+				"applicable" => merge_proof[ :applicable ].nil? ? merge_proof[ "applicable" ] : merge_proof[ :applicable ],
+				"proven" => merge_proof[ :proven ].nil? ? merge_proof[ "proven" ] : merge_proof[ :proven ],
+				"basis" => merge_proof[ :basis ] || merge_proof[ "basis" ],
+				"summary" => merge_proof[ :summary ] || merge_proof[ "summary" ],
+				"main_branch" => merge_proof[ :main_branch ] || merge_proof[ "main_branch" ],
+				"changed_files_count" => ( merge_proof[ :changed_files_count ] || merge_proof[ "changed_files_count" ] || 0 ).to_i
+			}
+		end
+
+		def deserialise_merge_proof( merge_proof: )
+			return nil unless merge_proof.is_a?( Hash )
+
+			{
+				applicable: merge_proof[ "applicable" ],
+				proven: merge_proof[ "proven" ],
+				basis: merge_proof[ "basis" ],
+				summary: merge_proof[ "summary" ],
+				main_branch: merge_proof[ "main_branch" ],
+				changed_files_count: merge_proof.fetch( "changed_files_count", 0 ).to_i
+			}
 		end
 
 		def now_utc
