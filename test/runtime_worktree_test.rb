@@ -694,6 +694,63 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	# Regression: worktree list must not touch the govern state lock file.
+	# Before lazy-ledger, Runtime.new always created a Ledger which always
+	# acquired the lock — blocking read-only commands when the lock was busy.
+	def test_worktree_list_succeeds_without_govern_state_lock
+		Dir.mktmpdir( "carson-lazy-ledger-test", carson_tmp_root ) do |tmp_dir|
+			bare_root = File.join( tmp_dir, "bare" )
+			repo_root = File.join( tmp_dir, "repo" )
+			system( "git", "init", "--bare", "-b", "main", bare_root, out: File::NULL, err: File::NULL )
+			system( "git", "clone", bare_root, repo_root, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "README.md" ), "init\n" )
+			system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "init", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			# Point govern state at a read-only directory so lock file creation would fail.
+			readonly_dir = File.join( tmp_dir, "readonly" )
+			FileUtils.mkdir_p( readonly_dir )
+			state_path = File.join( readonly_dir, "state.json" )
+			FileUtils.chmod( 0o444, readonly_dir )
+
+			config_path = File.join( tmp_dir, "config.json" )
+			File.write( config_path, JSON.generate( { "govern" => { "state_path" => state_path } } ) )
+
+			mock_bin = File.join( tmp_dir, "mock-bin" )
+			FileUtils.mkdir_p( mock_bin )
+			File.write( File.join( mock_bin, "gh" ), "#!/usr/bin/env bash\necho \"gh version mock\"\nexit 0\n" )
+			FileUtils.chmod( 0o755, File.join( mock_bin, "gh" ) )
+
+			with_env( "HOME" => tmp_dir, "CARSON_CONFIG_FILE" => config_path, "PATH" => "#{mock_bin}:#{ENV.fetch( 'PATH' )}" ) do
+				output = StringIO.new
+				runtime = Carson::Runtime.new(
+					repo_root: repo_root,
+					tool_root: File.expand_path( "..", __dir__ ),
+					output: output,
+					error: StringIO.new,
+					verbose: false
+				)
+
+				# worktree list must succeed — it should never touch the ledger.
+				status = runtime.worktree_list!( json_output: true )
+				assert_equal Carson::Runtime::EXIT_OK, status
+
+				data = JSON.parse( output.string )
+				assert_equal "ok", data.fetch( "status" )
+				assert_kind_of Array, data.fetch( "worktrees" )
+
+				# The lock file must not have been created.
+				lock_path = "#{state_path}.lock"
+				refute File.exist?( lock_path ), "govern state lock file must not be created by worktree list"
+			end
+		ensure
+			FileUtils.chmod( 0o755, readonly_dir ) if defined?( readonly_dir ) && File.directory?( readonly_dir )
+		end
+	end
+
 	def test_worktree_remove_concise_output
 		Dir.mktmpdir( "carson-worktree-test", carson_tmp_root ) do |tmp_dir|
 			bare_root = File.join( tmp_dir, "bare" )
