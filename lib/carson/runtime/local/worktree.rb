@@ -14,8 +14,8 @@ module Carson
 			end
 
 			# Removes a worktree: directory, git registration, and branch.
-			def worktree_remove!( worktree_path:, force: false, json_output: false )
-				Worktree.remove!( path: worktree_path, runtime: self, force: force, json_output: json_output )
+			def worktree_remove!( worktree_path:, force: false, skip_unpushed: false, json_output: false )
+				Worktree.remove!( path: worktree_path, runtime: self, force: force, skip_unpushed: skip_unpushed, json_output: json_output )
 			end
 
 			# Removes agent-owned worktrees whose branch content is already on main.
