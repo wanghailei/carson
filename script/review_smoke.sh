@@ -285,7 +285,8 @@ git config user.name "Carson Review Smoke"
 git config user.email "carson-review-smoke@example.com"
 printf "# Carson Review Smoke Repo\n" > README.md
 git add README.md
-git commit -m "initial commit" >/dev/null
+# Seed the temporary main branch without tripping the shared main-branch commit guard.
+git commit --no-verify -m "initial commit" >/dev/null
 git push -u origin main >/dev/null
 git switch -c tool/review-smoke >/dev/null
 

@@ -383,6 +383,8 @@ script/ci_smoke.sh
 script/review_smoke.sh
 ```
 
+Run smoke commands from a shell where `ruby -v` resolves to the repo-selected Ruby runtime (for example via `.ruby-version` and your version manager). The smoke scripts intentionally stop when `ruby` resolves below Carson's supported floor.
+
 Source installation for dogfooding:
 
 ```bash
