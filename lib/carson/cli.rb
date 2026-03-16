@@ -67,6 +67,7 @@ module Carson
 				parser.separator "    abandon      Close and clean up abandoned delivery work"
 				parser.separator "    sync         Sync local main with remote"
 				parser.separator "    deliver      Start autonomous branch delivery"
+				parser.separator "    recover      Merge the repair PR for one baseline-red governance check"
 				parser.separator "    prune        Remove stale local branches"
 				parser.separator "    worktree     Manage isolated coding worktrees"
 				parser.separator "    housekeep    Sync, reap worktrees, and prune branches"
@@ -129,6 +130,8 @@ module Carson
 				parse_status_command( arguments: arguments, error: error )
 			when "deliver"
 				parse_deliver_command( arguments: arguments, error: error )
+			when "recover"
+				parse_recover_command( arguments: arguments, error: error )
 			when "govern"
 				parse_govern_subcommand( arguments: arguments, error: error )
 			else
@@ -630,6 +633,47 @@ module Carson
 			{ command: :invalid }
 		end
 
+		# --- recover ---
+
+		def self.parse_recover_command( arguments:, error: )
+			options = { json: false, check_name: nil }
+			recover_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson recover --check NAME [--json]"
+				parser.separator ""
+				parser.separator "Merge the current repair PR when one governance-owned required check is already red on the default branch."
+				parser.separator "Recovery is narrow: Carson verifies the baseline failure, keeps every other gate intact, and records an audit event."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--check NAME", "Name of the governance-owned required check to recover" ) { |value| options[ :check_name ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson recover --check \"Carson governance\""
+				parser.separator "    carson recover --check \"Carson governance\" --json"
+			end
+			recover_parser.parse!( arguments )
+			if options.fetch( :check_name, nil ).to_s.strip.empty?
+				error.puts "#{BADGE} --check requires a non-empty governance check name"
+				error.puts recover_parser
+				return { command: :invalid }
+			end
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for recover: #{arguments.join( ' ' )}"
+				error.puts recover_parser
+				return { command: :invalid }
+			end
+
+			{
+				command: "recover",
+				json: options.fetch( :json ),
+				check_name: options.fetch( :check_name )
+			}
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts recover_parser
+			{ command: :invalid }
+		end
+
 		# --- repos ---
 
 		def self.parse_repos_command( arguments:, error: )
@@ -825,6 +869,11 @@ module Carson
 					title: parsed.fetch( :title, nil ),
 					body_file: parsed.fetch( :body_file, nil ),
 					commit_message: parsed.fetch( :commit_message, nil ),
+					json_output: parsed.fetch( :json, false )
+				)
+			when "recover"
+				runtime.recover!(
+					check_name: parsed.fetch( :check_name ),
 					json_output: parsed.fetch( :json, false )
 				)
 			when "review:gate"
