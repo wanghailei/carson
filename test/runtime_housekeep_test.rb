@@ -509,4 +509,39 @@ class RuntimeHousekeepTest < Minitest::Test
 		assert_includes output, "housekeep loop stopped after 2 cycles"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
+
+	def test_housekeep_loop_stops_after_term_requested_during_cycle
+		runtime, repo_root = build_runtime( verbose: false )
+		handlers = {}
+		restored = []
+		cycle_count = 0
+
+		runtime.define_singleton_method( :loop_runner_trap ) do |signal_name, handler = nil, &block|
+			if handler || block.nil?
+				restored << [ signal_name, handler ]
+				handler
+			else
+				handlers[ signal_name ] = block
+				"DEFAULT-#{signal_name}"
+			end
+		end
+		runtime.define_singleton_method( :loop_runner_sleep ) do |seconds|
+			flunk "sleep should not run after TERM is requested during the cycle"
+		end
+		runtime.define_singleton_method( :housekeep_all! ) do |json_output:, dry_run:|
+			cycle_count += 1
+			handlers.fetch( "TERM" ).call
+			Carson::Runtime::EXIT_OK
+		end
+
+		result = runtime.housekeep_loop!( json_output: false, dry_run: true, loop_seconds: 300 )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal 1, cycle_count
+		assert_includes restored, [ "INT", "DEFAULT-INT" ]
+		assert_includes restored, [ "TERM", "DEFAULT-TERM" ]
+		output = runtime.instance_variable_get( :@output ).string
+		assert_includes output, "housekeep cycle 1"
+		assert_includes output, "housekeep loop stopped after 1 cycle"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
 end

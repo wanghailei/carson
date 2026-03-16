@@ -470,7 +470,7 @@ class RuntimeGovernTest < Minitest::Test
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		cycle_count = 0
-		runtime.define_singleton_method( :sleep ) do |seconds|
+		runtime.define_singleton_method( :loop_runner_sleep ) do |seconds|
 			cycle_count += 1
 			raise Interrupt if cycle_count >= 1
 		end
@@ -479,6 +479,44 @@ class RuntimeGovernTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, result
 		text = output_string( runtime )
 		assert_match( /sleeping 300s — next cycle at \d{4}-\d{2}-\d{2}/, text )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_loop_stops_after_term_requested_during_sleep
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		handlers = {}
+		restored = []
+		cycle_count = 0
+		now = 0.0
+
+		runtime.define_singleton_method( :loop_runner_trap ) do |signal_name, handler = nil, &block|
+			if handler || block.nil?
+				restored << [ signal_name, handler ]
+				handler
+			else
+				handlers[ signal_name ] = block
+				"DEFAULT-#{signal_name}"
+			end
+		end
+		runtime.define_singleton_method( :loop_runner_monotonic_now ) { now }
+		runtime.define_singleton_method( :loop_runner_sleep ) do |seconds|
+			now += seconds
+			handlers.fetch( "TERM" ).call
+		end
+		runtime.define_singleton_method( :govern_cycle! ) do |dry_run:, json_output:|
+			cycle_count += 1
+			Carson::Runtime::EXIT_OK
+		end
+
+		result = runtime.govern!( dry_run: true, loop_seconds: 300 )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal 1, cycle_count
+		assert_includes restored, [ "INT", "DEFAULT-INT" ]
+		assert_includes restored, [ "TERM", "DEFAULT-TERM" ]
+		text = output_string( runtime )
+		assert_match( /sleeping 300s — next cycle at \d{4}-\d{2}-\d{2}/, text )
+		assert_includes text, "govern loop stopped after 1 cycle"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

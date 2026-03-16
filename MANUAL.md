@@ -301,7 +301,7 @@ carson housekeep --all --loop 300   # housekeep every 5 minutes
 
 `refresh --all` checks each repo for safety before operating: repos with active worktrees or uncommitted changes are skipped with clear reasons. Other batch commands attempt each repo and report failures without stopping.
 
-`housekeep --all --loop SECONDS` runs the full housekeep cycle continuously, sleeping SECONDS between passes. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` with a cycle count summary.
+`housekeep --all --loop SECONDS` runs the full housekeep cycle continuously, sleeping SECONDS between passes. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` or `SIGTERM` with a cycle count summary.
 
 **Periodic maintenance:**
 
@@ -321,7 +321,7 @@ carson govern --loop 300 --dry-run    # observe mode, no integration or revision
 
 The loop is built-in and cross-platform — no cron, launchd, or Task Scheduler required. Run it in a terminal, tmux, screen, or as a system service.
 
-Each cycle runs independently: if one cycle fails (network error, GitHub API timeout), the error is logged and the next cycle proceeds normally. Press `Ctrl-C` to stop — Carson exits cleanly with a cycle count summary.
+Each cycle runs independently: if one cycle fails (network error, GitHub API timeout), the error is logged and the next cycle proceeds normally. Press `Ctrl-C` or send `SIGTERM` to stop — Carson exits cleanly with a cycle count summary.
 
 ### Govern and Coding Agents
 
