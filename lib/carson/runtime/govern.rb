@@ -45,6 +45,8 @@ module Carson
 					puts_line ""
 					puts_line "cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
 					govern_cycle!( dry_run: dry_run, json_output: json_output )
+					next_at = Time.now + loop_seconds
+					puts_line "sleeping #{loop_seconds}s — next cycle at #{next_at.strftime( '%Y-%m-%d %H:%M:%S %z' )}"
 					sleep loop_seconds
 				end
 			rescue Interrupt
@@ -85,6 +87,8 @@ module Carson
 				next_to_integrate = reconciled.find( &:ready? )&.key
 
 				reconciled.each do |delivery|
+					hint = delivery_action_hint( delivery: delivery, next_to_integrate: next_to_integrate, dry_run: dry_run )
+					puts_line "  #{delivery.branch} — #{hint}" if hint && !silent
 					delivery_report = scoped_runtime.send(
 						:decide_delivery_action,
 						delivery: delivery,
@@ -341,6 +345,15 @@ module Carson
 
 				def held_delivery?( delivery: )
 					[ "merge", "freshness" ].include?( delivery.cause )
+				end
+
+				def delivery_action_hint( delivery:, next_to_integrate:, dry_run: )
+					return nil if dry_run
+					return nil if delivery.superseded? || delivery.integrated? || delivery.failed?
+					return "integrating…" if delivery.ready? && delivery.key == next_to_integrate
+					return nil unless delivery.blocked?
+					return nil if held_delivery?( delivery: delivery )
+					delivery.revision_count >= 3 ? "escalating…" : "revising…"
 				end
 
 			def housekeep_repo!( repo_path: )

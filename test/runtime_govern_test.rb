@@ -469,6 +469,51 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_loop_prints_sleep_announcement
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		cycle_count = 0
+		runtime.define_singleton_method( :sleep ) do |seconds|
+			cycle_count += 1
+			raise Interrupt if cycle_count >= 1
+		end
+
+		result = runtime.govern!( dry_run: true, loop_seconds: 300 )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		text = output_string( runtime )
+		assert_match( /sleeping 300s — next cycle at \d{4}-\d{2}-\d{2}/, text )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_prints_progress_hint_before_integration
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/hint" )
+		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/hint", status: "queued", summary: "ready to integrate into main" )
+		stub_reconciliation( runtime, delivery: delivery )
+		stub_integration( runtime )
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		text = output_string( runtime )
+		assert_includes text, "feature/hint — integrating"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_govern_dry_run_omits_progress_hints
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/dry" )
+		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/dry", status: "queued", summary: "ready to integrate into main" )
+		stub_reconciliation( runtime, delivery: delivery )
+
+		result = runtime.govern!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		text = output_string( runtime )
+		refute_match( /integrating…/, text )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_integrates_later_ready_delivery_when_first_item_is_merge_blocked
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
