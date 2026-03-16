@@ -2,9 +2,9 @@
 
 ## Status
 
-Implementation plan for restoring a single explicit authority model to Carson.
+Implementation plan for `docs/spec.20260316.authority-model.md`.
 
-This plan assumes the immediate goal is not to ship both remote authority and local authority at once. The immediate goal is to remove Carson's current hybrid path and make one authority model true end to end.
+This plan assumes the immediate goal is not to ship both remote authority and local authority at once. The immediate goal is to remove Carson's current hybrid path and make the spec true end to end.
 
 ## Problem
 
