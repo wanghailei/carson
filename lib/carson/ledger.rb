@@ -180,7 +180,7 @@ module Carson
 		end
 
 		def load_state
-			return { "deliveries" => {}, "recovery_events" => [] } unless File.exist?( path )
+		return { "deliveries" => {}, "recovery_events" => [] } unless File.exist?( path )
 
 			raw = File.read( path )
 			return { "deliveries" => {}, "recovery_events" => [] } if raw.strip.empty?
@@ -188,7 +188,7 @@ module Carson
 			parsed = JSON.parse( raw )
 			raise "state file must contain a JSON object at #{path}" unless parsed.is_a?( Hash )
 			parsed[ "deliveries" ] ||= {}
-			parsed[ "recovery_events" ] ||= []
+		parsed[ "recovery_events" ] ||= []
 			parsed
 		rescue JSON::ParserError => exception
 			raise "invalid JSON in state file #{path}: #{exception.message}"

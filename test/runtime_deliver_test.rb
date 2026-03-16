@@ -262,7 +262,7 @@ class RuntimeDeliverTest < Minitest::Test
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: true )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/supersede" )
-		stub_ready_assessment( runtime )
+		stub_assessment( runtime, ci: :pending, review: { status: :pass, review: :approved, detail: "" } )
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
 		first_delivery = delivery_row_for( runtime: runtime, branch_name: "feature/supersede" )
@@ -273,9 +273,14 @@ class RuntimeDeliverTest < Minitest::Test
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
 
-		active = delivery_row_for( runtime: runtime, branch_name: "feature/supersede" )
-		refute_equal first_delivery.fetch( "head" ), active.fetch( "head" )
-		assert_equal [ "integrated", "integrated" ], delivery_rows_for( runtime: runtime, branch_name: "feature/supersede" ).map { |row| row.fetch( "status" ) }
+		active = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
+		refute_equal first_delivery.fetch( "head" ), active.head
+		state = JSON.parse( File.read( runtime.ledger.path ) )
+		statuses = state[ "deliveries" ]
+			.select { |_k, d| d[ "branch_name" ] == "feature/supersede" }
+			.sort_by { |_k, d| d[ "created_at" ] }
+			.map { |_k, d| d[ "status" ] }
+		assert_equal [ "superseded", "gated" ], statuses
 		FileUtils.remove_entry( tmp_dir )
 	end
 
