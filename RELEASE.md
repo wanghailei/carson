@@ -5,12 +5,13 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
-## Unreleased
+## 3.27.1
 
 ### What changed
 
 - **JSON ledger preserves legacy state and FIFO ordering** — legacy SQLite ledgers now import automatically into the JSON store on first read, same branch/head deliveries collapse across repo-path aliases, and queue order stays first-in-first-out even when multiple deliveries share the same timestamp.
 - **sqlite3 support restored for migration** — `carson.gemspec` depends on `sqlite3` again so Carson can import legacy SQLite ledgers, and CI installs the gem before running unit tests.
+- **Script Ruby guards now follow the gem contract** — `script/ci_smoke.sh` and `script/install_global_carson.sh` read the minimum supported Ruby version from `carson.gemspec` instead of hard-coding it, so smoke checks and installer behaviour stay aligned with the published gem.
 
 ### Migration
 
