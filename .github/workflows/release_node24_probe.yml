@@ -1,0 +1,33 @@
+name: Release action Node 24 probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe_rubygems_credentials:
+    name: Probe RubyGems credentials under forced Node 24
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # GitHub currently warns that the RubyGems credentials action still runs on
+      # Node 20. Force the upcoming default now so we can prove whether the latest
+      # published action survives before the June 2026 platform deadline.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Configure RubyGems credentials
+        uses: rubygems/configure-rubygems-credentials@v1.0.0
+
+      - name: Confirm RubyGems credentials action completed
+        run: |
+          echo "RubyGems credentials action completed under forced Node 24."
