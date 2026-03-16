@@ -24,7 +24,7 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "4.0"
+          ruby-version: "3.4"
 
       - name: Refresh
         run: ruby exe/carson refresh
@@ -56,7 +56,7 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "4.0"
+          ruby-version: "3.4"
 
       - name: Ruby syntax check
         run: |

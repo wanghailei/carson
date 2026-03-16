@@ -64,7 +64,7 @@ jobs:
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "4.0"
+          ruby-version: "3.4"
 
       - name: Check if gem version exists on RubyGems
         id: gem_check
