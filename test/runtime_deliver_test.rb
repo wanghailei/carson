@@ -28,6 +28,52 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_blocks_before_push_when_branch_is_behind_remote_main
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/behind-prepush" )
+		system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+		File.write( File.join( repo_root, "README.md" ), "# Main advanced\n" )
+		system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "advance main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "checkout", "feature/behind-prepush", out: File::NULL, err: File::NULL )
+
+		result = runtime.deliver!
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		output = output_string( runtime )
+		assert_includes output, "branch is behind origin/main"
+		assert_includes output, "git rebase origin/main && carson deliver"
+		refute system(
+			"git", "-C", "#{repo_root}-remote.git",
+			"show-ref", "--verify", "refs/heads/feature/behind-prepush",
+			out: File::NULL, err: File::NULL
+		)
+		assert_empty delivery_rows_for( runtime: runtime, branch_name: "feature/behind-prepush" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_deliver_blocks_when_freshness_cannot_be_verified_before_push
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/freshness-unknown" )
+		original_git_run = runtime.method( :git_run )
+		runtime.define_singleton_method( :git_run ) do |*args|
+			return [ "", "network timeout", false, 1 ] if args[ 0 ] == "fetch"
+
+			original_git_run.call( *args )
+		end
+
+		result = runtime.deliver!( json_output: true )
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "unknown", data.dig( "freshness", "status" )
+		assert_includes data.fetch( "error" ), "could not verify freshness"
+		assert_includes data.fetch( "recovery" ), "git fetch origin main"
+		assert_empty delivery_rows_for( runtime: runtime, branch_name: "feature/freshness-unknown" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_deliver_with_commit_json_reports_created_commit_for_all_dirty_changes
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
@@ -218,6 +264,41 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
+	def test_deliver_blocks_when_branch_becomes_behind_during_settle
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/freshness-drifts" )
+		stub_ready_assessment( runtime )
+		configure_settle_window( runtime, watch_window_seconds: 2, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		stub_pull_request_states(
+			runtime,
+			Array.new( 4 ) do
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
+			end
+		)
+		freshness = [
+			freshness_assessment( status: :fresh, remote_ref: "origin/main" ),
+			freshness_assessment( status: :behind, remote_ref: "origin/main" )
+		]
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name:, remote:, main:|
+			freshness.shift || freshness.last
+		end
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			raise "merge should not run after freshness blocks the delivery"
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "blocked", data.fetch( "outcome" )
+		assert_equal "behind", data.dig( "freshness", "status" )
+		assert_equal "freshness_behind", data.dig( "handoff", "reason" )
+		assert_equal false, data.fetch( "merge_attempted" )
+		assert_includes data.fetch( "summary" ), "behind origin/main"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
 	def test_assess_delivery_marks_conflicting_pr_as_merge_blocked
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )
@@ -247,7 +328,7 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_assess_delivery_keeps_behind_pr_queued_with_explicit_summary
+	def test_assess_delivery_marks_behind_pr_as_freshness_blocked
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/behind" )
@@ -270,9 +351,9 @@ class RuntimeDeliverTest < Minitest::Test
 		end
 
 		updated = runtime.send( :assess_delivery!, delivery: delivery, branch_name: "feature/behind" )
-		assert_equal "queued", updated.status
-		assert_nil updated.cause
-		assert_includes updated.summary, "behind base"
+		assert_equal "gated", updated.status
+		assert_equal "freshness", updated.cause
+		assert_includes updated.summary, "behind origin/main"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
@@ -649,6 +730,18 @@ private
 
 	def git_log_subjects( repo_root, count: )
 		git_capture( repo_root, "log", "-n", count.to_s, "--pretty=%s" ).split( "\n" )
+	end
+
+	def freshness_assessment( status:, remote_ref:, detail: nil )
+		assessment = {
+			ready: status == :fresh,
+			status: status,
+			reason: status == :fresh ? "freshness_fresh" : "freshness_#{status}",
+			summary: status == :fresh ? "verified freshness against #{remote_ref}" : "branch is behind #{remote_ref}",
+			remote_ref: remote_ref
+		}
+		assessment[ :detail ] = detail if detail
+		assessment
 	end
 
 	def write_runtime_config( tmp_dir: )

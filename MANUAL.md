@@ -157,7 +157,7 @@ On the governed main working tree, Carson blocks raw `git add` / `git commit` an
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Carson pushes the branch, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when the path is clear, and syncs local `main`. If the window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff that states whether merge was attempted and what to run next. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
+**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Before any push, Carson verifies the branch is fresh against the configured remote `main`. If freshness is behind or unknown, delivery stops immediately and no PR is created or refreshed. If freshness is good, Carson pushes the branch, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when the path is clear, and syncs local `main`. If the window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff that states whether merge was attempted and what to run next. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
@@ -327,7 +327,7 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
 
-After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash-only governed merge contract.
+After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary. `BEHIND` is treated as a freshness failure, not a harmless squash detail: Carson blocks and requires a branch refresh before it will continue.
 
 After a successful govern merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
 

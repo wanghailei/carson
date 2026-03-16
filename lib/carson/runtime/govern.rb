@@ -138,40 +138,56 @@ module Carson
 				assess_delivery!( delivery: delivery, branch_name: delivery.branch )
 			end
 
-			def decide_delivery_action( delivery:, repo_path:, dry_run:, next_to_integrate: )
-				report = {
-					key: delivery.key,
-					branch: delivery.branch,
-					status: delivery.status,
-					summary: delivery.summary,
-					revision_count: delivery.revision_count,
-					action: "none"
-				}
+				def decide_delivery_action( delivery:, repo_path:, dry_run:, next_to_integrate: )
+					report = {
+						key: delivery.key,
+						branch: delivery.branch,
+						status: delivery.status,
+						cause: delivery.cause,
+						summary: delivery.summary,
+						revision_count: delivery.revision_count,
+						action: "none"
+					}
 
 				if delivery.superseded? || delivery.integrated? || delivery.failed?
 					return report
 				end
 
-				if delivery.ready? && delivery.key == next_to_integrate
-					report[ :action ] = dry_run ? "would_integrate" : "integrate"
-					report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
-					return report
-				end
-
-				if delivery.blocked?
-					if merge_blocked_delivery?( delivery: delivery )
-						report[ :action ] = dry_run ? "would_hold" : "hold"
+					if delivery.ready? && delivery.key == next_to_integrate
+						report[ :action ] = dry_run ? "would_integrate" : "integrate"
+						unless dry_run
+							updated = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run )
+							report[ :status ] = updated.status
+							report[ :cause ] = updated.cause
+							report[ :summary ] = updated.summary
+						end
 						return report
 					end
 
-					if delivery.revision_count >= 3
-						report[ :action ] = dry_run ? "would_escalate" : "escalate"
-						report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
-					else
-						report[ :action ] = dry_run ? "would_revise" : "revise"
-						report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
+					if delivery.blocked?
+						if held_delivery?( delivery: delivery )
+							report[ :action ] = dry_run ? "would_hold" : "hold"
+							return report
+						end
+
+						if delivery.revision_count >= 3
+							report[ :action ] = dry_run ? "would_escalate" : "escalate"
+							unless dry_run
+								updated = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run )
+								report[ :status ] = updated.status
+								report[ :cause ] = updated.cause
+								report[ :summary ] = updated.summary
+							end
+						else
+							report[ :action ] = dry_run ? "would_revise" : "revise"
+							unless dry_run
+								updated = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run )
+								report[ :status ] = updated.status
+								report[ :cause ] = updated.cause
+								report[ :summary ] = updated.summary
+							end
+						end
 					end
-				end
 
 				report
 			end
@@ -191,13 +207,27 @@ module Carson
 				end
 			end
 
-			def integrate_delivery!( delivery:, repo_path: )
-				result = {}
-				prepared = ledger.update_delivery(
-					delivery: delivery,
-					status: "integrating",
-					summary: "integrating into #{config.main_branch}"
-				)
+				def integrate_delivery!( delivery:, repo_path: )
+					result = {}
+					freshness = assess_branch_freshness(
+						branch_name: delivery.branch,
+						remote: config.git_remote,
+						main: config.main_branch
+					)
+					unless freshness.fetch( :ready )
+						return ledger.update_delivery(
+							delivery: delivery,
+							status: "gated",
+							cause: "freshness",
+							summary: freshness.fetch( :summary )
+						)
+					end
+
+					prepared = ledger.update_delivery(
+						delivery: delivery,
+						status: "integrating",
+						summary: "integrating into #{config.main_branch}"
+					)
 				merge_exit = merge_pr!( number: prepared.pull_request_number, result: result )
 				if merge_exit == EXIT_OK
 					integrated = ledger.update_delivery(
@@ -288,9 +318,9 @@ module Carson
 				end
 			end
 
-			def merge_blocked_delivery?( delivery: )
-				delivery.cause == "merge"
-			end
+				def held_delivery?( delivery: )
+					[ "merge", "freshness" ].include?( delivery.cause )
+				end
 
 			def housekeep_repo!( repo_path: )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
@@ -435,36 +465,36 @@ module Carson
 
 					next if repo_report[ :deliveries ].empty?
 
-					repo_report[ :deliveries ].each do |delivery|
-						action_text = format_govern_action( status: delivery[ :status ], action: delivery[ :action ] )
-						puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]} — #{action_text}"
-						puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
+						repo_report[ :deliveries ].each do |delivery|
+							action_text = format_govern_action( status: delivery[ :status ], action: delivery[ :action ], cause: delivery[ :cause ] )
+							puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]} — #{action_text}"
+							puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
+						end
 					end
 				end
-			end
 
-			def format_govern_action( status:, action: )
-				case action
-				when "integrate"
-					format_govern_integration_outcome( status: status )
-				when "would_integrate" then "ready to integrate (dry run)"
-				when "hold" then "held at gate"
-				when "would_hold" then "would hold at gate (dry run)"
-				when "revise" then "revision dispatched"
-				when "would_revise" then "would revise (dry run)"
+				def format_govern_action( status:, action:, cause: )
+					case action
+					when "integrate"
+						format_govern_integration_outcome( status: status, cause: cause )
+					when "would_integrate" then "ready to integrate (dry run)"
+					when "hold" then cause == "freshness" ? "refresh required" : "held at gate"
+					when "would_hold" then cause == "freshness" ? "would require refresh (dry run)" : "would hold at gate (dry run)"
+					when "revise" then "revision dispatched"
+					when "would_revise" then "would revise (dry run)"
 				when "escalate" then "escalated"
 				when "would_escalate" then "would escalate (dry run)"
 				else status
 				end
 			end
 
-			def format_govern_integration_outcome( status: )
-				case status
-				when "integrated" then "integrated"
-				when "gated" then "held at gate"
-				when "failed" then "integration failed"
-				when "escalated" then "integration escalated"
-				else status
+				def format_govern_integration_outcome( status:, cause: )
+					case status
+					when "integrated" then "integrated"
+					when "gated" then cause == "freshness" ? "refresh required" : "held at gate"
+					when "failed" then "integration failed"
+					when "escalated" then "integration escalated"
+					else status
 				end
 			end
 		end
