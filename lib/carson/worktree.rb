@@ -96,12 +96,23 @@ module Carson
 			# Determine the base branch (main branch from config).
 			base = runtime.config.main_branch
 
-			# Sync main from remote before branching so the worktree starts
-			# from the latest code. Prevents stale-base merge conflicts later.
-			# Best-effort — if pull fails (non-ff, offline), continue anyway.
+			# Fetch to update the remote tracking ref without mutating the main worktree.
+			# Best-effort — if fetch fails (no remote, offline), branch from local main.
 			main_root = runtime.main_worktree_root
-			_, _, pull_ok, = Open3.capture3( "git", "-C", main_root, "pull", "--ff-only", runtime.config.git_remote, base )
-			runtime.puts_verbose( pull_ok.success? ? "synced #{base} before branching" : "sync skipped — continuing from local #{base}" ) unless json_output
+			remote = runtime.config.git_remote
+			_, _, fetch_ok, = Open3.capture3( "git", "-C", main_root, "fetch", remote, base )
+			if fetch_ok.success?
+				remote_ref = "#{remote}/#{base}"
+				_, _, ref_ok, = Open3.capture3( "git", "-C", main_root, "rev-parse", "--verify", remote_ref )
+				if ref_ok.success?
+					base = remote_ref
+					runtime.puts_verbose( "branching from #{remote_ref}" ) unless json_output
+				else
+					runtime.puts_verbose( "fetch succeeded but #{remote_ref} not found — branching from local #{runtime.config.main_branch}" ) unless json_output
+				end
+			else
+				runtime.puts_verbose( "fetch skipped — branching from local #{runtime.config.main_branch}" ) unless json_output
+			end
 
 			# Ensure .claude/ is excluded from git status in the host repository.
 			# Uses .git/info/exclude (local-only, never committed) to respect the outsider boundary.

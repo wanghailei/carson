@@ -250,15 +250,10 @@ module Carson
 						pull_request_draft: false,
 						pull_request_merged_at: Time.now.utc.iso8601
 					)
-					housekeep_result = housekeep_repo!( repo_path: repo_path )
-					proof = if housekeep_result.is_a?( Hash ) && housekeep_result[ :sync_status ] != "ok"
-						merge_proof_unavailable(
-							main_ref: config.main_branch,
-							summary: "proof unavailable — local #{config.main_branch} sync did not complete."
-						)
-					else
-						merge_proof_for_branch( branch: integrated.branch, main_ref: config.main_branch )
-					end
+					# Fetch-only: update the remote tracking ref without mutating the
+					# main worktree. Reap and prune are deferred to explicit housekeep.
+					fetch_for_merge_proof!( repo_path: repo_path )
+					proof = merge_proof_for_remote_ref( branch: integrated.branch )
 					ledger.update_delivery(
 						delivery: integrated,
 						merge_proof: proof
@@ -277,6 +272,27 @@ module Carson
 				provider = select_agent_provider
 				return escalate_delivery!( delivery: delivery, reason: "no agent provider available" ) if provider.nil?
 				return escalate_delivery!( delivery: delivery, reason: "worktree missing for revision" ) unless File.directory?( delivery.worktree_path.to_s )
+
+				# Defer if the target worktree is occupied — temporary hold, not failure.
+				worktree = Carson::Worktree.find( path: delivery.worktree_path.to_s, runtime: self )
+				if worktree
+					if worktree.held_by_other_process?
+						return ledger.update_delivery(
+							delivery: delivery,
+							status: "gated",
+							cause: "busy",
+							summary: "worktree held by another process — deferring revision"
+						)
+					end
+					if worktree.dirty?
+						return ledger.update_delivery(
+							delivery: delivery,
+							status: "gated",
+							cause: "busy",
+							summary: "worktree has uncommitted changes — deferring revision"
+						)
+					end
+				end
 
 				objective = revision_objective( cause: delivery.cause )
 				context = evidence( delivery: delivery, repo_path: repo_path, objective: objective )
@@ -344,7 +360,7 @@ module Carson
 			end
 
 				def held_delivery?( delivery: )
-					[ "merge", "freshness" ].include?( delivery.cause )
+					[ "merge", "freshness", "busy" ].include?( delivery.cause )
 				end
 
 				def delivery_action_hint( delivery:, next_to_integrate:, dry_run: )
@@ -359,6 +375,15 @@ module Carson
 			def housekeep_repo!( repo_path: )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
 				scoped_runtime.send( :housekeep_one_entry, repo_path: repo_path, silent: true )
+			end
+
+			# Fetch-only helper for post-merge proof generation.
+			# Updates the remote tracking ref without mutating the main worktree.
+			def fetch_for_merge_proof!( repo_path: )
+				scoped = repo_runtime_for( repo_path: repo_path )
+				scoped.send( :git_run, "fetch", scoped.config.git_remote, "--prune" )
+			rescue StandardError
+				# Best-effort — merge proof falls back to unavailable if fetch fails.
 			end
 
 			def select_agent_provider

@@ -58,7 +58,7 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		result = runtime.worktree_create!( name: "no-remote" )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
-		assert_includes output, "sync skipped"
+		assert_includes output, "fetch skipped"
 
 		wt_path = File.join( repo_root, ".claude", "worktrees", "no-remote" )
 		cleanup_worktree( repo_root, wt_path )
