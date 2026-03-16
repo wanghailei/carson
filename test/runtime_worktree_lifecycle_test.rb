@@ -81,6 +81,22 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_worktree_create_json_output_stays_machine_parseable_in_verbose_mode
+		runtime, repo_root = build_runtime( verbose: true )
+		init_git_repo( repo_root )
+
+		result = runtime.worktree_create!( name: "json-quiet", json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal "ok", json[ "status" ]
+		assert_equal "json-quiet", json[ "name" ]
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "json-quiet" )
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_worktree_create_errors_when_success_cannot_be_verified
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
@@ -138,6 +154,37 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 
 		# No stray directory should remain.
 		refute Dir.exist?( worktree_path ), "No stray directory should remain"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_rejects_prunable_registered_entry
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		worktree_name = "codex/prunable-worktree"
+		original_git_run = runtime.method( :git_run )
+
+		runtime.define_singleton_method( :git_run ) do |*args|
+			stdout, stderr, success, status = original_git_run.call( *args )
+			if args[ 0, 2 ] == [ "worktree", "add" ] && success
+				FileUtils.rm_rf( args.fetch( 2 ) )
+			end
+			[ stdout, stderr, success, status ]
+		end
+
+		result = runtime.worktree_create!( name: worktree_name, json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		diag = json.fetch( "diagnostics" )
+
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_equal "error", json[ "status" ]
+		assert_equal false, diag.fetch( "worktree_directory_exists" )
+		assert_equal true, diag.fetch( "registered_worktree" )
+		assert_includes diag.fetch( "worktree_list" ), "prunable"
+		assert_includes diag.fetch( "prunable_reason" ), "non-existent"
+
+		branch_output, = Open3.capture3( "git", "branch", "--list", worktree_name, chdir: repo_root )
+		assert_equal "", branch_output.strip, "Prunable verification failure should clean up the branch"
 
 		destroy_runtime_repo( repo_root: repo_root )
 	end

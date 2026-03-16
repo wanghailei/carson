@@ -193,7 +193,7 @@ carson worktree list
 carson housekeep
 ```
 
-`housekeep` still performs safe reaping and branch pruning when `sync` cannot complete. A blocked sync no longer prevents cleanup work that has its own safety evidence.
+`housekeep` still performs safe reaping and branch pruning when `sync` cannot complete. A blocked sync no longer prevents cleanup work that has its own safety evidence. Absorbed-into-main detection is informational; Carson only auto-reaps when it also has stronger abandonment evidence such as a missing directory, merged PR, or closed abandoned PR.
 
 `housekeep` also reconciles integrated delivery worktree records from the ledger. If the recorded worktree is already gone, Carson clears the stale ledger path. If the worktree still points at the integrated head and is safe to remove, Carson reaps it and clears the ledger path in the same pass.
 

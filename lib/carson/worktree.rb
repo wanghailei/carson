@@ -7,18 +7,20 @@
 require "fileutils"
 require "json"
 require "open3"
+require "pathname"
 
 module Carson
 	class Worktree
 		# Agent directory names whose worktrees Carson may sweep.
 		AGENT_DIRS = %w[ .claude .codex ].freeze
 
-		attr_reader :path, :branch
+		attr_reader :path, :branch, :prunable_reason
 
-		def initialize( path:, branch:, runtime: nil )
+		def initialize( path:, branch:, runtime: nil, prunable_reason: nil )
 			@path = path
 			@branch = branch
 			@runtime = runtime
+			@prunable_reason = prunable_reason
 		end
 
 		# --- Class lifecycle methods ---
@@ -30,21 +32,36 @@ module Carson
 			entries = []
 			current_path = nil
 			current_branch = :unset
+			current_prunable_reason = nil
 			raw.lines.each do |line|
 				line = line.strip
 				if line.empty?
-					entries << new( path: current_path, branch: current_branch == :unset ? nil : current_branch, runtime: runtime ) if current_path
+					entries << new(
+						path: current_path,
+						branch: current_branch == :unset ? nil : current_branch,
+						runtime: runtime,
+						prunable_reason: current_prunable_reason
+					) if current_path
 					current_path = nil
 					current_branch = :unset
+					current_prunable_reason = nil
 				elsif line.start_with?( "worktree " )
 					current_path = runtime.realpath_safe( line.sub( "worktree ", "" ) )
 				elsif line.start_with?( "branch " )
 					current_branch = line.sub( "branch refs/heads/", "" )
 				elsif line == "detached"
 					current_branch = nil
+				elsif line.start_with?( "prunable" )
+					reason = line.sub( "prunable", "" ).strip
+					current_prunable_reason = reason.empty? ? "prunable" : reason
 				end
 			end
-			entries << new( path: current_path, branch: current_branch == :unset ? nil : current_branch, runtime: runtime ) if current_path
+			entries << new(
+				path: current_path,
+				branch: current_branch == :unset ? nil : current_branch,
+				runtime: runtime,
+				prunable_reason: current_prunable_reason
+			) if current_path
 			entries
 		end
 
@@ -112,7 +129,7 @@ module Carson
 				return finish(
 					result: { command: "worktree create", status: "error", name: name, path: worktree_path, branch: name,
 						error: "git reported success but Carson could not verify the worktree and branch",
-						recovery: "git worktree list && git branch --list '#{name}'",
+						recovery: "git worktree list --porcelain && git branch --list '#{name}'",
 						diagnostics: diagnostics },
 					exit_code: Runtime::EXIT_ERROR, runtime: runtime, json_output: json_output
 				)
@@ -297,10 +314,9 @@ module Carson
 			{ status: :ok, resolved_path: resolved_path, branch: branch, missing: false }
 		end
 
-		# Removes agent-owned worktrees whose branch content is already on main.
-		# Scans AGENT_DIRS (e.g. .claude/worktrees/, .codex/worktrees/)
-		# under the main repo root. Safe: skips detached HEADs, the caller's CWD,
-		# and dirty working trees (git worktree remove refuses without --force).
+		# Removes agent-owned worktrees that the shared cleanup classifier judges
+		# safe to reap. Scans AGENT_DIRS (e.g. .claude/worktrees/, .codex/worktrees/)
+		# under the main repo root.
 		def self.sweep_stale!( runtime: )
 			main_root = runtime.main_worktree_root
 			worktrees = list( runtime: runtime )
@@ -314,11 +330,16 @@ module Carson
 			worktrees.each do |worktree|
 				next unless worktree.branch
 				next unless agent_prefixes.any? { |prefix| worktree.path.start_with?( prefix ) }
-				next if worktree.holds_cwd?
-				next if worktree.held_by_other_process?
-				next unless runtime.branch_absorbed_into_main?( branch: worktree.branch )
 
-				# Remove the worktree (no --force: refuses if dirty working tree).
+				classification = runtime.send( :classify_worktree_cleanup, worktree: worktree )
+				next unless classification.fetch( :action ) == :reap
+
+				unless worktree.exists?
+					remove_missing!( resolved_path: worktree.path, runtime: runtime, json_output: false )
+					next
+				end
+
+				# Remove the worktree (no --force: automatic sweep never force-removes dirty worktrees).
 				_, _, rm_success, = runtime.git_run( "worktree", "remove", worktree.path )
 				next unless rm_success
 
@@ -373,6 +394,10 @@ module Carson
 
 		def exists?
 			Dir.exist?( path )
+		end
+
+		def prunable?
+			!prunable_reason.to_s.strip.empty?
 		end
 
 		def dirty?
@@ -446,7 +471,12 @@ module Carson
 		private_class_method :finish
 
 		def self.creation_verified?( path:, branch:, runtime: )
-			Dir.exist?( path ) && registered?( path: path, runtime: runtime ) && branch_exists?( branch: branch, runtime: runtime )
+			entry = find( path: path, runtime: runtime )
+			return false if entry.nil?
+			return false if entry.prunable?
+			return false unless Dir.exist?( path )
+
+			branch_exists?( branch: branch, runtime: runtime )
 		end
 		private_class_method :creation_verified?
 
@@ -468,9 +498,11 @@ module Carson
 		# Captures diagnostic state for a verification failure so the next
 		# incident is self-diagnosing without manual investigation.
 		def self.gather_create_diagnostics( git_stdout:, git_stderr:, name:, runtime: )
-			wt_list, = runtime.git_run( "worktree", "list" )
+			wt_list, = runtime.git_run( "worktree", "list", "--porcelain" )
 			branch_list, = runtime.git_run( "branch", "--list", name )
 			git_version, = Open3.capture3( "git", "--version" )
+			worktree_path = File.join( runtime.main_worktree_root, ".claude", "worktrees", name )
+			entry = find( path: worktree_path, runtime: runtime )
 			{
 				git_stdout: git_stdout.to_s.strip,
 				git_stderr: git_stderr.to_s.strip,
@@ -478,7 +510,10 @@ module Carson
 				main_worktree_root: runtime.main_worktree_root,
 				worktree_list: wt_list.to_s.strip,
 				branch_list: branch_list.to_s.strip,
-				git_version: git_version.to_s.strip
+				git_version: git_version.to_s.strip,
+				worktree_directory_exists: Dir.exist?( worktree_path ),
+				registered_worktree: !entry.nil?,
+				prunable_reason: entry&.prunable_reason
 			}
 		end
 		private_class_method :gather_create_diagnostics
@@ -553,8 +588,16 @@ module Carson
 		# succeed, even when the OS resolves symlinks differently.
 		# Uses main_worktree_root (not repo_root) so resolution works from inside worktrees.
 		def self.resolve_path( path:, runtime: )
-			if path.include?( "/" )
+			if Pathname.new( path ).absolute?
 				return runtime.realpath_safe( path )
+			end
+
+			relative_candidate = runtime.realpath_safe( File.expand_path( path, Dir.pwd ) )
+			return relative_candidate if registered?( path: relative_candidate, runtime: runtime )
+
+			if path.include?( "/" )
+				scoped_candidate = runtime.realpath_safe( File.join( runtime.main_worktree_root, ".claude", "worktrees", path ) )
+				return scoped_candidate if registered?( path: scoped_candidate, runtime: runtime )
 			end
 
 			root = runtime.main_worktree_root
