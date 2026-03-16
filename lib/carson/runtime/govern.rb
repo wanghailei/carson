@@ -39,19 +39,17 @@ module Carson
 			end
 
 			def govern_loop!( dry_run:, json_output:, loop_seconds: )
-				cycle_count = 0
-				loop do
-					cycle_count += 1
-					puts_line ""
-					puts_line "cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
+				run_signal_aware_loop!(
+					loop_name: "govern",
+					loop_seconds: loop_seconds,
+					cycle_line: ->( cycle_count ) { "cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}" },
+					sleep_line: ->( seconds ) do
+						next_at = Time.now + seconds
+						"sleeping #{seconds}s — next cycle at #{next_at.strftime( '%Y-%m-%d %H:%M:%S %z' )}"
+					end
+				) do
 					govern_cycle!( dry_run: dry_run, json_output: json_output )
-					next_at = Time.now + loop_seconds
-					puts_line "sleeping #{loop_seconds}s — next cycle at #{next_at.strftime( '%Y-%m-%d %H:%M:%S %z' )}"
-					sleep loop_seconds
 				end
-			rescue Interrupt
-				puts_line "govern loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}"
-				EXIT_OK
 			end
 
 		private

@@ -81,17 +81,13 @@ module Carson
 			end
 
 			def housekeep_loop!( json_output:, dry_run:, loop_seconds: )
-				cycle_count = 0
-				loop do
-					cycle_count += 1
-					puts_line ""
-					puts_line "housekeep cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
+				run_signal_aware_loop!(
+					loop_name: "housekeep",
+					loop_seconds: loop_seconds,
+					cycle_line: ->( cycle_count ) { "housekeep cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}" }
+				) do
 					housekeep_all!( json_output: json_output, dry_run: dry_run )
-					sleep loop_seconds
 				end
-			rescue Interrupt
-				puts_line "housekeep loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}"
-				EXIT_OK
 			end
 
 			# Prints a dry-run plan for this repo without making any changes.

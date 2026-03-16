@@ -364,6 +364,7 @@ end
 
 require_relative "runtime/local"
 require_relative "runtime/audit"
+require_relative "runtime/loop_runner"
 require_relative "runtime/housekeep"
 require_relative "runtime/repos"
 require_relative "runtime/review"

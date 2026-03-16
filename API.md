@@ -52,7 +52,7 @@ All batch commands operate across every governed repository registered in `gover
 | `carson template check --all` | Read-only template drift detection across all governed repos. |
 | `carson housekeep --all [--loop SECONDS]` | Attempt sync, then reap worktrees with strong abandonment evidence, reconcile integrated delivery worktree records from the ledger, and prune across all governed repos. Safe cleanup still runs when sync is blocked. |
 
-`--loop SECONDS` runs the housekeep cycle continuously, sleeping SECONDS between cycles. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` with a cycle count summary.
+`--loop SECONDS` runs the housekeep cycle continuously, sleeping SECONDS between cycles. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` or `SIGTERM` with a cycle count summary.
 
 ### Govern commands
 
@@ -60,7 +60,7 @@ All batch commands operate across every governed repository registered in `gover
 |---|---|
 | `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level delivery oversight: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. Live integrated rows include merge proof. |
 
-`--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
+`--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` or `SIGTERM` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
 Governed integration is fixed to `squash`. Non-squash `govern.merge.method` values are rejected by config validation.
 
