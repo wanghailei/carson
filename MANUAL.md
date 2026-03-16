@@ -157,30 +157,57 @@ On the governed main working tree, Carson blocks raw `git add` / `git commit` an
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the asynchronous branch handoff. Carson pushes the branch, creates or refreshes the PR, records delivery state, and returns immediately. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
+**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Carson pushes the branch, creates or refreshes the PR, waits for the CI and review signals it can observe, merges when the path is clear, and syncs local `main`. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
 # or, if the worktree is still dirty:
 carson deliver --commit "fix: describe this delivery"
-# Output: PR #N, Delivery: queued|gated
-#   Next: carson status
+# Output: merged into main, or held at gate with the next command
 ```
 
-**4. Monitor and advance** — `status` is the delivery surface. It shows the current branch plus active deliveries for the repository. Keep `govern` running to advance queued deliveries and revisions across governed repositories:
+**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, `status` shows the current branch, the next queued delivery, and any blocked-delivery summaries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
 
 ```bash
 carson status
 carson govern --loop 300
 ```
 
-**5. Clean up landed work** — once the delivery is integrated, use Carson cleanup commands from the main worktree:
+### Recover a baseline-red governance check
+
+When a governance-owned required check is already red on the default branch, the PR that repairs it can deadlock behind that same gate. Use the explicit recovery path instead of reaching for raw `gh api`:
+
+```bash
+carson recover --check "Carson governance"
+```
+
+Recovery is narrow. Carson proves that the named check is red on the default branch, verifies that the current branch is repairing the governance surface, requires every other required check and the review gate to pass, then records a machine-readable audit event before reporting success.
+
+If Carson refuses recovery, the message explains the exact missing proof or remaining gate and tells you what to do next.
+
+**5. Clean up landed work** — once the delivery is integrated, use Carson cleanup commands from the main worktree. `worktree list` shows every registered worktree with PR state, absorbed-into-main detection, and Carson's cleanup recommendation:
 
 ```bash
 cd /path/to/repo
-carson worktree remove my-feature
-carson prune
+carson worktree list
+carson housekeep
 ```
+
+`housekeep` still performs safe reaping and branch pruning when `sync` cannot complete. A blocked sync no longer prevents cleanup work that has its own safety evidence.
+
+`housekeep` also reconciles integrated delivery worktree records from the ledger. If the recorded worktree is already gone, Carson clears the stale ledger path. If the worktree still points at the integrated head and is safe to remove, Carson reaps it and clears the ledger path in the same pass.
+
+When you need to abandon a stale branch or PR instead of landing it:
+
+```bash
+carson abandon 291
+# or:
+carson abandon https://github.com/owner/repo/pull/291
+# or:
+carson abandon feature/stale-work
+```
+
+`abandon` closes the PR when it is still open, removes the matching worktree when safe, deletes the local and remote branch refs when allowed, and marks the delivery as failed in Carson's ledger.
 
 **Safety guards** — `worktree remove` blocks when:
 - Shell CWD is inside the worktree (prevents session crash).
@@ -188,7 +215,7 @@ carson prune
 
 After squash or rebase merge, the content matches main — removal proceeds without `--force`.
 
-**Stale worktree recovery** — if a worktree directory is destroyed externally (for example by a raw GitHub merge/delete flow), `worktree remove` and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error. Use Carson's `deliver` + `govern` flow instead of raw `gh pr merge --delete-branch` so the worktree directory stays intact for orderly cleanup.
+**Stale worktree recovery** — if a worktree directory is destroyed externally (for example by a raw GitHub merge/delete flow), `worktree remove`, `worktree list`, `housekeep`, and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error when Carson has enough evidence. Use Carson's delivery and cleanup commands instead of raw `gh pr merge --delete-branch` so the worktree directory stays intact for orderly cleanup.
 
 ### Carson vs Claude Code EnterWorktree
 
@@ -267,9 +294,12 @@ carson audit --all             # governance audit across all repos
 carson prune --all             # remove stale branches across all repos
 carson template check --all    # detect template drift across all repos
 carson housekeep --all         # full maintenance cycle across all repos
+carson housekeep --all --loop 300   # housekeep every 5 minutes
 ```
 
 `refresh --all` checks each repo for safety before operating: repos with active worktrees or uncommitted changes are skipped with clear reasons. Other batch commands attempt each repo and report failures without stopping.
+
+`housekeep --all --loop SECONDS` runs the full housekeep cycle continuously, sleeping SECONDS between passes. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` with a cycle count summary.
 
 **Periodic maintenance:**
 
@@ -294,6 +324,12 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 ### Govern and Coding Agents
 
 `carson govern` dispatches coding agents (Codex or Claude) when an active delivery is blocked by CI, review, or policy feedback. The agent receives the failure context and attempts a revision. If the agent succeeds, the delivery re-enters the governance pipeline. If it fails repeatedly or times out, the delivery is escalated for human attention.
+
+After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
+
+After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs stay held at gate with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash policy.
+
+After a successful govern merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
 
 The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 

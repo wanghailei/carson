@@ -66,7 +66,7 @@ class RuntimeWorktreeTest < Minitest::Test
 				end
 			)
 			<<~CLAUSE
-				if echo "$@" | grep -q "state=closed" && echo "$@" | grep -q "head=test:#{branch}"; then
+				if echo "$@" | grep -q "state=closed" && echo "$@" | grep -qE "head=.*:#{branch}( |$)"; then
 					if echo "$@" | grep -qE " page=1$"; then
 						cat <<'PRJSON'
 			#{pr_json}
@@ -88,7 +88,7 @@ class RuntimeWorktreeTest < Minitest::Test
 				"base" => { "ref" => "main" }
 			} ] )
 			<<~CLAUSE
-				if echo "$@" | grep -q "state=open" && echo "$@" | grep -q "head=test:#{branch}"; then
+				if echo "$@" | grep -qE "state=(open|all)" && echo "$@" | grep -qE "head=.*:#{branch}( |$)"; then
 					cat <<'PRJSON'
 			#{pr_json}
 			PRJSON
@@ -240,6 +240,45 @@ class RuntimeWorktreeTest < Minitest::Test
 			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ), force: true )
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute Dir.exist?( worktree.fetch( :path ) ), "dirty worktree should be removed with --force"
+		end
+	end
+
+	def test_worktree_list_json_includes_external_worktree
+		with_worktree_repo( mock_gh_script: mock_gh_for_worktree_reap( closed_prs_by_branch: {} ) ) do |runtime, repo_root, _bare_root, output|
+			external_root = Dir.mktmpdir( "carson-external-worktree", carson_tmp_root )
+			external_path = File.join( external_root, "external-wt" )
+			branch_name = "external-wt"
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, external_path, out: File::NULL, err: File::NULL )
+
+			runtime.worktree_list!( json_output: true )
+			data = JSON.parse( output.string )
+			entry = data.fetch( "worktrees" ).find { |row| row.fetch( "branch" ) == branch_name }
+			refute_nil entry
+			assert_equal branch_name, entry.fetch( "branch" )
+			assert_equal runtime.send( :realpath_safe, external_path ), runtime.send( :realpath_safe, entry.fetch( "path" ) )
+			assert_equal "reap", entry.dig( "cleanup", "action" )
+			assert_equal "content absorbed into main", entry.dig( "cleanup", "reason" )
+		ensure
+			system( "git", "-C", repo_root, "worktree", "remove", "--force", external_path, out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "branch", "-D", branch_name, out: File::NULL, err: File::NULL )
+			FileUtils.remove_entry( external_root ) if defined?( external_root ) && File.directory?( external_root )
+		end
+	end
+
+	def test_worktree_list_human_reports_open_pr_recommendation
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "open-pr-list" )
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {},
+				open_pr_branches: [ worktree.fetch( :branch ) ]
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.worktree_list!
+			end
+
+			assert_includes output.string, "- open-pr-list: #{worktree.fetch( :branch )}, clean, PR #99 OPEN"
+			assert_includes output.string, "Recommendation: keep — open PR exists"
 		end
 	end
 
@@ -424,8 +463,34 @@ class RuntimeWorktreeTest < Minitest::Test
 			refute Dir.exist?( worktree.fetch( :path ) ), "abandoned worktree should be reaped"
 			refute system( "git", "-C", repo_root, "rev-parse", "--verify", worktree.fetch( :branch ), out: File::NULL, err: File::NULL ),
 				"abandoned branch should be deleted after reap"
-			assert_includes output.string, "reaped abandoned worktree: abandoned-pr"
-			assert_includes output.string, "https://github.com/test/repo/pull/41"
+			assert_includes output.string, "deleted branch: #{worktree.fetch( :branch )}"
+		end
+	end
+
+	def test_reap_dead_worktrees_reaps_external_absorbed_worktree
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			external_root = Dir.mktmpdir( "carson-external-reap", carson_tmp_root )
+			external_path = File.join( external_root, "external-absorbed" )
+			branch_name = "external-absorbed"
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, external_path, out: File::NULL, err: File::NULL )
+			File.write( File.join( external_path, "#{branch_name}.txt" ), "feature content\n" )
+			system( "git", "-C", external_path, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", external_path, "commit", "-m", "work on #{branch_name}", out: File::NULL, err: File::NULL )
+			system( "git", "-C", external_path, "push", "-u", "origin", branch_name, out: File::NULL, err: File::NULL )
+
+			File.write( File.join( repo_root, "#{branch_name}.txt" ), "feature content\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "land #{branch_name} content via other PR", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+			runtime.reap_dead_worktrees!
+
+			refute Dir.exist?( external_path ), "external absorbed worktree should be reaped"
+			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch_name, out: File::NULL, err: File::NULL ),
+				"external absorbed branch should be deleted"
+			assert_includes output.string, "deleted branch: #{branch_name}"
+		ensure
+			FileUtils.remove_entry( external_root ) if defined?( external_root ) && File.directory?( external_root )
 		end
 	end
 

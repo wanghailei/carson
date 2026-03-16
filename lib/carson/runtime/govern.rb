@@ -159,6 +159,11 @@ module Carson
 				end
 
 				if delivery.blocked?
+					if merge_blocked_delivery?( delivery: delivery )
+						report[ :action ] = dry_run ? "would_hold" : "hold"
+						return report
+					end
+
 					if delivery.revision_count >= 3
 						report[ :action ] = dry_run ? "would_escalate" : "escalate"
 						report[ :status ] = execute_delivery_action!( action: report[ :action ], delivery: delivery, repo_path: repo_path, dry_run: dry_run ).status unless dry_run
@@ -283,10 +288,13 @@ module Carson
 				end
 			end
 
+			def merge_blocked_delivery?( delivery: )
+				delivery.cause == "merge"
+			end
+
 			def housekeep_repo!( repo_path: )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
-				sync_status = scoped_runtime.sync!
-				scoped_runtime.prune! if sync_status == EXIT_OK
+				scoped_runtime.send( :housekeep_one_entry, repo_path: repo_path, silent: true )
 			end
 
 			def select_agent_provider
@@ -437,12 +445,25 @@ module Carson
 
 			def format_govern_action( status:, action: )
 				case action
-				when "integrate" then "integrated"
+				when "integrate"
+					format_govern_integration_outcome( status: status )
 				when "would_integrate" then "ready to integrate (dry run)"
+				when "hold" then "held at gate"
+				when "would_hold" then "would hold at gate (dry run)"
 				when "revise" then "revision dispatched"
 				when "would_revise" then "would revise (dry run)"
 				when "escalate" then "escalated"
 				when "would_escalate" then "would escalate (dry run)"
+				else status
+				end
+			end
+
+			def format_govern_integration_outcome( status: )
+				case status
+				when "integrated" then "integrated"
+				when "gated" then "held at gate"
+				when "failed" then "integration failed"
+				when "escalated" then "integration escalated"
 				else status
 				end
 			end

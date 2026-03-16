@@ -115,14 +115,14 @@ module Carson
 				if json_output
 					output.puts JSON.pretty_generate( result )
 				else
-					print_prune_human( counters: counters )
+					print_prune_human( branches: result.fetch( :branches ), counters: counters )
 				end
 
 				exit_code
 			end
 
 			# Human-readable output for prune results.
-			def print_prune_human( counters: )
+			def print_prune_human( branches:, counters: )
 				deleted_count = counters.fetch( :deleted )
 				skipped_count = counters.fetch( :skipped )
 
@@ -136,16 +136,11 @@ module Carson
 				end
 
 				puts_verbose "prune_summary: deleted=#{deleted_count} skipped=#{skipped_count}"
-				unless verbose?
-					message = if deleted_count > 0 && skipped_count > 0
-						"Pruned #{deleted_count}, skipped #{skipped_count} (--verbose for details)."
-					elsif deleted_count > 0
-						"Pruned #{deleted_count} stale #{ deleted_count == 1 ? 'branch' : 'branches' }."
-					else
-						"Skipped #{skipped_count} #{ skipped_count == 1 ? 'branch' : 'branches' } (--verbose for details)."
-					end
-					puts_line message
+				branches.each do |entry|
+					action = entry.fetch( :action ) == :deleted ? "Deleted" : "Kept"
+					puts_line "#{action} #{entry.fetch( :type )} branch: #{entry.fetch( :branch )} — #{entry.fetch( :reason )}"
 				end
+				puts_line "Prune complete: #{deleted_count} deleted, #{skipped_count} kept."
 			end
 
 			# Runs a git command, suppressing stdout in JSON mode to keep output clean.

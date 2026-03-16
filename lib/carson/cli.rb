@@ -64,8 +64,10 @@ module Carson
 				parser.separator "    status       Show repository delivery state"
 				parser.separator "    setup        Initialise Carson configuration"
 				parser.separator "    audit        Run pre-commit health checks"
+				parser.separator "    abandon      Close and clean up abandoned delivery work"
 				parser.separator "    sync         Sync local main with remote"
 				parser.separator "    deliver      Start autonomous branch delivery"
+				parser.separator "    recover      Merge the repair PR for one baseline-red governance check"
 				parser.separator "    prune        Remove stale local branches"
 				parser.separator "    worktree     Manage isolated coding worktrees"
 				parser.separator "    housekeep    Sync, reap worktrees, and prune branches"
@@ -120,12 +122,16 @@ module Carson
 				parse_review_subcommand( arguments: arguments, error: error )
 			when "audit"
 				parse_audit_command( arguments: arguments, error: error )
+			when "abandon"
+				parse_abandon_command( arguments: arguments, error: error )
 			when "sync"
 				parse_sync_command( arguments: arguments, error: error )
 			when "status"
 				parse_status_command( arguments: arguments, error: error )
 			when "deliver"
 				parse_deliver_command( arguments: arguments, error: error )
+			when "recover"
+				parse_recover_command( arguments: arguments, error: error )
 			when "govern"
 				parse_govern_subcommand( arguments: arguments, error: error )
 			else
@@ -303,7 +309,7 @@ module Carson
 		def self.parse_worktree_subcommand( arguments:, error: )
 			options = { json: false, force: false }
 			worktree_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson worktree <create|remove> <name> [options]"
+				parser.banner = "Usage: carson worktree <create|list|remove> <name> [options]"
 				parser.separator ""
 				parser.separator "Manage isolated worktrees for coding agents."
 				parser.separator "Create auto-syncs main before branching. Remove guards against"
@@ -311,6 +317,7 @@ module Carson
 				parser.separator ""
 				parser.separator "Subcommands:"
 				parser.separator "    create <name>              Create a new worktree with a fresh branch"
+				parser.separator "    list                       List registered worktrees with cleanup status"
 				parser.separator "    remove <name> [--force]    Remove a worktree (--force skips safety checks)"
 				parser.separator ""
 				parser.separator "Options:"
@@ -319,6 +326,7 @@ module Carson
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson worktree create feature-x    Create an isolated worktree"
+				parser.separator "    carson worktree list                Show registered worktrees"
 				parser.separator "    carson worktree remove feature-x    Remove after work is pushed"
 			end
 			worktree_parser.parse!( arguments )
@@ -338,6 +346,8 @@ module Carson
 					return { command: :invalid }
 				end
 				{ command: "worktree:create", worktree_name: name, json: options[ :json ] }
+			when "list"
+				{ command: "worktree:list", json: options[ :json ] }
 			when "remove"
 				worktree_path = arguments.shift
 				if worktree_path.to_s.strip.empty?
@@ -478,6 +488,38 @@ module Carson
 			{ command: :invalid }
 		end
 
+		# --- abandon ---
+
+		def self.parse_abandon_command( arguments:, error: )
+			options = { json: false }
+			abandon_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson abandon <pr-number|pr-url|branch> [--json]"
+				parser.separator ""
+				parser.separator "Close an abandoned delivery and clean up its worktree and branch when safe."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson abandon 301"
+				parser.separator "    carson abandon https://github.com/acme/widgets/pull/301"
+				parser.separator "    carson abandon codex/feature-branch"
+			end
+			abandon_parser.parse!( arguments )
+			target = arguments.shift.to_s.strip
+			if target.empty? || !arguments.empty?
+				error.puts "#{BADGE} Use: carson abandon <pr-number|pr-url|branch>"
+				error.puts abandon_parser
+				return { command: :invalid }
+			end
+
+			{ command: "abandon", target: target, json: options.fetch( :json ) }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts abandon_parser
+			{ command: :invalid }
+		end
+
 		# --- sync ---
 
 		def self.parse_sync_command( arguments:, error: )
@@ -591,6 +633,47 @@ module Carson
 			{ command: :invalid }
 		end
 
+		# --- recover ---
+
+		def self.parse_recover_command( arguments:, error: )
+			options = { json: false, check_name: nil }
+			recover_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson recover --check NAME [--json]"
+				parser.separator ""
+				parser.separator "Merge the current repair PR when one governance-owned required check is already red on the default branch."
+				parser.separator "Recovery is narrow: Carson verifies the baseline failure, keeps every other gate intact, and records an audit event."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--check NAME", "Name of the governance-owned required check to recover" ) { |value| options[ :check_name ] = value }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson recover --check \"Carson governance\""
+				parser.separator "    carson recover --check \"Carson governance\" --json"
+			end
+			recover_parser.parse!( arguments )
+			if options.fetch( :check_name, nil ).to_s.strip.empty?
+				error.puts "#{BADGE} --check requires a non-empty governance check name"
+				error.puts recover_parser
+				return { command: :invalid }
+			end
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for recover: #{arguments.join( ' ' )}"
+				error.puts recover_parser
+				return { command: :invalid }
+			end
+
+			{
+				command: "recover",
+				json: options.fetch( :json ),
+				check_name: options.fetch( :check_name )
+			}
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts recover_parser
+			{ command: :invalid }
+		end
+
 		# --- repos ---
 
 		def self.parse_repos_command( arguments:, error: )
@@ -623,9 +706,9 @@ module Carson
 		# --- housekeep ---
 
 		def self.parse_housekeep_command( arguments:, error: )
-			options = { all: false, json: false, dry_run: false }
+			options = { all: false, json: false, dry_run: false, loop_seconds: nil }
 			housekeep_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson housekeep [REPO] [--all] [--dry-run] [--json]"
+				parser.banner = "Usage: carson housekeep [REPO] [--all] [--dry-run] [--json] [--loop SECONDS]"
 				parser.separator ""
 				parser.separator "Run housekeeping: sync main, reap dead worktrees, and prune stale branches."
 				parser.separator "Defaults to the current repository."
@@ -634,21 +717,31 @@ module Carson
 				parser.on( "--all", "Housekeep all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--dry-run", "Show what would be reaped/deleted without making changes" ) { options[ :dry_run ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles (requires --all)" ) do |seconds|
+					error.puts( "#{BADGE} --loop expects a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
+					options[ :loop_seconds ] = seconds
+				end
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson housekeep              Housekeep the current repository"
 				parser.separator "    carson housekeep --dry-run    Preview what housekeep would do"
 				parser.separator "    carson housekeep nexus        Housekeep a named governed repo"
 				parser.separator "    carson housekeep --all        Housekeep all governed repos"
+				parser.separator "    carson housekeep --all --loop 300   Housekeep every 5 minutes"
 			end
 			housekeep_parser.parse!( arguments )
+
+			if options[ :loop_seconds ] && !options[ :all ]
+				error.puts "#{BADGE} --loop requires --all"
+				return { command: :invalid }
+			end
 
 			if options[ :all ] && !arguments.empty?
 				error.puts "#{BADGE} --all and repo target are mutually exclusive. Use: carson housekeep --all OR carson housekeep [repo]"
 				return { command: :invalid }
 			end
 
-			return { command: "housekeep:all", json: options[ :json ], dry_run: options[ :dry_run ] } if options[ :all ]
+			return { command: "housekeep:all", json: options[ :json ], dry_run: options[ :dry_run ], loop_seconds: options[ :loop_seconds ] } if options[ :all ]
 
 			if arguments.length > 1
 				error.puts "#{BADGE} Too many arguments for housekeep. Use: carson housekeep [repo]"
@@ -745,6 +838,8 @@ module Carson
 				runtime.setup!( cli_choices: parsed.fetch( :cli_choices, {} ) )
 			when "audit"
 				runtime.audit!( json_output: parsed.fetch( :json, false ) )
+			when "abandon"
+				runtime.abandon!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ) )
 			when "sync"
 				runtime.sync!( json_output: parsed.fetch( :json, false ) )
 			when "prune"
@@ -753,6 +848,8 @@ module Carson
 				runtime.prune_all!
 			when "worktree:create"
 				runtime.worktree_create!( name: parsed.fetch( :worktree_name ), json_output: parsed.fetch( :json, false ) )
+			when "worktree:list"
+				runtime.worktree_list!( json_output: parsed.fetch( :json, false ) )
 			when "worktree:remove"
 				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ), json_output: parsed.fetch( :json, false ) )
 			when "onboard"
@@ -774,6 +871,11 @@ module Carson
 					commit_message: parsed.fetch( :commit_message, nil ),
 					json_output: parsed.fetch( :json, false )
 				)
+			when "recover"
+				runtime.recover!(
+					check_name: parsed.fetch( :check_name ),
+					json_output: parsed.fetch( :json, false )
+				)
 			when "review:gate"
 				runtime.review_gate!
 			when "review:sweep"
@@ -785,7 +887,16 @@ module Carson
 			when "housekeep:target"
 				runtime.housekeep_target!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 			when "housekeep:all"
-				runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
+				loop_seconds = parsed.fetch( :loop_seconds, nil )
+				if loop_seconds
+					runtime.housekeep_loop!(
+						json_output: parsed.fetch( :json, false ),
+						dry_run: parsed.fetch( :dry_run, false ),
+						loop_seconds: loop_seconds
+					)
+				else
+					runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
+				end
 			when "govern"
 				runtime.govern!(
 					dry_run: parsed.fetch( :dry_run, false ),

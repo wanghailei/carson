@@ -1,4 +1,4 @@
-# Tests for the async branch-delivery contract.
+# Tests for the synchronous branch-delivery contract.
 require_relative "test_helper"
 
 class RuntimeDeliverTest < Minitest::Test
@@ -111,7 +111,7 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
-	def test_deliver_registers_queued_delivery_when_branch_is_ready
+	def test_deliver_integrates_delivery_when_branch_is_ready
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/queued" )
@@ -123,13 +123,16 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_includes output, "PR #99"
 		assert_includes output, "Delivery:"
 		assert_includes output, "feature/queued → main"
-		assert_includes output, "All clear"
+		assert_includes output, "Merged into main with squash."
+		assert_includes output, "Synced local main."
 
 		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/queued" )
+		assert_nil delivery
+		delivery = delivery_row_for( runtime: runtime, branch_name: "feature/queued" )
 		refute_nil delivery
-		assert_equal "queued", delivery.status
-		assert_equal "ready to integrate into main", delivery.summary
-		assert_equal 99, delivery.pull_request_number
+		assert_equal "integrated", delivery.fetch( "status" )
+		assert_equal "integrated into main", delivery.fetch( "summary" )
+		assert_equal 99, delivery.fetch( "pr_number" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -138,6 +141,7 @@ class RuntimeDeliverTest < Minitest::Test
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/gated" )
 		stub_assessment( runtime, ci: :pending, review: { status: :pass, review: :approved, detail: "" } )
+		runtime.define_singleton_method( :wait_for_delivery_readiness! ) { |delivery:, branch_name:| delivery }
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
@@ -146,6 +150,80 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal "ci", delivery.cause
 		assert_includes delivery.summary, "waiting for CI"
 		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_assess_delivery_marks_conflicting_pr_as_merge_blocked
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/conflicting" )
+		repository = runtime.send( :repository_record )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/conflicting",
+			head: git_capture( repo_root, "rev-parse", "feature/conflicting" ),
+			worktree_path: repo_root,
+			pr_number: 99,
+			pr_url: "https://github.com/test/repo/pull/99",
+			status: "preparing",
+			summary: "delivery accepted",
+			cause: nil
+		)
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "CONFLICTING", "mergeStateStatus" => "DIRTY" }
+		end
+
+		updated = runtime.send( :assess_delivery!, delivery: delivery, branch_name: "feature/conflicting" )
+		assert_equal "gated", updated.status
+		assert_equal "merge", updated.cause
+		assert_equal "pull request has merge conflicts", updated.summary
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_assess_delivery_keeps_behind_pr_queued_with_explicit_summary
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/behind" )
+		repository = runtime.send( :repository_record )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/behind",
+			head: git_capture( repo_root, "rev-parse", "feature/behind" ),
+			worktree_path: repo_root,
+			pr_number: 99,
+			pr_url: "https://github.com/test/repo/pull/99",
+			status: "preparing",
+			summary: "delivery accepted",
+			cause: nil
+		)
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "BEHIND" }
+		end
+
+		updated = runtime.send( :assess_delivery!, delivery: delivery, branch_name: "feature/behind" )
+		assert_equal "queued", updated.status
+		assert_nil updated.cause
+		assert_includes updated.summary, "behind base"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_delivery_gate_waitable_returns_true_for_review_required
+		runtime, repo_root = build_runtime( verbose: false )
+		delivery = build_delivery( status: "gated", cause: "review", summary: "waiting for review" )
+
+		assert_equal true, runtime.send( :delivery_gate_waitable?, delivery: delivery )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_delivery_gate_waitable_returns_false_for_review_changes_requested
+		runtime, repo_root = build_runtime( verbose: false )
+		delivery = build_delivery( status: "gated", cause: "review", summary: "review changes requested" )
+
+		assert_equal false, runtime.send( :delivery_gate_waitable?, delivery: delivery )
+		destroy_runtime_repo( repo_root: repo_root )
 	end
 
 	def test_deliver_json_reports_delivery_payload
@@ -158,8 +236,8 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, result
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal 42, data.fetch( "pr_number" )
-		assert_equal "queued", data.dig( "delivery", "status" )
-		assert_equal "carson status", data.fetch( "next_step" )
+		assert_equal "integrated", data.dig( "delivery", "status" )
+		assert_equal "carson housekeep", data.fetch( "next_step" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -174,9 +252,9 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, first
 		assert_equal Carson::Runtime::EXIT_OK, second
 
-		deliveries = runtime.ledger.active_deliveries( repo_path: runtime.main_worktree_root )
+		deliveries = delivery_rows_for( runtime: runtime, branch_name: "feature/idempotent" )
 		assert_equal 1, deliveries.size
-		assert_equal "feature/idempotent", deliveries.first.branch
+		assert_equal "integrated", deliveries.first.fetch( "status" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -184,10 +262,10 @@ class RuntimeDeliverTest < Minitest::Test
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: true )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/supersede" )
-		stub_ready_assessment( runtime )
+		stub_assessment( runtime, ci: :pending, review: { status: :pass, review: :approved, detail: "" } )
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
-		first_delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
+		first_delivery = delivery_row_for( runtime: runtime, branch_name: "feature/supersede" )
 
 		File.write( File.join( repo_root, "feature.txt" ), "updated" )
 		system( "git", "-C", repo_root, "add", "feature.txt", out: File::NULL, err: File::NULL )
@@ -196,13 +274,13 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
 
 		active = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/supersede" )
-		refute_equal first_delivery.head, active.head
+		refute_equal first_delivery.fetch( "head" ), active.head
 		state = JSON.parse( File.read( runtime.ledger.path ) )
 		statuses = state[ "deliveries" ]
 			.select { |_k, d| d[ "branch_name" ] == "feature/supersede" }
 			.sort_by { |_k, d| d[ "created_at" ] }
 			.map { |_k, d| d[ "status" ] }
-		assert_equal [ "superseded", "queued" ], statuses
+		assert_equal [ "superseded", "gated" ], statuses
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -301,6 +379,13 @@ private
 		<<~BASH
 			#!/usr/bin/env bash
 			if [[ "$1" == "pr" && "$2" == "view" ]]; then
+				if [[ "$3" =~ ^[0-9]+$ ]]; then
+					number="$3"
+					cat <<JSON
+			{"number":${number},"url":"https://github.com/test/repo/pull/${number}","state":"OPEN","isDraft":false}
+			JSON
+					exit 0
+				fi
 				if #{existing_pr ? "true" : "false"}; then
 					cat <<'JSON'
 			{"number":42,"url":"https://github.com/test/repo/pull/42","state":"OPEN"}
@@ -313,6 +398,10 @@ private
 
 			if [[ "$1" == "pr" && "$2" == "create" ]]; then
 				echo "https://github.com/test/repo/pull/99"
+				exit 0
+			fi
+
+			if [[ "$1" == "pr" && "$2" == "merge" ]]; then
 				exit 0
 			fi
 
@@ -396,10 +485,40 @@ private
 		runtime.instance_variable_get( :@output ).string
 	end
 
+	def delivery_row_for( runtime:, branch_name: )
+		delivery_rows_for( runtime: runtime, branch_name: branch_name ).last
+	end
+
+	def delivery_rows_for( runtime:, branch_name: )
+		state = JSON.parse( File.read( runtime.ledger.path ) )
+		state.fetch( "deliveries" )
+			.values
+			.select { |row| row.fetch( "repo_path" ) == runtime.main_worktree_root && row.fetch( "branch_name" ) == branch_name }
+			.sort_by { |row| row.fetch( "created_at" ).to_s }
+	end
+
 	def git_capture( repo_root, *args )
 		stdout, _stderr, status = Open3.capture3( "git", "-C", repo_root, *args )
 		raise "git #{args.join( ' ' )} failed" unless status.success?
 		stdout.strip
+	end
+
+	def build_delivery( status:, cause:, summary: )
+		Carson::Delivery.new(
+			repo_path: "/tmp/repo",
+			branch: "feature/review",
+			head: "abc123",
+			worktree_path: "/tmp/repo/.claude/worktrees/review",
+			status: status,
+			pull_request_number: 1,
+			pull_request_url: "https://github.com/test/repo/pull/1",
+			cause: cause,
+			summary: summary,
+			created_at: Time.now.utc.iso8601,
+			updated_at: Time.now.utc.iso8601,
+			integrated_at: nil,
+			superseded_at: nil
+		)
 	end
 
 	def git_log_subjects( repo_root, count: )

@@ -135,65 +135,27 @@ module Carson
 				return fingerprint_status
 			end
 
-			resolved_path = resolve_path( path: path, runtime: runtime )
+			check = remove_check( path: path, runtime: runtime, force: force )
+			unless check.fetch( :status ) == :ok
+				return finish(
+					result: { command: "worktree remove", status: check.fetch( :result_status ), name: File.basename( check.fetch( :resolved_path ) ),
+						branch: check.fetch( :branch, nil ),
+						error: check.fetch( :error ),
+						recovery: check.fetch( :recovery, nil ) },
+					exit_code: check.fetch( :exit_code ), runtime: runtime, json_output: json_output
+				)
+			end
+
+			resolved_path = check.fetch( :resolved_path )
+			branch = check.fetch( :branch )
 
 			# Missing directory: worktree was destroyed externally (e.g. gh pr merge
 			# --delete-branch). Clean up the stale git registration and delete the branch.
-			if !Dir.exist?( resolved_path ) && registered?( path: resolved_path, runtime: runtime )
+			if check.fetch( :missing )
 				return remove_missing!( resolved_path: resolved_path, runtime: runtime, json_output: json_output )
 			end
 
-			unless registered?( path: resolved_path, runtime: runtime )
-				return finish(
-					result: { command: "worktree remove", status: "error", name: File.basename( resolved_path ),
-						error: "#{resolved_path} is not a registered worktree",
-						recovery: "git worktree list" },
-					exit_code: Runtime::EXIT_ERROR, runtime: runtime, json_output: json_output
-				)
-			end
-
-			# Safety: refuse if the caller's shell CWD is inside the worktree.
-			# Removing a directory while a shell is inside it kills the shell permanently.
-			entry = find( path: resolved_path, runtime: runtime )
-			if entry&.holds_cwd?
-				safe_root = runtime.main_worktree_root
-				return finish(
-					result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
-						error: "current working directory is inside this worktree",
-						recovery: "cd #{safe_root} && carson worktree remove #{File.basename( resolved_path )}" },
-					exit_code: Runtime::EXIT_BLOCK, runtime: runtime, json_output: json_output
-				)
-			end
-
-			# Safety: refuse if another process has its CWD inside the worktree.
-			# Protects against cross-process CWD crashes (e.g. an agent session
-			# removed by a separate cleanup process while the agent's shell is inside).
-			if entry&.held_by_other_process?
-				return finish(
-					result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
-						error: "another process has its working directory inside this worktree",
-						recovery: "wait for the other session to finish, then retry" },
-					exit_code: Runtime::EXIT_BLOCK, runtime: runtime, json_output: json_output
-				)
-			end
-
-			branch = entry&.branch
 			runtime.puts_verbose "worktree_remove: path=#{resolved_path} branch=#{branch} force=#{force}"
-
-			# Safety: refuse if the branch has unpushed commits (unless --force).
-			# Prevents accidental destruction of work that exists only locally.
-			unless force
-				unpushed = check_unpushed_commits( branch: branch, worktree_path: resolved_path, runtime: runtime )
-				if unpushed
-					return finish(
-						result: { command: "worktree remove", status: "block", name: File.basename( resolved_path ),
-							branch: branch,
-							error: unpushed[ :error ],
-							recovery: unpushed[ :recovery ] },
-						exit_code: Runtime::EXIT_BLOCK, runtime: runtime, json_output: json_output
-					)
-				end
-			end
 
 			# Step 1: remove the worktree (directory + git registration).
 			rm_args = [ "worktree", "remove" ]
@@ -246,6 +208,87 @@ module Carson
 					branch: branch, branch_deleted: branch_deleted, remote_deleted: remote_deleted },
 				exit_code: Runtime::EXIT_OK, runtime: runtime, json_output: json_output
 			)
+		end
+
+		# Preflight guard for worktree removal. Shared by `worktree remove` and
+		# other runtime flows that need to know whether cleanup is safe before
+		# mutating GitHub or branch state.
+		def self.remove_check( path:, runtime:, force: false )
+			resolved_path = resolve_path( path: path, runtime: runtime )
+
+			if !Dir.exist?( resolved_path ) && registered?( path: resolved_path, runtime: runtime )
+				entry = find( path: resolved_path, runtime: runtime )
+				return { status: :ok, resolved_path: resolved_path, branch: entry&.branch, missing: true }
+			end
+
+			unless registered?( path: resolved_path, runtime: runtime )
+				return {
+					status: :error,
+					result_status: "error",
+					exit_code: Runtime::EXIT_ERROR,
+					resolved_path: resolved_path,
+					branch: nil,
+					error: "#{resolved_path} is not a registered worktree",
+					recovery: "git worktree list"
+				}
+			end
+
+			entry = find( path: resolved_path, runtime: runtime )
+			branch = entry&.branch
+
+			if entry&.holds_cwd?
+				safe_root = runtime.main_worktree_root
+				return {
+					status: :block,
+					result_status: "block",
+					exit_code: Runtime::EXIT_BLOCK,
+					resolved_path: resolved_path,
+					branch: branch,
+					error: "current working directory is inside this worktree",
+					recovery: "cd #{safe_root} && carson worktree remove #{File.basename( resolved_path )}"
+				}
+			end
+
+			if entry&.held_by_other_process?
+				return {
+					status: :block,
+					result_status: "block",
+					exit_code: Runtime::EXIT_BLOCK,
+					resolved_path: resolved_path,
+					branch: branch,
+					error: "another process has its working directory inside this worktree",
+					recovery: "wait for the other session to finish, then retry"
+				}
+			end
+
+			if !force && entry&.dirty?
+				return {
+					status: :error,
+					result_status: "error",
+					exit_code: Runtime::EXIT_ERROR,
+					resolved_path: resolved_path,
+					branch: branch,
+					error: "worktree has uncommitted changes",
+					recovery: "commit or discard changes first, or use --force to override"
+				}
+			end
+
+			unless force
+				unpushed = branch_unpushed_issue( branch: branch, worktree_path: resolved_path, runtime: runtime )
+				if unpushed
+					return {
+						status: :block,
+						result_status: "block",
+						exit_code: Runtime::EXIT_BLOCK,
+						resolved_path: resolved_path,
+						branch: branch,
+						error: unpushed.fetch( :error ),
+						recovery: unpushed.fetch( :recovery )
+					}
+				end
+			end
+
+			{ status: :ok, resolved_path: resolved_path, branch: branch, missing: false }
 		end
 
 		# Removes agent-owned worktrees whose branch content is already on main.
@@ -318,6 +361,19 @@ module Carson
 		rescue Errno::ENOENT
 			# lsof not installed.
 			false
+		rescue StandardError
+			false
+		end
+
+		def exists?
+			Dir.exist?( path )
+		end
+
+		def dirty?
+			return false unless exists?
+
+			stdout, = Open3.capture3( "git", "status", "--porcelain", chdir: path )
+			!stdout.to_s.strip.empty?
 		rescue StandardError
 			false
 		end
@@ -425,7 +481,7 @@ module Carson
 		# Content-aware: after squash/rebase merge, SHAs differ but tree content may match main.
 		# Compares content, not SHAs.
 		# Returns nil if safe, or { error:, recovery: } hash if unpushed work exists.
-		def self.check_unpushed_commits( branch:, worktree_path:, runtime: )
+		def self.branch_unpushed_issue( branch:, worktree_path:, runtime: )
 			return nil unless branch
 
 			remote = runtime.config.git_remote
@@ -453,7 +509,6 @@ module Carson
 
 			nil
 		end
-		private_class_method :check_unpushed_commits
 
 		# Resolves a worktree path: if it's a bare name, first tries the flat
 		# .claude/worktrees/<name> convention; if that isn't registered, searches

@@ -10,10 +10,17 @@ module Carson
 	class Runtime
 		module Housekeep
 			# Serves the current repo: sync + prune.
+			# Resolves to the canonical main worktree root so the command works
+			# correctly when invoked from inside an agent worktree.
 			def housekeep!( json_output: false, dry_run: false )
-				return housekeep_one_dry_run if dry_run
+				canonical = main_worktree_root
 
-				housekeep_one( repo_path: repo_root, json_output: json_output )
+				if dry_run
+					scoped = Runtime.new( repo_root: canonical, tool_root: tool_root, output: output, error: error, verbose: verbose? )
+					return scoped.housekeep_one_dry_run
+				end
+
+				housekeep_one( repo_path: canonical, json_output: json_output )
 			end
 
 			# Resolves a target name to a governed repo, then serves it.
@@ -73,6 +80,20 @@ module Carson
 				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
 			end
 
+			def housekeep_loop!( json_output:, dry_run:, loop_seconds: )
+				cycle_count = 0
+				loop do
+					cycle_count += 1
+					puts_line ""
+					puts_line "housekeep cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}"
+					housekeep_all!( json_output: json_output, dry_run: dry_run )
+					sleep loop_seconds
+				end
+			rescue Interrupt
+				puts_line "housekeep loop stopped after #{cycle_count} cycle#{plural_suffix( count: cycle_count )}"
+				EXIT_OK
+			end
+
 			# Prints a dry-run plan for this repo without making any changes.
 			# Calls reap_dead_worktrees_plan and prune_plan on self (already scoped to the repo).
 			def housekeep_one_dry_run
@@ -87,154 +108,37 @@ module Carson
 			# non-main worktree, without executing any mutations.
 			# Each item: { name:, branch:, action: :reap|:skip, reason: }
 			def reap_dead_worktrees_plan
-				main_root = main_worktree_root
-				items = []
+				worktree_list.filter_map do |worktree|
+					next if worktree.path == main_worktree_root
 
-				agent_prefixes = Worktree::AGENT_DIRS.map do |dir|
-					full = File.join( main_root, dir, "worktrees" )
-					File.join( realpath_safe( full ), "" ) if Dir.exist?( full )
-				end.compact
-
-				worktree_list.each do |worktree|
-					next if worktree.path == main_root
-					next unless worktree.branch
-
-					item = { name: File.basename( worktree.path ), branch: worktree.branch }
-
-					if worktree.holds_cwd?
-						items << item.merge( action: :skip, reason: "held by current shell" )
-						next
-					end
-
-					if worktree.held_by_other_process?
-						items << item.merge( action: :skip, reason: "held by another process" )
-						next
-					end
-
-					# Missing directory — would be reaped by worktree prune + branch delete.
-					unless Dir.exist?( worktree.path )
-						items << item.merge( action: :reap, reason: "directory missing (destroyed externally)" )
-						next
-					end
-
-					# Layer 1: agent-owned + content absorbed into main (no gh needed).
-					if agent_prefixes.any? { |prefix| worktree.path.start_with?( prefix ) } &&
-							branch_absorbed_into_main?( branch: worktree.branch )
-						items << item.merge( action: :reap, reason: "content absorbed into main" )
-						next
-					end
-
-					# Layers 2 + 3: PR evidence — requires gh CLI.
-					unless gh_available?
-						items << item.merge( action: :skip, reason: "gh CLI not available for PR check" )
-						next
-					end
-
-					tip_sha = begin
-						git_capture!( "rev-parse", "--verify", worktree.branch ).strip
-					rescue StandardError
-						nil
-					end
-
-					unless tip_sha
-						items << item.merge( action: :skip, reason: "cannot read branch tip SHA" )
-						next
-					end
-
-					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-					if merged_pr
-						items << item.merge( action: :reap, reason: "merged #{pr_short_ref( merged_pr[ :url ] )}" )
-						next
-					end
-
-					if branch_has_open_pr?( branch: worktree.branch )
-						items << item.merge( action: :skip, reason: "open PR exists" )
-						next
-					end
-
-					abandoned_pr, = abandoned_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-					if abandoned_pr
-						items << item.merge( action: :reap, reason: "closed abandoned #{pr_short_ref( abandoned_pr[ :url ] )}" )
-						next
-					end
-
-					items << item.merge( action: :skip, reason: "no evidence to reap" )
+					classification = classify_worktree_cleanup( worktree: worktree )
+					{
+						name: File.basename( worktree.path ),
+						branch: worktree.branch,
+						action: classification.fetch( :action ),
+						reason: classification.fetch( :reason )
+					}
 				end
-
-				items
 			end
 
-			# Removes dead worktrees — those whose content is on main, with merged PR evidence,
-			# or with closed-unmerged PR evidence and no open PR.
-			# Unblocks prune for the branches they hold.
-			# Three-layer dead check:
-			#   1. Content-absorbed: delegates to sweep_stale_worktrees! (shared, no gh needed).
-			#   2. Merged PR evidence: covers rebase/squash where main has since evolved
-			#      the same files (requires gh).
-			#   3. Abandoned PR evidence: closed-but-unmerged PR on the exact branch tip,
-			#      but only when no open PR still exists for the branch.
 			def reap_dead_worktrees!
-				# Layer 1: sweep agent-owned worktrees whose content is on main.
-				sweep_stale_worktrees!
-
-				# Layers 2 and 3: PR evidence for remaining worktrees.
-				return unless gh_available?
-
-				main_root = main_worktree_root
 				worktree_list.each do |worktree|
-					next if worktree.path == main_root
-					next unless worktree.branch
-					next if worktree.holds_cwd?
-					next if worktree.held_by_other_process?
+					next if worktree.path == main_worktree_root
 
-					# Missing directory: worktree was destroyed externally.
-					# Prune the stale entry and delete the branch immediately.
-					unless Dir.exist?( worktree.path )
-						git_run( "worktree", "prune" )
-						puts_verbose "reaped stale worktree entry: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
-						if !config.protected_branches.include?( worktree.branch )
-							git_run( "branch", "-D", worktree.branch )
-							puts_verbose "deleted branch: #{worktree.branch}"
-						end
+					classification = classify_worktree_cleanup( worktree: worktree )
+					if classification.fetch( :action ) == :skip
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — #{classification.fetch( :reason )}" unless verbose?
 						next
 					end
 
-					tip_sha = git_capture!( "rev-parse", "--verify", worktree.branch ).strip rescue nil
-					next unless tip_sha
-
-					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-					if !merged_pr.nil?
-						# Remove the worktree (no --force: refuses if dirty working tree).
-						_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
-						next unless rm_success
-
-						puts_verbose "reaped dead worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch})"
-
-						# Delete the local branch now that no worktree holds it.
-						if !config.protected_branches.include?( worktree.branch )
-							git_run( "branch", "-D", worktree.branch )
-							puts_verbose "deleted branch: #{worktree.branch}"
-						end
-						next
-					end
-
-					next if branch_has_open_pr?( branch: worktree.branch )
-
-					abandoned_pr, = abandoned_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-					next if abandoned_pr.nil?
-
-					# Remove the worktree (no --force: refuses if dirty working tree).
-					_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
-					next unless rm_success
-
-					puts_verbose "reaped abandoned worktree: #{File.basename( worktree.path )} (branch: #{worktree.branch}, closed PR: #{abandoned_pr.fetch( :url )})"
-
-					# Delete the local branch now that no worktree holds it.
-					if !config.protected_branches.include?( worktree.branch )
-						git_run( "branch", "-D", worktree.branch )
-						puts_verbose "deleted branch: #{worktree.branch}"
-					end
+					reap_one_worktree!(
+						worktree: worktree,
+						reason: classification.fetch( :reason ),
+						force: classification.fetch( :force, false )
+					)
 				end
+
+				reap_integrated_delivery_worktrees!
 			end
 
 		private
@@ -260,26 +164,29 @@ module Carson
 				scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
 
 				sync_status = scoped_runtime.sync!
-				if sync_status == EXIT_OK
-					scoped_runtime.reap_dead_worktrees!
-					prune_status = scoped_runtime.prune!
-				end
+				reap_status = housekeep_reap_status( scoped_runtime: scoped_runtime )
+				prune_status = scoped_runtime.prune!
 
-				ok = sync_status == EXIT_OK && prune_status == EXIT_OK
+				ok = sync_status == EXIT_OK && reap_status == EXIT_OK && prune_status == EXIT_OK
 				unless verbose? || silent
-					summary = strip_badge( buffer.string.lines.last.to_s.strip )
-					puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"
+					puts_line "#{repo_name}:"
+					output.print buffer.string
+					puts_line "  OK" if buffer.string.to_s.strip.empty?
 				end
 
-				{ name: repo_name, path: repo_path, status: ok ? "ok" : "error" }
+				entry = {
+					name: repo_name,
+					path: repo_path,
+					status: ok ? "ok" : "error",
+					sync_status: housekeep_step_status( exit_code: sync_status ),
+					reap_status: housekeep_step_status( exit_code: reap_status ),
+					prune_status: housekeep_step_status( exit_code: prune_status )
+				}
+				entry[ :error ] = housekeep_failure_summary( entry: entry ) unless ok
+				entry
 			rescue StandardError => exception
 				puts_line "#{repo_name}: did not complete (#{exception.message})" unless silent
 				{ name: repo_name, path: repo_path, status: "error", error: exception.message }
-			end
-
-			# Strips the Carson badge prefix from a message to avoid double-badging.
-			def strip_badge( text )
-				text.sub( /\A#{Regexp.escape( BADGE )}\s*/, "" )
 			end
 
 			# Resolves a user-supplied target to a governed repository path.
@@ -376,6 +283,135 @@ module Carson
 			def print_branch_plan_item( item:, name_width:, reason_width: )
 				action_str = item[ :action ] == :delete ? "→ would delete" : "→ skip"
 				puts_line "    #{item[ :branch ].ljust( name_width )}  #{item[ :reason ].ljust( reason_width )}  #{action_str}"
+			end
+
+			def housekeep_reap_status( scoped_runtime: )
+				scoped_runtime.reap_dead_worktrees!
+				EXIT_OK
+			rescue StandardError
+				EXIT_ERROR
+			end
+
+			def housekeep_step_status( exit_code: )
+				case exit_code
+				when EXIT_OK then "ok"
+				when EXIT_BLOCK then "block"
+				else "error"
+				end
+			end
+
+			def housekeep_failure_summary( entry: )
+				failures = []
+				failures << "sync #{entry.fetch( :sync_status )}" unless entry.fetch( :sync_status ) == "ok"
+				failures << "reap #{entry.fetch( :reap_status )}" unless entry.fetch( :reap_status ) == "ok"
+				failures << "prune #{entry.fetch( :prune_status )}" unless entry.fetch( :prune_status ) == "ok"
+				failures.join( ", " )
+			end
+
+			def reap_integrated_delivery_worktrees!
+				ledger.integrated_deliveries( repo_path: main_worktree_root ).each do |delivery|
+					worktree_path = delivery.worktree_path.to_s
+					next if worktree_path.strip.empty?
+
+					unless Dir.exist?( worktree_path )
+						clear_integrated_delivery_worktree_path!( delivery: delivery, reason: "directory missing" )
+						next
+					end
+
+					worktree = Worktree.find( path: worktree_path, runtime: self )
+					next if worktree.nil?
+
+					current_head = integrated_delivery_worktree_head( worktree_path: worktree.path )
+					if current_head && current_head != delivery.head
+						clear_integrated_delivery_worktree_path!( delivery: delivery, reason: "worktree moved beyond integrated head" )
+						next
+					end
+
+					if worktree.holds_cwd?
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — held by current shell" unless verbose?
+						next
+					end
+
+					if worktree.held_by_other_process?
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — held by another process" unless verbose?
+						next
+					end
+
+					if worktree.dirty?
+						puts_line "Kept worktree: #{worktree_housekeep_label( worktree: worktree )} — dirty worktree" unless verbose?
+						next
+					end
+
+					next unless current_head == delivery.head
+
+					reason = "integrated delivery recorded in ledger"
+					reaped = reap_one_worktree!( worktree: worktree, reason: reason )
+					next unless reaped
+
+					if worktree.branch.to_s.strip.empty? &&
+						!delivery.branch.to_s.strip.empty? &&
+						worktree_branch_tip_sha( branch: delivery.branch ) == delivery.head
+						delete_branch_after_reap!( branch: delivery.branch )
+					end
+
+					clear_integrated_delivery_worktree_path!( delivery: delivery, reason: reason )
+				end
+			end
+
+			def reap_one_worktree!( worktree:, reason:, force: false )
+				label = worktree_housekeep_label( worktree: worktree )
+
+				unless worktree.exists?
+					git_run( "worktree", "prune" )
+					delete_branch_after_reap!( branch: worktree.branch )
+					puts_line "Reaped worktree: #{label} — #{reason}" unless verbose?
+					return true
+				end
+
+				_, _, rm_success, = git_run( "worktree", "remove", worktree.path )
+				if !rm_success && force
+					_, _, rm_success, = git_run( "worktree", "remove", "--force", worktree.path )
+					puts_verbose "force-reaped dirty worktree: #{File.basename( worktree.path )}" if rm_success
+				end
+
+				unless rm_success
+					puts_line "Kept worktree: #{label} — removal failed" unless verbose?
+					return false
+				end
+
+				delete_branch_after_reap!( branch: worktree.branch )
+				puts_line "Reaped worktree: #{label} — #{reason}" unless verbose?
+				true
+			end
+
+			def delete_branch_after_reap!( branch: )
+				return if branch.to_s.strip.empty?
+				return if config.protected_branches.include?( branch )
+
+				git_run( "branch", "-D", branch )
+				puts_verbose "deleted branch: #{branch}"
+			end
+
+			def clear_integrated_delivery_worktree_path!( delivery:, reason: )
+				ledger.update_delivery( delivery: delivery, worktree_path: nil )
+				puts_verbose "cleared integrated delivery worktree path: #{delivery.branch} (#{reason})"
+			end
+
+			def integrated_delivery_worktree_head( worktree_path: )
+				stdout_text, _stderr_text, status = Open3.capture3( "git", "-C", worktree_path, "rev-parse", "HEAD" )
+				return nil unless status.success?
+
+				head = stdout_text.to_s.strip
+				head.empty? ? nil : head
+			rescue StandardError
+				nil
+			end
+
+			def worktree_housekeep_label( worktree: )
+				name = File.basename( worktree.path )
+				return name if worktree.branch.to_s.strip.empty?
+
+				"#{name} (#{worktree.branch})"
 			end
 
 			# Extracts a short PR reference (e.g. "PR #123") from a GitHub URL.

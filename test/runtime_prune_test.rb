@@ -359,7 +359,8 @@ class RuntimePruneTest < Minitest::Test
 				status = runtime.prune!
 				assert_equal Carson::Runtime::EXIT_OK, status
 				refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "orphan branch should be deleted"
-				assert_includes output.string, "Pruned 1 stale branch."
+				assert_includes output.string, "Deleted orphan branch: #{branch_name} — content absorbed into main"
+				assert_includes output.string, "Prune complete: 1 deleted, 0 kept."
 			end
 		end
 	end
@@ -597,7 +598,8 @@ class RuntimePruneTest < Minitest::Test
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "absorbed branch should be deleted"
-			assert_includes output.string, "Pruned 1 stale branch."
+			assert_includes output.string, "Deleted absorbed branch: #{branch_name} — content already on main"
+			assert_includes output.string, "Prune complete: 1 deleted, 0 kept."
 			refute_includes output.string, "deleted_absorbed_branch"
 		end
 	end
@@ -649,7 +651,8 @@ class RuntimePruneTest < Minitest::Test
 
 			status = runtime.prune!
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert_includes output.string, "Skipped 1 branch (--verbose for details)."
+			assert_includes output.string, "Kept absorbed branch: #{branch_name} — error: cannot delete branch"
+			assert_includes output.string, "Prune complete: 0 deleted, 1 kept."
 			refute_includes output.string, "No stale branches."
 		end
 	end

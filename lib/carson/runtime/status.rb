@@ -55,6 +55,7 @@ module Carson
 				repository = repository_record
 				branch = branch_record
 				deliveries = ledger.active_deliveries( repo_path: repository.path )
+				next_delivery_key = deliveries.find( &:ready? )&.key
 
 				{
 					version: Carson::VERSION,
@@ -70,12 +71,13 @@ module Carson
 						dirty_reason: dirty_worktree_reason,
 						sync: remote_sync_status( branch: branch.name )
 					},
-					branches: deliveries.map { |delivery| status_branch_entry( delivery: delivery ) },
+					worktrees: gather_worktree_summary,
+					branches: deliveries.map { |delivery| status_branch_entry( delivery: delivery, next_to_integrate: delivery.key == next_delivery_key ) },
 					stale_branches: gather_stale_branch_info
 				}
 			end
 
-			def status_branch_entry( delivery: )
+			def status_branch_entry( delivery:, next_to_integrate: )
 				{
 					branch: delivery.branch,
 					worktree_path: delivery.worktree_path,
@@ -84,6 +86,7 @@ module Carson
 					delivery_state: delivery.status,
 					revision_count: delivery.revision_count,
 					summary: delivery.summary,
+					next_to_integrate: next_to_integrate,
 					updated_at: delivery.updated_at
 				}
 			end
@@ -129,6 +132,13 @@ module Carson
 				{ count: gone_branches.size }
 			end
 
+			def gather_worktree_summary
+				all = worktree_list
+				main_root = main_worktree_root
+				non_main = all.reject { |worktree| worktree.path == main_root }
+				{ count: all.count, non_main_count: non_main.count }
+			end
+
 			def print_status( data: )
 				repo_name = data.dig( :repository, :name )
 				puts_line "Carson #{data.fetch( :version )} — #{repo_name}"
@@ -138,6 +148,8 @@ module Carson
 				branch_line += " (uncommitted changes)" if branch.fetch( :dirty )
 				branch_line += ", #{format_sync( sync: branch.fetch( :sync ) )}."
 				puts_line branch_line
+				worktree_summary = data.fetch( :worktrees )
+				puts_line "Worktrees: #{worktree_summary.fetch( :non_main_count )} tracked outside main — run carson worktree list." if worktree_summary.fetch( :non_main_count ).positive?
 
 				deliveries = data.fetch( :branches )
 				if deliveries.empty?
@@ -147,6 +159,11 @@ module Carson
 
 				count = deliveries.length
 				puts_line "#{count} active deliver#{count == 1 ? 'y' : 'ies'}:"
+				if (next_delivery = deliveries.find { |delivery| delivery.fetch( :next_to_integrate, false ) })
+					pr_number = next_delivery.fetch( :pr_number )
+					pr_ref = pr_number ? " (PR ##{pr_number})" : ""
+					puts_line "Next delivery: #{next_delivery.fetch( :branch )}#{pr_ref}."
+				end
 				deliveries.each do |delivery|
 					pr_number = delivery.fetch( :pr_number )
 					pr_ref = pr_number ? " (PR ##{pr_number})" : ""
@@ -163,11 +180,7 @@ module Carson
 
 				deliveries = Array( result.fetch( :branches, [] ) )
 				counts = deliveries.each_with_object( Hash.new( 0 ) ) { |delivery, memo| memo[ delivery.fetch( :delivery_state ) ] += 1 }
-				summary = if counts.empty?
-					"no active deliveries"
-				else
-					counts.map { |state, count| "#{count} #{state}" }.join( ", " )
-				end
+				summary = counts.empty? ? "no active deliveries" : counts.map { |state, count| "#{count} #{state}" }.join( ", " )
 				puts_line "#{result.fetch( :name )} — #{summary}"
 			end
 

@@ -23,6 +23,17 @@ class RuntimeStatusTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_status_human_output_points_to_worktree_list_when_non_main_worktrees_exist
+		with_feature_worktree_runtimes(
+			branch_name: "codex/status-pointer",
+			worktree_name: "status-pointer"
+		) do |root_runtime, _worktree_runtime, _repo_root, _worktree_path|
+			root_runtime.status!
+			output = output_string( root_runtime )
+			assert_includes output, "Worktrees: 1 tracked outside main — run carson worktree list."
+		end
+	end
+
 	def test_status_json_reports_repository_and_branches
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
@@ -88,6 +99,43 @@ class RuntimeStatusTest < Minitest::Test
 			assert_equal worktree_path, entry.fetch( "worktree_path" )
 			assert_equal "queued", entry.fetch( "delivery_state" )
 		end
+	end
+
+	def test_status_human_output_identifies_next_delivery_and_merge_block_reason
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/conflicting" )
+		create_feature_branch( repo_root, "feature/ready" )
+		repository = runtime.send( :repository_record )
+		runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/conflicting",
+			head: `git -C #{repo_root} rev-parse feature/conflicting`.strip,
+			worktree_path: repo_root,
+			pr_number: 12,
+			pr_url: "https://github.com/test/repo/pull/12",
+			status: "gated",
+			summary: "pull request has merge conflicts",
+			cause: "merge"
+		)
+		runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/ready",
+			head: `git -C #{repo_root} rev-parse feature/ready`.strip,
+			worktree_path: repo_root,
+			pr_number: 13,
+			pr_url: "https://github.com/test/repo/pull/13",
+			status: "queued",
+			summary: "ready to integrate into main",
+			cause: nil
+		)
+
+		runtime.status!
+		output = output_string( runtime )
+		assert_includes output, "Next delivery: feature/ready (PR #13)."
+		assert_includes output, "feature/conflicting (PR #12) — gated"
+		assert_includes output, "pull request has merge conflicts."
+		destroy_runtime_repo( repo_root: repo_root )
 	end
 
 private

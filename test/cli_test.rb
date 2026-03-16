@@ -65,6 +65,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def worktree_list!( json_output: false )
+			@calls << [ :worktree_list, { json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def sync!( json_output: false )
 			@calls << [ :sync, { json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
@@ -72,6 +77,16 @@ class CLITest < Minitest::Test
 
 		def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
 			@calls << [ :deliver, { title: title, body_file: body_file, commit_message: commit_message, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def recover!( check_name:, json_output: false )
+			@calls << [ :recover, { check_name: check_name, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def abandon!( target:, json_output: false )
+			@calls << [ :abandon, { target: target, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -103,6 +118,11 @@ class CLITest < Minitest::Test
 
 		def housekeep_all!( json_output: false, dry_run: false )
 			@calls << [ :housekeep_all, { json_output: json_output, dry_run: dry_run } ]
+			Carson::Runtime::EXIT_OK
+		end
+
+		def housekeep_loop!( json_output:, dry_run:, loop_seconds: )
+			@calls << [ :housekeep_loop, { json_output: json_output, dry_run: dry_run, loop_seconds: loop_seconds } ]
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -257,6 +277,61 @@ class CLITest < Minitest::Test
 		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--commit", "fix: harden deliver" ], output: output, error: error )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "fix: harden deliver", parsed.fetch( :commit_message )
+	end
+
+	def test_parse_args_abandon_with_json
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "abandon", "291", "--json" ], output: output, error: error )
+		assert_equal "abandon", parsed.fetch( :command )
+		assert_equal "291", parsed.fetch( :target )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_worktree_list
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "list", "--json" ], output: output, error: error )
+		assert_equal "worktree:list", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_dispatch_routes_worktree_list_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "worktree:list", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :worktree_list, { json_output: true } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_abandon_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "abandon", target: "feature/stale", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :abandon, { target: "feature/stale", json_output: false } ] ], runtime.calls
+	end
+
+	def test_parse_args_recover_with_json
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "recover", "--check", "Carson governance", "--json" ], output: output, error: error )
+		assert_equal "recover", parsed.fetch( :command )
+		assert_equal "Carson governance", parsed.fetch( :check_name )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_recover_requires_check_name
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "recover" ], output: output, error: error )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "--check requires a non-empty governance check name"
+	end
+
+	def test_dispatch_routes_recover_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "recover", check_name: "Carson governance", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :recover, { check_name: "Carson governance", json_output: true } ] ], runtime.calls
 	end
 
 	def test_parse_args_deliver_rejects_blank_commit_message
@@ -853,6 +928,30 @@ class CLITest < Minitest::Test
 		assert_equal true, parsed.fetch( :dry_run )
 	end
 
+	def test_parse_args_housekeep_all_loop
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--loop", "300" ], output: output, error: error )
+		assert_equal "housekeep:all", parsed.fetch( :command )
+		assert_equal 300, parsed.fetch( :loop_seconds )
+	end
+
+	def test_parse_args_housekeep_loop_requires_all
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--loop", "300" ], output: output, error: error )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "--loop requires --all"
+	end
+
+	def test_parse_args_housekeep_loop_rejects_non_positive_seconds
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--loop", "0" ], output: output, error: error )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "--loop expects a positive integer"
+	end
+
 	def test_dispatch_routes_housekeep_current_repo
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep", json: false }, runtime: runtime )
@@ -872,6 +971,13 @@ class CLITest < Minitest::Test
 		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: false }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ [ :housekeep_all, { json_output: false, dry_run: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_housekeep_all_loop
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: true, dry_run: true, loop_seconds: 300 }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :housekeep_loop, { json_output: true, dry_run: true, loop_seconds: 300 } ] ], runtime.calls
 	end
 
 	# --- audit --all CLI tests ---
