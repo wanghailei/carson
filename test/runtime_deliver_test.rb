@@ -452,6 +452,7 @@ private
 
 	def stub_assessment( runtime, ci:, review: )
 		runtime.define_singleton_method( :check_pr_ci ) { |number:| ci }
+		runtime.define_singleton_method( :settle_check_pr_ci ) { |number:| ci }
 		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| review }
 	end
 

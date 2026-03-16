@@ -349,7 +349,7 @@ module Carson
 
 			def evaluate_delivery_for_settle( branch_name:, pr_number:, pr_url:, main: )
 				review = check_pr_review( number: pr_number, branch: branch_name, pr_url: pr_url )
-				ci = check_pr_ci( number: pr_number )
+				ci = settle_check_pr_ci( number: pr_number )
 				pr_state = pull_request_state( number: pr_number )
 
 				return {
@@ -923,6 +923,23 @@ module Carson
 
 			# Checks CI status on a PR. Returns :pass, :fail, :pending, or :none.
 			def check_pr_ci( number: )
+				stdout, _, success, = gh_run(
+					"pr", "checks", number.to_s,
+					"--json", "name,bucket"
+				)
+				return :none unless success
+
+				checks = JSON.parse( stdout ) rescue []
+				return :none if checks.empty?
+
+				buckets = checks.map { |entry| entry[ "bucket" ].to_s.downcase }
+				return :fail if buckets.include?( "fail" )
+				return :pending if buckets.include?( "pending" )
+
+				:pass
+			end
+
+			def settle_check_pr_ci( number: )
 				stdout, _, success, = gh_run(
 					"pr", "checks", number.to_s,
 					"--json", "name,bucket"
