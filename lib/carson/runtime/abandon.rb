@@ -44,7 +44,7 @@ module Carson
 
 				if worktree
 					remove_exit = with_captured_output do
-						worktree_remove!( worktree_path: worktree.path, json_output: false )
+						worktree_remove!( worktree_path: worktree.path, skip_unpushed: true, json_output: false )
 					end
 					unless remove_exit == EXIT_OK
 						result[ :error ] = "worktree cleanup failed for #{worktree.path}"
@@ -131,29 +131,32 @@ module Carson
 				nil
 			end
 
+			# Abandon is an intentional discard: committed-but-unpushed work
+			# does not block abandonment. Only uncommitted (dirty) worktree
+			# changes block, because those may be accidental.
 			def abandon_preflight_issue( branch:, worktree: )
 				if config.protected_branches.include?( branch )
 					return { exit_code: EXIT_BLOCK, error: "cannot abandon protected branch #{branch}", recovery: "choose a feature branch instead" }
 				end
 
 				if worktree
-					check = Worktree.remove_check( path: worktree.path, runtime: self, force: false )
+					check = Worktree.remove_check( path: worktree.path, runtime: self, force: false, skip_unpushed: true )
 					return nil if check.fetch( :status ) == :ok
+
+					recovery = check.fetch( :recovery )
+					if check.fetch( :error ) == "worktree has uncommitted changes"
+						recovery = "commit or discard the changes, then retry carson abandon #{branch}"
+					end
 
 					return {
 						exit_code: check.fetch( :exit_code ),
 						error: check.fetch( :error ),
-						recovery: check.fetch( :recovery )
+						recovery: recovery
 					}
 				end
 
 				return { exit_code: EXIT_BLOCK, error: "current branch is #{branch}", recovery: "switch to main or a different branch, then retry" } if current_branch == branch
-				return nil unless local_branch_exists?( branch: branch )
-
-				unpushed = Worktree.branch_unpushed_issue( branch: branch, worktree_path: repo_root, runtime: self )
-				return nil if unpushed.nil?
-
-				{ exit_code: EXIT_BLOCK, error: unpushed.fetch( :error ), recovery: unpushed.fetch( :recovery ) }
+				nil
 			end
 
 			def close_pull_request!( number:, result: )

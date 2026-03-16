@@ -76,7 +76,7 @@ class RuntimeAbandonTest < Minitest::Test
 			end
 			runtime.define_singleton_method( :abandon_preflight_issue ) { |branch:, worktree:| nil }
 			runtime.define_singleton_method( :close_pull_request! ) { |number:, result:| Carson::Runtime::EXIT_OK }
-			runtime.define_singleton_method( :worktree_remove! ) do |worktree_path:, force: false, json_output: false|
+			runtime.define_singleton_method( :worktree_remove! ) do |worktree_path:, force: false, skip_unpushed: false, json_output: false|
 				FileUtils.remove_entry( worktree_path ) if File.directory?( worktree_path )
 				local_branch_exists = false
 				remote_branch_exists = false
@@ -128,6 +128,70 @@ class RuntimeAbandonTest < Minitest::Test
 			data = JSON.parse( output.string )
 			assert_includes data.fetch( "error" ), "current branch is #{branch_name}"
 			assert branch_exists?( repo_root: repo_root, branch_name: branch_name ), "current branch must be preserved"
+		end
+	end
+
+	def test_abandon_succeeds_with_unpushed_commits_no_worktree
+		branch_name = "feature/local-only"
+
+		with_abandon_repo( mock_gh_script: mock_gh_without_pull_requests ) do |runtime, repo_root, _bare_root, output|
+			# Create a local branch with unpushed commits (not pushed to origin).
+			system( "git", "-C", repo_root, "checkout", "-b", branch_name, out: File::NULL, err: File::NULL )
+			File.write( File.join( repo_root, "local-work.txt" ), "work\n" )
+			system( "git", "-C", repo_root, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", repo_root, "commit", "-m", "local only work", out: File::NULL, err: File::NULL )
+			# Switch back to main so abandon does not hit current-branch block.
+			system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+
+			result = runtime.abandon!( target: branch_name, json_output: true )
+			assert_equal Carson::Runtime::EXIT_OK, result
+
+			data = JSON.parse( output.string )
+			assert_equal true, data.fetch( "branch_deleted" )
+			refute branch_exists?( repo_root: repo_root, branch_name: branch_name ), "branch should be deleted"
+		end
+	end
+
+	def test_abandon_succeeds_with_unpushed_worktree
+		branch_name = "feature/unpushed-wt"
+
+		with_abandon_repo( mock_gh_script: mock_gh_without_pull_requests ) do |runtime, repo_root, _bare_root, output|
+			# Create a worktree with committed but unpushed work.
+			worktree_path = File.join( repo_root, ".claude", "worktrees", "unpushed-wt" )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_path, out: File::NULL, err: File::NULL )
+			File.write( File.join( worktree_path, "unpushed-work.txt" ), "work\n" )
+			system( "git", "-C", worktree_path, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", worktree_path, "commit", "-m", "unpushed work", out: File::NULL, err: File::NULL )
+			# Do NOT push — the branch stays local-only.
+
+			result = runtime.abandon!( target: branch_name, json_output: true )
+			assert_equal Carson::Runtime::EXIT_OK, result
+
+			data = JSON.parse( output.string )
+			assert_equal true, data.fetch( "worktree_removed" )
+			refute Dir.exist?( worktree_path ), "worktree directory should be removed"
+		end
+	end
+
+	def test_abandon_blocks_dirty_worktree_without_force_mention
+		branch_name = "feature/dirty-wt"
+
+		with_abandon_repo( mock_gh_script: mock_gh_without_pull_requests ) do |runtime, repo_root, _bare_root, output|
+			# Create a worktree with uncommitted (dirty) changes.
+			worktree_path = File.join( repo_root, ".claude", "worktrees", "dirty-wt" )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", branch_name, worktree_path, out: File::NULL, err: File::NULL )
+			File.write( File.join( worktree_path, "dirty-file.txt" ), "uncommitted\n" )
+			# Do NOT commit — leave the worktree dirty.
+
+			result = runtime.abandon!( target: branch_name, json_output: true )
+			refute_equal Carson::Runtime::EXIT_OK, result
+
+			data = JSON.parse( output.string )
+			assert_includes data.fetch( "error" ), "uncommitted changes"
+			recovery = data.fetch( "recovery" )
+			refute_includes recovery, "--force", "abandon recovery must not mention --force"
+			assert_includes recovery, "carson abandon #{branch_name}", "recovery should suggest retrying abandon"
+			assert Dir.exist?( worktree_path ), "dirty worktree must be preserved"
 		end
 	end
 

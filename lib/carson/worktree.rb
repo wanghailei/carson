@@ -144,7 +144,7 @@ module Carson
 		# Removes a worktree: directory, git registration, and branch.
 		# Never forces removal — if the worktree has uncommitted changes, refuses unless
 		# the caller explicitly passes force: true via CLI --force flag.
-		def self.remove!( path:, runtime:, force: false, json_output: false )
+		def self.remove!( path:, runtime:, force: false, skip_unpushed: false, json_output: false )
 			fingerprint_status = runtime.block_if_outsider_fingerprints!
 			unless fingerprint_status.nil?
 				if json_output
@@ -158,7 +158,7 @@ module Carson
 				return fingerprint_status
 			end
 
-			check = remove_check( path: path, runtime: runtime, force: force )
+			check = remove_check( path: path, runtime: runtime, force: force, skip_unpushed: skip_unpushed )
 			unless check.fetch( :status ) == :ok
 				return finish(
 					result: { command: "worktree remove", status: check.fetch( :result_status ), name: File.basename( check.fetch( :resolved_path ) ),
@@ -236,7 +236,7 @@ module Carson
 		# Preflight guard for worktree removal. Shared by `worktree remove` and
 		# other runtime flows that need to know whether cleanup is safe before
 		# mutating GitHub or branch state.
-		def self.remove_check( path:, runtime:, force: false )
+		def self.remove_check( path:, runtime:, force: false, skip_unpushed: false )
 			resolved_path = resolve_path( path: path, runtime: runtime )
 
 			if !Dir.exist?( resolved_path ) && registered?( path: resolved_path, runtime: runtime )
@@ -296,7 +296,7 @@ module Carson
 				}
 			end
 
-			unless force
+			unless force || skip_unpushed
 				unpushed = branch_unpushed_issue( branch: branch, worktree_path: resolved_path, runtime: runtime )
 				if unpushed
 					return {

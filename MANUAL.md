@@ -209,11 +209,13 @@ carson abandon feature/stale-work
 
 `abandon` closes the PR when it is still open, removes the matching worktree when safe, deletes the local and remote branch refs when allowed, and marks the delivery as failed in Carson's ledger.
 
-**Safety guards** — `worktree remove` blocks when:
-- Shell CWD is inside the worktree (prevents session crash).
-- Branch has unpushed commits with content that differs from main (prevents data loss).
+`abandon` is an intentional discard: committed-but-unpushed branch work does not block abandonment. Typing `carson abandon` is explicit consent to discard committed work on that branch.
 
-After squash or rebase merge, the content matches main — removal proceeds without `--force`.
+**Safety guards** — `abandon` blocks when:
+- Shell CWD is inside the worktree (prevents session crash).
+- Worktree has uncommitted changes (prevents accidental loss of unsaved work).
+
+Committed-but-unpushed work is treated as intentional discard — `abandon` proceeds. The `worktree remove` command retains its own unpushed-commit guard and `--force` override for manual cleanup outside the abandon flow.
 
 **Stale worktree recovery** — if a worktree directory is destroyed externally (for example by a raw GitHub merge/delete flow), `worktree remove`, `worktree list`, `housekeep`, and `prune` handle the stale entry gracefully: they clean up the git registration and delete the branch without error when Carson has enough evidence. Use Carson's delivery and cleanup commands instead of raw `gh pr merge --delete-branch` so the worktree directory stays intact for orderly cleanup.
 
