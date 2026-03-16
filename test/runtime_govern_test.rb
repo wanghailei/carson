@@ -54,7 +54,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		blocked_freshness = freshness_assessment( status: :behind, remote_ref: "origin/main" )
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN" } }
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name:, remote:, main:|
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
 			blocked_freshness
 		end
 
@@ -202,7 +202,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		stub_reconciliation( runtime, delivery: delivery )
 		blocked_freshness = freshness_assessment( status: :behind, remote_ref: "origin/main" )
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name:, remote:, main:|
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
 			blocked_freshness
 		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|

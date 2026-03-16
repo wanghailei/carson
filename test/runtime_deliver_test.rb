@@ -281,7 +281,7 @@ class RuntimeDeliverTest < Minitest::Test
 			freshness_assessment( status: :fresh, remote_ref: "origin/main" ),
 			freshness_assessment( status: :behind, remote_ref: "origin/main" )
 		]
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name:, remote:, main:|
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
 			freshness.shift || freshness.last
 		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|

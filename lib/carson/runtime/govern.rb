@@ -210,7 +210,7 @@ module Carson
 				def integrate_delivery!( delivery:, repo_path: )
 					result = {}
 					freshness = assess_branch_freshness(
-						branch_name: delivery.branch,
+						head_ref: delivery.head || delivery.branch,
 						remote: config.git_remote,
 						main: config.main_branch
 					)

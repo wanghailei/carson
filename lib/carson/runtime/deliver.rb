@@ -55,7 +55,7 @@ module Carson
 					end
 
 					freshness = assess_branch_freshness(
-						branch_name: branch_name,
+						head_ref: current_head,
 						remote: remote_name,
 						main: main_branch
 					)
@@ -216,7 +216,7 @@ module Carson
 				# Assesses delivery readiness and records Carson's current branch state.
 				def assess_delivery!( delivery:, branch_name: )
 					freshness = assess_branch_freshness(
-						branch_name: branch_name,
+						head_ref: delivery.head || branch_name,
 						remote: config.git_remote,
 						main: config.main_branch
 					)
@@ -260,12 +260,13 @@ module Carson
 				result[ :merge_attempted ] = false
 
 				loop do
-					evaluation = evaluate_delivery_for_settle(
-						branch_name: branch_name,
-						pr_number: delivery.pull_request_number,
-						pr_url: delivery.pull_request_url,
-						main: main
-					)
+						evaluation = evaluate_delivery_for_settle(
+							branch_name: branch_name,
+							head_ref: delivery.head,
+							pr_number: delivery.pull_request_number,
+							pr_url: delivery.pull_request_url,
+							main: main
+						)
 						last_evaluation = evaluation
 						successful_reassessments += 1 if evaluation[ :assessment_success ]
 						result[ :ci ] = evaluation[ :ci ].to_s
@@ -380,9 +381,10 @@ module Carson
 				delivery
 				end
 
-				def evaluate_delivery_for_settle( branch_name:, pr_number:, pr_url:, main: )
+				def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
 					freshness = assess_branch_freshness(
 						branch_name: branch_name,
+						head_ref: head_ref,
 						remote: config.git_remote,
 						main: main
 					)
@@ -566,7 +568,7 @@ module Carson
 
 				def attempt_delivery_merge!( delivery:, remote:, main:, result: )
 					freshness = assess_branch_freshness(
-						branch_name: delivery.branch,
+						head_ref: delivery.head || delivery.branch,
 						remote: remote,
 						main: main
 					)
@@ -751,7 +753,8 @@ module Carson
 					seconds.positive? ? seconds : 5
 				end
 
-				def assess_branch_freshness( branch_name:, remote:, main: )
+				def assess_branch_freshness( branch_name: nil, head_ref: nil, remote:, main: )
+					subject_ref = head_ref || branch_name
 					remote_ref = "#{remote}/#{main}"
 					_fetch_stdout, fetch_stderr, fetch_success, = git_run( "fetch", remote, main )
 					unless fetch_success
@@ -766,7 +769,7 @@ module Carson
 					end
 
 					_merge_base_stdout, merge_base_stderr, ancestor_success, ancestor_exit = git_run(
-						"merge-base", "--is-ancestor", remote_ref, branch_name
+						"merge-base", "--is-ancestor", remote_ref, subject_ref
 					)
 					return {
 						ready: true,
