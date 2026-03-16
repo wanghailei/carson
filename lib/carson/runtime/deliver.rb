@@ -51,31 +51,31 @@ module Carson
 				end
 				template_sync_committed = sync_exit == EXIT_BLOCK
 
-					unless commit_message.to_s.strip.empty?
-						commit_exit = prepare_delivery_commit!(
-							commit_message: commit_message,
-							template_sync_committed: template_sync_committed,
-							result: result
-						)
-						return deliver_finish( result: result, exit_code: commit_exit, json_output: json_output ) unless commit_exit == EXIT_OK
-					end
-
-					freshness = assess_branch_freshness(
-						head_ref: current_head,
-						remote: remote_name,
-						main: main_branch
+				unless commit_message.to_s.strip.empty?
+					commit_exit = prepare_delivery_commit!(
+						commit_message: commit_message,
+						template_sync_committed: template_sync_committed,
+						result: result
 					)
-					result[ :freshness ] = freshness_payload( freshness: freshness )
-					unless freshness.fetch( :ready )
-						result[ :summary ] = freshness.fetch( :summary )
-						result[ :error ] = freshness.fetch( :summary )
-						result[ :recovery ] = freshness_recovery( freshness: freshness )
-						result[ :main_branch ] = main_branch
-						return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-					end
+					return deliver_finish( result: result, exit_code: commit_exit, json_output: json_output ) unless commit_exit == EXIT_OK
+				end
 
-					push_exit = push_branch!( branch: branch_name, remote: remote_name, result: result )
-					return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
+				freshness = assess_branch_freshness(
+					head_ref: current_head,
+					remote: remote_name,
+					main: main_branch
+				)
+				result[ :freshness ] = freshness_payload( freshness: freshness )
+				unless freshness.fetch( :ready )
+					result[ :summary ] = freshness.fetch( :summary )
+					result[ :error ] = freshness.fetch( :summary )
+					result[ :recovery ] = freshness_recovery( freshness: freshness )
+					result[ :main_branch ] = main_branch
+					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				end
+
+				push_exit = push_branch!( branch: branch_name, remote: remote_name, result: result )
+				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
 
 				pr_number, pr_url = find_or_create_pr!(
 					branch: branch_name,
@@ -219,28 +219,28 @@ module Carson
 				@output, @error = saved_output, saved_error
 			end
 
-				# Assesses delivery readiness and records Carson's current branch state.
-				def assess_delivery!( delivery:, branch_name: )
-					freshness = assess_branch_freshness(
-						head_ref: delivery.head || branch_name,
-						remote: config.git_remote,
-						main: config.main_branch
+			# Assesses delivery readiness and records Carson's current branch state.
+			def assess_delivery!( delivery:, branch_name: )
+				freshness = assess_branch_freshness(
+					head_ref: delivery.head || branch_name,
+					remote: config.git_remote,
+					main: config.main_branch
+				)
+				unless freshness.fetch( :ready )
+					return ledger.update_delivery(
+						delivery: delivery,
+						status: "gated",
+						cause: "freshness",
+						summary: freshness.fetch( :summary ),
+						pr_number: delivery.pull_request_number,
+						pr_url: delivery.pull_request_url,
+						worktree_path: delivery.worktree_path
 					)
-					unless freshness.fetch( :ready )
-						return ledger.update_delivery(
-							delivery: delivery,
-							status: "gated",
-							cause: "freshness",
-							summary: freshness.fetch( :summary ),
-							pr_number: delivery.pull_request_number,
-							pr_url: delivery.pull_request_url,
-							worktree_path: delivery.worktree_path
-						)
-					end
+				end
 
-					review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
-					ci = check_pr_ci( number: delivery.pull_request_number )
-					pr_state = pull_request_state( number: delivery.pull_request_number )
+				review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
+				ci = check_pr_ci( number: delivery.pull_request_number )
+				pr_state = pull_request_state( number: delivery.pull_request_number )
 				status, cause, summary = delivery_assessment( ci: ci, review: review, pr_state: pr_state )
 
 				ledger.update_delivery(
@@ -387,112 +387,112 @@ module Carson
 					delivery
 				end
 
-				def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
-					freshness = assess_branch_freshness(
-						branch_name: branch_name,
-						head_ref: head_ref,
-						remote: config.git_remote,
-						main: main
-					)
-					unless freshness.fetch( :ready )
-						return {
-							phase: :blocked,
-							reason: freshness.fetch( :reason ),
-							cause: "freshness",
-							summary: freshness.fetch( :summary ),
-							assessment_success: freshness.fetch( :status ) != :unknown,
-							ci: :none,
-							freshness: freshness
-						}
-					end
-
-					review = check_pr_review( number: pr_number, branch: branch_name, pr_url: pr_url )
-					ci = settle_check_pr_ci( number: pr_number )
-					pr_state = pull_request_state( number: pr_number )
-
-					return {
-						phase: :waiting,
-						reason: "assessment_unavailable",
-						cause: "assessment",
-						summary: "waiting for GitHub assessment",
-						assessment_success: false,
-						ci: ci
-					}.merge( freshness: freshness ) if ci == :error || review.fetch( :status, :pass ) == :error || !pr_state.is_a?( Hash )
-
-					return {
-						phase: :integrated,
-						reason: "already_merged",
-						cause: nil,
-						summary: "integrated into #{main}",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if pr_state[ "state" ] == "MERGED"
-
+			def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
+				freshness = assess_branch_freshness(
+					branch_name: branch_name,
+					head_ref: head_ref,
+					remote: config.git_remote,
+					main: main
+				)
+				unless freshness.fetch( :ready )
 					return {
 						phase: :blocked,
-						reason: "pull_request_closed",
-						cause: "policy",
-						summary: "pull request closed without integration",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if pr_state[ "state" ] == "CLOSED"
+						reason: freshness.fetch( :reason ),
+						cause: "freshness",
+						summary: freshness.fetch( :summary ),
+						assessment_success: freshness.fetch( :status ) != :unknown,
+						ci: :none,
+						freshness: freshness
+					}
+				end
 
-					return {
-						phase: :blocked,
-						reason: "draft_pr",
-						cause: "policy",
-						summary: "pull request is still a draft",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if pr_state[ "isDraft" ]
+				review = check_pr_review( number: pr_number, branch: branch_name, pr_url: pr_url )
+				ci = settle_check_pr_ci( number: pr_number )
+				pr_state = pull_request_state( number: pr_number )
 
-					return {
-						phase: :waiting,
-						reason: "ci_pending",
-						cause: "ci",
-						summary: "waiting for CI checks",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if ci == :pending
+				return {
+					phase: :waiting,
+					reason: "assessment_unavailable",
+					cause: "assessment",
+					summary: "waiting for GitHub assessment",
+					assessment_success: false,
+					ci: ci
+				}.merge( freshness: freshness ) if ci == :error || review.fetch( :status, :pass ) == :error || !pr_state.is_a?( Hash )
 
-					return {
-						phase: :blocked,
-						reason: "ci_failed",
-						cause: "ci",
-						summary: "CI checks are failing",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if ci == :fail
+				return {
+					phase: :integrated,
+					reason: "already_merged",
+					cause: nil,
+					summary: "integrated into #{main}",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if pr_state[ "state" ] == "MERGED"
 
-					return {
-						phase: :blocked,
-						reason: "review_changes_requested",
-						cause: "review",
-						summary: "review changes requested",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if review.fetch( :review, :none ) == :changes_requested
+				return {
+					phase: :blocked,
+					reason: "pull_request_closed",
+					cause: "policy",
+					summary: "pull request closed without integration",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if pr_state[ "state" ] == "CLOSED"
 
-					return {
-						phase: :waiting,
-						reason: "review_pending",
-						cause: "review",
-						summary: "waiting for review",
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if review.fetch( :review, :none ) == :review_required
+				return {
+					phase: :blocked,
+					reason: "draft_pr",
+					cause: "policy",
+					summary: "pull request is still a draft",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if pr_state[ "isDraft" ]
 
-					return {
-						phase: :blocked,
-						reason: "review_blocked",
-						cause: "review",
-						summary: review.fetch( :detail ).to_s,
-						assessment_success: true,
-						ci: ci
-					}.merge( freshness: freshness ) if review.fetch( :status, :pass ) == :fail
+				return {
+					phase: :waiting,
+					reason: "ci_pending",
+					cause: "ci",
+					summary: "waiting for CI checks",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if ci == :pending
 
-					mergeability = settle_mergeability_assessment( pr_state: pr_state, main: main )
-					mergeability.merge( assessment_success: true, ci: ci, freshness: freshness )
+				return {
+					phase: :blocked,
+					reason: "ci_failed",
+					cause: "ci",
+					summary: "CI checks are failing",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if ci == :fail
+
+				return {
+					phase: :blocked,
+					reason: "review_changes_requested",
+					cause: "review",
+					summary: "review changes requested",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if review.fetch( :review, :none ) == :changes_requested
+
+				return {
+					phase: :waiting,
+					reason: "review_pending",
+					cause: "review",
+					summary: "waiting for review",
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if review.fetch( :review, :none ) == :review_required
+
+				return {
+					phase: :blocked,
+					reason: "review_blocked",
+					cause: "review",
+					summary: review.fetch( :detail ).to_s,
+					assessment_success: true,
+					ci: ci
+				}.merge( freshness: freshness ) if review.fetch( :status, :pass ) == :fail
+
+				mergeability = settle_mergeability_assessment( pr_state: pr_state, main: main )
+				mergeability.merge( assessment_success: true, ci: ci, freshness: freshness )
 				end
 
 			def settle_mergeability_assessment( pr_state:, main: )
@@ -513,12 +513,12 @@ module Carson
 					summary: "merge is blocked by repository policy"
 				} if merge_state == "BLOCKED"
 
-					return {
-						phase: :blocked,
-						reason: "freshness_behind",
-						cause: "freshness",
-						summary: "branch is behind #{config.git_remote}/#{main}"
-					} if merge_state == "BEHIND"
+				return {
+					phase: :blocked,
+					reason: "freshness_behind",
+					cause: "freshness",
+					summary: "branch is behind #{config.git_remote}/#{main}"
+				} if merge_state == "BEHIND"
 
 				return {
 					phase: :ready,
@@ -572,29 +572,29 @@ module Carson
 				end
 			end
 
-				def attempt_delivery_merge!( delivery:, remote:, main:, result: )
-					freshness = assess_branch_freshness(
-						head_ref: delivery.head || delivery.branch,
-						remote: remote,
-						main: main
-					)
-					result[ :freshness ] = freshness_payload( freshness: freshness )
-					unless freshness.fetch( :ready )
-						result[ :recovery ] = freshness_recovery( freshness: freshness )
-						return {
-							phase: :blocked,
-							attempted: false,
-							reason: freshness.fetch( :reason ),
-							delivery: ledger.update_delivery(
-								delivery: delivery,
-								status: "gated",
-								cause: "freshness",
-								summary: freshness.fetch( :summary )
-							)
-						}
-					end
+			def attempt_delivery_merge!( delivery:, remote:, main:, result: )
+				freshness = assess_branch_freshness(
+					head_ref: delivery.head || delivery.branch,
+					remote: remote,
+					main: main
+				)
+				result[ :freshness ] = freshness_payload( freshness: freshness )
+				unless freshness.fetch( :ready )
+					result[ :recovery ] = freshness_recovery( freshness: freshness )
+					return {
+						phase: :blocked,
+						attempted: false,
+						reason: freshness.fetch( :reason ),
+						delivery: ledger.update_delivery(
+							delivery: delivery,
+							status: "gated",
+							cause: "freshness",
+							summary: freshness.fetch( :summary )
+						)
+					}
+				end
 
-					pr_state = pull_request_state( number: delivery.pull_request_number )
+				pr_state = pull_request_state( number: delivery.pull_request_number )
 				if pr_state && pr_state[ "state" ] == "MERGED"
 					return {
 						phase: :integrated,
@@ -660,7 +660,7 @@ module Carson
 					reason: merge_assessment.fetch( :reason ),
 					delivery: ledger.update_delivery(
 						delivery: prepared,
-						status: merge_assessment.fetch( :phase ) == :blocked ? "gated" : "gated",
+						status: "gated",
 						cause: merge_assessment.fetch( :cause ),
 						summary: merge_assessment.fetch( :summary )
 					)
@@ -753,79 +753,79 @@ module Carson
 				[ "carson status", "carson deliver", "carson govern --loop 300" ]
 			end
 
-				def deliver_ci_poll_seconds
-					# Reuse the review poll interval for delivery reassessment polling.
-					seconds = config.review_poll_seconds.to_i
-					seconds.positive? ? seconds : 5
-				end
+			def deliver_ci_poll_seconds
+				# Reuse the review poll interval for delivery reassessment polling.
+				seconds = config.review_poll_seconds.to_i
+				seconds.positive? ? seconds : 5
+			end
 
-				def assess_branch_freshness( branch_name: nil, head_ref: nil, remote:, main: )
-					subject_ref = head_ref || branch_name
-					remote_ref = "#{remote}/#{main}"
-					_fetch_stdout, fetch_stderr, fetch_success, = git_run( "fetch", remote, main )
-					unless fetch_success
-						return {
-							ready: false,
-							status: :unknown,
-							reason: "freshness_unknown",
-							summary: "could not verify freshness against #{remote_ref}",
-							remote_ref: remote_ref,
-							detail: fetch_stderr.to_s.strip
-						}
-					end
-
-					_merge_base_stdout, merge_base_stderr, ancestor_success, ancestor_exit = git_run(
-						"merge-base", "--is-ancestor", remote_ref, subject_ref
-					)
+			def assess_branch_freshness( branch_name: nil, head_ref: nil, remote:, main: )
+				subject_ref = head_ref || branch_name
+				remote_ref = "#{remote}/#{main}"
+				_fetch_stdout, fetch_stderr, fetch_success, = git_run( "fetch", remote, main )
+				unless fetch_success
 					return {
-						ready: true,
-						status: :fresh,
-						reason: "freshness_fresh",
-						summary: "verified freshness against #{remote_ref}",
-						remote_ref: remote_ref
-					} if ancestor_success
-
-					return {
-						ready: false,
-						status: :behind,
-						reason: "freshness_behind",
-						summary: "branch is behind #{remote_ref}",
-						remote_ref: remote_ref
-					} if ancestor_exit == 1
-
-					{
 						ready: false,
 						status: :unknown,
 						reason: "freshness_unknown",
 						summary: "could not verify freshness against #{remote_ref}",
 						remote_ref: remote_ref,
-						detail: merge_base_stderr.to_s.strip
+						detail: fetch_stderr.to_s.strip
 					}
 				end
 
-				def freshness_payload( freshness: )
-					payload = {
-						status: freshness.fetch( :status ).to_s,
-						reason: freshness.fetch( :reason ),
-						summary: freshness.fetch( :summary ),
-						base_ref: freshness.fetch( :remote_ref )
-					}
-					detail = freshness.fetch( :detail, "" ).to_s.strip
-					payload[ :detail ] = detail unless detail.empty?
-					payload
-				end
+				_merge_base_stdout, merge_base_stderr, ancestor_success, ancestor_exit = git_run(
+					"merge-base", "--is-ancestor", remote_ref, subject_ref
+				)
+				return {
+					ready: true,
+					status: :fresh,
+					reason: "freshness_fresh",
+					summary: "verified freshness against #{remote_ref}",
+					remote_ref: remote_ref
+				} if ancestor_success
 
-				def freshness_recovery( freshness: )
-					remote_ref = freshness.fetch( :remote_ref )
-					return "git rebase #{remote_ref} && carson deliver" if freshness.fetch( :status ) == :behind
+				return {
+					ready: false,
+					status: :behind,
+					reason: "freshness_behind",
+					summary: "branch is behind #{remote_ref}",
+					remote_ref: remote_ref
+				} if ancestor_exit == 1
 
-					remote, main = remote_ref.split( "/", 2 )
-					"git fetch #{remote} #{main} && carson deliver"
-				end
+				{
+					ready: false,
+					status: :unknown,
+					reason: "freshness_unknown",
+					summary: "could not verify freshness against #{remote_ref}",
+					remote_ref: remote_ref,
+					detail: merge_base_stderr.to_s.strip
+				}
+			end
 
-				def deliver_merge_attempt_cap
-					DELIVER_MERGE_ATTEMPT_CAP
-				end
+			def freshness_payload( freshness: )
+				payload = {
+					status: freshness.fetch( :status ).to_s,
+					reason: freshness.fetch( :reason ),
+					summary: freshness.fetch( :summary ),
+					base_ref: freshness.fetch( :remote_ref )
+				}
+				detail = freshness.fetch( :detail, "" ).to_s.strip
+				payload[ :detail ] = detail unless detail.empty?
+				payload
+			end
+
+			def freshness_recovery( freshness: )
+				remote_ref = freshness.fetch( :remote_ref )
+				return "git rebase #{remote_ref} && carson deliver" if freshness.fetch( :status ) == :behind
+
+				remote, main = remote_ref.split( "/", 2 )
+				"git fetch #{remote} #{main} && carson deliver"
+			end
+
+			def deliver_merge_attempt_cap
+				DELIVER_MERGE_ATTEMPT_CAP
+			end
 
 			def deliver_monotonic_now
 				Process.clock_gettime( Process::CLOCK_MONOTONIC )
