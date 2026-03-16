@@ -103,6 +103,7 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		assert_equal "error", json[ "status" ]
 		assert_includes json[ "error" ], "could not verify"
 		assert_includes json[ "recovery" ], "git worktree list"
+		assert_includes json[ "recovery" ], worktree_name, "Recovery should include the actual branch name, not a literal"
 		refute Dir.exist?( worktree_path ), "Verification failure must not report a real worktree path as created"
 
 		branch_output, = Open3.capture3( "git", "branch", "--list", worktree_name, chdir: repo_root )
@@ -168,6 +169,7 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		assert diag.key?( "worktree_list" ), "Should include worktree list"
 		assert diag.key?( "branch_list" ), "Should include branch list"
 		assert diag.key?( "git_version" ), "Should include git version"
+		assert_equal repo_root, diag[ "repo_root" ], "repo_root should be the actual runtime root"
 
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -234,6 +236,55 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		assert Dir.exist?( wt_path ), "Worktree directory should exist at nested path"
 
 		system( "git", "-C", repo_root, "worktree", "remove", "--force", wt_path, out: File::NULL, err: File::NULL )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_creation_verified_fails_when_directory_missing_but_registered
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		worktree_name = "ghost/dir-missing"
+		worktree_path = File.join( repo_root, ".claude", "worktrees", "ghost", "dir-missing" )
+		original_git_run = runtime.method( :git_run )
+
+		# Let worktree add actually run (creates branch + registration + directory),
+		# then immediately delete the directory. The Dir.exist? guard in
+		# creation_verified? must catch this gap.
+		runtime.define_singleton_method( :git_run ) do |*args|
+			result = original_git_run.call( *args )
+			if args[ 0, 2 ] == [ "worktree", "add" ]
+				FileUtils.rm_rf( worktree_path )
+			end
+			result
+		end
+
+		result = runtime.worktree_create!( name: worktree_name, json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		assert_equal "error", json[ "status" ]
+		assert_includes json[ "error" ], "could not verify"
+
+		# Clean up: branch and registration may still exist from the real git run.
+		system( "git", "-C", repo_root, "worktree", "prune", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "branch", "-D", worktree_name, out: File::NULL, err: File::NULL )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_json_with_verbose_produces_valid_json
+		runtime, repo_root = build_runtime( verbose: true )
+		init_git_repo( repo_root )
+		result = runtime.worktree_create!( name: "verbose-json", json_output: true )
+		raw = output_string( runtime ).strip
+
+		# The key assertion: JSON.parse must succeed — no verbose prefix lines.
+		json = JSON.parse( raw )
+
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal "ok", json[ "status" ]
+		assert_equal "verbose-json", json[ "name" ]
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "verbose-json" )
+		cleanup_worktree( repo_root, wt_path )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

@@ -84,14 +84,14 @@ module Carson
 			# Best-effort — if pull fails (non-ff, offline), continue anyway.
 			main_root = runtime.main_worktree_root
 			_, _, pull_ok, = Open3.capture3( "git", "-C", main_root, "pull", "--ff-only", runtime.config.git_remote, base )
-			runtime.puts_verbose pull_ok.success? ? "synced #{base} before branching" : "sync skipped — continuing from local #{base}"
+			runtime.puts_verbose( pull_ok.success? ? "synced #{base} before branching" : "sync skipped — continuing from local #{base}" ) unless json_output
 
 			# Ensure .claude/ is excluded from git status in the host repository.
 			# Uses .git/info/exclude (local-only, never committed) to respect the outsider boundary.
 			ensure_claude_dir_excluded!( runtime: runtime )
 
 			# Create the worktree with a new branch based on the main branch.
-			FileUtils.mkdir_p( worktrees_dir )
+			FileUtils.mkdir_p( File.dirname( worktree_path ) )
 			worktree_stdout, worktree_stderr, worktree_success, = runtime.git_run( "worktree", "add", worktree_path, "-b", name, base )
 			unless worktree_success
 				error_text = worktree_stderr.to_s.strip
@@ -112,7 +112,7 @@ module Carson
 				return finish(
 					result: { command: "worktree create", status: "error", name: name, path: worktree_path, branch: name,
 						error: "git reported success but Carson could not verify the worktree and branch",
-						recovery: "git worktree list && git branch --list '\#{name}'",
+						recovery: "git worktree list && git branch --list '#{name}'",
 						diagnostics: diagnostics },
 					exit_code: Runtime::EXIT_ERROR, runtime: runtime, json_output: json_output
 				)
@@ -446,7 +446,7 @@ module Carson
 		private_class_method :finish
 
 		def self.creation_verified?( path:, branch:, runtime: )
-			registered?( path: path, runtime: runtime ) && branch_exists?( branch: branch, runtime: runtime )
+			Dir.exist?( path ) && registered?( path: path, runtime: runtime ) && branch_exists?( branch: branch, runtime: runtime )
 		end
 		private_class_method :creation_verified?
 
@@ -474,7 +474,7 @@ module Carson
 			{
 				git_stdout: git_stdout.to_s.strip,
 				git_stderr: git_stderr.to_s.strip,
-				repo_root: runtime.main_worktree_root,
+				repo_root: runtime.send( :repo_root ),
 				main_worktree_root: runtime.main_worktree_root,
 				worktree_list: wt_list.to_s.strip,
 				branch_list: branch_list.to_s.strip,
