@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.28.0
+
+### What changed
+
+- **Merge proof is now a first-class delivery surface** — Carson now proves whether a delivered branch's content is already on `main`, even after squash or rewritten history. `carson status` reports the current branch's last observed PR state and merge proof when Carson is tracking that branch, while `carson deliver` and live `carson govern` integrations report the same proof immediately after landing.
+- **Delivery state now preserves PR telemetry and proof for machine consumers** — the JSON ledger stores the last observed PR state, draft flag, merged timestamp, and merge-proof payload so Carson can report stable `pull_request` and `merge_proof` objects without re-querying GitHub on every status read.
+- **Delivery and worktree safety are harder to break** — sync now refuses to proceed from a detached main worktree, worktree lifecycle guards catch more partial-state failures, and govern/deliver reporting stays consistent when mergeability, freshness, and follow-up paths change underneath the branch.
+
+### No migration required
+
+- Existing workflows continue to work unchanged. Machine consumers may now see additive `merge_proof` and current-branch `pull_request` data in Carson JSON output.
+
 ## 3.27.1
 
 ### What changed
