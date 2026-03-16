@@ -254,7 +254,7 @@ module Carson
 				)
 			end
 
-				def settle_delivery!( delivery:, branch_name:, remote:, main:, result: )
+			def settle_delivery!( delivery:, branch_name:, remote:, main:, result: )
 					started_at = deliver_monotonic_now
 					watch_window_seconds = config.govern_check_wait.to_i
 					merge_attempts = 0
@@ -843,7 +843,7 @@ module Carson
 				( started_at + watch_window_seconds ) - deliver_monotonic_now
 			end
 
-				def delivery_assessment( ci:, review:, pr_state: )
+			def delivery_assessment( ci:, review:, pr_state: )
 					return [ "gated", "policy", "unable to assess CI checks" ] if ci == :error
 					return [ "gated", "ci", "waiting for CI checks" ] if ci == :pending
 					return [ "gated", "ci", "CI checks are failing" ] if ci == :fail
@@ -859,7 +859,7 @@ module Carson
 					[ "gated", "merge", "waiting for GitHub mergeability" ]
 				end
 
-				def mergeability_assessment( pr_state: )
+			def mergeability_assessment( pr_state: )
 					return nil unless pr_state.is_a?( Hash )
 
 				mergeable = pr_state.fetch( "mergeable", "" ).to_s.upcase
