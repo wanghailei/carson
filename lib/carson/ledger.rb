@@ -180,14 +180,15 @@ module Carson
 		end
 
 		def load_state
-			return { "deliveries" => {} } unless File.exist?( path )
+			return { "deliveries" => {}, "recovery_events" => [] } unless File.exist?( path )
 
 			raw = File.read( path )
-			return { "deliveries" => {} } if raw.strip.empty?
+			return { "deliveries" => {}, "recovery_events" => [] } if raw.strip.empty?
 
 			parsed = JSON.parse( raw )
 			raise "state file must contain a JSON object at #{path}" unless parsed.is_a?( Hash )
 			parsed[ "deliveries" ] ||= {}
+			parsed[ "recovery_events" ] ||= []
 			parsed
 		rescue JSON::ParserError => exception
 			raise "invalid JSON in state file #{path}: #{exception.message}"
@@ -294,6 +295,31 @@ module Carson
 
 		def now_utc
 			Time.now.utc.iso8601
+		end
+
+		def record_recovery_event( repository:, branch_name:, pr_number:, pr_url:, check_name:, default_branch:, default_branch_sha:, pr_sha:, actor:, merge_method:, status:, summary: )
+			timestamp = now_utc
+
+			with_state do |state|
+				state[ "recovery_events" ] ||= []
+				event = {
+					"repository" => repository.path,
+					"branch_name" => branch_name,
+					"pr_number" => pr_number,
+					"pr_url" => pr_url,
+					"check_name" => check_name,
+					"default_branch" => default_branch,
+					"default_branch_sha" => default_branch_sha,
+					"pr_sha" => pr_sha,
+					"actor" => actor,
+					"merge_method" => merge_method,
+					"status" => status,
+					"summary" => summary,
+					"recorded_at" => timestamp
+				}
+				state[ "recovery_events" ] << event
+				event
+			end
 		end
 	end
 end

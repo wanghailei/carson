@@ -173,6 +173,18 @@ carson status
 carson govern --loop 300
 ```
 
+### Recover a baseline-red governance check
+
+When a governance-owned required check is already red on the default branch, the PR that repairs it can deadlock behind that same gate. Use the explicit recovery path instead of reaching for raw `gh api`:
+
+```bash
+carson recover --check "Carson governance"
+```
+
+Recovery is narrow. Carson proves that the named check is red on the default branch, verifies that the current branch is repairing the governance surface, requires every other required check and the review gate to pass, then records a machine-readable audit event before reporting success.
+
+If Carson refuses recovery, the message explains the exact missing proof or remaining gate and tells you what to do next.
+
 **5. Clean up landed work** — once the delivery is integrated, use Carson cleanup commands from the main worktree. `worktree list` shows every registered worktree with PR state, absorbed-into-main detection, and Carson's cleanup recommendation:
 
 ```bash

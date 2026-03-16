@@ -80,6 +80,11 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
+		def recover!( check_name:, json_output: false )
+			@calls << [ :recover, { check_name: check_name, json_output: json_output } ]
+			Carson::Runtime::EXIT_OK
+		end
+
 		def abandon!( target:, json_output: false )
 			@calls << [ :abandon, { target: target, json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
@@ -303,6 +308,30 @@ class CLITest < Minitest::Test
 		status = Carson::CLI.dispatch( parsed: { command: "abandon", target: "feature/stale", json: false }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, status
 		assert_equal [ [ :abandon, { target: "feature/stale", json_output: false } ] ], runtime.calls
+	end
+
+	def test_parse_args_recover_with_json
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "recover", "--check", "Carson governance", "--json" ], output: output, error: error )
+		assert_equal "recover", parsed.fetch( :command )
+		assert_equal "Carson governance", parsed.fetch( :check_name )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_recover_requires_check_name
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: [ "recover" ], output: output, error: error )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error.string, "--check requires a non-empty governance check name"
+	end
+
+	def test_dispatch_routes_recover_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "recover", check_name: "Carson governance", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :recover, { check_name: "Carson governance", json_output: true } ] ], runtime.calls
 	end
 
 	def test_parse_args_deliver_rejects_blank_commit_message

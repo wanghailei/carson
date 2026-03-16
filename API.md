@@ -26,6 +26,7 @@ carson <command> [subcommand] [arguments]
 |---|---|
 | `carson audit` | Evaluate governance status and generate report output. |
 | `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first, then Carson pushes, creates or refreshes the PR, waits for merge readiness, merges when clear, and syncs local `main`. |
+| `carson recover --check NAME [--json]` | Run the exceptional governed recovery path when one governance-owned required check is already red on the default branch. Carson proves the named baseline failure, keeps every other gate intact, merges through the recovery path, and records a machine-readable audit event. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap dead worktrees, reconcile integrated delivery worktree records from the ledger, and prune stale branches. Safe cleanup still runs when sync is blocked. |
@@ -96,6 +97,7 @@ In a Carson-governed repository:
 - Raw `git worktree add` and `git worktree remove` are blocked. Use `carson worktree create` and `carson worktree remove`.
 - Raw `git pull --rebase` is blocked. Use `carson sync`.
 - Raw `gh pr create` and `gh pr merge` are blocked. Use `carson deliver`.
+- Bootstrap repair for a baseline-red governance check uses `carson recover --check NAME`, not raw `gh api`.
 - On the governed main working tree, raw `git add` and `git commit` are blocked until a Carson worktree exists for the task.
 
 ## Repository boundary contract

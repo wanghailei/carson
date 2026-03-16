@@ -59,6 +59,8 @@ carson worktree list
 
 `carson deliver` owns the normal branch-delivery path: it pushes the branch, creates or refreshes the PR, waits for the review and CI gates Carson can observe, merges when clear, and syncs local `main`. If CI or review is still pending after Carson's configured wait windows, `deliver` returns a gated state instead of merging. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first.
 
+When one Carson-governed required check is already red on the default branch and the current PR is the repair, use `carson recover --check "..."`. Recovery is the explicit exceptional path: Carson proves the baseline failure, keeps every other gate intact, records an audit event, and never teaches operators to step outside Carson first.
+
 `carson worktree list` is the visibility surface for cleanup: it shows every registered worktree, the branch, PR state, whether the content is already on `main`, and Carson's keep or reap recommendation. When work needs to be abandoned instead of landed, use `carson abandon <pr-number|pr-url|branch>` to close the PR and clean up the branch/worktree safely.
 
 ## Portfolio Layer
