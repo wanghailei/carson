@@ -20,7 +20,8 @@ require_command() {
 	fi
 }
 
-version="$(cat "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/VERSION")"
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+version="$(cat "$repo_root/VERSION")"
 source_url="https://rubygems.pkg.github.com/wanghailei"
 
 while [[ $# -gt 0 ]]; do
@@ -53,8 +54,13 @@ cache_tmp_dir="$HOME/.cache"
 mkdir -p "$cache_tmp_dir"
 export TMPDIR="$cache_tmp_dir"
 
-if ! ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (major > 4 || ( major == 4 && minor >= 0 )) ? 0 : 1 )'; then
-	echo "Carson install error: Ruby >= 4.0 is required (current: $(ruby -e 'print RUBY_VERSION'))." >&2
+# Keep the installer guard aligned to the gem's declared support floor.
+required_ruby_version="$(
+	ruby -e 'spec = Gem::Specification.load(ARGV[0]) or abort("Carson install error: could not load carson.gemspec."); requirement = spec.required_ruby_version.requirements.find { |operator, _| operator == ">=" }; abort("Carson install error: carson.gemspec is missing a >= Ruby requirement.") unless requirement; print requirement[1]' \
+		"$repo_root/carson.gemspec"
+)"
+if ! ruby -e 'required = Gem::Version.new(ARGV[0]); exit( Gem::Version.new(RUBY_VERSION) >= required ? 0 : 1 )' "$required_ruby_version"; then
+	echo "Carson install error: Ruby >= ${required_ruby_version} is required (current: $(ruby -e 'print RUBY_VERSION'))." >&2
 	exit 1
 fi
 

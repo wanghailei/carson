@@ -217,9 +217,13 @@ EOF
 chmod +x "$mock_bin/gh"
 
 # Baseline toolchain and version contract checks.
-ruby_major="$(ruby -e 'print RUBY_VERSION.split(".").first.to_i')"
-if [[ "$ruby_major" -lt 4 ]]; then
-	echo "FAIL: Ruby >= 4.0 is required; found $(ruby -v)" >&2
+# Keep the smoke guard aligned to the gem's declared support floor.
+required_ruby_version="$(
+	ruby -e 'spec = Gem::Specification.load(ARGV[0]) or abort("FAIL: could not load carson.gemspec"); requirement = spec.required_ruby_version.requirements.find { |operator, _| operator == ">=" }; abort("FAIL: carson.gemspec is missing a >= Ruby requirement") unless requirement; print requirement[1]' \
+		"$repo_root/carson.gemspec"
+)"
+if ! ruby -e 'required = Gem::Version.new(ARGV[0]); exit( Gem::Version.new(RUBY_VERSION) >= required ? 0 : 1 )' "$required_ruby_version"; then
+	echo "FAIL: Ruby >= ${required_ruby_version} is required; found $(ruby -v)" >&2
 	exit 1
 fi
 
