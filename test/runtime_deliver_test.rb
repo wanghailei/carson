@@ -68,6 +68,9 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal "unknown", data.dig( "freshness", "status" )
+		assert_equal runtime.send( :config ).govern_check_wait, data.fetch( "watch_window_seconds" )
+		assert_equal 0, data.fetch( "waited_seconds" )
+		assert_equal false, data.fetch( "merge_attempted" )
 		assert_includes data.fetch( "error" ), "could not verify freshness"
 		assert_includes data.fetch( "recovery" ), "git fetch origin main"
 		assert_empty delivery_rows_for( runtime: runtime, branch_name: "feature/freshness-unknown" )
@@ -264,6 +267,39 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
+	def test_deliver_probes_once_after_one_successful_reassessment
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/probe-after-reassessment" )
+		stub_ready_assessment( runtime )
+		configure_settle_window( runtime, watch_window_seconds: 1, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		stub_pull_request_states(
+			runtime,
+			Array.new( 3 ) do
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
+			end
+		)
+		freshness = freshness_assessment( status: :fresh, remote_ref: "origin/main" )
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
+			freshness
+		end
+		merge_attempts = 0
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			merge_attempts += 1
+			result[ :error ] = "mergeability still pending"
+			Carson::Runtime::EXIT_ERROR
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "deferred", data.fetch( "outcome" )
+		assert_equal true, data.fetch( "merge_attempted" )
+		assert_equal 1, merge_attempts
+		FileUtils.remove_entry( tmp_dir )
+	end
+
 	def test_deliver_blocks_when_branch_becomes_behind_during_settle
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
@@ -296,6 +332,37 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal "freshness_behind", data.dig( "handoff", "reason" )
 		assert_equal false, data.fetch( "merge_attempted" )
 		assert_includes data.fetch( "summary" ), "behind origin/main"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_prints_handoff_steps_when_branch_becomes_behind_during_settle
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/freshness-drifts-human" )
+		stub_ready_assessment( runtime )
+		configure_settle_window( runtime, watch_window_seconds: 2, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		stub_pull_request_states(
+			runtime,
+			Array.new( 4 ) do
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
+			end
+		)
+		freshness = [
+			freshness_assessment( status: :fresh, remote_ref: "origin/main" ),
+			freshness_assessment( status: :behind, remote_ref: "origin/main" )
+		]
+		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
+			freshness.shift || freshness.last
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "Merge blocked — branch is behind origin/main."
+		assert_includes output, "carson status"
+		assert_includes output, "carson deliver"
+		assert_includes output, "carson govern --loop 300"
 		FileUtils.remove_entry( tmp_dir )
 	end
 
