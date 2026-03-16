@@ -81,6 +81,83 @@ class RuntimeSyncTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_sync_reattaches_detached_head_at_main_commit
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+
+		# Detach HEAD at the same commit as main.
+		main_sha = `git -C #{repo_root} rev-parse main`.strip
+		system( "git", "-C", repo_root, "checkout", "--detach", main_sha, out: File::NULL, err: File::NULL )
+		head_before = `git -C #{repo_root} rev-parse --abbrev-ref HEAD`.strip
+		assert_equal "HEAD", head_before, "should be detached"
+
+		result = runtime.sync!( json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "ok", json[ "status" ]
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		# Main worktree should now be attached to branch main.
+		head_after = `git -C #{repo_root} rev-parse --abbrev-ref HEAD`.strip
+		assert_equal "main", head_after, "sync should reattach detached HEAD to main"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_sync_detached_head_updates_local_main_not_just_head
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+
+		# Detach HEAD at the same commit as main.
+		main_sha = `git -C #{repo_root} rev-parse main`.strip
+		system( "git", "-C", repo_root, "checkout", "--detach", main_sha, out: File::NULL, err: File::NULL )
+
+		# Advance the remote so there is something to pull.
+		system( "git", "clone", @remote_path, "#{repo_root}-clone", out: File::NULL, err: File::NULL )
+		system( "git", "-C", "#{repo_root}-clone", "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", "#{repo_root}-clone", "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+		File.write( File.join( "#{repo_root}-clone", "advanced.txt" ), "new content" )
+		system( "git", "-C", "#{repo_root}-clone", "add", "advanced.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", "#{repo_root}-clone", "commit", "-m", "advance remote", out: File::NULL, err: File::NULL )
+		system( "git", "-C", "#{repo_root}-clone", "push", "origin", "main", out: File::NULL, err: File::NULL )
+		remote_sha = `git -C #{repo_root}-clone rev-parse main`.strip
+
+		result = runtime.sync!( json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "ok", json[ "status" ]
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		# Local main branch ref must be updated, not just the detached HEAD.
+		local_main_sha = `git -C #{repo_root} rev-parse refs/heads/main`.strip
+		assert_equal remote_sha, local_main_sha, "local main branch must be updated to remote SHA"
+
+		# Main worktree should be attached to main.
+		head_after = `git -C #{repo_root} rev-parse --abbrev-ref HEAD`.strip
+		assert_equal "main", head_after, "should be attached to main after sync"
+
+		FileUtils.remove_entry( "#{repo_root}-clone" ) if File.directory?( "#{repo_root}-clone" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_sync_blocks_when_detached_at_diverged_commit
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo_with_remote( repo_root )
+
+		# Create a diverged detached HEAD: commit something on main, then detach
+		# at the old commit.
+		old_sha = `git -C #{repo_root} rev-parse main`.strip
+		File.write( File.join( repo_root, "extra.txt" ), "extra" )
+		system( "git", "-C", repo_root, "add", "extra.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "advance local main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "checkout", "--detach", old_sha, out: File::NULL, err: File::NULL )
+
+		result = runtime.sync!( json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+		assert_equal "block", json[ "status" ]
+		assert_includes json[ "error" ], "detached"
+		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def init_git_repo_with_remote( repo_root )
