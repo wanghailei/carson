@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## Unreleased
+
+### What changed
+
+- **JSON ledger preserves legacy state and FIFO ordering** — legacy SQLite ledgers now import automatically into the JSON store on first read, same branch/head deliveries collapse across repo-path aliases, and queue order stays first-in-first-out even when multiple deliveries share the same timestamp.
+- **sqlite3 support restored for migration** — `carson.gemspec` depends on `sqlite3` again so Carson can import legacy SQLite ledgers, and CI installs the gem before running unit tests.
+
+### Migration
+
+- Existing SQLite ledgers are imported automatically on first read. Explicit legacy `.sqlite3` paths keep working after import.
+
 ## 3.27.0
 
 ### What changed
@@ -26,7 +37,6 @@ Release-note scope rule:
 
 - **Govern now finds worktree-created deliveries** — `repository_record` stored the worktree CWD as `repo_path` in the ledger, but `govern` looked up deliveries by the main tree path from config. The SQL query never matched, so `carson govern` always reported "no active deliveries" for worktree-created PRs. Now `repository_record` uses `main_worktree_root` so the ledger key is always the canonical main tree path. Also fixed the govern fallback path, `reconcile_delivery!`, `housekeep_repo!`, and `review_evidence` for the same mismatch.
 - **Status shows canonical repository name** — `carson status` from a worktree displayed the worktree folder name (e.g. `feature-branch`) as `Repository:` instead of the actual repository name. Now correctly shows the canonical name.
-- **JSON ledger preserves legacy state and FIFO ordering** — legacy SQLite ledgers now import automatically into the JSON store on first read, same branch/head deliveries collapse across repo-path aliases, and queue order stays first-in-first-out even when multiple deliveries share the same timestamp.
 
 ### Migration note
 
