@@ -66,12 +66,12 @@ on:
 
 jobs:
   governance:
-    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v3.27.1
+    uses: wanghailei/carson/.github/workflows/carson_policy.yml@v3.28.0
     secrets:
       CARSON_READ_TOKEN: ${{ secrets.CARSON_READ_TOKEN }}
     with:
-      carson_ref: "v3.27.1"
-      carson_version: "3.27.1"
+      carson_ref: "v3.28.0"
+      carson_version: "3.28.0"
       rubocop_version: "1.81.0"
 ```
 
