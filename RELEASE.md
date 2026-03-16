@@ -5,6 +5,21 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.29.0
+
+### What changed
+
+- **3.25.0 — Value objects simplified** — `Delivery` gains `repo_path`, `key` (composite `repo_path:branch:head`), and an embedded `revisions` array. `revision_count` is now derived from `revisions.length`. `Revision` drops `id` and `delivery_id`. Numeric delivery IDs are removed from the model entirely.
+- **3.26.0 — Ledger rewritten from SQLite to JSON** — The delivery ledger is now a plain JSON file (`~/.carson/state.json`) with file-lock protection and atomic writes. Revisions are embedded in their parent delivery. No migration — a missing `state.json` starts with an empty ledger; legacy `state.sqlite3` files are left untouched.
+- **3.27.0 — Config defaults updated** — `govern.state_path` default changed from `~/.carson/state.sqlite3` to `~/.carson/state.json`. Fallback leaf follows suit.
+- **3.28.0 — Consumers use natural keys** — `govern.rb` and `deliver.rb` reference `delivery.key` instead of `delivery.id`. `revisions_for_delivery` uses the delivery object directly. `revision_count:` arguments removed from `update_delivery` calls (count is derived). Human output shows `Delivery: branch → main` instead of `Delivery #id`.
+- **3.29.0 — sqlite3 dependency removed** — `spec.add_dependency "sqlite3"` removed from `carson.gemspec`. Carson has zero native extension dependencies.
+
+### Migration
+
+- If you have an existing `~/.carson/state.sqlite3`, Carson will not read it. Active deliveries start fresh. The old file is not deleted.
+- Any automation referencing `govern.state_path` with `.sqlite3` should update to `.json`.
+
 ## 3.24.0
 
 ### What changed
