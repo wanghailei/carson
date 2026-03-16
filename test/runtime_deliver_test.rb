@@ -764,6 +764,8 @@ private
 	end
 
 	def delivery_rows_for( runtime:, branch_name: )
+		return [] unless File.exist?( runtime.ledger.path )
+
 		state = JSON.parse( File.read( runtime.ledger.path ) )
 		state.fetch( "deliveries" )
 			.values
