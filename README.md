@@ -26,7 +26,7 @@ Carson lives on your workstation and in CI, never inside the repositories it gov
   ~/.carson/                     ← Carson lives here, never inside your repos
        │
        ├─ hooks ──────────────►  commit gates and command guards
-       ├─ worktree flow ──────►  create → work → deliver → clean up
+       ├─ worktree flow ──────►  create → work → deliver → housekeep
        └─ portfolio layer ────►  status --all | refresh --all | govern
 ```
 
@@ -35,6 +35,7 @@ The outsider boundary still matters: Carson governs repositories without becomin
 ## Principles
 
 - **Worktree-first** — substantive work happens in worktrees, not on `main`.
+- **Single landing path** — completed work rejoins shared truth through remote `main` via PR-based delivery.
 - **Carson-owned operations** — Carson owns worktree and delivery operations in governed repositories. Raw `git worktree add/remove`, raw `git pull --rebase`, and raw `gh pr create/merge` are blocked, and `git add` / `git commit` are blocked on the main working tree until you create a Carson worktree.
 - **Self-diagnosing output** — every block should say what happened and the exact next command.
 - **Outsider boundary** — Carson governs repositories without becoming a host-repository runtime dependency.
@@ -50,18 +51,24 @@ carson onboard your/repo/path
 carson worktree create your-worktree
 cd your/repo/path/.claude/worktrees/your-worktree
 
-# work and test, then either commit yourself or let Carson create the delivery commit
-carson deliver --commit "fix: describe this delivery"
+# work and test, then commit and hand the branch to Carson
+git add -A
+git commit -m "fix: describe this delivery"
+carson deliver
 
-# inspect cleanup recommendations once the work is landed
-carson worktree list
+# or let Carson create one all-dirty delivery commit:
+# carson deliver --commit "fix: describe this delivery"
+
+# once the delivery is integrated, clean up from the repo root
+cd your/repo/path
+carson housekeep
 ```
 
-`carson deliver` owns the normal branch-delivery path: before any push, Carson verifies the branch is fresh against the configured remote `main`. If freshness is behind or unknown, delivery stops with an explicit block and no PR side effect. If the branch is fresh, Carson pushes the branch, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, and syncs local `main`. If the settle window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff instead of leaving the PR mysteriously open. Deferred and blocked exits say whether Carson attempted merge and list the next commands in order. Use plain `carson deliver` when the branch is already committed. Use `carson deliver --commit "..."` when the worktree is dirty and Carson should create one all-dirty delivery commit first.
+`carson deliver` runs Carson-owned branch delivery. Before any push, Carson verifies that the branch is fresh against the configured remote `main`. If freshness is behind or unknown, delivery stops with an explicit block and no PR side effect. Plain `deliver` transports existing commits only; `carson deliver --commit "..."` creates one all-dirty delivery commit first, then continues the same flow. If the branch is fresh, Carson pushes it, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, and syncs local `main`. If the settle window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff instead of leaving the PR mysteriously open. Deferred and blocked exits say whether Carson attempted merge and list the next commands in order.
 
 When one Carson-governed required check is already red on the default branch and the current PR is the repair, use `carson recover --check "..."`. Recovery is the explicit exceptional path: Carson proves the baseline failure, keeps every other gate intact, records an audit event, and never teaches operators to step outside Carson first.
 
-`carson worktree list` is the visibility surface for cleanup: it shows every registered worktree, the branch, PR state, whether the content is already on `main`, and Carson's keep or reap recommendation. When work needs to be abandoned instead of landed, use `carson abandon <pr-number|pr-url|branch>` to close the PR and clean up the branch/worktree safely.
+`carson worktree list` is the visibility surface for cleanup: it shows every registered worktree, the branch, PR state, whether the content is already on `main`, and Carson's keep or reap recommendation. `carson housekeep` is the main cleanup pass: sync main, reap dead worktrees, and prune stale branches. When work needs to be abandoned instead of landed, use `carson abandon <pr-number|pr-url|branch>` to close the PR and clean up the branch/worktree safely.
 
 ## Portfolio Layer
 
@@ -73,7 +80,7 @@ carson refresh --all
 carson govern --dry-run
 ```
 
-`carson govern` is the portfolio layer. It reassesses active deliveries across governed repositories, dispatches revision work for blocked branches, and surfaces what needs human judgement. Governed integration is squash-only and happens one repository at a time.
+`carson govern` is the portfolio layer. It assesses active deliveries across governed repositories, integrates ready branches, dispatches revisions for blocked work, and escalates what still needs human judgement. Governed integration is squash-only and happens one repository at a time.
 
 ## Where to Read Next
 
