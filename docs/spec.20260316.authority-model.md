@@ -2,13 +2,13 @@
 
 ## Status
 
-Active product spec for Carson's authority model.
+Active product spec for authority and backup in Carson-governed repositories.
 
-This spec defines the target truth for authority and backup in governed repositories. It does not define implementation sequencing.
+This document defines the target truth. It does not define implementation order.
 
 ## Problem
 
-Carson must not sit in the middle between a local-centred model and a remote-centred model.
+Carson must not use one side for branch origin and the other side for landing.
 
 A governed repository needs one clear answer to two questions:
 
@@ -17,11 +17,11 @@ A governed repository needs one clear answer to two questions:
 
 If those answers point to different sides, Carson is hybrid. Hybrid authority is a defect.
 
-## Core definitions
+## Terms
 
 ### Authority
 
-The side whose primary branch defines:
+The side whose primary branch decides all of the following:
 
 - branch origin for new work
 - landing path for completed work
@@ -31,7 +31,7 @@ The side whose primary branch defines:
 
 The side that mirrors, preserves, or caches the authority side.
 
-Backup does not define branch origin or landing semantics.
+Backup does not decide branch origin or landing semantics.
 
 ### Hybrid authority
 
@@ -42,21 +42,23 @@ A mixed model where:
 
 Hybrid authority is forbidden.
 
-## Core law
+## Core rule
 
 For every governed repository:
 
-- exactly one side is **authority**
-- the other side is **backup**
+- exactly one side is authority
+- the other side is backup
 
 Authority chooses both:
 
 1. where agents branch from
 2. where completed work lands
 
-Neither side may do both authority and backup jobs at the same time.
+The start side and the landing side must match.
 
-## Supported authority modes
+Neither side may act as both authority and backup at the same time.
+
+## Authority modes
 
 ### Remote authority
 
@@ -66,10 +68,10 @@ Under remote authority:
 
 - agents branch from a proved remote baseline
 - completed work lands through remote `main`
-- PR review and govern flows remain the governed landing path
+- PR review and govern flows remain part of the governed landing path
 - local `main` is backup only
 
-Any local update after landing is a sync or mirror step, not part of the authority chain.
+Any local update after landing is a backup refresh step. It is not part of the authority chain.
 
 ### Local authority
 
@@ -82,7 +84,7 @@ Under local authority:
 - remote receives backup pushes only
 - PR-based review and govern flows are not the governed landing path
 
-### Current support boundary
+## Support boundary
 
 Carson supports **remote authority** now.
 
@@ -90,23 +92,23 @@ Local authority is **deferred**. It remains a valid design mode, but it is not a
 
 ## Repository invariants
 
-### Invariant 1 — one authority only
+### Invariant 1 — one authority
 
 A governed repository has one authority at a time.
 
 ### Invariant 2 — branch origin follows authority
 
-`carson worktree create` must use the repository's authority side as the semantic source of the new branch.
+`carson worktree create` must use the authority side as the semantic source of the new branch.
 
-### Invariant 3 — landing path follows authority
+### Invariant 3 — landing follows authority
 
-`carson deliver` must land through the repository's authority side.
+`carson deliver` must land through the authority side.
 
 ### Invariant 4 — backup is secondary
 
-Backup refresh, drift, or failure may affect operator confidence and recovery flow, but it does not redefine authority.
+Backup refresh, drift, or failure may affect confidence and recovery flow, but it does not redefine authority.
 
-### Invariant 5 — surfaces must tell the same story
+### Invariant 5 — every surface tells the same story
 
 Docs, human output, JSON output, and runtime behaviour must describe the same authority model.
 
@@ -114,14 +116,14 @@ Docs, human output, JSON output, and runtime behaviour must describe the same au
 
 ### `carson onboard`
 
-When Carson onboards a governed repository, the default authority is remote.
+The default authority is remote.
 
 ### `carson worktree create`
 
 In remote authority:
 
 - Carson must prove the remote baseline before branching
-- Carson must branch from remote authority semantically, not from local `main` as a decision surface
+- Carson must branch from remote authority semantically, not from local `main` as the decision surface
 - Carson must block with exact recovery guidance if the remote authority baseline cannot be proved
 
 It is not sufficient to say "synced remote baseline" if the actual decision surface is local authority.
@@ -156,14 +158,14 @@ Carson must use authority language consistently.
 
 - **authority** = branch origin plus landing truth
 - **backup** = mirror or preservation only
-- **sync** = refresh backup state or align local copy, not redefine authority
+- **sync** = refresh backup state or align the local copy, not redefine authority
 
 ### Forbidden ambiguity
 
 Carson must not describe a workflow in a way that implies:
 
-- remote is authority for landing but local is authority for branching, or
-- local becomes authority because it was refreshed from remote, or
+- remote is authority for landing but local is authority for branching
+- local becomes authority because it was refreshed from remote
 - local post-merge sync is part of remote-authority integration truth
 
 ## Deferred local-authority contract
@@ -209,12 +211,3 @@ This spec is satisfied when all of the following are true.
 
 - README, MANUAL, API, status output, and runtime messages all use the same authority meanings.
 - Operators can tell who is authority and who is backup without reading source code.
-
-## Relationship to the idea and plan
-
-- Idea capture: GitHub issue `#339`
-- Implementation sequencing: `docs/feature.20260316.authority-model.md`
-
-The issue keeps the original idea in the backlog.
-This spec defines the target truth.
-The feature document defines the work sequence to reach it.
