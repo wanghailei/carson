@@ -5,6 +5,19 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.29.0
+
+### What changed
+
+- **Govern and housekeep loops are clearer and safer to run unattended** — `carson govern --loop` now prints per-delivery progress hints and a sleep announcement with the next-cycle timestamp, and both `govern --loop` and `housekeep --all --loop` now stop cleanly on `SIGTERM` as well as `Ctrl-C`.
+- **Govern and worktree creation no longer mutate the user's main worktree behind their back** — govern now fetches instead of syncing/pruning after merges, worktree creation branches from the remote tracking ref instead of pulling on main, and revision dispatch now defers when the target worktree is busy or dirty.
+- **Abandon guidance now matches the actual safety contract** — `carson abandon` no longer suggests an unsupported `--force`, and committed-but-unpushed branch work no longer blocks abandonment; only dirty worktree changes do.
+- **CI and release workflows are hardened for the Node 24 transition** — GitHub Actions checkouts now use `actions/checkout@v6`, Carson includes a dedicated forced-Node-24 probe for the RubyGems credentials action before changing the release path, and the standalone review smoke script now seeds its temporary `main` branch without tripping the shared main-branch commit guard.
+
+### No migration required
+
+- Existing workflows continue to work unchanged.
+
 ## 3.28.0
 
 ### What changed
