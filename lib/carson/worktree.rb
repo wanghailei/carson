@@ -92,7 +92,7 @@ module Carson
 
 			# Create the worktree with a new branch based on the main branch.
 			FileUtils.mkdir_p( worktrees_dir )
-			_, worktree_stderr, worktree_success, = runtime.git_run( "worktree", "add", worktree_path, "-b", name, base )
+			worktree_stdout, worktree_stderr, worktree_success, = runtime.git_run( "worktree", "add", worktree_path, "-b", name, base )
 			unless worktree_success
 				error_text = worktree_stderr.to_s.strip
 				error_text = "unable to create worktree" if error_text.empty?
@@ -104,10 +104,16 @@ module Carson
 			end
 
 			unless creation_verified?( path: worktree_path, branch: name, runtime: runtime )
+				diagnostics = gather_create_diagnostics(
+					git_stdout: worktree_stdout, git_stderr: worktree_stderr,
+					name: name, runtime: runtime
+				)
+				cleanup_partial_create!( path: worktree_path, branch: name, runtime: runtime )
 				return finish(
 					result: { command: "worktree create", status: "error", name: name, path: worktree_path, branch: name,
 						error: "git reported success but Carson could not verify the worktree and branch",
-						recovery: "git worktree list && git branch --list '#{name}'" },
+						recovery: "git worktree list && git branch --list '\#{name}'",
+						diagnostics: diagnostics },
 					exit_code: Runtime::EXIT_ERROR, runtime: runtime, json_output: json_output
 				)
 			end
@@ -449,6 +455,34 @@ module Carson
 			success
 		end
 		private_class_method :branch_exists?
+
+		# Removes partial state left behind when git worktree add reports success
+		# but verification reveals the worktree or branch is incomplete.
+		def self.cleanup_partial_create!( path:, branch:, runtime: )
+			FileUtils.rm_rf( path ) if Dir.exist?( path )
+			runtime.git_run( "worktree", "prune" )
+			runtime.git_run( "branch", "-D", branch ) if branch_exists?( branch: branch, runtime: runtime )
+		end
+		private_class_method :cleanup_partial_create!
+
+		# Captures diagnostic state for a verification failure so the next
+		# incident is self-diagnosing without manual investigation.
+		def self.gather_create_diagnostics( git_stdout:, git_stderr:, name:, runtime: )
+			wt_list, = runtime.git_run( "worktree", "list" )
+			branch_list, = runtime.git_run( "branch", "--list", name )
+			git_version, = Open3.capture3( "git", "--version" )
+			{
+				git_stdout: git_stdout.to_s.strip,
+				git_stderr: git_stderr.to_s.strip,
+				repo_root: runtime.main_worktree_root,
+				main_worktree_root: runtime.main_worktree_root,
+				worktree_list: wt_list.to_s.strip,
+				branch_list: branch_list.to_s.strip,
+				git_version: git_version.to_s.strip
+			}
+		end
+		private_class_method :gather_create_diagnostics
+
 
 		# Human-readable output for worktree results.
 		def self.print_human( result:, runtime: )
