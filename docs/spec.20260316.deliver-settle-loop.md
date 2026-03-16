@@ -4,7 +4,33 @@
 
 Active product spec for the bounded settle loop in `carson deliver`.
 
-This document defines the target behaviour. It does not define PR sequencing.
+This document defines the target settle behaviour.
+
+Branch freshness truth is defined in `docs/spec.20260316.deliver-branch-freshness.md`.
+
+This document does not define freshness semantics or rollout slices. It defines the bounded wait, reassessment cadence, merge-attempt rules, and handoff contract inside one `deliver` invocation.
+
+## Spec ownership
+
+This file owns:
+
+- the watch budget,
+- poll cadence,
+- reassessment flow,
+- merge-attempt limits,
+- deferred-versus-blocked output once freshness still allows continuation.
+
+The branch-freshness spec owns:
+
+- what `fresh`, `behind`, and `unknown` mean,
+- when freshness blocks delivery,
+- how freshness constrains `govern`,
+- what later slices may add.
+
+If the two specs overlap, use this rule:
+
+- this settle-loop spec decides **how** Carson keeps watching and retrying,
+- the branch-freshness spec decides **whether** Carson may continue watching or attempting merge at all.
 
 ## Problem
 
@@ -95,6 +121,8 @@ Carson exits immediately as blocked for these cases:
 - CI failing,
 - review changes requested,
 - review gate error,
+- branch freshness behind,
+- branch freshness unknown,
 - draft PR,
 - PR closed without integration,
 - merge conflict,
@@ -126,13 +154,14 @@ These states are merge-blocked:
 These states remain eligible for integration if CI and review also pass:
 
 - `mergeStateStatus = CLEAN`
-- `mergeStateStatus = BEHIND`
 
-`BEHIND` remains eligible because governed integration is fixed to `squash` in Carson today.
+### Freshness-blocked base drift
 
-If Carson later supports a non-squash governed merge method, this rule must be revisited before implementation changes.
+`mergeStateStatus = BEHIND` is not merge-eligible in Carson once delivery-first freshness is active.
 
-The summary must say that the branch is behind base.
+Carson treats `BEHIND` as a freshness block, not as a harmless squash-merge detail.
+
+The settle loop must stop immediately and report that the branch is behind base.
 
 ### Unsettled mergeability
 
@@ -256,6 +285,8 @@ This spec is satisfied when all of the following are true:
 
 - one `carson deliver` invocation merges a PR that becomes ready within the configured settle window,
 - a second manual `carson deliver` is not needed for the short-settling case,
+- branch freshness is rechecked during the settle loop and before merge,
+- a PR that becomes `BEHIND` during settle exits as blocked rather than integrating,
 - hard blockers still stop promptly and truthfully,
 - deferred exits clearly distinguish timeout from hard block,
 - draft PRs are treated as blocked, not as settle-wait cases,
