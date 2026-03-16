@@ -238,21 +238,22 @@ module Carson
 					)
 				end
 
-				review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
-				ci = check_pr_ci( number: delivery.pull_request_number )
-				pr_state = pull_request_state( number: delivery.pull_request_number )
-				status, cause, summary = delivery_assessment( ci: ci, review: review, pr_state: pr_state )
+					review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
+					ci = check_pr_ci( number: delivery.pull_request_number )
+					pr_state = pull_request_state( number: delivery.pull_request_number )
+					status, cause, summary = delivery_assessment( ci: ci, review: review, pr_state: pr_state )
 
-				ledger.update_delivery(
-					delivery: delivery,
-					status: status,
-					cause: cause,
-					summary: summary,
-					pr_number: delivery.pull_request_number,
-					pr_url: delivery.pull_request_url,
-					worktree_path: delivery.worktree_path
-				)
-			end
+					ledger.update_delivery(
+						delivery: delivery,
+						status: status,
+						cause: cause,
+						summary: summary,
+						pr_number: delivery.pull_request_number,
+						pr_url: delivery.pull_request_url,
+						worktree_path: delivery.worktree_path,
+						**pull_request_observation_attributes( pr_state: pr_state )
+					)
+				end
 
 			def settle_delivery!( delivery:, branch_name:, remote:, main:, result: )
 				started_at = deliver_monotonic_now
@@ -376,7 +377,7 @@ module Carson
 					deliver_sleep( wait_seconds )
 				end
 
-				result[ :outcome ] = "deferred"
+					result[ :outcome ] = "deferred"
 				result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
 				apply_handoff!(
 					result: result,
@@ -387,112 +388,111 @@ module Carson
 				delivery
 			end
 
-			def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
-				freshness = assess_branch_freshness(
-					branch_name: branch_name,
-					head_ref: head_ref,
-					remote: config.git_remote,
-					main: main
-				)
-				unless freshness.fetch( :ready )
+				def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
+					freshness = assess_branch_freshness(
+						branch_name: branch_name,
+						head_ref: head_ref,
+						remote: config.git_remote,
+						main: main
+					)
+					unless freshness.fetch( :ready )
+						return {
+							phase: :blocked,
+							reason: freshness.fetch( :reason ),
+							cause: "freshness",
+							summary: freshness.fetch( :summary ),
+							assessment_success: freshness.fetch( :status ) != :unknown,
+							ci: :none,
+							freshness: freshness
+						}
+					end
+
+					review = check_pr_review( number: pr_number, branch: branch_name, pr_url: pr_url )
+					ci = settle_check_pr_ci( number: pr_number )
+					pr_state = pull_request_state( number: pr_number )
+
+					return {
+						phase: :waiting,
+						reason: "assessment_unavailable",
+						cause: "assessment",
+						summary: "waiting for GitHub assessment",
+						assessment_success: false,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if ci == :error || review.fetch( :status, :pass ) == :error || !pr_state.is_a?( Hash )
+
+					return {
+						phase: :integrated,
+						reason: "already_merged",
+						cause: nil,
+						summary: "integrated into #{main}",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if pr_state[ "state" ] == "MERGED"
 					return {
 						phase: :blocked,
-						reason: freshness.fetch( :reason ),
-						cause: "freshness",
-						summary: freshness.fetch( :summary ),
-						assessment_success: freshness.fetch( :status ) != :unknown,
-						ci: :none,
-						freshness: freshness
-					}
-				end
+						reason: "pull_request_closed",
+						cause: "policy",
+						summary: "pull request closed without integration",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if pr_state[ "state" ] == "CLOSED"
 
-				review = check_pr_review( number: pr_number, branch: branch_name, pr_url: pr_url )
-				ci = settle_check_pr_ci( number: pr_number )
-				pr_state = pull_request_state( number: pr_number )
+					return {
+						phase: :blocked,
+						reason: "draft_pr",
+						cause: "policy",
+						summary: "pull request is still a draft",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if pr_state[ "isDraft" ]
 
-				return {
-					phase: :waiting,
-					reason: "assessment_unavailable",
-					cause: "assessment",
-					summary: "waiting for GitHub assessment",
-					assessment_success: false,
-					ci: ci
-				}.merge( freshness: freshness ) if ci == :error || review.fetch( :status, :pass ) == :error || !pr_state.is_a?( Hash )
+					return {
+						phase: :waiting,
+						reason: "ci_pending",
+						cause: "ci",
+						summary: "waiting for CI checks",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if ci == :pending
 
-				return {
-					phase: :integrated,
-					reason: "already_merged",
-					cause: nil,
-					summary: "integrated into #{main}",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if pr_state[ "state" ] == "MERGED"
+					return {
+						phase: :blocked,
+						reason: "ci_failed",
+						cause: "ci",
+						summary: "CI checks are failing",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if ci == :fail
 
-				return {
-					phase: :blocked,
-					reason: "pull_request_closed",
-					cause: "policy",
-					summary: "pull request closed without integration",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if pr_state[ "state" ] == "CLOSED"
+					return {
+						phase: :blocked,
+						reason: "review_changes_requested",
+						cause: "review",
+						summary: "review changes requested",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if review.fetch( :review, :none ) == :changes_requested
 
-				return {
-					phase: :blocked,
-					reason: "draft_pr",
-					cause: "policy",
-					summary: "pull request is still a draft",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if pr_state[ "isDraft" ]
+					return {
+						phase: :waiting,
+						reason: "review_pending",
+						cause: "review",
+						summary: "waiting for review",
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if review.fetch( :review, :none ) == :review_required
 
-				return {
-					phase: :waiting,
-					reason: "ci_pending",
-					cause: "ci",
-					summary: "waiting for CI checks",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if ci == :pending
+					return {
+						phase: :blocked,
+						reason: "review_blocked",
+						cause: "review",
+						summary: review.fetch( :detail ).to_s,
+						assessment_success: true,
+						ci: ci
+					}.merge( freshness: freshness, pr_state: pr_state ) if review.fetch( :status, :pass ) == :fail
 
-				return {
-					phase: :blocked,
-					reason: "ci_failed",
-					cause: "ci",
-					summary: "CI checks are failing",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if ci == :fail
-
-				return {
-					phase: :blocked,
-					reason: "review_changes_requested",
-					cause: "review",
-					summary: "review changes requested",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if review.fetch( :review, :none ) == :changes_requested
-
-				return {
-					phase: :waiting,
-					reason: "review_pending",
-					cause: "review",
-					summary: "waiting for review",
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if review.fetch( :review, :none ) == :review_required
-
-				return {
-					phase: :blocked,
-					reason: "review_blocked",
-					cause: "review",
-					summary: review.fetch( :detail ).to_s,
-					assessment_success: true,
-					ci: ci
-				}.merge( freshness: freshness ) if review.fetch( :status, :pass ) == :fail
-
-				mergeability = settle_mergeability_assessment( pr_state: pr_state, main: main )
-				mergeability.merge( assessment_success: true, ci: ci, freshness: freshness )
+					mergeability = settle_mergeability_assessment( pr_state: pr_state, main: main )
+					mergeability.merge( assessment_success: true, ci: ci, freshness: freshness, pr_state: pr_state )
 				end
 
 			def settle_mergeability_assessment( pr_state:, main: )
@@ -536,23 +536,30 @@ module Carson
 			end
 
 			def update_delivery_for_settle_evaluation( delivery:, evaluation: )
+				observation = pull_request_observation_attributes( pr_state: evaluation[ :pr_state ] )
+
 				case evaluation.fetch( :phase )
 				when :integrated
-					delivery
+					ledger.update_delivery(
+						delivery: delivery,
+						**observation
+					)
 				when :blocked
 					if evaluation.fetch( :reason ) == "pull_request_closed"
 						ledger.update_delivery(
 							delivery: delivery,
 							status: "failed",
 							cause: evaluation.fetch( :cause ),
-							summary: evaluation.fetch( :summary )
+							summary: evaluation.fetch( :summary ),
+							**observation
 						)
 					else
 						ledger.update_delivery(
 							delivery: delivery,
 							status: "gated",
 							cause: evaluation.fetch( :cause ),
-							summary: evaluation.fetch( :summary )
+							summary: evaluation.fetch( :summary ),
+							**observation
 						)
 					end
 				when :ready
@@ -560,14 +567,16 @@ module Carson
 						delivery: delivery,
 						status: "queued",
 						cause: nil,
-						summary: evaluation.fetch( :summary )
+						summary: evaluation.fetch( :summary ),
+						**observation
 					)
 				else
 					ledger.update_delivery(
 						delivery: delivery,
 						status: "gated",
 						cause: evaluation.fetch( :cause ),
-						summary: evaluation.fetch( :summary )
+						summary: evaluation.fetch( :summary ),
+						**observation
 					)
 				end
 			end
@@ -594,39 +603,43 @@ module Carson
 					}
 				end
 
-				pr_state = pull_request_state( number: delivery.pull_request_number )
-				if pr_state && pr_state[ "state" ] == "MERGED"
-					return {
-						phase: :integrated,
-						attempted: false,
-						delivery: mark_delivery_integrated!(
-							delivery: delivery,
-							remote: remote,
-							main: main,
-							result: result
-						)
-					}
-				end
+					pr_state = pull_request_state( number: delivery.pull_request_number )
+					observation = pull_request_observation_attributes( pr_state: pr_state )
+					if pr_state && pr_state[ "state" ] == "MERGED"
+						return {
+							phase: :integrated,
+							attempted: false,
+							delivery: mark_delivery_integrated!(
+								delivery: delivery,
+								remote: remote,
+								main: main,
+								result: result,
+								pr_state: pr_state
+							)
+						}
+					end
 
-				if pr_state && pr_state[ "state" ] == "CLOSED"
-					return {
-						phase: :blocked,
-						attempted: false,
-						reason: "pull_request_closed",
-						delivery: ledger.update_delivery(
-							delivery: delivery,
-							status: "failed",
-							cause: "policy",
-							summary: "pull request closed without integration"
-						)
-					}
-				end
+					if pr_state && pr_state[ "state" ] == "CLOSED"
+						return {
+							phase: :blocked,
+							attempted: false,
+							reason: "pull_request_closed",
+							delivery: ledger.update_delivery(
+								delivery: delivery,
+								status: "failed",
+								cause: "policy",
+								summary: "pull request closed without integration",
+								**observation
+							)
+						}
+					end
 
-				prepared = ledger.update_delivery(
-					delivery: delivery,
-					status: "integrating",
-					summary: "integrating into #{main}"
-				)
+					prepared = ledger.update_delivery(
+						delivery: delivery,
+						status: "integrating",
+						summary: "integrating into #{main}",
+						**observation
+					)
 				merge_exit = merge_pr!( number: prepared.pull_request_number, result: result )
 				if merge_exit == EXIT_OK
 					return {
@@ -636,7 +649,8 @@ module Carson
 							delivery: prepared,
 							remote: remote,
 							main: main,
-							result: result
+							result: result,
+							pr_state: pr_state
 						)
 					}
 				end
@@ -711,15 +725,31 @@ module Carson
 				}
 			end
 
-			def mark_delivery_integrated!( delivery:, remote:, main:, result: )
+			def mark_delivery_integrated!( delivery:, remote:, main:, result:, pr_state: nil )
+				integrated_at = Time.now.utc.iso8601
 				integrated = ledger.update_delivery(
 					delivery: delivery,
 					status: "integrated",
-					integrated_at: Time.now.utc.iso8601,
-					summary: "integrated into #{main}"
+					integrated_at: integrated_at,
+					summary: "integrated into #{main}",
+					pull_request_state: "MERGED",
+					pull_request_draft: false,
+					pull_request_merged_at: pr_state&.fetch( "mergedAt", nil ) || integrated_at
 				)
 				sync_after_merge!( remote: remote, main: main, result: result )
-				integrated
+				proof = if result[ :synced ] == false
+					merge_proof_unavailable(
+						main_ref: main,
+						summary: "proof unavailable — local #{main} sync failed."
+					)
+				else
+					merge_proof_for_branch( branch: integrated.branch, main_ref: main )
+				end
+				result[ :merge_proof ] = merge_proof_payload( proof: proof )
+				ledger.update_delivery(
+					delivery: integrated,
+					merge_proof: proof
+				)
 			end
 
 			def deferred_handoff_reason( evaluation: )
@@ -887,6 +917,7 @@ module Carson
 
 			def deliver_next_step( delivery:, result: )
 				return "carson sync" if delivery.integrated? && result[ :synced ] == false
+				return "carson status" if delivery.integrated? && merge_proof_needs_follow_up?( proof: result[ :merge_proof ] )
 				return "carson housekeep" if delivery.integrated?
 				return result.dig( :handoff, :next_steps, 0 ) if result[ :handoff ]
 				return "carson status" if delivery.blocked?
@@ -939,6 +970,7 @@ module Carson
 						elsif result[ :synced ]
 							puts_line "Synced local #{main}."
 						end
+						puts_line "Merge proof: #{result.dig( :merge_proof, :summary )}" if result[ :merge_proof ]
 						elsif outcome == "deferred"
 							puts_line "Merge deferred — #{summary}."
 							puts_line deferred_human_explanation( result: result )
@@ -972,6 +1004,74 @@ module Carson
 				Array( result.dig( :handoff, :next_steps ) ).each do |command|
 					puts_line "  → #{command}"
 				end
+			end
+
+			def merge_proof_needs_follow_up?( proof: )
+				return false unless proof.is_a?( Hash )
+
+				!proof.fetch( :proven, false )
+			end
+
+			def merge_proof_payload( proof: )
+				return nil unless proof.is_a?( Hash )
+
+				{
+					applicable: proof.fetch( :applicable ),
+					proven: proof.fetch( :proven ),
+					basis: proof.fetch( :basis ),
+					summary: proof.fetch( :summary ),
+					main_branch: proof.fetch( :main_branch ),
+					changed_files_count: proof.fetch( :changed_files_count )
+				}
+			end
+
+			def pull_request_payload( delivery: )
+				number = delivery.pull_request_number
+				return nil if number.nil?
+
+				state = pull_request_state_for_delivery( delivery: delivery )
+				draft = delivery.pull_request_draft
+				merged_at = delivery.pull_request_merged_at
+				merged_at ||= delivery.integrated_at if state == "MERGED"
+
+				{
+					number: number,
+					url: delivery.pull_request_url,
+					state: state,
+					draft: draft,
+					merged_at: merged_at,
+						summary: delivery_pull_request_summary(
+							number: number,
+							state: state,
+							draft: draft
+						)
+					}
+				end
+
+			def pull_request_state_for_delivery( delivery: )
+				return delivery.pull_request_state unless delivery.pull_request_state.to_s.strip.empty?
+				return "MERGED" if delivery.integrated?
+
+				nil
+			end
+
+				def delivery_pull_request_summary( number:, state:, draft: )
+					return "PR ##{number} is merged." if state == "MERGED"
+					return "PR ##{number} is closed." if state == "CLOSED"
+					return "PR ##{number} is open as draft." if state == "OPEN" && draft
+					return "PR ##{number} is open." if state == "OPEN"
+
+				"PR ##{number} is tracked by Carson."
+			end
+
+			def pull_request_observation_attributes( pr_state: )
+				return {} unless pr_state.is_a?( Hash )
+
+				{
+					pull_request_state: pr_state[ "state" ],
+					pull_request_draft: pr_state[ "isDraft" ],
+					pull_request_merged_at: pr_state[ "mergedAt" ]
+				}
 			end
 
 			# Pushes the branch to the remote with tracking.
@@ -1126,7 +1226,7 @@ module Carson
 			def pull_request_state( number: )
 				stdout, _, success, = gh_run(
 					"pr", "view", number.to_s,
-					"--json", "number,state,isDraft,url,mergeStateStatus,mergeable"
+					"--json", "number,state,isDraft,url,mergeStateStatus,mergeable,mergedAt"
 				)
 				return nil unless success
 

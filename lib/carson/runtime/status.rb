@@ -54,6 +54,7 @@ module Carson
 			def gather_status
 				repository = repository_record
 				branch = branch_record
+				tracked_delivery = status_branch_delivery( branch_name: branch.name )
 				deliveries = ledger.active_deliveries( repo_path: repository.path )
 				next_delivery_key = deliveries.find( &:ready? )&.key
 
@@ -69,7 +70,9 @@ module Carson
 						worktree: branch.worktree,
 						dirty: working_tree_dirty?,
 						dirty_reason: dirty_worktree_reason,
-						sync: remote_sync_status( branch: branch.name )
+						sync: remote_sync_status( branch: branch.name ),
+						pull_request: status_branch_pull_request( delivery: tracked_delivery ),
+						merge_proof: status_branch_merge_proof( branch_name: branch.name, delivery: tracked_delivery )
 					},
 					worktrees: gather_worktree_summary,
 					branches: deliveries.map { |delivery| status_branch_entry( delivery: delivery, next_to_integrate: delivery.key == next_delivery_key ) },
@@ -150,6 +153,12 @@ module Carson
 				puts_line branch_line
 				worktree_summary = data.fetch( :worktrees )
 				puts_line "Worktrees: #{worktree_summary.fetch( :non_main_count )} tracked outside main — run carson worktree list." if worktree_summary.fetch( :non_main_count ).positive?
+				if (pull_request = branch[ :pull_request ])
+					puts_line pull_request.fetch( :summary )
+				end
+				if branch.fetch( :name ) != config.main_branch && (merge_proof = branch[ :merge_proof ])
+					puts_line "Merge proof: #{merge_proof.fetch( :summary )}"
+				end
 
 				deliveries = data.fetch( :branches )
 				if deliveries.empty?
@@ -193,6 +202,30 @@ module Carson
 				when :no_remote then "no remote tracking"
 				else "sync unknown"
 				end
+			end
+
+			def status_branch_delivery( branch_name: )
+				return nil if branch_name == config.main_branch
+
+				ledger.latest_delivery(
+					repo_path: repository_record.path,
+					branch_name: branch_name
+				)
+			end
+
+			def status_branch_pull_request( delivery: )
+				return nil unless delivery
+
+				pull_request_payload( delivery: delivery )
+			end
+
+			def status_branch_merge_proof( branch_name:, delivery: )
+				return merge_proof_payload( proof: merge_proof_for_branch( branch: branch_name ) ) if branch_name == config.main_branch
+				return nil unless delivery
+
+				return merge_proof_payload( proof: delivery.merge_proof ) if delivery.merge_proof
+
+				merge_proof_payload( proof: merge_proof_for_branch( branch: branch_name ) )
 			end
 		end
 

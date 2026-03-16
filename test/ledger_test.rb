@@ -74,6 +74,42 @@ class LedgerTest < Minitest::Test
 		assert_equal "new-head", deliveries.first.head
 	end
 
+	def test_latest_delivery_returns_newest_delivery_for_branch
+		first = create_test_delivery( branch_name: "feature/latest", head: "head-1" )
+		@ledger.update_delivery( delivery: first, status: "integrated", integrated_at: Time.now.utc.iso8601 )
+		create_test_delivery( branch_name: "feature/latest", head: "head-2" )
+
+		latest = @ledger.latest_delivery( repo_path: @tmp_dir, branch_name: "feature/latest" )
+		assert_equal "head-2", latest.head
+		assert_equal "queued", latest.status
+	end
+
+	def test_delivery_round_trips_pull_request_observation_and_merge_proof
+		proof = {
+			applicable: true,
+			proven: true,
+			basis: "content_identical",
+			summary: "proven on main — 2 changed files already match main.",
+			main_branch: "main",
+			changed_files_count: 2
+		}
+
+		create_test_delivery(
+			branch_name: "feature/proof",
+			head: "proof-head",
+			pull_request_state: "MERGED",
+			pull_request_draft: false,
+			pull_request_merged_at: "2026-03-16T12:00:00Z",
+			merge_proof: proof
+		)
+
+		stored = @ledger.latest_delivery( repo_path: @tmp_dir, branch_name: "feature/proof" )
+		assert_equal "MERGED", stored.pull_request_state
+		assert_equal false, stored.pull_request_draft
+		assert_equal "2026-03-16T12:00:00Z", stored.pull_request_merged_at
+		assert_equal proof, stored.merge_proof
+	end
+
 	# --- record_revision ---
 
 	def test_record_revision_creates_first_revision_with_number_one
@@ -388,7 +424,15 @@ private
 		database&.close
 	end
 
-	def create_test_delivery( branch_name: "feature/test", head: "abc123", status: "queued" )
+	def create_test_delivery(
+		branch_name: "feature/test",
+		head: "abc123",
+		status: "queued",
+		pull_request_state: nil,
+		pull_request_draft: nil,
+		pull_request_merged_at: nil,
+		merge_proof: nil
+	)
 		@ledger.upsert_delivery(
 			repository: @repository,
 			branch_name: branch_name,
@@ -398,7 +442,11 @@ private
 			pr_url: "https://github.com/test/repo/pull/1",
 			status: status,
 			summary: "test delivery",
-			cause: nil
+			cause: nil,
+			pull_request_state: pull_request_state,
+			pull_request_draft: pull_request_draft,
+			pull_request_merged_at: pull_request_merged_at,
+			merge_proof: merge_proof
 		)
 	end
 end

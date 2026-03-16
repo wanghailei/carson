@@ -165,6 +165,16 @@ class RuntimeDeliverTest < Minitest::Test
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/queued" )
 		stub_ready_assessment( runtime )
+		runtime.define_singleton_method( :merge_proof_for_branch ) do |branch:, main_ref:|
+			{
+				applicable: true,
+				proven: true,
+				basis: "ancestor",
+				summary: "proven on main — branch tip is already on #{main_ref}.",
+				main_branch: main_ref,
+				changed_files_count: 1
+			}
+		end
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
@@ -174,6 +184,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_includes output, "feature/queued → main"
 		assert_includes output, "Merged into main with squash."
 		assert_includes output, "Synced local main."
+		assert_includes output, "Merge proof: proven on main"
 
 		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/queued" )
 		assert_nil delivery
@@ -182,6 +193,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal "integrated", delivery.fetch( "status" )
 		assert_equal "integrated into main", delivery.fetch( "summary" )
 		assert_equal 99, delivery.fetch( "pr_number" )
+		assert_equal true, delivery.dig( "merge_proof", "proven" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -478,6 +490,16 @@ class RuntimeDeliverTest < Minitest::Test
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/json" )
 		stub_ready_assessment( runtime )
+		runtime.define_singleton_method( :merge_proof_for_branch ) do |branch:, main_ref:|
+			{
+				applicable: true,
+				proven: true,
+				basis: "ancestor",
+				summary: "proven on main — branch tip is already on #{main_ref}.",
+				main_branch: main_ref,
+				changed_files_count: 1
+			}
+		end
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
 		assert_equal Carson::Runtime::EXIT_OK, result
@@ -487,9 +509,31 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal "carson housekeep", data.fetch( "next_step" )
 		assert_equal true, data.fetch( "merge_attempted" )
 		assert_equal "integrated", data.fetch( "outcome" )
+		assert_equal true, data.dig( "merge_proof", "proven" )
+		assert_equal "ancestor", data.dig( "merge_proof", "basis" )
 		assert data.key?( "watch_window_seconds" )
 		assert data.key?( "waited_seconds" )
 		refute data.key?( "handoff" )
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_reports_unavailable_merge_proof_when_local_sync_fails
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: true )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/sync-fail-proof" )
+		stub_ready_assessment( runtime )
+		runtime.define_singleton_method( :sync_after_merge! ) do |remote:, main:, result:|
+			result[ :synced ] = false
+			result[ :sync_error ] = "simulated sync failure"
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal false, data.dig( "merge_proof", "proven" )
+		assert_equal "unavailable", data.dig( "merge_proof", "basis" )
+		assert_equal "carson sync", data.fetch( "next_step" )
+		assert_includes data.dig( "merge_proof", "summary" ), "sync failed"
 		FileUtils.remove_entry( tmp_dir )
 	end
 
