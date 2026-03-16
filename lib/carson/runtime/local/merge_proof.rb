@@ -2,6 +2,24 @@
 module Carson
 	class Runtime
 		module Local
+			# Generates merge proof against the remote tracking ref directly.
+			# Skips the local-main trust check — the caller is responsible for
+			# fetching before calling. Used by govern's post-merge path to avoid
+			# mutating the main worktree.
+			def merge_proof_for_remote_ref( branch:, remote: config.git_remote, main_ref: config.main_branch )
+				remote_ref = "#{remote}/#{main_ref}"
+				return merge_proof_not_applicable( main_ref: main_ref ) if branch.to_s == main_ref.to_s
+
+				candidate = merge_proof_candidate( branch: branch, main_ref: remote_ref )
+				return candidate if candidate.fetch( :basis ) == "unavailable"
+
+				# Normalise display: show the local branch name, not the remote tracking ref.
+				candidate.merge(
+					main_branch: main_ref,
+					summary: candidate.fetch( :summary ).gsub( remote_ref, main_ref )
+				)
+			end
+
 			def merge_proof_for_branch( branch:, main_ref: config.main_branch )
 				return merge_proof_not_applicable( main_ref: main_ref ) if branch.to_s == main_ref.to_s
 

@@ -246,25 +246,22 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_runs_full_housekeep_entry_after_successful_merge
+	def test_govern_does_not_run_housekeep_after_successful_merge
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/housekeep" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/housekeep", status: "queued", summary: "ready to integrate into main" )
 		stub_reconciliation( runtime, delivery: delivery )
-		housekeep_calls = []
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK
 		end
 		runtime.define_singleton_method( :housekeep_one_entry ) do |repo_path:, silent:|
-			housekeep_calls << [ repo_path, silent ]
-			{ status: "ok" }
+			raise "housekeep should not run after merge — govern uses fetch-only"
 		end
 
 		result = runtime.govern!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ File.realpath( repo_root ), true ] ], housekeep_calls
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
 		destroy_runtime_repo( repo_root: repo_root )
@@ -552,7 +549,7 @@ class RuntimeGovernTest < Minitest::Test
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK
 		end
-		runtime.define_singleton_method( :housekeep_repo! ) { |repo_path:| Carson::Runtime::EXIT_OK }
+		runtime.define_singleton_method( :fetch_for_merge_proof! ) { |repo_path:| nil }
 
 		result = runtime.govern!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
@@ -578,14 +575,14 @@ private
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK
 		end
-		runtime.define_singleton_method( :housekeep_repo! ) { |repo_path:| { status: "ok", sync_status: "ok" } }
-		runtime.define_singleton_method( :merge_proof_for_branch ) do |branch:, main_ref:|
+		runtime.define_singleton_method( :fetch_for_merge_proof! ) { |repo_path:| nil }
+		runtime.define_singleton_method( :merge_proof_for_remote_ref ) do |branch:, remote: nil, main_ref: nil|
 			{
 				applicable: true,
 				proven: true,
 				basis: "content_identical",
-				summary: "proven on main — 1 changed file already matches #{main_ref}.",
-				main_branch: main_ref,
+				summary: "proven on main — 1 changed file already matches main.",
+				main_branch: "main",
 				changed_files_count: 1
 			}
 		end
