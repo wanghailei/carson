@@ -359,6 +359,7 @@ These define what Carson *is*. They are not configurable.
 - **Active review** — undisposed reviewer findings block merge; feedback must be acknowledged.
 - **Self-diagnosing output** — every warning and error names what went wrong, why, and what to do next.
 - **Transparent governance** — Carson prepares everything for merge but never makes decisions without telling you.
+- **Structural-edit discipline** — coding agents must not use Python or other blind text-rewrite scripts to edit Carson's Ruby source. Ruby files are edited with scoped patches or Ruby-aware tools so structural `end` boundaries are not truncated by cross-language text munging.
 
 ### Configurable defaults
 

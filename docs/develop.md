@@ -43,6 +43,17 @@ The layering is a direct consequence of the outsider boundary rule. Carson must 
 
 **Branch delivery is first-class.** The branch is the delivery unit. Worktree is only the isolation container. Carson owns the full branch/worktree lifecycle: create, track, deliver, and clean up.
 
+## Iron Rule — no Python rewrite scripts for Ruby source
+
+Carson's runtime is Ruby. Coding agents must not use Python or other blind text-rewrite scripts to edit Carson Ruby files.
+
+This is forbidden because the failure mode is structural corruption: a generic rewrite can delete or misplace closing `end` statements while leaving the file superficially plausible.
+
+For Carson Ruby source:
+- use scoped patches or Ruby-aware edits
+- keep the change boundary narrow enough to inspect directly
+- prove the file still parses immediately after structural edits with `ruby -c` or the targeted test that loads the file
+
 ### Three-layer command model
 
 | Layer | Scope | Trigger | Examples |
