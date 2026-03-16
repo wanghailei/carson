@@ -110,6 +110,133 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_worktree_create_cleans_up_partial_state_on_verification_failure
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		worktree_name = "partial-cleanup"
+		worktree_path = File.join( repo_root, ".claude", "worktrees", worktree_name )
+		original_git_run = runtime.method( :git_run )
+
+		# Simulate: git worktree add succeeds but creates only the branch,
+		# not the actual worktree registration. This leaves a partial branch behind.
+		runtime.define_singleton_method( :git_run ) do |*args|
+			if args[ 0, 2 ] == [ "worktree", "add" ]
+				original_git_run.call( "branch", args[ 4 ], args[ 5 ] )
+				[ "", "", true, 0 ]
+			else
+				original_git_run.call( *args )
+			end
+		end
+
+		result = runtime.worktree_create!( name: worktree_name, json_output: true )
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+
+		# The partial branch must be cleaned up.
+		branch_output, = Open3.capture3( "git", "branch", "--list", worktree_name, chdir: repo_root )
+		assert_equal "", branch_output.strip, "Partial branch should be deleted on verification failure"
+
+		# No stray directory should remain.
+		refute Dir.exist?( worktree_path ), "No stray directory should remain"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_verification_failure_includes_diagnostics
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		worktree_name = "diag-test"
+		original_git_run = runtime.method( :git_run )
+
+		runtime.define_singleton_method( :git_run ) do |*args|
+			if args[ 0, 2 ] == [ "worktree", "add" ]
+				[ "mock stdout", "mock stderr", true, 0 ]
+			else
+				original_git_run.call( *args )
+			end
+		end
+
+		result = runtime.worktree_create!( name: worktree_name, json_output: true )
+		json = JSON.parse( output_string( runtime ).strip )
+
+		assert_equal "error", json[ "status" ]
+		assert json.key?( "diagnostics" ), "Error should include diagnostics hash"
+		diag = json[ "diagnostics" ]
+		assert diag.key?( "git_stdout" ), "Should include git stdout"
+		assert diag.key?( "git_stderr" ), "Should include git stderr"
+		assert diag.key?( "repo_root" ), "Should include repo_root"
+		assert diag.key?( "main_worktree_root" ), "Should include main_worktree_root"
+		assert diag.key?( "worktree_list" ), "Should include worktree list"
+		assert diag.key?( "branch_list" ), "Should include branch list"
+		assert diag.key?( "git_version" ), "Should include git version"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_worktree_create_from_inside_existing_worktree
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+
+		runtime.worktree_create!( name: "outer-wt" )
+		outer_path = File.join( repo_root, ".claude", "worktrees", "outer-wt" )
+		assert Dir.exist?( outer_path ), "First worktree should exist"
+
+		config_path = ENV.fetch( "CARSON_CONFIG_FILE", "" ).to_s.strip
+		config_path = write_test_config( repo_root: repo_root ) if config_path.empty?
+		inner_runtime = nil
+		with_env( "CARSON_CONFIG_FILE" => config_path ) do
+			inner_runtime = Carson::Runtime.new(
+				repo_root: outer_path,
+				tool_root: repo_root,
+				output: StringIO.new,
+				error: StringIO.new,
+				verbose: false
+			)
+		end
+
+		result = inner_runtime.worktree_create!( name: "inner-wt", json_output: true )
+		json = JSON.parse( inner_runtime.instance_variable_get( :@output ).string.strip )
+
+		assert_equal Carson::Runtime::EXIT_OK, result, "Creating worktree from inside another should succeed"
+		assert_equal "ok", json[ "status" ]
+		assert_equal "inner-wt", json[ "name" ]
+
+		inner_path = File.join( repo_root, ".claude", "worktrees", "inner-wt" )
+		assert Dir.exist?( inner_path ), "Inner worktree directory should exist under main repo root"
+
+		branch_output, = Open3.capture3( "git", "branch", "--list", "inner-wt", chdir: repo_root )
+		assert_includes branch_output, "inner-wt"
+
+		cleanup_worktree( repo_root, inner_path )
+		cleanup_worktree( repo_root, outer_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_cli_worktree_create_with_slash_scoped_name
+		repo_root = Dir.mktmpdir( "carson-cli-e2e", carson_tmp_root )
+		init_git_repo( repo_root )
+
+		carson_bin = File.expand_path( File.join( __dir__, "..", "exe", "carson" ) )
+		config_path = write_test_config( repo_root: repo_root )
+
+		stdout, stderr, status = Open3.capture3(
+			{ "CARSON_CONFIG_FILE" => config_path },
+			carson_bin, "worktree", "create", "claude/e2e-slash", "--json",
+			chdir: repo_root
+		)
+
+		assert status.success?, "CLI should exit 0. stderr: #{stderr}"
+		json = JSON.parse( stdout.strip )
+		assert_equal "ok", json[ "status" ]
+		assert_equal "claude/e2e-slash", json[ "name" ]
+		assert_equal "claude/e2e-slash", json[ "branch" ]
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "claude", "e2e-slash" )
+		assert Dir.exist?( wt_path ), "Worktree directory should exist at nested path"
+
+		system( "git", "-C", repo_root, "worktree", "remove", "--force", wt_path, out: File::NULL, err: File::NULL )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# --- JSON output tests ---
 
 	def test_worktree_create_json_success
