@@ -126,6 +126,8 @@ After the existing dirty-tree and optional `--commit` flow have produced a clean
 3. classify freshness,
 4. stop immediately unless freshness is `fresh`.
 
+This gate runs before push, PR creation or refresh, settle-loop entry, or merge.
+
 ### Fetch scope
 
 Carson must fetch only what the freshness check needs.
@@ -142,7 +144,7 @@ It does not push, create or refresh a PR, enter the settle loop, or attempt a me
 
 If Carson cannot verify freshness because fetch or comparison failed, Carson exits blocked.
 
-It does not continue optimistically.
+It does not push, create or refresh a PR, enter the settle loop, or attempt a merge.
 
 ### Dirty worktree rule
 
@@ -276,7 +278,7 @@ It is not part of Slice 1 or Slice 2.
 Before Carson may auto-refresh a branch, all of these must be proven:
 
 1. clean worktree is a hard prerequisite,
-2. in-progress rebase, merge, or cherry-pick state is a hard prerequisite,
+2. in-progress rebase, merge, or cherry-pick state is absent before refresh begins,
 3. fetch scope remains targeted,
 4. failure never falls through as success,
 5. abort handling is safe and truthful,

@@ -13,7 +13,13 @@ module Carson
 				branch_name = current_branch
 				main_branch = config.main_branch
 				remote_name = config.git_remote
-				result = { command: "deliver", branch: branch_name }
+				result = {
+					command: "deliver",
+					branch: branch_name,
+					watch_window_seconds: config.govern_check_wait.to_i,
+					waited_seconds: 0,
+					merge_attempted: false
+				}
 
 				if branch_name == main_branch
 					result[ :error ] = "cannot deliver from #{main_branch}"
@@ -249,17 +255,17 @@ module Carson
 			end
 
 				def settle_delivery!( delivery:, branch_name:, remote:, main:, result: )
-				started_at = deliver_monotonic_now
-				watch_window_seconds = config.govern_check_wait.to_i
-				merge_attempts = 0
-				successful_reassessments = 0
-				last_evaluation = nil
+					started_at = deliver_monotonic_now
+					watch_window_seconds = config.govern_check_wait.to_i
+					merge_attempts = 0
+					successful_assessments = 0
+					last_evaluation = nil
 
-				result[ :watch_window_seconds ] = watch_window_seconds
-				result[ :waited_seconds ] = 0
-				result[ :merge_attempted ] = false
+					result[ :watch_window_seconds ] = watch_window_seconds
+					result[ :waited_seconds ] = 0
+					result[ :merge_attempted ] = false
 
-				loop do
+					loop do
 						evaluation = evaluate_delivery_for_settle(
 							branch_name: branch_name,
 							head_ref: delivery.head,
@@ -268,24 +274,24 @@ module Carson
 							main: main
 						)
 						last_evaluation = evaluation
-						successful_reassessments += 1 if evaluation[ :assessment_success ]
+						successful_assessments += 1 if evaluation[ :assessment_success ]
 						result[ :ci ] = evaluation[ :ci ].to_s
 						result[ :freshness ] = freshness_payload( freshness: evaluation.fetch( :freshness ) ) if evaluation[ :freshness ]
 
-					delivery = update_delivery_for_settle_evaluation( delivery: delivery, evaluation: evaluation )
-					result[ :summary ] = delivery.summary
+						delivery = update_delivery_for_settle_evaluation( delivery: delivery, evaluation: evaluation )
+						result[ :summary ] = delivery.summary
 
-					case evaluation[ :phase ]
-					when :integrated
-						delivery = mark_delivery_integrated!(
-							delivery: delivery,
-							remote: remote,
-							main: main,
-							result: result
-						)
-						result[ :outcome ] = "integrated"
-						result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-						return delivery
+						case evaluation[ :phase ]
+						when :integrated
+							delivery = mark_delivery_integrated!(
+								delivery: delivery,
+								remote: remote,
+								main: main,
+								result: result
+							)
+							result[ :outcome ] = "integrated"
+							result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
+							return delivery
 						when :blocked
 							result[ :outcome ] = "blocked"
 							result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
@@ -294,43 +300,10 @@ module Carson
 								result: result,
 								reason: evaluation.fetch( :reason ),
 								summary: delivery.summary,
-							outcome: "blocked"
-						)
-						return delivery
-					when :ready
-						merge_outcome = attempt_delivery_merge!(
-							delivery: delivery,
-							remote: remote,
-							main: main,
-							result: result
-						)
-						if merge_outcome.fetch( :attempted )
-							merge_attempts += 1
-							result[ :merge_attempted ] = true
-						end
-						delivery = merge_outcome.fetch( :delivery )
-						result[ :summary ] = delivery.summary
-
-						case merge_outcome.fetch( :phase )
-						when :integrated
-							result[ :outcome ] = "integrated"
-							result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-							return delivery
-						when :blocked
-							result[ :outcome ] = "blocked"
-							result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-							apply_handoff!(
-								result: result,
-								reason: merge_outcome.fetch( :reason ),
-								summary: delivery.summary,
 								outcome: "blocked"
 							)
 							return delivery
-						end
-					when :waiting
-						if evaluation.fetch( :reason ) == "mergeability_pending" &&
-								successful_reassessments >= 2 &&
-								merge_attempts < deliver_merge_attempt_cap
+						when :ready
 							merge_outcome = attempt_delivery_merge!(
 								delivery: delivery,
 								remote: remote,
@@ -360,25 +333,58 @@ module Carson
 								)
 								return delivery
 							end
+						when :waiting
+							if evaluation.fetch( :reason ) == "mergeability_pending" &&
+									successful_assessments >= 2 &&
+									merge_attempts < deliver_merge_attempt_cap
+								merge_outcome = attempt_delivery_merge!(
+									delivery: delivery,
+									remote: remote,
+									main: main,
+									result: result
+								)
+								if merge_outcome.fetch( :attempted )
+									merge_attempts += 1
+									result[ :merge_attempted ] = true
+								end
+								delivery = merge_outcome.fetch( :delivery )
+								result[ :summary ] = delivery.summary
+
+								case merge_outcome.fetch( :phase )
+								when :integrated
+									result[ :outcome ] = "integrated"
+									result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
+									return delivery
+								when :blocked
+									result[ :outcome ] = "blocked"
+									result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
+									apply_handoff!(
+										result: result,
+										reason: merge_outcome.fetch( :reason ),
+										summary: delivery.summary,
+										outcome: "blocked"
+									)
+									return delivery
+								end
+							end
 						end
+
+						remaining = remaining_settle_seconds( started_at: started_at, watch_window_seconds: watch_window_seconds )
+						break if remaining <= 0
+
+						wait_seconds = [ deliver_ci_poll_seconds, remaining ].min
+						deliver_sleep( wait_seconds )
 					end
 
-					remaining = remaining_settle_seconds( started_at: started_at, watch_window_seconds: watch_window_seconds )
-					break if remaining <= 0
-
-					wait_seconds = [ deliver_ci_poll_seconds, remaining ].min
-					deliver_sleep( wait_seconds )
-				end
-
-				result[ :outcome ] = "deferred"
-				result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-				apply_handoff!(
-					result: result,
-					reason: deferred_handoff_reason( evaluation: last_evaluation ),
-					summary: delivery.summary,
-					outcome: "deferred"
-				)
-				delivery
+					result[ :outcome ] = "deferred"
+					result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
+					apply_handoff!(
+						result: result,
+						reason: deferred_handoff_reason( evaluation: last_evaluation ),
+						summary: delivery.summary,
+						outcome: "deferred"
+					)
+					delivery
 				end
 
 				def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
@@ -933,15 +939,16 @@ module Carson
 						elsif result[ :synced ]
 							puts_line "Synced local #{main}."
 						end
-					elsif outcome == "deferred"
-						puts_line "Merge deferred — #{summary}."
-						puts_line deferred_human_explanation( result: result )
-						print_handoff_next_steps( result: result )
+						elsif outcome == "deferred"
+							puts_line "Merge deferred — #{summary}."
+							puts_line deferred_human_explanation( result: result )
+							print_handoff_next_steps( result: result )
 						elsif outcome == "blocked"
 							puts_line "Merge blocked — #{summary}."
 							puts_line blocked_human_explanation( result: result )
 							puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
 							puts_line "  → #{result.dig( :merge, :recovery )}" if result.dig( :merge, :recovery )
+							print_handoff_next_steps( result: result )
 					elsif status == "failed"
 						puts_line "Delivery failed — #{summary}."
 					else
