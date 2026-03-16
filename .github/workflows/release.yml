@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Read version
         id: version
@@ -76,6 +76,8 @@ jobs:
           fi
 
       - name: Configure RubyGems credentials
+        # Keep the latest published RubyGems action here and probe forced Node 24
+        # compatibility separately before changing the release path.
         if: steps.gem_check.outputs.exists == 'false'
         uses: rubygems/configure-rubygems-credentials@v1.0.0
 

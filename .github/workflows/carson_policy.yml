@@ -27,13 +27,13 @@ jobs:
 
     steps:
       - name: Checkout host repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: host
           fetch-depth: 0
 
       - name: Checkout Carson runtime
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: wanghailei/carson
           ref: ${{ inputs.carson_ref }}
