@@ -11,8 +11,11 @@ Release-note scope rule:
 
 - **Govern now finds worktree-created deliveries** — `repository_record` stored the worktree CWD as `repo_path` in the ledger, but `govern` looked up deliveries by the main tree path from config. The SQL query never matched, so `carson govern` always reported "no active deliveries" for worktree-created PRs. Now `repository_record` uses `main_worktree_root` so the ledger key is always the canonical main tree path. Also fixed the govern fallback path, `reconcile_delivery!`, `housekeep_repo!`, and `review_evidence` for the same mismatch.
 - **Status shows canonical repository name** — `carson status` from a worktree displayed the worktree folder name (e.g. `feature-branch`) as `Repository:` instead of the actual repository name. Now correctly shows the canonical name.
+- **JSON ledger preserves legacy state and FIFO ordering** — legacy SQLite ledgers now import automatically into the JSON store on first read, same branch/head deliveries collapse across repo-path aliases, and queue order stays first-in-first-out even when multiple deliveries share the same timestamp.
 
-### No migration required
+### Migration note
+
+- Existing SQLite ledgers are imported automatically on first read. No manual cleanup is required before upgrading.
 
 ## 3.23.3
 

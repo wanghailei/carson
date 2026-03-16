@@ -7,10 +7,12 @@ module Carson
 	class Ledger
 		UNSET = Object.new
 		ACTIVE_DELIVERY_STATES = Delivery::ACTIVE_STATES
+		SQLITE_HEADER = "SQLite format 3\0".b.freeze
 
 		def initialize( path: )
 			@path = File.expand_path( path )
 			FileUtils.mkdir_p( File.dirname( @path ) )
+			migrate_legacy_state_if_needed!
 		end
 
 		attr_reader :path
@@ -20,23 +22,22 @@ module Carson
 			timestamp = now_utc
 
 			with_state do |state|
+				repo_paths = repo_identity_paths( repo_path: repository.path )
+				matches = matching_deliveries(
+					state: state,
+					repo_paths: repo_paths,
+					branch_name: branch_name,
+					head: head
+				)
 				key = delivery_key( repo_path: repository.path, branch_name: branch_name, head: head )
-				existing = state[ "deliveries" ][ key ]
-
-				if existing
-					existing[ "repo_path" ] = repository.path
-					existing[ "worktree_path" ] = worktree_path
-					existing[ "status" ] = status
-					existing[ "pr_number" ] = pr_number
-					existing[ "pr_url" ] = pr_url
-					existing[ "cause" ] = cause
-					existing[ "summary" ] = summary
-					existing[ "updated_at" ] = timestamp
-					return build_delivery( key: key, data: existing, repository: repository )
-				end
+				sequence = matches.map { |_existing_key, data| delivery_sequence( data: data ) }.compact.min
+				created_at = matches.map { |_existing_key, data| data.fetch( "created_at", "" ).to_s }.reject( &:empty? ).min || timestamp
+				revisions = merged_revisions( entries: matches )
+				matches.each { |existing_key, _data| state[ "deliveries" ].delete( existing_key ) }
 
 				supersede_branch!( state: state, repo_path: repository.path, branch_name: branch_name, timestamp: timestamp )
 				state[ "deliveries" ][ key ] = {
+					"sequence" => sequence || next_delivery_sequence!( state: state ),
 					"repo_path" => repository.path,
 					"branch_name" => branch_name,
 					"head" => head,
@@ -46,11 +47,11 @@ module Carson
 					"pr_url" => pr_url,
 					"cause" => cause,
 					"summary" => summary,
-					"created_at" => timestamp,
+					"created_at" => created_at,
 					"updated_at" => timestamp,
 					"integrated_at" => nil,
 					"superseded_at" => nil,
-					"revisions" => []
+					"revisions" => revisions
 				}
 				build_delivery( key: key, data: state[ "deliveries" ][ key ], repository: repository )
 			end
@@ -69,7 +70,7 @@ module Carson
 
 			return nil if candidates.empty?
 
-			key, data = candidates.max_by { |k, d| [ d[ "updated_at" ].to_s, k ] }
+			key, data = candidates.max_by { |k, d| [ d[ "updated_at" ].to_s, delivery_sequence( data: d ), k ] }
 			build_delivery( key: key, data: data )
 		end
 
@@ -80,7 +81,7 @@ module Carson
 
 			state[ "deliveries" ]
 				.select { |_key, data| repo_paths.include?( data[ "repo_path" ] ) && ACTIVE_DELIVERY_STATES.include?( data[ "status" ] ) }
-				.sort_by { |key, data| [ data[ "created_at" ].to_s, key ] }
+				.sort_by { |key, data| [ delivery_sequence( data: data ), key ] }
 				.map { |key, data| build_delivery( key: key, data: data ) }
 		end
 
@@ -95,7 +96,7 @@ module Carson
 						data[ "status" ] == "integrated" &&
 						!data[ "worktree_path" ].to_s.strip.empty?
 				end
-				.sort_by { |key, data| [ data[ "integrated_at" ].to_s, data[ "updated_at" ].to_s, key ] }
+				.sort_by { |key, data| [ data[ "integrated_at" ].to_s, delivery_sequence( data: data ), key ] }
 				.map { |key, data| build_delivery( key: key, data: data ) }
 		end
 
@@ -112,8 +113,7 @@ module Carson
 			superseded_at: UNSET
 		)
 			with_state do |state|
-				data = state[ "deliveries" ][ delivery.key ]
-				raise "delivery not found: #{delivery.key}" unless data
+				key, data = resolve_delivery_entry( state: state, delivery: delivery )
 
 				data[ "status" ] = status unless status.equal?( UNSET )
 				data[ "pr_number" ] = pr_number unless pr_number.equal?( UNSET )
@@ -125,7 +125,7 @@ module Carson
 				data[ "superseded_at" ] = superseded_at unless superseded_at.equal?( UNSET )
 				data[ "updated_at" ] = now_utc
 
-				build_delivery( key: delivery.key, data: data, repository: delivery.repository )
+				build_delivery( key: key, data: data, repository: delivery.repository )
 			end
 		end
 
@@ -134,8 +134,7 @@ module Carson
 			timestamp = now_utc
 
 			with_state do |state|
-				data = state[ "deliveries" ][ delivery.key ]
-				raise "delivery not found: #{delivery.key}" unless data
+				_key, data = resolve_delivery_entry( state: state, delivery: delivery )
 
 				revisions = data[ "revisions" ] ||= []
 				next_number = ( revisions.map { |r| r[ "number" ].to_i }.max || 0 ) + 1
@@ -166,11 +165,7 @@ module Carson
 
 		# Acquires file lock, loads state, yields for mutation, saves atomically, releases lock.
 		def with_state
-			lock_path = "#{path}.lock"
-			FileUtils.mkdir_p( File.dirname( lock_path ) )
-			FileUtils.touch( lock_path )
-
-			File.open( lock_path, File::RDWR | File::CREAT ) do |lock_file|
+			with_state_lock do |lock_file|
 				lock_file.flock( File::LOCK_EX )
 				state = load_state
 				result = yield state
@@ -182,19 +177,19 @@ module Carson
 		def load_state
 			return { "deliveries" => {}, "recovery_events" => [] } unless File.exist?( path )
 
-			raw = File.read( path )
+			raw = File.binread( path )
 			return { "deliveries" => {}, "recovery_events" => [] } if raw.strip.empty?
 
 			parsed = JSON.parse( raw )
 			raise "state file must contain a JSON object at #{path}" unless parsed.is_a?( Hash )
-			parsed[ "deliveries" ] ||= {}
-			parsed[ "recovery_events" ] ||= []
+			normalise_state!( state: parsed )
 			parsed
-		rescue JSON::ParserError => exception
+		rescue JSON::ParserError, Encoding::InvalidByteSequenceError, Encoding::UndefinedConversionError => exception
 			raise "invalid JSON in state file #{path}: #{exception.message}"
 		end
 
 		def save_state!( state )
+			normalise_state!( state: state )
 			tmp_path = "#{path}.tmp"
 			File.write( tmp_path, JSON.pretty_generate( state ) + "\n" )
 			File.rename( tmp_path, path )
@@ -240,6 +235,228 @@ module Carson
 				finished_at: data[ "finished_at" ],
 				summary: data[ "summary" ]
 			)
+		end
+
+		def migrate_legacy_state_if_needed!
+			with_state_lock do |lock_file|
+				lock_file.flock( File::LOCK_EX )
+				source_path = legacy_sqlite_source_path
+				next unless source_path
+
+				state = load_legacy_sqlite_state( path: source_path )
+				save_state!( state )
+			end
+		end
+
+		def with_state_lock
+			lock_path = "#{path}.lock"
+			FileUtils.mkdir_p( File.dirname( lock_path ) )
+			FileUtils.touch( lock_path )
+
+			File.open( lock_path, File::RDWR | File::CREAT ) do |lock_file|
+				yield lock_file
+			end
+		end
+
+		def legacy_sqlite_source_path
+			return nil unless state_path_requires_migration?
+			return path if sqlite_database_file?( path: path )
+
+			legacy_path = legacy_state_path
+			return nil unless legacy_path
+			return legacy_path if sqlite_database_file?( path: legacy_path )
+
+			nil
+		end
+
+		def state_path_requires_migration?
+			return true if sqlite_database_file?( path: path )
+			return false if File.exist?( path )
+			!legacy_state_path.nil?
+		end
+
+		def legacy_state_path
+			return nil unless path.end_with?( ".json" )
+			path.sub( /\.json\z/, ".sqlite3" )
+		end
+
+		def sqlite_database_file?( path: )
+			return false unless File.file?( path )
+			File.binread( path, SQLITE_HEADER.bytesize ) == SQLITE_HEADER
+		rescue StandardError
+			false
+		end
+
+		def load_legacy_sqlite_state( path: )
+			begin
+				require "sqlite3"
+			rescue LoadError => exception
+				raise "legacy SQLite ledger found at #{path}, but sqlite3 support is unavailable: #{exception.message}"
+			end
+
+			database = open_legacy_sqlite_database( path: path )
+			deliveries = database.execute( "SELECT * FROM deliveries ORDER BY id ASC" )
+			revisions_by_delivery = database.execute(
+				"SELECT * FROM revisions ORDER BY delivery_id ASC, number ASC, id ASC"
+			).group_by { |row| row.fetch( "delivery_id" ) }
+
+			state = {
+				"deliveries" => {},
+				"recovery_events" => [],
+				"next_sequence" => 1
+			}
+			deliveries.each do |row|
+				key = delivery_key(
+					repo_path: row.fetch( "repo_path" ),
+					branch_name: row.fetch( "branch_name" ),
+					head: row.fetch( "head" )
+				)
+				state[ "deliveries" ][ key ] = {
+					"sequence" => row.fetch( "id" ).to_i,
+					"repo_path" => row.fetch( "repo_path" ),
+					"branch_name" => row.fetch( "branch_name" ),
+					"head" => row.fetch( "head" ),
+					"worktree_path" => row.fetch( "worktree_path" ),
+					"status" => row.fetch( "status" ),
+					"pr_number" => row.fetch( "pr_number" ),
+					"pr_url" => row.fetch( "pr_url" ),
+					"cause" => row.fetch( "cause" ),
+					"summary" => row.fetch( "summary" ),
+					"created_at" => row.fetch( "created_at" ),
+					"updated_at" => row.fetch( "updated_at" ),
+					"integrated_at" => row.fetch( "integrated_at" ),
+					"superseded_at" => row.fetch( "superseded_at" ),
+					"revisions" => Array( revisions_by_delivery[ row.fetch( "id" ) ] ).map do |revision|
+						{
+							"number" => revision.fetch( "number" ).to_i,
+							"cause" => revision.fetch( "cause" ),
+							"provider" => revision.fetch( "provider" ),
+							"status" => revision.fetch( "status" ),
+							"started_at" => revision.fetch( "started_at" ),
+							"finished_at" => revision.fetch( "finished_at" ),
+							"summary" => revision.fetch( "summary" )
+						}
+					end
+				}
+			end
+			normalise_state!( state: state )
+			state
+		ensure
+			database&.close
+		end
+
+		def open_legacy_sqlite_database( path: )
+			database = SQLite3::Database.new( "file:#{path}?immutable=1", readonly: true, uri: true )
+			database.results_as_hash = true
+			database.busy_timeout = 5_000
+			database
+		rescue SQLite3::CantOpenException
+			database&.close
+			database = SQLite3::Database.new( path, readonly: true )
+			database.results_as_hash = true
+			database.busy_timeout = 5_000
+			database
+		end
+
+		def normalise_state!( state: )
+			deliveries = state[ "deliveries" ]
+			raise "state file must contain a JSON object at #{path}" unless deliveries.is_a?( Hash )
+			state[ "recovery_events" ] = Array( state[ "recovery_events" ] )
+
+			sequence_counts = Hash.new( 0 )
+			deliveries.each_value do |data|
+				data[ "revisions" ] = Array( data[ "revisions" ] )
+				sequence = integer_or_nil( value: data[ "sequence" ] )
+				sequence_counts[ sequence ] += 1 unless sequence.nil? || sequence <= 0
+			end
+
+			max_sequence = sequence_counts.keys.max.to_i
+			next_sequence = max_sequence + 1
+			deliveries.keys.sort_by { |key| [ deliveries.fetch( key ).fetch( "created_at", "" ).to_s, key ] }.each do |key|
+				data = deliveries.fetch( key )
+				sequence = integer_or_nil( value: data[ "sequence" ] )
+				if sequence.nil? || sequence <= 0 || sequence_counts[ sequence ] > 1
+					sequence = next_sequence
+					next_sequence += 1
+				end
+				data[ "sequence" ] = sequence
+			end
+
+			recorded_next = integer_or_nil( value: state[ "next_sequence" ] ) || 1
+			state[ "next_sequence" ] = [ recorded_next, next_sequence ].max
+		end
+
+		def next_delivery_sequence!( state: )
+			sequence = integer_or_nil( value: state[ "next_sequence" ] ) || 1
+			state[ "next_sequence" ] = sequence + 1
+			sequence
+		end
+
+		def integer_or_nil( value: )
+			Integer( value )
+		rescue ArgumentError, TypeError
+			nil
+		end
+
+		def delivery_sequence( data: )
+			integer_or_nil( value: data[ "sequence" ] ) || 0
+		end
+
+		def matching_deliveries( state:, repo_paths:, branch_name:, head: UNSET )
+			state[ "deliveries" ].select do |_key, data|
+				next false unless repo_paths.include?( data[ "repo_path" ] )
+				next false unless data[ "branch_name" ] == branch_name
+				next false unless head.equal?( UNSET ) || data[ "head" ] == head
+
+				true
+			end
+		end
+
+		def resolve_delivery_entry( state:, delivery: )
+			data = state[ "deliveries" ][ delivery.key ]
+			return [ delivery.key, data ] if data
+
+			repo_paths = repo_identity_paths( repo_path: delivery.repo_path )
+			match = matching_deliveries(
+				state: state,
+				repo_paths: repo_paths,
+				branch_name: delivery.branch,
+				head: delivery.head
+			).max_by { |key, row| [ row[ "updated_at" ].to_s, delivery_sequence( data: row ), key ] }
+			raise "delivery not found: #{delivery.key}" unless match
+
+			match
+		end
+
+		def merged_revisions( entries: )
+			entries
+				.flat_map { |_key, data| Array( data[ "revisions" ] ) }
+				.map do |revision|
+					{
+						"number" => revision.fetch( "number", 0 ).to_i,
+						"cause" => revision[ "cause" ],
+						"provider" => revision[ "provider" ],
+						"status" => revision[ "status" ],
+						"started_at" => revision[ "started_at" ],
+						"finished_at" => revision[ "finished_at" ],
+						"summary" => revision[ "summary" ]
+					}
+				end
+				.uniq do |revision|
+					[
+						revision[ "cause" ],
+						revision[ "provider" ],
+						revision[ "status" ],
+						revision[ "started_at" ],
+						revision[ "finished_at" ],
+						revision[ "summary" ]
+					]
+				end
+				.sort_by { |revision| [ revision.fetch( "started_at", "" ).to_s, revision.fetch( "number", 0 ).to_i ] }
+				.each_with_index
+				.map do |revision, index|
+					revision.merge( "number" => index + 1 )
+				end
 		end
 
 		def supersede_branch!( state:, repo_path:, branch_name:, timestamp: )
@@ -294,7 +511,7 @@ module Carson
 		end
 
 		def now_utc
-			Time.now.utc.iso8601
+			Time.now.utc.iso8601( 6 )
 		end
 
 		def record_recovery_event( repository:, branch_name:, pr_number:, pr_url:, check_name:, default_branch:, default_branch_sha:, pr_sha:, actor:, merge_method:, status:, summary: )
