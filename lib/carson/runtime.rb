@@ -33,11 +33,17 @@ module Carson
 			@config = Config.load( repo_root: repo_root )
 			@git_adapter = Adapters::Git.new( repo_root: repo_root )
 			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
-			@ledger = Ledger.new( path: @config.govern_state_path )
 			@template_sync_result = nil
 		end
 
-		attr_reader :template_sync_result, :ledger
+		attr_reader :template_sync_result
+
+		# Lazy ledger: only constructed when a command actually needs delivery state.
+		# Read-only commands (worktree list, audit, prune, sync) never touch the
+		# govern state lock file.
+		def ledger
+			@ledger ||= Ledger.new( path: @config.govern_state_path )
+		end
 
 	private
 

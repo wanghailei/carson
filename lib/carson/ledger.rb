@@ -274,6 +274,11 @@ module Carson
 		end
 
 		def migrate_legacy_state_if_needed!
+			# Skip lock acquisition entirely when no legacy SQLite file exists.
+			# Read-only file checks are safe without the lock; the migration
+			# itself is idempotent so a narrow race is harmless.
+			return unless state_path_requires_migration?
+
 			with_state_lock do |lock_file|
 				lock_file.flock( File::LOCK_EX )
 				source_path = legacy_sqlite_source_path
