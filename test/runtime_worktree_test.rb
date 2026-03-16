@@ -154,6 +154,19 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	def test_worktree_remove_by_slash_scoped_name
+		with_worktree_repo do |runtime, repo_root, _bare_root, _output|
+			status = runtime.worktree_create!( name: "codex/slash-remove" )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			worktree_path = File.join( repo_root, ".claude", "worktrees", "codex", "slash-remove" )
+
+			assert Dir.exist?( worktree_path ), "slash-scoped worktree directory should exist"
+			status = runtime.worktree_remove!( worktree_path: "codex/slash-remove" )
+			assert_equal Carson::Runtime::EXIT_OK, status
+			refute Dir.exist?( worktree_path ), "slash-scoped worktree directory should be removed"
+		end
+	end
+
 
 	def test_worktree_remove_by_name_nested
 		with_worktree_repo do |runtime, repo_root, _bare_root, output|
@@ -243,7 +256,7 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
-	def test_worktree_list_json_includes_external_worktree
+	def test_worktree_list_json_keeps_external_worktree_without_abandonment_evidence
 		with_worktree_repo( mock_gh_script: mock_gh_for_worktree_reap( closed_prs_by_branch: {} ) ) do |runtime, repo_root, _bare_root, output|
 			external_root = Dir.mktmpdir( "carson-external-worktree", carson_tmp_root )
 			external_path = File.join( external_root, "external-wt" )
@@ -256,8 +269,9 @@ class RuntimeWorktreeTest < Minitest::Test
 			refute_nil entry
 			assert_equal branch_name, entry.fetch( "branch" )
 			assert_equal runtime.send( :realpath_safe, external_path ), runtime.send( :realpath_safe, entry.fetch( "path" ) )
-			assert_equal "reap", entry.dig( "cleanup", "action" )
-			assert_equal "content absorbed into main", entry.dig( "cleanup", "reason" )
+			assert_equal true, entry.fetch( "absorbed_into_main" )
+			assert_equal "skip", entry.dig( "cleanup", "action" )
+			assert_equal "no evidence to reap", entry.dig( "cleanup", "reason" )
 		ensure
 			system( "git", "-C", repo_root, "worktree", "remove", "--force", external_path, out: File::NULL, err: File::NULL )
 			system( "git", "-C", repo_root, "branch", "-D", branch_name, out: File::NULL, err: File::NULL )
@@ -319,24 +333,46 @@ class RuntimeWorktreeTest < Minitest::Test
 
 	# --- sweep_stale_worktrees! ---
 
-	def test_sweep_stale_worktrees_removes_absorbed
-		with_worktree_repo do |runtime, repo_root, _bare_root, output|
-			worktree = create_worktree( repo_root: repo_root, worktree_name: "stale-sweep" )
-			branch = worktree.fetch( :branch )
+	def test_sweep_stale_worktrees_keeps_absorbed_worktree_without_abandonment_evidence
+		with_worktree_repo( mock_gh_script: mock_gh_for_worktree_reap( closed_prs_by_branch: {} ) ) do |runtime, repo_root, _bare_root, output|
+			result = runtime.worktree_create!( name: "stale-sweep" )
+			assert_equal Carson::Runtime::EXIT_OK, result
+			worktree_path = File.join( repo_root, ".claude", "worktrees", "stale-sweep" )
 
-			# Merge the worktree branch into main so its content is absorbed.
-			system( "git", "-C", repo_root, "merge", branch, "--no-edit", out: File::NULL, err: File::NULL )
-
-			assert Dir.exist?( worktree.fetch( :path ) ), "worktree directory should exist before sweep"
+			assert Dir.exist?( worktree_path ), "worktree directory should exist before sweep"
 			runtime.sweep_stale_worktrees!
-			refute Dir.exist?( worktree.fetch( :path ) ), "absorbed worktree should be swept"
+			assert Dir.exist?( worktree_path ), "absorbed worktree without abandonment evidence must be preserved"
 
-			# Branch should be deleted.
-			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
-				"branch should be deleted after sweep"
+			assert system( "git", "-C", repo_root, "rev-parse", "--verify", "stale-sweep", out: File::NULL, err: File::NULL ),
+				"branch should still exist after sweep"
+			refute_includes output.string, "swept stale worktree: stale-sweep"
+		end
+	end
 
-			assert_includes output.string, "swept stale worktree: stale-sweep"
-			assert_includes output.string, "deleted branch: #{branch}"
+	def test_sweep_stale_worktrees_reaps_closed_abandoned_worktree
+		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+			worktree = create_worktree( repo_root: repo_root, worktree_name: "stale-abandoned" )
+			tip_sha = `git -C #{worktree.fetch( :path )} rev-parse HEAD`.strip
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {
+					worktree.fetch( :branch ) => [ {
+						number: 55,
+						sha: tip_sha,
+						merged_at: nil,
+						closed_at: "2026-03-16T10:00:00Z"
+					} ]
+				}
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.sweep_stale_worktrees!
+			end
+
+			refute Dir.exist?( worktree.fetch( :path ) ), "closed abandoned worktree should be swept"
+			refute system( "git", "-C", repo_root, "rev-parse", "--verify", worktree.fetch( :branch ), out: File::NULL, err: File::NULL ),
+				"closed abandoned branch should be deleted after sweep"
+			assert_includes output.string, "swept stale worktree: stale-abandoned"
+			assert_includes output.string, "deleted branch: #{worktree.fetch( :branch )}"
 		end
 	end
 
@@ -351,8 +387,8 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
-	def test_sweep_stale_worktrees_scans_codex_directory
-		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+	def test_sweep_stale_worktrees_scans_codex_directory_and_keeps_without_abandonment_evidence
+		with_worktree_repo( mock_gh_script: mock_gh_for_worktree_reap( closed_prs_by_branch: {} ) ) do |runtime, repo_root, _bare_root, output|
 			# Create a worktree under .codex/worktrees/ manually.
 			codex_dir = File.join( repo_root, ".codex", "worktrees" )
 			worktree_path = File.join( codex_dir, "codex-task" )
@@ -368,9 +404,9 @@ class RuntimeWorktreeTest < Minitest::Test
 
 			assert Dir.exist?( worktree_path ), "codex worktree should exist before sweep"
 			runtime.sweep_stale_worktrees!
-			refute Dir.exist?( worktree_path ), "absorbed codex worktree should be swept"
+			assert Dir.exist?( worktree_path ), "codex worktree without abandonment evidence must be preserved"
 
-			assert_includes output.string, "swept stale worktree: codex-task"
+			refute_includes output.string, "swept stale worktree: codex-task"
 		end
 	end
 
@@ -467,8 +503,8 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
-	def test_reap_dead_worktrees_reaps_external_absorbed_worktree
-		with_worktree_repo do |runtime, repo_root, _bare_root, output|
+	def test_reap_dead_worktrees_keeps_external_absorbed_worktree_without_abandonment_evidence
+		with_worktree_repo( mock_gh_script: mock_gh_for_worktree_reap( closed_prs_by_branch: {} ) ) do |runtime, repo_root, _bare_root, output|
 			external_root = Dir.mktmpdir( "carson-external-reap", carson_tmp_root )
 			external_path = File.join( external_root, "external-absorbed" )
 			branch_name = "external-absorbed"
@@ -485,10 +521,10 @@ class RuntimeWorktreeTest < Minitest::Test
 
 			runtime.reap_dead_worktrees!
 
-			refute Dir.exist?( external_path ), "external absorbed worktree should be reaped"
-			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch_name, out: File::NULL, err: File::NULL ),
-				"external absorbed branch should be deleted"
-			assert_includes output.string, "deleted branch: #{branch_name}"
+			assert Dir.exist?( external_path ), "external absorbed worktree without abandonment evidence must be preserved"
+			assert system( "git", "-C", repo_root, "rev-parse", "--verify", branch_name, out: File::NULL, err: File::NULL ),
+				"external absorbed branch should still exist"
+			refute_includes output.string, "deleted branch: #{branch_name}"
 		ensure
 			FileUtils.remove_entry( external_root ) if defined?( external_root ) && File.directory?( external_root )
 		end

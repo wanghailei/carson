@@ -143,35 +143,21 @@ module Carson
 				return { action: :skip, reason: "held by another process", absorbed: false } if worktree.held_by_other_process?
 				return { action: :reap, reason: "directory missing (destroyed externally)", absorbed: false } unless worktree.exists?
 
-				if worktree.dirty?
-					absorbed = branch_absorbed_into_main?( branch: worktree.branch )
-					return { action: :reap, reason: "dirty worktree with content absorbed into main", absorbed: true, force: true } if absorbed
-					return { action: :skip, reason: "gh CLI not available for PR check", absorbed: false } unless gh_available?
-
-					tip_sha = worktree_branch_tip_sha( branch: worktree.branch )
-					return { action: :skip, reason: "cannot read branch tip SHA", absorbed: false } if tip_sha.nil?
-
-					merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-					return { action: :reap, reason: "dirty worktree with merged #{pr_short_ref( merged_pr.fetch( :url ) )}", absorbed: false, force: true } unless merged_pr.nil?
-
-					return { action: :skip, reason: "dirty worktree", absorbed: false }
-				end
-
 				absorbed = branch_absorbed_into_main?( branch: worktree.branch )
-				return { action: :reap, reason: "content absorbed into main", absorbed: true } if absorbed
-				return { action: :skip, reason: "gh CLI not available for PR check", absorbed: false } unless gh_available?
+				return { action: :skip, reason: "dirty worktree", absorbed: absorbed } if worktree.dirty?
+				return { action: :skip, reason: "gh CLI not available for PR check", absorbed: absorbed } unless gh_available?
 
 				tip_sha = worktree_branch_tip_sha( branch: worktree.branch )
-				return { action: :skip, reason: "cannot read branch tip SHA", absorbed: false } if tip_sha.nil?
+				return { action: :skip, reason: "cannot read branch tip SHA", absorbed: absorbed } if tip_sha.nil?
 
 				merged_pr, = merged_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-				return { action: :reap, reason: "merged #{pr_short_ref( merged_pr.fetch( :url ) )}", absorbed: false } unless merged_pr.nil?
-				return { action: :skip, reason: "open PR exists", absorbed: false } if branch_has_open_pr?( branch: worktree.branch )
+				return { action: :reap, reason: "merged #{pr_short_ref( merged_pr.fetch( :url ) )}", absorbed: absorbed } unless merged_pr.nil?
+				return { action: :skip, reason: "open PR exists", absorbed: absorbed } if branch_has_open_pr?( branch: worktree.branch )
 
 				abandoned_pr, = abandoned_pr_for_branch( branch: worktree.branch, branch_tip_sha: tip_sha )
-				return { action: :reap, reason: "closed abandoned #{pr_short_ref( abandoned_pr.fetch( :url ) )}", absorbed: false } unless abandoned_pr.nil?
+				return { action: :reap, reason: "closed abandoned #{pr_short_ref( abandoned_pr.fetch( :url ) )}", absorbed: absorbed } unless abandoned_pr.nil?
 
-				{ action: :skip, reason: "no evidence to reap", absorbed: false }
+				{ action: :skip, reason: "no evidence to reap", absorbed: absorbed }
 			end
 
 			def worktree_branch_tip_sha( branch: )

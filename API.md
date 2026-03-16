@@ -29,7 +29,7 @@ carson <command> [subcommand] [arguments]
 | `carson recover --check NAME [--json]` | Run the exceptional governed recovery path when one governance-owned required check is already red on the default branch. Carson proves the named baseline failure, keeps every other gate intact, merges through the recovery path, and records a machine-readable audit event. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
-| `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap dead worktrees, reconcile integrated delivery worktree records from the ledger, and prune stale branches. Safe cleanup still runs when sync is blocked. |
+| `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap worktrees with strong abandonment evidence, reconcile integrated delivery worktree records from the ledger, and prune stale branches. Safe cleanup still runs when sync is blocked. |
 | `carson template check` | Detect drift between managed templates and host `.github/*` files. |
 | `carson template apply` | Write canonical managed template content into host `.github/*` files. |
 | `carson status [--json]` | Show repository delivery state, including the next queued delivery and blocked-delivery summaries. Default output is Markdown/text; `--json` is the explicit machine contract. |
@@ -50,7 +50,7 @@ All batch commands operate across every governed repository registered in `gover
 | `carson prune --all` | Remove stale branches across all governed repos. |
 | `carson status --all [--json]` | Portfolio-wide delivery overview per governed repository. |
 | `carson template check --all` | Read-only template drift detection across all governed repos. |
-| `carson housekeep --all [--loop SECONDS]` | Attempt sync, then reap dead worktrees, reconcile integrated delivery worktree records from the ledger, and prune across all governed repos. Safe cleanup still runs when sync is blocked. |
+| `carson housekeep --all [--loop SECONDS]` | Attempt sync, then reap worktrees with strong abandonment evidence, reconcile integrated delivery worktree records from the ledger, and prune across all governed repos. Safe cleanup still runs when sync is blocked. |
 
 `--loop SECONDS` runs the housekeep cycle continuously, sleeping SECONDS between cycles. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` with a cycle count summary.
 

@@ -68,7 +68,7 @@ carson housekeep
 
 When one Carson-governed required check is already red on the default branch and the current PR is the repair, use `carson recover --check "..."`. Recovery is the explicit exceptional path: Carson proves the baseline failure, keeps every other gate intact, records an audit event, and never teaches operators to step outside Carson first.
 
-`carson worktree list` is the visibility surface for cleanup: it shows every registered worktree, the branch, PR state, whether the content is already on `main`, and Carson's keep or reap recommendation. `carson housekeep` is the main cleanup pass: sync main, reap dead worktrees, and prune stale branches. When work needs to be abandoned instead of landed, use `carson abandon <pr-number|pr-url|branch>` to close the PR and clean up the branch/worktree safely.
+`carson worktree list` is the visibility surface for cleanup: it shows every registered worktree, the branch, PR state, whether the content is already on `main`, and Carson's keep or reap recommendation. Content matching `main` is diagnostic, not standalone proof that a worktree is abandoned. `carson housekeep` is the main cleanup pass: sync main, reap worktrees with strong abandonment evidence (for example a missing directory, merged PR, or closed abandoned PR), and prune stale branches. When work needs to be abandoned instead of landed, use `carson abandon <pr-number|pr-url|branch>` to close the PR and clean up the branch/worktree safely.
 
 ## Portfolio Layer
 
