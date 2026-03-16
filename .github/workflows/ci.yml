@@ -72,6 +72,9 @@ jobs:
       - name: Ruby indentation guard
         run: ruby script/ruby_indentation_guard.rb
 
+      - name: Install sqlite3 for legacy ledger migration tests
+        run: gem install sqlite3 --no-document
+
       - name: Ruby unit tests
         run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
 
