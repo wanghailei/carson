@@ -157,16 +157,16 @@ On the governed main working tree, Carson blocks raw `git add` / `git commit` an
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
 
-**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Carson pushes the branch, creates or refreshes the PR, waits for the CI and review signals it can observe, merges when the path is clear, and syncs local `main`. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
+**3. Hand the branch to Carson** — `deliver` is the synchronous happy path. Carson pushes the branch, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when the path is clear, and syncs local `main`. If the window expires without integration, Carson exits with an explicit `Merge deferred` or `Merge blocked` handoff that states whether merge was attempted and what to run next. Plain `carson deliver` transports existing commits and blocks if the worktree is dirty. `carson deliver --commit "..."` creates one all-dirty agent-authored commit first, then continues the same delivery flow. Managed template drift is still corrected in a separate Carson-managed commit before push.
 
 ```bash
 carson deliver
 # or, if the worktree is still dirty:
 carson deliver --commit "fix: describe this delivery"
-# Output: merged into main, or held at gate with the next command
+# Output: merged into main, or an explicit deferred/blocked handoff
 ```
 
-**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, `status` shows the current branch, the next queued delivery, and any blocked-delivery summaries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
+**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, Carson tells you whether the PR was deferred or blocked, whether merge was attempted, and which command to run next. `status` still shows the current branch, the next queued delivery, and blocked-delivery summaries for the repository. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
 
 ```bash
 carson status
@@ -327,7 +327,7 @@ Each cycle runs independently: if one cycle fails (network error, GitHub API tim
 
 After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
 
-After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs stay held at gate with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash policy.
+After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary, while `BEHIND` PRs remain eligible under Carson's current squash-only governed merge contract.
 
 After a successful govern merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
 

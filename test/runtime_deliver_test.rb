@@ -136,19 +136,85 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
-	def test_deliver_registers_gated_delivery_when_ci_is_pending
+	def test_deliver_defers_delivery_when_ci_is_pending
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/gated" )
 		stub_assessment( runtime, ci: :pending, review: { status: :pass, review: :approved, detail: "" } )
-		runtime.define_singleton_method( :wait_for_delivery_readiness! ) { |delivery:, branch_name:| delivery }
+		configure_settle_window( runtime, watch_window_seconds: 0, poll_seconds: 1 )
+		stub_settle_clock( runtime )
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "Merge deferred — waiting for CI checks."
+		assert_includes output, "Carson did not attempt merge in this run."
+		assert_includes output, "carson status"
+		assert_includes output, "carson deliver"
+		assert_includes output, "carson govern --loop 300"
 		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/gated" )
 		assert_equal "gated", delivery.status
 		assert_equal "ci", delivery.cause
 		assert_includes delivery.summary, "waiting for CI"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_merges_after_mergeability_settles_within_watch_window
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/settles" )
+		stub_ready_assessment( runtime )
+		configure_settle_window( runtime, watch_window_seconds: 2, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		stub_pull_request_states(
+			runtime,
+			[
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" },
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+			]
+		)
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		output = output_string( runtime )
+		assert_includes output, "Merged into main with squash."
+		delivery = delivery_row_for( runtime: runtime, branch_name: "feature/settles" )
+		assert_equal "integrated", delivery.fetch( "status" )
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_caps_transient_merge_attempts_before_deferred_handoff
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/retry-cap" )
+		stub_ready_assessment( runtime )
+		configure_settle_window( runtime, watch_window_seconds: 5, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		stub_pull_request_states(
+			runtime,
+			Array.new( 8 ) do
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
+			end
+		)
+		merge_attempts = 0
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			merge_attempts += 1
+			result[ :merge_method ] = "squash"
+			result[ :error ] = "merge failed"
+			result[ :recovery ] = "gh pr merge #{number} --squash"
+			Carson::Runtime::EXIT_ERROR
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "deferred", data.fetch( "outcome" )
+		assert_equal true, data.fetch( "merge_attempted" )
+		assert_equal 5, data.fetch( "waited_seconds" )
+		assert_equal "mergeability_pending", data.dig( "handoff", "reason" )
+		assert_equal [ "carson status", "carson deliver", "carson govern --loop 300" ], data.dig( "handoff", "next_steps" )
+		assert_equal 3, merge_attempts
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -210,20 +276,53 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_delivery_gate_waitable_returns_true_for_review_required
+	def test_assess_delivery_marks_draft_pr_as_policy_blocked
 		runtime, repo_root = build_runtime( verbose: false )
-		delivery = build_delivery( status: "gated", cause: "review", summary: "waiting for review" )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/draft" )
+		repository = runtime.send( :repository_record )
+		delivery = runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/draft",
+			head: git_capture( repo_root, "rev-parse", "feature/draft" ),
+			worktree_path: repo_root,
+			pr_number: 99,
+			pr_url: "https://github.com/test/repo/pull/99",
+			status: "preparing",
+			summary: "delivery accepted",
+			cause: nil
+		)
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "isDraft" => true, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
+		end
 
-		assert_equal true, runtime.send( :delivery_gate_waitable?, delivery: delivery )
+		updated = runtime.send( :assess_delivery!, delivery: delivery, branch_name: "feature/draft" )
+		assert_equal "gated", updated.status
+		assert_equal "policy", updated.cause
+		assert_equal "pull request is still a draft", updated.summary
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_delivery_gate_waitable_returns_false_for_review_changes_requested
-		runtime, repo_root = build_runtime( verbose: false )
-		delivery = build_delivery( status: "gated", cause: "review", summary: "review changes requested" )
+	def test_deliver_defers_when_assessment_is_unavailable
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/assessment-unavailable" )
+		stub_assessment( runtime, ci: :pass, review: { status: :pass, review: :approved, detail: "" } )
+		configure_settle_window( runtime, watch_window_seconds: 0, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		runtime.define_singleton_method( :pull_request_state ) { |number:| nil }
 
-		assert_equal false, runtime.send( :delivery_gate_waitable?, delivery: delivery )
-		destroy_runtime_repo( repo_root: repo_root )
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_OK, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "deferred", data.fetch( "outcome" )
+		assert_equal false, data.fetch( "merge_attempted" )
+		assert_equal "assessment_unavailable", data.dig( "handoff", "reason" )
+		refute_nil data.fetch( "watch_window_seconds" )
+		refute_nil data.fetch( "waited_seconds" )
+		FileUtils.remove_entry( tmp_dir )
 	end
 
 	def test_deliver_json_reports_delivery_payload
@@ -238,6 +337,11 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal 42, data.fetch( "pr_number" )
 		assert_equal "integrated", data.dig( "delivery", "status" )
 		assert_equal "carson housekeep", data.fetch( "next_step" )
+		assert_equal true, data.fetch( "merge_attempted" )
+		assert_equal "integrated", data.fetch( "outcome" )
+		assert data.key?( "watch_window_seconds" )
+		assert data.key?( "waited_seconds" )
+		refute data.key?( "handoff" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -263,6 +367,8 @@ class RuntimeDeliverTest < Minitest::Test
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/supersede" )
 		stub_assessment( runtime, ci: :pending, review: { status: :pass, review: :approved, detail: "" } )
+		configure_settle_window( runtime, watch_window_seconds: 0, poll_seconds: 1 )
+		stub_settle_clock( runtime )
 
 		assert_equal Carson::Runtime::EXIT_OK, with_env( "PATH" => mock_path ) { runtime.deliver! }
 		first_delivery = delivery_row_for( runtime: runtime, branch_name: "feature/supersede" )
@@ -346,7 +452,27 @@ private
 
 	def stub_assessment( runtime, ci:, review: )
 		runtime.define_singleton_method( :check_pr_ci ) { |number:| ci }
+		runtime.define_singleton_method( :settle_check_pr_ci ) { |number:| ci }
 		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| review }
+	end
+
+	def stub_pull_request_states( runtime, states )
+		queue = states.dup
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			queue.shift || states.last
+		end
+	end
+
+	def configure_settle_window( runtime, watch_window_seconds:, poll_seconds: )
+		config = runtime.send( :config )
+		config.instance_variable_set( :@govern_check_wait, watch_window_seconds )
+		config.instance_variable_set( :@review_poll_seconds, poll_seconds )
+	end
+
+	def stub_settle_clock( runtime, start: 0.0 )
+		clock = start
+		runtime.define_singleton_method( :deliver_monotonic_now ) { clock }
+		runtime.define_singleton_method( :deliver_sleep ) { |seconds| clock += seconds }
 	end
 
 	def build_runtime_with_mock_gh( existing_pr: )
@@ -382,7 +508,7 @@ private
 				if [[ "$3" =~ ^[0-9]+$ ]]; then
 					number="$3"
 					cat <<JSON
-			{"number":${number},"url":"https://github.com/test/repo/pull/${number}","state":"OPEN","isDraft":false}
+			{"number":${number},"url":"https://github.com/test/repo/pull/${number}","state":"OPEN","isDraft":false,"mergeStateStatus":"CLEAN","mergeable":"MERGEABLE"}
 			JSON
 					exit 0
 				fi
