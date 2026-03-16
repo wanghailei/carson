@@ -22,6 +22,15 @@ module Carson
 						exit_code: EXIT_BLOCK, json_output: json_output
 					)
 				end
+
+				attachment = ensure_main_attached!
+				unless attachment.fetch( :ok )
+					return sync_finish(
+						result: { command: "sync", status: "block", error: attachment.fetch( :error ), recovery: attachment[ :recovery ] },
+						exit_code: EXIT_BLOCK, json_output: json_output
+					)
+				end
+
 				start_branch = current_branch
 				switched = false
 				sync_git!( "fetch", config.git_remote, "--prune", json_output: json_output )
@@ -184,6 +193,86 @@ module Carson
 			def git_remote_exists?( remote_name: )
 				_, _, success, = git_run( "remote", "get-url", remote_name.to_s )
 				success
+			end
+
+			# Ensures the main worktree is attached to the main branch, not detached HEAD
+			# or on a wrong branch.
+			#
+			# Returns { ok: true } when already attached or successfully reattached.
+			# Returns { ok: false, error: "...", recovery: "..." } when blocked.
+			#
+			# Why this exists: git pull --ff-only on a detached HEAD succeeds (exit 0)
+			# but fast-forwards the detached HEAD instead of updating the local main
+			# branch ref. This means sync_after_merge! can report synced: true while
+			# local main is still stale.
+			def ensure_main_attached!( main_root: nil )
+				main_root ||= repo_root
+				main = config.main_branch
+
+				head_ref, _, head_success, = Open3.capture3( "git", "-C", main_root, "rev-parse", "--abbrev-ref", "HEAD" )
+				return { ok: true } unless head_success
+
+				head_ref = head_ref.strip
+				return { ok: true } if head_ref == main
+
+				if head_ref != "HEAD"
+					# On a wrong branch — switch to main if the tree is clean.
+					status_out, = Open3.capture3( "git", "-C", main_root, "status", "--porcelain" )
+					unless status_out.to_s.strip.empty?
+						return {
+							ok: false,
+							error: "main worktree is on branch #{head_ref} with uncommitted changes, expected #{main}",
+							recovery: "cd #{main_root} && git stash && git switch #{main}"
+						}
+					end
+
+					_, switch_err, switch_status, = Open3.capture3( "git", "-C", main_root, "switch", main )
+					unless switch_status.success?
+						return {
+							ok: false,
+							error: "main worktree is on branch #{head_ref}, could not switch to #{main}: #{switch_err.strip}",
+							recovery: "cd #{main_root} && git switch #{main}"
+						}
+					end
+
+					puts_verbose "switched main worktree from #{head_ref} to #{main}"
+					return { ok: true, reattached: true }
+				end
+
+				# Detached HEAD — check if safe to reattach.
+				detached_sha, = Open3.capture3( "git", "-C", main_root, "rev-parse", "HEAD" )
+				detached_sha = detached_sha.strip
+
+				main_sha, _, main_exists, = Open3.capture3( "git", "-C", main_root, "rev-parse", "--verify", "refs/heads/#{main}" )
+				main_sha = main_sha.strip if main_exists&.success?
+
+				remote = config.git_remote
+				remote_sha, _, remote_exists, = Open3.capture3( "git", "-C", main_root, "rev-parse", "--verify", "refs/remotes/#{remote}/#{main}" )
+				remote_sha = remote_sha.strip if remote_exists&.success?
+
+				safe = ( main_exists&.success? && detached_sha == main_sha ) ||
+					( remote_exists&.success? && detached_sha == remote_sha )
+
+				unless safe
+					short_sha = detached_sha[ 0, 8 ]
+					return {
+						ok: false,
+						error: "main worktree is detached at #{short_sha} which differs from #{main}",
+						recovery: "cd #{main_root} && git switch #{main}"
+					}
+				end
+
+				_, switch_err, switch_status, = Open3.capture3( "git", "-C", main_root, "switch", main )
+				unless switch_status.success?
+					return {
+						ok: false,
+						error: "could not reattach main worktree to #{main}: #{switch_err.strip}",
+						recovery: "cd #{main_root} && git switch #{main}"
+					}
+				end
+
+				puts_verbose "reattached main worktree to #{main}"
+				{ ok: true, reattached: true }
 			end
 
 			# In outsider mode, Carson must not leave Carson-owned fingerprints in host repositories.

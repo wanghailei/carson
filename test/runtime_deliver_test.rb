@@ -93,8 +93,8 @@ class RuntimeDeliverTest < Minitest::Test
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal "created", data.dig( "commit", "status" )
 		assert_equal "fix: commit dirty tree", data.dig( "commit", "message" )
-		assert_equal "fix: commit dirty tree", git_capture( repo_root, "log", "-1", "--pretty=%s" )
-		changed_files = git_capture( repo_root, "show", "--pretty=", "--name-only", "HEAD" ).split( "\n" )
+		assert_equal "fix: commit dirty tree", git_capture( repo_root, "log", "-1", "--pretty=%s", "feature/commit-all" )
+		changed_files = git_capture( repo_root, "show", "--pretty=", "--name-only", "feature/commit-all" ).split( "\n" )
 		assert_includes changed_files, "README.md"
 		assert_includes changed_files, "notes.txt"
 		assert_includes changed_files, "feature.txt"
@@ -133,7 +133,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_OK, result
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal "created", data.dig( "commit", "status" )
-		assert_equal [ "fix: user delivery", "chore: sync Carson managed files" ], git_log_subjects( repo_root, count: 2 )
+		assert_equal [ "fix: user delivery", "chore: sync Carson managed files" ], git_log_subjects( repo_root, count: 2, ref: "feature/template-then-agent" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -156,7 +156,7 @@ class RuntimeDeliverTest < Minitest::Test
 		data = JSON.parse( output_string( runtime ) )
 		assert_equal "skipped", data.dig( "commit", "status" )
 		assert_includes data.dig( "commit", "summary" ), "template sync"
-		assert_equal "chore: sync Carson managed files", git_capture( repo_root, "log", "-1", "--pretty=%s" )
+		assert_equal "chore: sync Carson managed files", git_capture( repo_root, "log", "-1", "--pretty=%s", "feature/template-only" )
 		FileUtils.remove_entry( tmp_dir )
 	end
 
@@ -544,6 +544,7 @@ class RuntimeDeliverTest < Minitest::Test
 		stub_ready_assessment( runtime )
 
 		first = with_env( "PATH" => mock_path ) { runtime.deliver! }
+		system( "git", "-C", repo_root, "switch", "feature/idempotent", out: File::NULL, err: File::NULL )
 		second = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, first
 		assert_equal Carson::Runtime::EXIT_OK, second
@@ -841,8 +842,10 @@ private
 		)
 	end
 
-	def git_log_subjects( repo_root, count: )
-		git_capture( repo_root, "log", "-n", count.to_s, "--pretty=%s" ).split( "\n" )
+	def git_log_subjects( repo_root, count:, ref: nil )
+		args = [ "log", "-n", count.to_s, "--pretty=%s" ]
+		args << ref if ref
+		git_capture( repo_root, *args ).split( "\n" )
 	end
 
 	def freshness_assessment( status:, remote_ref:, detail: nil )

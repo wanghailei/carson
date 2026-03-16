@@ -1257,8 +1257,19 @@ module Carson
 			end
 
 			# Syncs main after a successful merge.
+			# Ensures the main worktree is attached to the main branch before pulling,
+			# because git pull --ff-only on a detached HEAD fast-forwards the detached
+			# HEAD but does not update the local main branch ref.
 			def sync_after_merge!( remote:, main:, result: )
 				main_root = main_worktree_root
+				attachment = ensure_main_attached!( main_root: main_root )
+				unless attachment.fetch( :ok )
+					result[ :synced ] = false
+					result[ :sync_error ] = attachment.fetch( :error )
+					puts_verbose "sync blocked: #{attachment.fetch( :error )}"
+					return
+				end
+
 				_, pull_stderr, pull_status, = Open3.capture3(
 					"git", "-C", main_root, "pull", "--ff-only", remote, main
 				)
