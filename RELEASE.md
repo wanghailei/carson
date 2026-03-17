@@ -5,6 +5,18 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.30.1
+
+### What changed
+
+- **MANUAL.md CI example updated to v3.30.0** — The CI workflow reference, `carson_ref`, and `carson_version` in the setup example were still pinned to v3.29.0. Now aligned with the current release.
+- **CI split into fast PR gate and full smoke on main** — PR checks run the unit test suite only; the full smoke script runs on main after merge. Reduces PR feedback time.
+- **Command guard respects leading `cd` in Bash commands** — `cd /path && gh pr create` is now correctly detected as a governed command.
+
+### No migration required
+
+- Existing workflows continue to work unchanged.
+
 ## 3.30.0
 
 ### What changed
