@@ -99,7 +99,7 @@ Autonomous portfolio-level delivery oversight: triage, dispatch, merge.
 
 ### Mental model
 
-`carson receive` runs a triage-dispatch-verify cycle across all governed repositories. It classifies each open PR, dispatches coding agents to fix issues, and merges PRs that pass all gates. With `--loop SECONDS`, it runs continuously.
+`carson <repo> receive` runs a triage-dispatch-verify cycle for one repository. It classifies each open PR, dispatches coding agents to fix issues, and merges PRs that pass all gates. With `--loop SECONDS`, it runs continuously.
 
 ### PR classification
 

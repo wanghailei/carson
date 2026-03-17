@@ -323,7 +323,7 @@ After CI and review pass, Carson still checks GitHub mergeability. Conflicting P
 
 After a successful receive merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
 
-The agent provider is configurable via `receive.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
+The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 
 ## Governed Integration Policy
 

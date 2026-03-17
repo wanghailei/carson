@@ -20,9 +20,9 @@ Repo-scoped commands: `carson <repo> <command>` or `carson <command>` when CWD i
 | Command | Purpose |
 |---|---|
 | `carson setup` | Interactive quiz to configure remote, main branch, workflow, and canonical lint-policy path. Writes `~/.carson/config.json`. |
-| `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
+| `carson onboard <repo_path>` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
 | `carson refresh` | Re-apply hooks, templates, and audit across all governed repos after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). Skips repos with active worktrees or uncommitted changes. |
-| `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `receive.repos`. |
+| `carson offboard <repo_path>` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
 | `carson list [--json]` | List all governed repositories. |
 
 ### Daily commands
@@ -47,7 +47,7 @@ Repo-scoped commands: `carson <repo> <command>` or `carson <command>` when CWD i
 
 | Command | Purpose |
 |---|---|
-| `carson receive [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level delivery oversight: assess active deliveries across all governed repos, integrate ready branches, dispatch revisions, and escalate blocked work. Live integrated rows include merge proof. |
+| `carson <repo> receive [--dry-run] [--json] [--loop SECONDS]` | Single-repo delivery triage: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. Live integrated rows include merge proof. |
 
 `--loop SECONDS` runs the receive cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` or `SIGTERM` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 

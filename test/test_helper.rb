@@ -66,6 +66,24 @@ module CarsonTestSupport
 		path
 	end
 
+	# Like write_test_config but also registers the repo in govern.repos
+	# so CWD fallback resolution recognises it as governed.
+	def write_test_config_governed( repo_root: )
+		path = File.join( repo_root, "carson-config.json" )
+		File.write(
+			path,
+			JSON.generate(
+				{
+					"govern" => {
+						"state_path" => File.join( repo_root, "carson-state.json" ),
+						"repos" => [ repo_root ]
+					}
+				}
+			)
+		)
+		path
+	end
+
 	def with_feature_worktree_runtimes( branch_name:, worktree_name: )
 		Dir.mktmpdir( "carson-worktree-runtime-test", carson_tmp_root ) do |tmp_dir|
 			remote_path = File.join( tmp_dir, "remote.git" )

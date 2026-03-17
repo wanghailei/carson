@@ -246,9 +246,10 @@ class CLITest < Minitest::Test
 
 	# --- portfolio: onboard ---
 
-	def test_parse_args_onboard_defaults
-		parsed = parse_args_from( [ "onboard" ] )
-		assert_equal "onboard", parsed.fetch( :command )
+	def test_parse_args_onboard_missing_arg
+		parsed, error = parse_args_with_error( [ "onboard" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Missing repo path"
 	end
 
 	def test_parse_args_onboard_with_path
@@ -265,9 +266,10 @@ class CLITest < Minitest::Test
 
 	# --- portfolio: offboard ---
 
-	def test_parse_args_offboard_defaults
-		parsed = parse_args_from( [ "offboard" ] )
-		assert_equal "offboard", parsed.fetch( :command )
+	def test_parse_args_offboard_missing_arg
+		parsed, error = parse_args_with_error( [ "offboard" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Missing repo path"
 	end
 
 	def test_parse_args_offboard_with_path
@@ -965,6 +967,41 @@ class CLITest < Minitest::Test
 			File.write( target, backup )
 		elsif target && File.file?( target )
 			FileUtils.rm_f( target )
+		end
+	end
+
+	# --- CWD enforcement ---
+
+	def test_repo_command_outside_governed_repo_returns_error
+		Dir.mktmpdir( "carson-cwd-test" ) do |tmp_dir|
+			output = StringIO.new
+			error = StringIO.new
+			exit_code = Carson::CLI.start(
+				arguments: [ "status" ],
+				repo_root: tmp_dir,
+				tool_root: tmp_dir,
+				output: output,
+				error: error
+			)
+			assert_equal Carson::Runtime::EXIT_ERROR, exit_code
+			assert_includes error.string, "Not inside a governed repo"
+			assert_includes error.string, "carson list"
+		end
+	end
+
+	def test_repo_command_outside_git_repo_returns_error
+		Dir.mktmpdir( "carson-non-git-test" ) do |tmp_dir|
+			output = StringIO.new
+			error = StringIO.new
+			exit_code = Carson::CLI.start(
+				arguments: [ "audit" ],
+				repo_root: tmp_dir,
+				tool_root: tmp_dir,
+				output: output,
+				error: error
+			)
+			assert_equal Carson::Runtime::EXIT_ERROR, exit_code
+			assert_includes error.string, "Not inside a governed repo"
 		end
 	end
 

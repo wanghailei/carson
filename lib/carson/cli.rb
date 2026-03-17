@@ -48,7 +48,15 @@ module Carson
 				return Runtime::EXIT_ERROR
 			end
 
-			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, output: output, error: error, verbose: verbose )
+			config = Config.load( repo_root: target_repo_root )
+			resolved = resolve_cwd_repo( repo_root: target_repo_root, config: config )
+			unless resolved
+				error.puts "#{BADGE} Not inside a governed repo. Use: carson <repo> #{command} or cd into a governed repo."
+				error.puts "#{BADGE}   Run carson list to see governed repositories."
+				return Runtime::EXIT_ERROR
+			end
+
+			runtime = Runtime.new( repo_root: resolved, tool_root: tool_root, output: output, error: error, verbose: verbose )
 			dispatch( parsed: parsed, runtime: runtime )
 		rescue ConfigError => exception
 			error.puts "#{BADGE} Configuration problem: #{exception.message}"
@@ -123,8 +131,8 @@ module Carson
 				parser.separator ""
 				parser.separator "Portfolio commands:"
 				parser.separator "    list         List governed repositories"
-				parser.separator "    onboard      Register a repository for governance"
-				parser.separator "    offboard     Remove a repository from governance"
+				parser.separator "    onboard      Register a repository for governance (requires repo path)"
+				parser.separator "    offboard     Remove a repository from governance (requires repo path)"
 				parser.separator "    refresh      Re-install hooks and configuration (all governed repos)"
 				parser.separator "    version      Show Carson version"
 				parser.separator ""
@@ -277,26 +285,28 @@ module Carson
 
 		def self.parse_onboard_command( arguments:, error: )
 			onboard_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson onboard [REPO_PATH]"
+				parser.banner = "Usage: carson onboard <REPO_PATH>"
 				parser.separator ""
 				parser.separator "Register a repository for Carson governance."
 				parser.separator "Detects the remote, installs hooks, applies templates, and runs initial audit."
-				parser.separator "Defaults to the current directory if no path is given."
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson onboard             Onboard the current repository"
 				parser.separator "    carson onboard ~/Dev/app   Onboard a specific repository"
 			end
 			onboard_parser.parse!( arguments )
-			if arguments.length > 1
-				error.puts "#{BADGE} Too many arguments for onboard. Use: carson onboard [repo_path]"
+			if arguments.empty?
+				error.puts "#{BADGE} Missing repo path. Use: carson onboard <repo_path>"
 				error.puts onboard_parser
 				return { command: :invalid }
 			end
-			repo_path = arguments.first
+			if arguments.length > 1
+				error.puts "#{BADGE} Too many arguments for onboard. Use: carson onboard <repo_path>"
+				error.puts onboard_parser
+				return { command: :invalid }
+			end
 			{
 				command: "onboard",
-				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+				repo_root: File.expand_path( arguments.first )
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -306,25 +316,28 @@ module Carson
 
 		def self.parse_offboard_command( arguments:, error: )
 			offboard_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson offboard [REPO_PATH]"
+				parser.banner = "Usage: carson offboard <REPO_PATH>"
 				parser.separator ""
 				parser.separator "Remove a repository from Carson governance."
 				parser.separator "Unregisters the repo from Carson's portfolio and removes hooks."
-				parser.separator "Defaults to the current directory if no path is given."
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson offboard            Offboard the current repository"
+				parser.separator "    carson offboard ~/Dev/app   Offboard a specific repository"
 			end
 			offboard_parser.parse!( arguments )
-			if arguments.length > 1
-				error.puts "#{BADGE} Too many arguments for offboard. Use: carson offboard [repo_path]"
+			if arguments.empty?
+				error.puts "#{BADGE} Missing repo path. Use: carson offboard <repo_path>"
 				error.puts offboard_parser
 				return { command: :invalid }
 			end
-			repo_path = arguments.first
+			if arguments.length > 1
+				error.puts "#{BADGE} Too many arguments for offboard. Use: carson offboard <repo_path>"
+				error.puts offboard_parser
+				return { command: :invalid }
+			end
 			{
 				command: "offboard",
-				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
+				repo_root: File.expand_path( arguments.first )
 			}
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -862,10 +875,14 @@ module Carson
 
 		# Resolves the CWD repo_root to a governed repository path.
 		# Canonicalises worktree vs main-tree via git common-dir, then matches.
+		# Compares real paths to handle symlinks (e.g., /tmp → /private/tmp on macOS).
 		def self.resolve_cwd_repo( repo_root:, config: )
 			canonical = canonicalise_repo_root( repo_root: repo_root )
 			repos = config.govern_repos
-			repos.find { |repo_path| File.expand_path( repo_path ) == canonical }
+			repos.find do |repo_path|
+				expanded = File.expand_path( repo_path )
+				expanded == canonical || ( File.exist?( expanded ) && File.realpath( expanded ) == canonical )
+			end
 		end
 
 		# Returns the canonical main worktree root for a repo_root.

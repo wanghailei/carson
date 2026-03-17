@@ -80,7 +80,7 @@ carson refresh
 carson receive --dry-run
 ```
 
-`carson receive` is the portfolio layer. It assesses active deliveries across governed repositories, integrates ready branches, dispatches revisions for blocked work, and escalates what still needs human judgement. Governed integration is squash-only and happens one repository at a time.
+`carson <repo> receive` triages active deliveries for one repository: integrates ready branches, dispatches revisions for blocked work, and escalates what still needs human judgement. Governed integration is squash-only. Use `carson list --json` to script receive across your portfolio.
 
 ## Where to Read Next
 
