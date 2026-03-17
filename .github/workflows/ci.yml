@@ -63,7 +63,7 @@ jobs:
           ruby -c exe/carson
           ruby -c lib/carson.rb
 
-      - name: Ruby indentation guard
+      - name: Ruby indentation and access modifier guard
         run: ruby script/ruby_indentation_guard.rb
 
       - name: Legacy naming guard

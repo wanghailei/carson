@@ -134,7 +134,7 @@ Carson uses Minitest with no external test framework dependencies. Tests are fas
 
 2. **Runtime unit tests** (`runtime_*_test.rb`) — runtime methods against a real `Runtime` backed by `tmpdir`. Each test builds and tears down its own directory.
 
-3. **Smoke tests** (`script/ci_smoke.sh`, `script/review_smoke.sh`) — end-to-end binary invocations. PR CI runs `--pr-canary` (version contract, status, deliver-blocks-on-main). Full smoke and review smoke run on main pushes and manual dispatch.
+3. **Smoke tests** (`script/ci_smoke.sh`, `script/review_smoke.sh`) — end-to-end binary invocations. PR CI runs `--pr-canary` (version contract, status, deliver-blocks-on-main). The PR lint job separately runs `script/ruby_indentation_guard.rb` so tab indentation and outdented bare access modifiers stay enforced without restoring full RuboCop-on-PR. Full smoke and review smoke run on main pushes and manual dispatch.
 
 **Isolation conventions:**
 - Never use `$stdout`/`$stderr` directly. Capture via `StringIO`.
