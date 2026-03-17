@@ -134,7 +134,7 @@ Carson uses Minitest with no external test framework dependencies. Tests are fas
 
 2. **Runtime unit tests** (`runtime_*_test.rb`) — runtime methods against a real `Runtime` backed by `tmpdir`. Each test builds and tears down its own directory.
 
-3. **Smoke tests** (`script/ci_smoke.sh`, `script/review_smoke.sh`) — end-to-end binary invocations. Run in CI as the last gate.
+3. **Smoke tests** (`script/ci_smoke.sh`, `script/review_smoke.sh`) — end-to-end binary invocations. PR CI runs `--pr-canary` (version contract, status, deliver-blocks-on-main). Full smoke and review smoke run on main pushes and manual dispatch.
 
 **Isolation conventions:**
 - Never use `$stdout`/`$stderr` directly. Capture via `StringIO`.
@@ -162,7 +162,10 @@ ruby -v
 package_dir="$(mktemp -d "${TMPDIR:-/tmp}/carson-build-XXXXXX")"
 gem build carson.gemspec --output "$package_dir/carson-$(cat VERSION).gem"
 
-# Smoke verification
+# PR canary (fast)
+script/ci_smoke.sh --pr-canary
+
+# Full smoke verification
 script/ci_smoke.sh
 script/review_smoke.sh
 
