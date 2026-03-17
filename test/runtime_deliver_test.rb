@@ -292,10 +292,6 @@ class RuntimeDeliverTest < Minitest::Test
 				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
 			end
 		)
-		freshness = freshness_assessment( status: :fresh, remote_ref: "origin/main" )
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
-			freshness
-		end
 		merge_attempts = 0
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
 			merge_attempts += 1
@@ -312,7 +308,7 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
-	def test_deliver_blocks_when_branch_becomes_behind_during_settle
+	def test_deliver_blocks_when_github_reports_behind_during_settle
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/freshness-drifts" )
@@ -321,19 +317,13 @@ class RuntimeDeliverTest < Minitest::Test
 		stub_settle_clock( runtime )
 		stub_pull_request_states(
 			runtime,
-			Array.new( 4 ) do
-				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
-			end
+			[
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "BEHIND" }
+			]
 		)
-		freshness = [
-			freshness_assessment( status: :fresh, remote_ref: "origin/main" ),
-			freshness_assessment( status: :behind, remote_ref: "origin/main" )
-		]
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
-			freshness.shift || freshness.last
-		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
-			raise "merge should not run after freshness blocks the delivery"
+			raise "merge should not run after GitHub reports BEHIND"
 		end
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
@@ -347,7 +337,7 @@ class RuntimeDeliverTest < Minitest::Test
 		FileUtils.remove_entry( tmp_dir )
 	end
 
-	def test_deliver_prints_handoff_steps_when_branch_becomes_behind_during_settle
+	def test_deliver_prints_handoff_steps_when_github_reports_behind_during_settle
 		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/freshness-drifts-human" )
@@ -356,17 +346,11 @@ class RuntimeDeliverTest < Minitest::Test
 		stub_settle_clock( runtime )
 		stub_pull_request_states(
 			runtime,
-			Array.new( 4 ) do
-				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" }
-			end
+			[
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "BEHIND" }
+			]
 		)
-		freshness = [
-			freshness_assessment( status: :fresh, remote_ref: "origin/main" ),
-			freshness_assessment( status: :behind, remote_ref: "origin/main" )
-		]
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
-			freshness.shift || freshness.last
-		end
 
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result

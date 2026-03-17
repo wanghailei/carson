@@ -52,11 +52,11 @@ class RuntimeGovernTest < Minitest::Test
 			status: "queued",
 			summary: "ready to integrate into main"
 		)
-		blocked_freshness = freshness_assessment( status: :behind, remote_ref: "origin/main" )
-		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN" } }
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
-			blocked_freshness
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "BEHIND" }
 		end
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
 
 		result = runtime.govern!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
@@ -81,6 +81,9 @@ class RuntimeGovernTest < Minitest::Test
 			summary: "ready to integrate into main"
 		)
 		stub_reconciliation( runtime, delivery: delivery )
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
 			result[ :error ] = "merge conflict"
 			Carson::Runtime::EXIT_ERROR
@@ -215,7 +218,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_rechecks_freshness_before_merge
+	def test_govern_rechecks_github_state_before_merge
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/freshness-recheck" )
@@ -227,12 +230,11 @@ class RuntimeGovernTest < Minitest::Test
 			summary: "ready to integrate into main"
 		)
 		stub_reconciliation( runtime, delivery: delivery )
-		blocked_freshness = freshness_assessment( status: :behind, remote_ref: "origin/main" )
-		runtime.define_singleton_method( :assess_branch_freshness ) do |branch_name: nil, head_ref: nil, remote:, main:|
-			blocked_freshness
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "BEHIND" }
 		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
-			raise "merge should not run when freshness blocks integration"
+			raise "merge should not run when GitHub reports BEHIND"
 		end
 
 		result = runtime.govern!( dry_run: false )
@@ -252,6 +254,9 @@ class RuntimeGovernTest < Minitest::Test
 		create_feature_branch( repo_root, "feature/housekeep" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/housekeep", status: "queued", summary: "ready to integrate into main" )
 		stub_reconciliation( runtime, delivery: delivery )
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK
@@ -549,6 +554,41 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_govern_integrates_delivery_behind_locally_but_clean_on_github
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/behind-local-clean-gh" )
+
+		# Advance main so the feature branch is locally behind
+		system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
+		File.write( File.join( repo_root, "README.md" ), "# Main advanced\n" )
+		system( "git", "-C", repo_root, "add", "README.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "commit", "-m", "advance main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		delivery = create_delivery(
+			runtime: runtime,
+			repo_root: repo_root,
+			branch_name: "feature/behind-local-clean-gh",
+			status: "queued",
+			summary: "ready to integrate into main"
+		)
+		# GitHub says CLEAN even though local branch is behind main
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+		end
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		stub_integration( runtime )
+
+		result = runtime.govern!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "integrated", row.fetch( "status" )
+		assert_equal "integrated into main", row.fetch( "summary" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_govern_integrates_later_ready_delivery_when_first_item_is_merge_blocked
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
@@ -609,6 +649,9 @@ private
 	end
 
 	def stub_integration( runtime )
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK

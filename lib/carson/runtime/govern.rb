@@ -216,19 +216,20 @@ module Carson
 				end
 			end
 
+				# Final pre-merge recheck using GitHub as authority for merge eligibility.
+				# Intentionally strict: blocks on ANY non-ready state (including pending/unavailable).
+				# Unlike deliver's attempt_delivery_merge! which allows speculative merges on pending states,
+				# govern runs unattended and should not speculatively attempt merges on uncertain state.
 				def integrate_delivery!( delivery:, repo_path: )
 					result = {}
-					freshness = assess_branch_freshness(
-						head_ref: delivery.head || delivery.branch,
-						remote: config.git_remote,
-						main: config.main_branch
-					)
-					unless freshness.fetch( :ready )
+					pr_state = pull_request_state( number: delivery.pull_request_number )
+					merge_check = github_merge_assessment( pr_state: pr_state )
+					unless merge_check[ :ready ]
 						return ledger.update_delivery(
 							delivery: delivery,
 							status: "gated",
-							cause: "freshness",
-							summary: freshness.fetch( :summary )
+							cause: merge_check[ :cause ],
+							summary: merge_check[ :summary ]
 						)
 					end
 
