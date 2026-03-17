@@ -4,6 +4,11 @@
 # repositories so CI catches behavioural regressions early.
 set -euo pipefail
 
+QUICK_MODE=false
+if [[ "${1:-}" == "--quick" ]]; then
+	QUICK_MODE=true
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 carson_bin="$repo_root/exe/carson"
 
@@ -275,6 +280,11 @@ expect_exit 2 "deliver blocks on main branch" run_carson_with_mock_gh deliver
 # Clean up feature branch.
 git branch -D feature/deliver-smoke >/dev/null
 echo "PASS: deliver smoke tests"
+
+if [[ "$QUICK_MODE" == true ]]; then
+	echo "Carson quick smoke tests passed."
+	exit 0
+fi
 
 git clone "$remote_repo" "$init_repo" >/dev/null
 (
