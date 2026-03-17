@@ -106,9 +106,9 @@ jobs:
       - name: Ruby unit tests
         run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
 
-  smoke-quick:
-    name: Quick smoke
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+  smoke-canary:
+    name: PR canary smoke
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -122,8 +122,8 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - name: Carson quick smoke
-        run: bash script/ci_smoke.sh --quick
+      - name: Carson PR canary
+        run: bash script/ci_smoke.sh --pr-canary
 
   smoke-full:
     name: Full smoke and review tests
