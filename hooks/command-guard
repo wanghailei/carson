@@ -31,6 +31,28 @@ block_command() {
 	exit 2
 }
 
+resolve_command_pwd() {
+	local command_text="$1"
+	local base_pwd
+	local raw_cd_target
+	local cd_target
+	local resolved_pwd
+
+	base_pwd="$(pwd -P)"
+	if [[ ! "$command_text" =~ ^[[:space:]]*cd[[:space:]]+([^;&|]+)[[:space:]]*(&&|;) ]]; then
+		echo "$base_pwd"
+		return
+	fi
+
+	raw_cd_target="${BASH_REMATCH[1]}"
+	cd_target="$(printf '%s' "$raw_cd_target" | sed -E "s/^[[:space:]]+//; s/[[:space:]]+$//; s/^'(.*)'$/\\1/; s/^\"(.*)\"$/\\1/")"
+	if resolved_pwd="$(cd "$base_pwd" && cd "$cd_target" 2>/dev/null && pwd -P)"; then
+		echo "$resolved_pwd"
+	else
+		echo "$base_pwd"
+	fi
+}
+
 # Read the tool call JSON from stdin.
 input="$(cat)"
 
@@ -40,16 +62,17 @@ tool_name="$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null)"
 
 command_text="$(echo "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 [ -n "$command_text" ] || exit 0
+command_pwd="$(resolve_command_pwd "$command_text")"
 
 # Check if the current directory is inside a governed repository.
 config_file="${HOME}/.carson/config.json"
 [ -f "$config_file" ] || exit 0
 
-repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+repo_root="$(git -C "$command_pwd" rev-parse --show-toplevel 2>/dev/null || echo "")"
 [ -n "$repo_root" ] || exit 0
 
 current_root="$(cd "$repo_root" && pwd -P)"
-common_dir="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "")"
+common_dir="$(git -C "$command_pwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "")"
 if [ -n "$common_dir" ]; then
 	governed_root="$(cd "$(dirname "$common_dir")" && pwd -P)"
 else
@@ -62,7 +85,7 @@ fi
 
 main_branch="$(jq -r '.git.main_branch // "main"' "$config_file" 2>/dev/null || echo "main")"
 [ -n "$main_branch" ] || main_branch="main"
-current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+current_branch="$(git -C "$command_pwd" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
 on_main_worktree=false
 on_main_branch=false
 [ "$current_root" = "$governed_root" ] && on_main_worktree=true
@@ -96,7 +119,7 @@ fi
 if [ "$on_main_worktree" = true ] && [ "$on_main_branch" = true ] && grep -qE "$main_mutation_pattern" <<<"$command_text"; then
 	block_command \
 		"Main working tree is read-only in this Carson-governed repo." \
-		"Use \`carson worktree create <name>\` first, then run \`git add\` or \`git commit\` inside that worktree."
+		"Use \`carson worktree create <name>\` first, then commit inside that worktree or let Carson do it with \`carson deliver --commit \"...\"\`."
 fi
 
 exit 0
