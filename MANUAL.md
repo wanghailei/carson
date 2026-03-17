@@ -130,7 +130,7 @@ These strategies are the audit lens for Carson. If behaviour departs from them, 
 - **Main-tree protection** — on the governed main working tree, Carson blocks `git add` and `git commit` until the agent creates a Carson worktree for the task.
 - **Governed delivery** — completed work returns to shared truth through remote `main` via PR-based delivery. Carson owns the landing path.
 - **Active review gating** — when the repo uses PR-based delivery, review findings must be acknowledged before merge. Feedback is never silently buried.
-- **Portfolio triage** — `carson govern` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
+- **Portfolio triage** — `carson receive` applies the same discipline across multiple repositories: classify, merge, dispatch, or escalate.
 - **Template propagation** — Carson treats canonical policy files as managed infrastructure and keeps them consistent across repos.
 
 ### Safety Strategies
@@ -166,11 +166,11 @@ carson deliver --commit "fix: describe this delivery"
 # Output: merged into main, or an explicit deferred/blocked handoff
 ```
 
-**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, Carson tells you whether the PR was deferred or blocked, whether merge was attempted, and which command to run next. `status` still shows the current branch, the next queued delivery, and blocked-delivery summaries for the repository. When the current branch has a Carson delivery record, `status` also shows Carson's last observed PR state and merge proof. Keep `govern` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
+**4. Inspect or wait when needed** — when `deliver` cannot merge immediately, Carson tells you whether the PR was deferred or blocked, whether merge was attempted, and which command to run next. `status` still shows the current branch, the next queued delivery, and blocked-delivery summaries for the repository. When the current branch has a Carson delivery record, `status` also shows Carson's last observed PR state and merge proof. Keep `receive` running when you want unattended portfolio reassessment and revision dispatch across governed repositories:
 
 ```bash
 carson status
-carson govern --loop 300
+carson receive --loop 300
 ```
 
 ### Recover a baseline-red governance check
@@ -280,28 +280,18 @@ carson review gate
 **Portfolio overview:**
 
 ```bash
-carson repos           # list all governed repositories
-carson repos --json    # machine-readable output
-carson status --all    # branch, worktrees, governance per repo
+carson list             # list all governed repositories
+carson list --json      # machine-readable output
 ```
 
-**Portfolio maintenance (Layer 2):**
-
-All `--all` commands run across every governed repository registered via `carson onboard`.
+**Portfolio maintenance:**
 
 ```bash
-carson refresh --all           # re-apply hooks, templates, audit across all repos
-carson sync --all              # fast-forward main across all repos
-carson audit --all             # governance audit across all repos
-carson prune --all             # remove stale branches across all repos
-carson template check --all    # detect template drift across all repos
-carson housekeep --all         # full maintenance cycle across all repos
-carson housekeep --all --loop 300   # housekeep every 5 minutes
+carson refresh                 # re-apply hooks, templates, audit across all repos
+carson list                    # list all governed repositories
 ```
 
-`refresh --all` checks each repo for safety before operating: repos with active worktrees or uncommitted changes are skipped with clear reasons. Other batch commands attempt each repo and report failures without stopping.
-
-`housekeep --all --loop SECONDS` runs the full housekeep cycle continuously, sleeping SECONDS between passes. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` or `SIGTERM` with a cycle count summary.
+`refresh` checks each repo for safety before operating: repos with active worktrees or uncommitted changes are skipped with clear reasons. Use `carson list --json` to script batch operations across governed repositories.
 
 **Periodic maintenance:**
 
@@ -310,30 +300,30 @@ carson review sweep    # update tracking issue for late review feedback
 carson prune           # remove stale local branches
 ```
 
-## Running Carson Govern Continuously
+## Running Carson Receive Continuously
 
-Use `--loop SECONDS` to run `carson govern` as a persistent daemon that cycles on a schedule:
+Use `--loop SECONDS` to run `carson receive` as a persistent daemon that cycles on a schedule:
 
 ```bash
-carson govern --loop 300              # cycle every 5 minutes
-carson govern --loop 300 --dry-run    # observe mode, no integration or revision dispatch
+carson receive --loop 300              # cycle every 5 minutes
+carson receive --loop 300 --dry-run    # observe mode, no integration or revision dispatch
 ```
 
 The loop is built-in and cross-platform — no cron, launchd, or Task Scheduler required. Run it in a terminal, tmux, screen, or as a system service.
 
 Each cycle runs independently: if one cycle fails (network error, GitHub API timeout), the error is logged and the next cycle proceeds normally. Press `Ctrl-C` or send `SIGTERM` to stop — Carson exits cleanly with a cycle count summary.
 
-### Govern and Coding Agents
+### Receive and Coding Agents
 
-`carson govern` dispatches coding agents (Codex or Claude) when an active delivery is blocked by CI, review, or policy feedback. The agent receives the failure context and attempts a revision. If the agent succeeds, the delivery re-enters the governance pipeline. If it fails repeatedly or times out, the delivery is escalated for human attention.
+`carson receive` dispatches coding agents (Codex or Claude) when an active delivery is blocked by CI, review, or policy feedback. The agent receives the failure context and attempts a revision. If the agent succeeds, the delivery re-enters the governance pipeline. If it fails repeatedly or times out, the delivery is escalated for human attention.
 
-After a live merge attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated. Successful integrations also report merge proof for the landed branch.
+After a live merge attempt, receive reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated. Successful integrations also report merge proof for the landed branch.
 
 After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary. `BEHIND` is treated as a freshness failure, not a harmless squash detail: Carson blocks and requires a branch refresh before it will continue.
 
-After a successful govern merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
+After a successful receive merge, Carson runs the same cleanup path as `carson housekeep`: sync, reap safe worktrees, then prune.
 
-The agent provider is configurable via `govern.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
+The agent provider is configurable via `receive.agent.provider` (`auto`, `codex`, or `claude`). In `auto` mode, Carson selects the first available provider.
 
 ## Governed Integration Policy
 
@@ -467,8 +457,7 @@ carson template check
 ```
 
 **Hook version mismatch after upgrade**
-- Run `carson refresh` to re-apply hooks and templates for the new Carson version.
-- Run `carson refresh --all` to refresh all governed repositories at once.
+- Run `carson refresh` to re-apply hooks and templates for all governed repositories.
 
 **Template auto-propagation**
 
@@ -487,7 +476,7 @@ To retire Carson from a repository:
 carson offboard /path/to/your-repo
 ```
 
-This removes Carson-managed host artefacts, unsets `core.hooksPath` when it points to Carson-managed global hooks, and deregisters the repository from `govern.repos` so `carson govern` and `carson refresh --all` no longer target it.
+This removes Carson-managed host artefacts, unsets `core.hooksPath` when it points to Carson-managed global hooks, and deregisters the repository from `govern.repos` so `carson receive` and `carson refresh` no longer target it.
 
 ## Related Documents
 

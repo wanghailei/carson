@@ -20,11 +20,6 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def refresh!
-			@calls << :refresh
-			Carson::Runtime::EXIT_OK
-		end
-
 		def refresh_all!
 			@calls << :refresh_all
 			Carson::Runtime::EXIT_OK
@@ -95,59 +90,28 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def prune_all!
-			@calls << :prune_all
-			Carson::Runtime::EXIT_OK
-		end
-
-
-		def repos!( json_output: false )
-			@calls << [ :repos, { json_output: json_output } ]
-			Carson::Runtime::EXIT_OK
-		end
-
 		def housekeep!( json_output: false, dry_run: false )
 			@calls << [ :housekeep, { json_output: json_output, dry_run: dry_run } ]
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep_target!( target:, json_output: false, dry_run: false )
-			@calls << [ :housekeep_target, { target: target, json_output: json_output, dry_run: dry_run } ]
+		def list!( json_output: false )
+			@calls << [ :list, { json_output: json_output } ]
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep_all!( json_output: false, dry_run: false )
-			@calls << [ :housekeep_all, { json_output: json_output, dry_run: dry_run } ]
+		def receive!( dry_run: false, json_output: false, loop_seconds: nil )
+			@calls << [ :receive, { dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds } ]
 			Carson::Runtime::EXIT_OK
 		end
 
-		def housekeep_loop!( json_output:, dry_run:, loop_seconds: )
-			@calls << [ :housekeep_loop, { json_output: json_output, dry_run: dry_run, loop_seconds: loop_seconds } ]
+		def onboard!
+			@calls << :onboard
 			Carson::Runtime::EXIT_OK
 		end
 
-		def template_check_all!
-			@calls << :template_check_all
-			Carson::Runtime::EXIT_OK
-		end
-
-		def audit_all!
-			@calls << :audit_all
-			Carson::Runtime::EXIT_OK
-		end
-
-		def sync_all!
-			@calls << :sync_all
-			Carson::Runtime::EXIT_OK
-		end
-
-		def status_all!( json_output: false )
-			@calls << [ :status_all, { json_output: json_output } ]
-			Carson::Runtime::EXIT_OK
-		end
-
-		def govern!( dry_run: false, json_output: false, loop_seconds: nil )
-			@calls << [ :govern, { dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds } ]
+		def offboard!
+			@calls << :offboard
 			Carson::Runtime::EXIT_OK
 		end
 
@@ -156,10 +120,37 @@ class CLITest < Minitest::Test
 		end
 	end
 
-	def test_parse_args_defaults_to_audit_with_no_arguments
+	# --- helpers ---
+
+	# Parses arguments and dispatches to a FakeRuntime, returning the runtime's calls.
+	def parse_with_dispatch( arguments )
+		runtime = FakeRuntime.new
 		output = StringIO.new
 		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [], output: output, error: error )
+		parsed = Carson::CLI.parse_args( arguments: arguments, output: output, error: error )
+		Carson::CLI.dispatch( parsed: parsed, runtime: runtime )
+		runtime.calls
+	end
+
+	# Parses arguments and returns the parsed hash (for testing parse_args directly).
+	def parse_args_from( arguments )
+		output = StringIO.new
+		error = StringIO.new
+		Carson::CLI.parse_args( arguments: arguments, output: output, error: error )
+	end
+
+	# Parses arguments and returns [parsed_hash, error_string].
+	def parse_args_with_error( arguments )
+		output = StringIO.new
+		error = StringIO.new
+		parsed = Carson::CLI.parse_args( arguments: arguments, output: output, error: error )
+		[ parsed, error.string ]
+	end
+
+	# --- bare carson / defaults ---
+
+	def test_parse_args_defaults_to_audit_with_no_arguments
+		parsed = parse_args_from( [] )
 		assert_equal "audit", parsed.fetch( :command )
 	end
 
@@ -172,21 +163,47 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_version_returns_version_command
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "--version" ], output: output, error: error )
+		parsed = parse_args_from( [ "--version" ] )
 		assert_equal "version", parsed.fetch( :command )
 	end
 
-	def test_parse_args_template_and_review_subcommands
-		output = StringIO.new
-		error = StringIO.new
+	def test_parse_args_v_flag_remains_version
+		parsed = parse_args_from( [ "-v" ] )
+		assert_equal "version", parsed.fetch( :command )
+	end
 
-		template = Carson::CLI.parse_args( arguments: [ "template", "check" ], output: output, error: error )
-		review = Carson::CLI.parse_args( arguments: [ "review", "gate" ], output: output, error: error )
+	# --- verbose flag ---
 
-		assert_equal "template:check", template.fetch( :command )
-		assert_equal "review:gate", review.fetch( :command )
+	def test_parse_args_verbose_flag_defaults_to_false
+		parsed = parse_args_from( [ "audit" ] )
+		assert_equal false, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_verbose_flag_with_command
+		parsed = parse_args_from( [ "--verbose", "audit" ] )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_verbose_flag_after_command
+		parsed = parse_args_from( [ "audit", "--verbose" ] )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	def test_parse_args_verbose_flag_with_no_args_defaults_to_audit
+		parsed = parse_args_from( [ "--verbose" ] )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :verbose )
+	end
+
+	# --- dispatch helpers ---
+
+	def test_dispatch_rejects_unknown_command
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "review:unknown" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_ERROR, status
+		assert_includes runtime.messages, "Unknown command: review:unknown"
 	end
 
 	def test_dispatch_routes_to_expected_runtime_method
@@ -196,191 +213,28 @@ class CLITest < Minitest::Test
 		assert_equal [ :template_apply ], runtime.calls
 	end
 
-	def test_parse_args_refresh_without_path
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "refresh" ], output: output, error: error )
-		assert_equal "refresh", parsed.fetch( :command )
-		assert_nil parsed.fetch( :repo_root )
+	# --- portfolio: list ---
+
+	def test_list_dispatches_to_list
+		calls = parse_with_dispatch( [ "list" ] )
+		assert_equal [ [ :list, { json_output: false } ] ], calls
 	end
 
-	def test_parse_args_refresh_with_path
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "/some/path" ], output: output, error: error )
-		assert_equal "refresh", parsed.fetch( :command )
-		assert_equal "/some/path", parsed.fetch( :repo_root )
+	def test_list_json_dispatches
+		calls = parse_with_dispatch( [ "list", "--json" ] )
+		assert_equal [ [ :list, { json_output: true } ] ], calls
 	end
 
-	def test_parse_args_refresh_too_many_arguments
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "/a", "/b" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
+	# --- portfolio: refresh ---
+
+	def test_refresh_dispatches_to_refresh_all
+		calls = parse_with_dispatch( [ "refresh" ] )
+		assert_equal [ :refresh_all ], calls
 	end
 
-	def test_dispatch_routes_refresh_to_runtime
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch( parsed: { command: "refresh" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ :refresh ], runtime.calls
-	end
-
-	def test_dispatch_rejects_unknown_command
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch( parsed: { command: "review:unknown" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_ERROR, status
-		assert_includes runtime.messages, "Unknown command: review:unknown"
-	end
-
-	def test_parse_args_verbose_flag_defaults_to_false
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "audit" ], output: output, error: error )
-		assert_equal false, parsed.fetch( :verbose )
-	end
-
-	def test_parse_args_verbose_flag_with_command
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "--verbose", "audit" ], output: output, error: error )
-		assert_equal "audit", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :verbose )
-	end
-
-	def test_parse_args_verbose_flag_after_command
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "audit", "--verbose" ], output: output, error: error )
-		assert_equal "audit", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :verbose )
-	end
-
-	def test_parse_args_verbose_flag_with_no_args_defaults_to_audit
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "--verbose" ], output: output, error: error )
-		assert_equal "audit", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :verbose )
-	end
-
-	def test_parse_args_v_flag_remains_version
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "-v" ], output: output, error: error )
-		assert_equal "version", parsed.fetch( :command )
-	end
-
-	def test_parse_args_deliver_with_commit_message
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--commit", "fix: harden deliver" ], output: output, error: error )
-		assert_equal "deliver", parsed.fetch( :command )
-		assert_equal "fix: harden deliver", parsed.fetch( :commit_message )
-	end
-
-	def test_parse_args_abandon_with_json
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "abandon", "291", "--json" ], output: output, error: error )
-		assert_equal "abandon", parsed.fetch( :command )
-		assert_equal "291", parsed.fetch( :target )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_worktree_list
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "list", "--json" ], output: output, error: error )
-		assert_equal "worktree:list", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_dispatch_routes_worktree_list_to_runtime
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch( parsed: { command: "worktree:list", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ [ :worktree_list, { json_output: true } ] ], runtime.calls
-	end
-
-	def test_dispatch_routes_abandon_to_runtime
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch( parsed: { command: "abandon", target: "feature/stale", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ [ :abandon, { target: "feature/stale", json_output: false } ] ], runtime.calls
-	end
-
-	def test_parse_args_recover_with_json
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "recover", "--check", "Carson governance", "--json" ], output: output, error: error )
-		assert_equal "recover", parsed.fetch( :command )
-		assert_equal "Carson governance", parsed.fetch( :check_name )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_recover_requires_check_name
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "recover" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "--check requires a non-empty governance check name"
-	end
-
-	def test_dispatch_routes_recover_to_runtime
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch( parsed: { command: "recover", check_name: "Carson governance", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ [ :recover, { check_name: "Carson governance", json_output: true } ] ], runtime.calls
-	end
-
-	def test_parse_args_deliver_rejects_blank_commit_message
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--commit", "   " ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "--commit requires a non-empty message"
-	end
-
-	def test_dispatch_routes_deliver_commit_to_runtime
-		runtime = FakeRuntime.new
-		status = Carson::CLI.dispatch(
-			parsed: {
-				command: "deliver",
-				title: nil,
-				body_file: nil,
-				commit_message: "fix: harden deliver",
-				json: false
-			},
-			runtime: runtime
-		)
-		assert_equal Carson::Runtime::EXIT_OK, status
-		assert_equal [ [ :deliver, { title: nil, body_file: nil, commit_message: "fix: harden deliver", json_output: false } ] ], runtime.calls
-	end
-
-	# --- refresh --all tests ---
-
-	def test_parse_args_refresh_all_parses_to_refresh_all_command
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "--all" ], output: output, error: error )
+	def test_parse_args_refresh_returns_refresh_all_command
+		parsed = parse_args_from( [ "refresh" ] )
 		assert_equal "refresh:all", parsed.fetch( :command )
-	end
-
-	def test_parse_args_refresh_all_with_path_is_invalid
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "refresh", "--all", "/some/path" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "mutually exclusive"
-	end
-
-	def test_parse_args_refresh_all_with_verbose_preserves_both_flags
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "--verbose", "refresh", "--all" ], output: output, error: error )
-		assert_equal "refresh:all", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :verbose )
 	end
 
 	def test_dispatch_routes_refresh_all_to_runtime
@@ -390,65 +244,271 @@ class CLITest < Minitest::Test
 		assert_equal [ :refresh_all ], runtime.calls
 	end
 
+	# --- portfolio: onboard ---
+
+	def test_parse_args_onboard_defaults
+		parsed = parse_args_from( [ "onboard" ] )
+		assert_equal "onboard", parsed.fetch( :command )
+	end
+
+	def test_parse_args_onboard_with_path
+		parsed = parse_args_from( [ "onboard", "/some/path" ] )
+		assert_equal "onboard", parsed.fetch( :command )
+		assert_equal "/some/path", parsed.fetch( :repo_root )
+	end
+
+	def test_parse_args_onboard_too_many_args
+		parsed, error = parse_args_with_error( [ "onboard", "/a", "/b" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Too many arguments for onboard"
+	end
+
+	# --- portfolio: offboard ---
+
+	def test_parse_args_offboard_defaults
+		parsed = parse_args_from( [ "offboard" ] )
+		assert_equal "offboard", parsed.fetch( :command )
+	end
+
+	def test_parse_args_offboard_with_path
+		parsed = parse_args_from( [ "offboard", "/some/path" ] )
+		assert_equal "offboard", parsed.fetch( :command )
+		assert_equal "/some/path", parsed.fetch( :repo_root )
+	end
+
+	def test_parse_args_offboard_too_many_args
+		parsed, error = parse_args_with_error( [ "offboard", "/a", "/b" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Too many arguments for offboard"
+	end
+
+	# --- repo from CWD: status ---
+
+	def test_status_from_cwd
+		calls = parse_with_dispatch( [ "status" ] )
+		assert_equal [ [ :status, { json_output: false } ] ], calls
+	end
+
+	def test_parse_args_status_returns_status_command
+		parsed = parse_args_from( [ "status" ] )
+		assert_equal "status", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_status_with_json_flag
+		parsed = parse_args_from( [ "status", "--json" ] )
+		assert_equal "status", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_status_rejects_unexpected_arguments
+		parsed, error = parse_args_with_error( [ "status", "extra" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Unexpected arguments for status"
+	end
+
+	def test_dispatch_routes_status_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "status", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :status, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_status_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "status", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :status, { json_output: true } ] ], runtime.calls
+	end
+
+	# --- repo from CWD: audit ---
+
+	def test_audit_from_cwd
+		calls = parse_with_dispatch( [ "audit" ] )
+		assert_equal [ [ :audit, { json_output: false } ] ], calls
+	end
+
+	def test_parse_args_audit_defaults
+		parsed = parse_args_from( [ "audit" ] )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_audit_with_json_flag
+		parsed = parse_args_from( [ "audit", "--json" ] )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_audit_rejects_unexpected_arguments
+		parsed, error = parse_args_with_error( [ "audit", "extra" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Unexpected arguments for audit"
+	end
+
+	def test_dispatch_routes_audit_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "audit", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :audit, { json_output: false } ] ], runtime.calls
+	end
+
+	def test_dispatch_routes_audit_with_json_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "audit", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :audit, { json_output: true } ] ], runtime.calls
+	end
+
+	def test_parse_args_no_args_defaults_to_audit_with_json_false
+		parsed = parse_args_from( [] )
+		assert_equal "audit", parsed.fetch( :command )
+	end
+
+	# --- explicit repo subject ---
+
+	def test_explicit_repo_status
+		parsed = parse_args_from( [ "nexus", "status" ] )
+		assert_equal "status", parsed.fetch( :command )
+		assert_equal "nexus", parsed.fetch( :repo_subject )
+	end
+
+	def test_explicit_repo_audit
+		parsed = parse_args_from( [ "nexus", "audit" ] )
+		assert_equal "audit", parsed.fetch( :command )
+		assert_equal "nexus", parsed.fetch( :repo_subject )
+	end
+
+	def test_explicit_repo_sync
+		parsed = parse_args_from( [ "nexus", "sync" ] )
+		assert_equal "sync", parsed.fetch( :command )
+		assert_equal "nexus", parsed.fetch( :repo_subject )
+	end
+
+	# --- receive command ---
+
+	def test_receive_dispatches
+		calls = parse_with_dispatch( [ "receive" ] )
+		assert_equal [ [ :receive, { dry_run: false, json_output: false, loop_seconds: nil } ] ], calls
+	end
+
+	def test_receive_dry_run
+		calls = parse_with_dispatch( [ "receive", "--dry-run" ] )
+		assert_equal [ [ :receive, { dry_run: true, json_output: false, loop_seconds: nil } ] ], calls
+	end
+
+	def test_receive_loop
+		calls = parse_with_dispatch( [ "receive", "--loop", "300" ] )
+		assert_equal [ [ :receive, { dry_run: false, json_output: false, loop_seconds: 300 } ] ], calls
+	end
+
+	def test_parse_args_receive_defaults
+		parsed = parse_args_from( [ "receive" ] )
+		assert_equal "receive", parsed.fetch( :command )
+		assert_equal false, parsed.fetch( :dry_run )
+		assert_equal false, parsed.fetch( :json )
+		assert_nil parsed.fetch( :loop_seconds )
+	end
+
+	def test_parse_args_receive_with_json
+		parsed = parse_args_from( [ "receive", "--json" ] )
+		assert_equal "receive", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_receive_loop_rejects_non_positive_seconds
+		parsed, error = parse_args_with_error( [ "receive", "--loop", "0" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "--loop expects a positive integer"
+	end
+
+	def test_dispatch_routes_receive_to_runtime
+		runtime = FakeRuntime.new
+		result = Carson::CLI.dispatch( parsed: { command: "receive", dry_run: true, json: true, loop_seconds: 60 }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		assert_equal [ [ :receive, { dry_run: true, json_output: true, loop_seconds: 60 } ] ], runtime.calls
+	end
+
+	# --- migration errors ---
+
+	def test_legacy_govern_returns_migration_error
+		parsed, error = parse_args_with_error( [ "govern" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "carson govern has been replaced"
+	end
+
+	def test_legacy_repos_returns_migration_error
+		parsed, error = parse_args_with_error( [ "repos" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "carson repos has been replaced"
+	end
+
+	def test_legacy_all_flag_returns_migration_error
+		parsed, error = parse_args_with_error( [ "status", "--all" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "--all has been removed"
+	end
+
+	def test_legacy_repo_refresh_returns_migration_error
+		parsed, error = parse_args_with_error( [ "nexus", "refresh" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "portfolio command"
+	end
+
+	# --- reserved word / ambiguity ---
+
+	def test_command_wins_ambiguity
+		# If someone has a repo named "status", ["status"] still parses as the status command.
+		parsed = parse_args_from( [ "status" ] )
+		assert_equal "status", parsed.fetch( :command )
+		refute parsed.key?( :repo_subject )
+	end
+
 	# --- setup CLI flag tests ---
 
 	def test_parse_args_setup_with_no_flags_returns_empty_cli_choices
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup" ] )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal( {}, parsed.fetch( :cli_choices ) )
 	end
 
 	def test_parse_args_setup_with_remote_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--remote", "github" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup", "--remote", "github" ] )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "github", parsed.fetch( :cli_choices )[ "git.remote" ]
 	end
 
 	def test_parse_args_setup_with_main_branch_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--main-branch", "develop" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup", "--main-branch", "develop" ] )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "develop", parsed.fetch( :cli_choices )[ "git.main_branch" ]
 	end
 
 	def test_parse_args_setup_with_workflow_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--workflow", "trunk" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup", "--workflow", "trunk" ] )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "trunk", parsed.fetch( :cli_choices )[ "workflow.style" ]
 	end
 
 	def test_parse_args_setup_rejects_merge_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--merge", "squash" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup", "--merge", "squash" ] )
 		assert_equal :invalid, parsed.fetch( :command )
 	end
 
 	def test_parse_args_setup_with_canonical_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--canonical", "/tmp/my-templates" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup", "--canonical", "/tmp/my-templates" ] )
 		assert_equal "setup", parsed.fetch( :command )
 		assert_equal "/tmp/my-templates", parsed.fetch( :cli_choices )[ "lint.canonical" ]
 	end
 
 	def test_parse_args_setup_with_all_flags
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [
+		parsed = parse_args_from( [
 			"setup",
 			"--remote", "github",
 			"--main-branch", "main",
 			"--workflow", "branch",
 			"--canonical", "/tmp/templates"
-		], output: output, error: error )
+		] )
 		assert_equal "setup", parsed.fetch( :command )
 		choices = parsed.fetch( :cli_choices )
 		assert_equal "github", choices[ "git.remote" ]
@@ -458,17 +518,13 @@ class CLITest < Minitest::Test
 	end
 
 	def test_parse_args_setup_with_unexpected_positional_args
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "extra-arg" ], output: output, error: error )
+		parsed, error = parse_args_with_error( [ "setup", "extra-arg" ] )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Unexpected arguments for setup"
+		assert_includes error, "Unexpected arguments for setup"
 	end
 
 	def test_parse_args_setup_with_unknown_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "setup", "--unknown-flag" ], output: output, error: error )
+		parsed = parse_args_from( [ "setup", "--unknown-flag" ] )
 		assert_equal :invalid, parsed.fetch( :command )
 	end
 
@@ -487,62 +543,61 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :setup, {} ] ], runtime.calls
 	end
 
-	# --- status CLI tests ---
+	# --- template and review subcommands ---
 
-	def test_parse_args_status_returns_status_command
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "status" ], output: output, error: error )
-		assert_equal "status", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :json )
+	def test_parse_args_template_and_review_subcommands
+		template = parse_args_from( [ "template", "check" ] )
+		review = parse_args_from( [ "review", "gate" ] )
+
+		assert_equal "template:check", template.fetch( :command )
+		assert_equal "review:gate", review.fetch( :command )
 	end
 
-	def test_parse_args_status_with_json_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "status", "--json" ], output: output, error: error )
-		assert_equal "status", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_status_rejects_unexpected_arguments
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "status", "extra" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Unexpected arguments for status"
-	end
-
-	def test_dispatch_routes_status_to_runtime
+	def test_dispatch_routes_template_check_to_runtime
 		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "status", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :status, { json_output: false } ] ], runtime.calls
+		status = Carson::CLI.dispatch( parsed: { command: "template:check" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ :template_check ], runtime.calls
 	end
 
-	def test_dispatch_routes_status_with_json_to_runtime
+	def test_dispatch_routes_review_gate_to_runtime
 		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "status", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :status, { json_output: true } ] ], runtime.calls
+		status = Carson::CLI.dispatch( parsed: { command: "review:gate" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ :review_gate ], runtime.calls
 	end
 
-	# --- worktree create CLI tests ---
+	def test_dispatch_routes_review_sweep_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "review:sweep" }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ :review_sweep ], runtime.calls
+	end
+
+	# --- worktree CLI tests ---
 
 	def test_parse_args_worktree_create
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "create", "my-feature" ], output: output, error: error )
+		parsed = parse_args_from( [ "worktree", "create", "my-feature" ] )
 		assert_equal "worktree:create", parsed.fetch( :command )
 		assert_equal "my-feature", parsed.fetch( :worktree_name )
 	end
 
 	def test_parse_args_worktree_create_missing_name
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "create" ], output: output, error: error )
+		parsed, error = parse_args_with_error( [ "worktree", "create" ] )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Missing name"
+		assert_includes error, "Missing name"
+	end
+
+	def test_parse_args_worktree_create_with_json
+		parsed = parse_args_from( [ "worktree", "--json", "create", "my-feature" ] )
+		assert_equal "worktree:create", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_worktree_list
+		parsed = parse_args_from( [ "worktree", "list", "--json" ] )
+		assert_equal "worktree:list", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_dispatch_routes_worktree_create
@@ -559,12 +614,11 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :worktree_create, { name: "feat", json_output: true } ] ], runtime.calls
 	end
 
-	def test_parse_args_worktree_create_with_json
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "worktree", "--json", "create", "my-feature" ], output: output, error: error )
-		assert_equal "worktree:create", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :json )
+	def test_dispatch_routes_worktree_list_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch( parsed: { command: "worktree:list", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :worktree_list, { json_output: true } ] ], runtime.calls
 	end
 
 	def test_dispatch_routes_worktree_remove
@@ -584,64 +638,62 @@ class CLITest < Minitest::Test
 	# --- deliver CLI tests ---
 
 	def test_parse_args_deliver_defaults
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver" ], output: output, error: error )
+		parsed = parse_args_from( [ "deliver" ] )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 		assert_nil parsed[ :title ]
 		assert_nil parsed[ :body_file ]
 	end
 
+	def test_parse_args_deliver_with_commit_message
+		parsed = parse_args_from( [ "deliver", "--commit", "fix: harden deliver" ] )
+		assert_equal "deliver", parsed.fetch( :command )
+		assert_equal "fix: harden deliver", parsed.fetch( :commit_message )
+	end
+
 	def test_parse_args_deliver_rejects_merge_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--merge" ], output: output, error: error )
+		parsed, error = parse_args_with_error( [ "deliver", "--merge" ] )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "use carson deliver"
+		assert_includes error, "use carson deliver"
 	end
 
 	def test_parse_args_deliver_with_title
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--title", "My PR" ], output: output, error: error )
+		parsed = parse_args_from( [ "deliver", "--title", "My PR" ] )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "My PR", parsed.fetch( :title )
 	end
 
 	def test_parse_args_deliver_with_body_file
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--body-file", "/tmp/body.md" ], output: output, error: error )
+		parsed = parse_args_from( [ "deliver", "--body-file", "/tmp/body.md" ] )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "/tmp/body.md", parsed.fetch( :body_file )
 	end
 
 	def test_parse_args_deliver_with_all_flags
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [
+		parsed = parse_args_from( [
 			"deliver", "--title", "Fix bug", "--body-file", "/tmp/b.md"
-		], output: output, error: error )
+		] )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal "Fix bug", parsed.fetch( :title )
 		assert_equal "/tmp/b.md", parsed.fetch( :body_file )
 	end
 
 	def test_parse_args_deliver_rejects_unexpected_arguments
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "extra" ], output: output, error: error )
+		parsed, error = parse_args_with_error( [ "deliver", "extra" ] )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Unexpected arguments for deliver"
+		assert_includes error, "Unexpected arguments for deliver"
 	end
 
 	def test_parse_args_deliver_with_json_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "deliver", "--json" ], output: output, error: error )
+		parsed = parse_args_from( [ "deliver", "--json" ] )
 		assert_equal "deliver", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_deliver_rejects_blank_commit_message
+		parsed, error = parse_args_with_error( [ "deliver", "--commit", "   " ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "--commit requires a non-empty message"
 	end
 
 	def test_dispatch_routes_deliver_to_runtime
@@ -671,117 +723,78 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :deliver, { title: nil, body_file: nil, commit_message: nil, json_output: true } ] ], runtime.calls
 	end
 
-	# --- audit CLI tests ---
-
-	def test_parse_args_audit_defaults
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "audit" ], output: output, error: error )
-		assert_equal "audit", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :json )
+	def test_dispatch_routes_deliver_commit_to_runtime
+		runtime = FakeRuntime.new
+		status = Carson::CLI.dispatch(
+			parsed: {
+				command: "deliver",
+				title: nil,
+				body_file: nil,
+				commit_message: "fix: harden deliver",
+				json: false
+			},
+			runtime: runtime
+		)
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :deliver, { title: nil, body_file: nil, commit_message: "fix: harden deliver", json_output: false } ] ], runtime.calls
 	end
 
-	def test_parse_args_audit_with_json_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "audit", "--json" ], output: output, error: error )
-		assert_equal "audit", parsed.fetch( :command )
+	# --- abandon CLI tests ---
+
+	def test_parse_args_abandon_with_json
+		parsed = parse_args_from( [ "abandon", "291", "--json" ] )
+		assert_equal "abandon", parsed.fetch( :command )
+		assert_equal "291", parsed.fetch( :target )
 		assert_equal true, parsed.fetch( :json )
 	end
 
-	def test_parse_args_audit_rejects_unexpected_arguments
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "audit", "extra" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Unexpected arguments for audit"
-	end
-
-	def test_dispatch_routes_audit_to_runtime
+	def test_dispatch_routes_abandon_to_runtime
 		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "audit", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :audit, { json_output: false } ] ], runtime.calls
+		status = Carson::CLI.dispatch( parsed: { command: "abandon", target: "feature/stale", json: false }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :abandon, { target: "feature/stale", json_output: false } ] ], runtime.calls
 	end
 
-	def test_dispatch_routes_audit_with_json_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "audit", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :audit, { json_output: true } ] ], runtime.calls
-	end
+	# --- recover CLI tests ---
 
-	def test_parse_args_no_args_defaults_to_audit_with_json_false
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [], output: output, error: error )
-		assert_equal "audit", parsed.fetch( :command )
-	end
-
-	# --- repos CLI tests ---
-
-	def test_parse_args_repos_defaults
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "repos" ], output: output, error: error )
-		assert_equal "repos", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :json )
-	end
-
-	def test_parse_args_repos_with_json_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "repos", "--json" ], output: output, error: error )
-		assert_equal "repos", parsed.fetch( :command )
+	def test_parse_args_recover_with_json
+		parsed = parse_args_from( [ "recover", "--check", "Carson governance", "--json" ] )
+		assert_equal "recover", parsed.fetch( :command )
+		assert_equal "Carson governance", parsed.fetch( :check_name )
 		assert_equal true, parsed.fetch( :json )
 	end
 
-	def test_parse_args_repos_rejects_unexpected_arguments
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "repos", "extra" ], output: output, error: error )
+	def test_parse_args_recover_requires_check_name
+		parsed, error = parse_args_with_error( [ "recover" ] )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Unexpected arguments for repos"
+		assert_includes error, "--check requires a non-empty governance check name"
 	end
 
-	def test_dispatch_routes_repos_to_runtime
+	def test_dispatch_routes_recover_to_runtime
 		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "repos", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :repos, { json_output: false } ] ], runtime.calls
-	end
-
-	def test_dispatch_routes_repos_with_json_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "repos", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :repos, { json_output: true } ] ], runtime.calls
+		status = Carson::CLI.dispatch( parsed: { command: "recover", check_name: "Carson governance", json: true }, runtime: runtime )
+		assert_equal Carson::Runtime::EXIT_OK, status
+		assert_equal [ [ :recover, { check_name: "Carson governance", json_output: true } ] ], runtime.calls
 	end
 
 	# --- sync CLI tests ---
 
 	def test_parse_args_sync_defaults
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "sync" ], output: output, error: error )
+		parsed = parse_args_from( [ "sync" ] )
 		assert_equal "sync", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_sync_with_json_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "sync", "--json" ], output: output, error: error )
+		parsed = parse_args_from( [ "sync", "--json" ] )
 		assert_equal "sync", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
 	def test_parse_args_sync_rejects_unexpected_arguments
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "sync", "extra" ], output: output, error: error )
+		parsed, error = parse_args_with_error( [ "sync", "extra" ] )
 		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Unexpected arguments for sync"
+		assert_includes error, "Unexpected arguments for sync"
 	end
 
 	def test_dispatch_routes_sync_to_runtime
@@ -801,33 +814,14 @@ class CLITest < Minitest::Test
 	# --- prune CLI tests ---
 
 	def test_parse_args_prune_defaults
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "prune" ], output: output, error: error )
+		parsed = parse_args_from( [ "prune" ] )
 		assert_equal "prune", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_prune_with_json_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "prune", "--json" ], output: output, error: error )
+		parsed = parse_args_from( [ "prune", "--json" ] )
 		assert_equal "prune", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_prune_with_all_flag
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "prune", "--all" ], output: output, error: error )
-		assert_equal "prune:all", parsed.fetch( :command )
-	end
-
-	def test_parse_args_prune_with_all_and_json_flags
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "prune", "--all", "--json" ], output: output, error: error )
-		assert_equal "prune:all", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
 	end
 
@@ -845,111 +839,25 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :prune, { json_output: true } ] ], runtime.calls
 	end
 
-	def test_dispatch_routes_prune_all_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "prune:all" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ :prune_all ], runtime.calls
-	end
-
 	# --- housekeep CLI tests ---
 
 	def test_parse_args_housekeep_no_args
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep" ], output: output, error: error )
+		parsed = parse_args_from( [ "housekeep" ] )
 		assert_equal "housekeep", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :json )
-	end
-
-	def test_parse_args_housekeep_with_target
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "AI" ], output: output, error: error )
-		assert_equal "housekeep:target", parsed.fetch( :command )
-		assert_equal "AI", parsed.fetch( :target )
-	end
-
-	def test_parse_args_housekeep_with_all
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all" ], output: output, error: error )
-		assert_equal "housekeep:all", parsed.fetch( :command )
 		assert_equal false, parsed.fetch( :json )
 	end
 
 	def test_parse_args_housekeep_with_json
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--json" ], output: output, error: error )
+		parsed = parse_args_from( [ "housekeep", "--json" ] )
 		assert_equal "housekeep", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_housekeep_with_target_and_json
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--json", "AI" ], output: output, error: error )
-		assert_equal "housekeep:target", parsed.fetch( :command )
-		assert_equal "AI", parsed.fetch( :target )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_housekeep_all_with_target_is_invalid
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "AI" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "mutually exclusive"
-	end
-
-	def test_parse_args_housekeep_too_many_args
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "a", "b" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "Too many arguments for housekeep"
 	end
 
 	def test_parse_args_housekeep_dry_run
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--dry-run" ], output: output, error: error )
+		parsed = parse_args_from( [ "housekeep", "--dry-run" ] )
 		assert_equal "housekeep", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :dry_run )
 		assert_equal false, parsed.fetch( :json )
-	end
-
-	def test_parse_args_housekeep_all_dry_run
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--dry-run" ], output: output, error: error )
-		assert_equal "housekeep:all", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :dry_run )
-	end
-
-	def test_parse_args_housekeep_all_loop
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--loop", "300" ], output: output, error: error )
-		assert_equal "housekeep:all", parsed.fetch( :command )
-		assert_equal 300, parsed.fetch( :loop_seconds )
-	end
-
-	def test_parse_args_housekeep_loop_requires_all
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--loop", "300" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "--loop requires --all"
-	end
-
-	def test_parse_args_housekeep_loop_rejects_non_positive_seconds
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "housekeep", "--all", "--loop", "0" ], output: output, error: error )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error.string, "--loop expects a positive integer"
 	end
 
 	def test_dispatch_routes_housekeep_current_repo
@@ -959,89 +867,11 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :housekeep, { json_output: false, dry_run: false } ] ], runtime.calls
 	end
 
-	def test_dispatch_routes_housekeep_targeted
+	def test_dispatch_routes_housekeep_with_dry_run
 		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "housekeep:target", target: "AI", json: true }, runtime: runtime )
+		result = Carson::CLI.dispatch( parsed: { command: "housekeep", json: true, dry_run: true }, runtime: runtime )
 		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep_target, { target: "AI", json_output: true, dry_run: false } ] ], runtime.calls
-	end
-
-	def test_dispatch_routes_housekeep_all
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep_all, { json_output: false, dry_run: false } ] ], runtime.calls
-	end
-
-	def test_dispatch_routes_housekeep_all_loop
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "housekeep:all", json: true, dry_run: true, loop_seconds: 300 }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :housekeep_loop, { json_output: true, dry_run: true, loop_seconds: 300 } ] ], runtime.calls
-	end
-
-	# --- audit --all CLI tests ---
-
-	def test_parse_args_audit_all
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "audit", "--all" ], output: output, error: error )
-		assert_equal "audit:all", parsed.fetch( :command )
-	end
-
-	def test_dispatch_routes_audit_all_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "audit:all" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ :audit_all ], runtime.calls
-	end
-
-	# --- sync --all CLI tests ---
-
-	def test_parse_args_sync_all
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "sync", "--all" ], output: output, error: error )
-		assert_equal "sync:all", parsed.fetch( :command )
-	end
-
-	def test_dispatch_routes_sync_all_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "sync:all" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ :sync_all ], runtime.calls
-	end
-
-	# --- status --all CLI tests ---
-
-	def test_parse_args_status_all
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "status", "--all" ], output: output, error: error )
-		assert_equal "status:all", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :json )
-	end
-
-	def test_parse_args_status_all_with_json
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "status", "--all", "--json" ], output: output, error: error )
-		assert_equal "status:all", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_dispatch_routes_status_all_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "status:all", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :status_all, { json_output: false } ] ], runtime.calls
-	end
-
-	def test_dispatch_routes_status_all_with_json_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "status:all", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :status_all, { json_output: true } ] ], runtime.calls
+		assert_equal [ [ :housekeep, { json_output: true, dry_run: true } ] ], runtime.calls
 	end
 
 	# --- ensure_global_artefacts! tests ---
@@ -1136,22 +966,6 @@ class CLITest < Minitest::Test
 		elsif target && File.file?( target )
 			FileUtils.rm_f( target )
 		end
-	end
-
-	# --- template check --all CLI tests ---
-
-	def test_parse_args_template_check_all
-		output = StringIO.new
-		error = StringIO.new
-		parsed = Carson::CLI.parse_args( arguments: [ "template", "check", "--all" ], output: output, error: error )
-		assert_equal "template:check:all", parsed.fetch( :command )
-	end
-
-	def test_dispatch_routes_template_check_all_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "template:check:all" }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ :template_check_all ], runtime.calls
 	end
 
 end

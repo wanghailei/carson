@@ -1,31 +1,31 @@
-# Tests for the repos command and portfolio listing.
+# Tests for the list command and portfolio listing.
 require_relative "test_helper"
 
-class RuntimeReposTest < Minitest::Test
+class RuntimeListTest < Minitest::Test
 	include CarsonTestSupport
 
-	def test_repos_returns_exit_ok
+	def test_list_returns_exit_ok
 		runtime, repo_root = build_runtime
-		result = runtime.repos!
+		result = runtime.list!
 		assert_equal Carson::Runtime::EXIT_OK, result
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_repos_shows_no_repos_message_when_empty
+	def test_list_shows_no_repos_message_when_empty
 		runtime, repo_root = build_runtime
-		runtime.repos!
+		runtime.list!
 		output = runtime.instance_variable_get( :@output ).string
 		assert_includes output, "No governed repositories"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_repos_lists_governed_repos
-		config_path = File.join( Dir.tmpdir, "carson-repos-test-config.json" )
+	def test_list_lists_governed_repos
+		config_path = File.join( Dir.tmpdir, "carson-list-test-config.json" )
 		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ "/tmp/repo-a", "/tmp/repo-b" ] } } ) )
 
 		with_env( "CARSON_CONFIG_FILE" => config_path ) do
 			runtime, repo_root = build_runtime
-			runtime.repos!
+			runtime.list!
 			output = runtime.instance_variable_get( :@output ).string
 			assert_includes output, "Governed repositories (2)"
 			assert_includes output, "/tmp/repo-a"
@@ -36,16 +36,16 @@ class RuntimeReposTest < Minitest::Test
 		FileUtils.rm_f( config_path )
 	end
 
-	def test_repos_json_output
-		config_path = File.join( Dir.tmpdir, "carson-repos-json-test-config.json" )
+	def test_list_json_output
+		config_path = File.join( Dir.tmpdir, "carson-list-json-test-config.json" )
 		File.write( config_path, JSON.generate( { "govern" => { "repos" => [ "/tmp/repo-x" ] } } ) )
 
 		with_env( "CARSON_CONFIG_FILE" => config_path ) do
 			runtime, repo_root = build_runtime
-			runtime.repos!( json_output: true )
+			runtime.list!( json_output: true )
 			output = runtime.instance_variable_get( :@output ).string
 			data = JSON.parse( output )
-			assert_equal "repos", data[ "command" ]
+			assert_equal "list", data[ "command" ]
 			assert_equal [ "/tmp/repo-x" ], data[ "repos" ]
 			destroy_runtime_repo( repo_root: repo_root )
 		end
@@ -53,12 +53,12 @@ class RuntimeReposTest < Minitest::Test
 		FileUtils.rm_f( config_path )
 	end
 
-	def test_repos_json_output_empty
+	def test_list_json_output_empty
 		runtime, repo_root = build_runtime
-		runtime.repos!( json_output: true )
+		runtime.list!( json_output: true )
 		output = runtime.instance_variable_get( :@output ).string
 		data = JSON.parse( output )
-		assert_equal "repos", data[ "command" ]
+		assert_equal "list", data[ "command" ]
 		assert_equal [], data[ "repos" ]
 		destroy_runtime_repo( repo_root: repo_root )
 	end

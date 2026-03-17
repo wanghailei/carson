@@ -1,9 +1,9 @@
-# Tests for govern safety improvements: fetch-only post-merge, remote-ref merge proof,
+# Tests for receive safety improvements: fetch-only post-merge, remote-ref merge proof,
 # busy-worktree guard in revise_delivery!, and fetch-only worktree create.
 require_relative "test_helper"
 require "shellwords"
 
-class RuntimeGovernSafetyTest < Minitest::Test
+class RuntimeReceiveSafetyTest < Minitest::Test
 	include CarsonTestSupport
 
 	# --- Change 1: fetch-only post-merge (no housekeep) ---
@@ -22,10 +22,10 @@ class RuntimeGovernSafetyTest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 		runtime.define_singleton_method( :housekeep_one_entry ) do |repo_path:, silent:|
-			raise "housekeep must not run from govern post-merge"
+			raise "housekeep must not run from receive post-merge"
 		end
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
@@ -62,7 +62,7 @@ class RuntimeGovernSafetyTest < Minitest::Test
 		git!( repo_root, "merge", "--ff-only", "feature/behind-proof" )
 		git!( repo_root, "push", "origin", "main" )
 
-		# Reset local main behind remote — simulates govern fetch-only (no pull).
+		# Reset local main behind remote — simulates receive fetch-only (no pull).
 		git!( repo_root, "reset", "--hard", "HEAD~1" )
 		git!( repo_root, "fetch", "origin" )
 
@@ -88,7 +88,7 @@ class RuntimeGovernSafetyTest < Minitest::Test
 
 	# --- Change 4: busy-worktree guard in revise_delivery! ---
 
-	def test_govern_defers_revision_when_worktree_dirty
+	def test_receive_defers_revision_when_worktree_dirty
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		worktree_path = File.join( repo_root, ".claude", "worktrees", "dirty-wt" )
@@ -106,7 +106,7 @@ class RuntimeGovernSafetyTest < Minitest::Test
 		stub_reconciliation( runtime, delivery: delivery )
 		runtime.define_singleton_method( :select_agent_provider ) { "codex" }
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "gated", row.fetch( "status" )
@@ -117,7 +117,7 @@ class RuntimeGovernSafetyTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_holds_busy_delivery_instead_of_revising
+	def test_receive_holds_busy_delivery_instead_of_revising
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/busy" )
@@ -128,7 +128,7 @@ class RuntimeGovernSafetyTest < Minitest::Test
 		)
 		stub_reconciliation( runtime, delivery: delivery )
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "would hold at gate (dry run)"

@@ -85,5 +85,5 @@ Layer 1 is the foundation. Layer 2 extends every Layer 1 command across the port
 2. **Onboard** — `carson onboard /path/to/repo`. Asks only what it cannot detect. One-time.
 3. **Daily flow** — commit normally. Silence means safety. Blocks are actionable and exact.
 4. **Review + merge** — `carson review gate` verifies every comment is handled. `carson deliver` lands the branch.
-5. **Portfolio** — `carson govern` triages all repos. One command, full state.
+5. **Portfolio** — `carson receive` triages all repos. One command, full state.
 6. **Offboard** — `carson offboard` removes everything cleanly. No residue.

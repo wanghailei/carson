@@ -212,7 +212,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_includes output, "Carson did not attempt merge in this run."
 		assert_includes output, "carson status"
 		assert_includes output, "carson deliver"
-		assert_includes output, "carson govern --loop 300"
+		refute_includes output, "carson govern"
 		delivery = runtime.ledger.active_delivery( repo_path: runtime.main_worktree_root, branch_name: "feature/gated" )
 		assert_equal "gated", delivery.status
 		assert_equal "ci", delivery.cause
@@ -274,7 +274,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal true, data.fetch( "merge_attempted" )
 		assert_equal 5, data.fetch( "waited_seconds" )
 		assert_equal "mergeability_pending", data.dig( "handoff", "reason" )
-		assert_equal [ "carson status", "carson deliver", "carson govern --loop 300" ], data.dig( "handoff", "next_steps" )
+		assert_equal [ "carson status", "carson deliver" ], data.dig( "handoff", "next_steps" )
 		assert_equal 3, merge_attempts
 		FileUtils.remove_entry( tmp_dir )
 	end
@@ -358,7 +358,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_includes output, "Merge blocked — branch is behind origin/main."
 		assert_includes output, "carson status"
 		assert_includes output, "carson deliver"
-		assert_includes output, "carson govern --loop 300"
+		refute_includes output, "carson govern"
 		FileUtils.remove_entry( tmp_dir )
 	end
 

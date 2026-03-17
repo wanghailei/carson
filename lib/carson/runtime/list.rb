@@ -4,12 +4,12 @@ require "json"
 
 module Carson
 	class Runtime
-		module Repos
-			def repos!( json_output: false )
+		module List
+			def list!( json_output: false )
 				repos = config.govern_repos
 
 				if json_output
-					output.puts JSON.pretty_generate( { command: "repos", repos: repos } )
+					output.puts JSON.pretty_generate( { command: "list", repos: repos } )
 				else
 					if repos.empty?
 						puts_line "No governed repositories."
@@ -24,6 +24,6 @@ module Carson
 			end
 		end
 
-		include Repos
+		include List
 	end
 end

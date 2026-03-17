@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## Unreleased
+
+### Breaking
+
+- CLI grammar is now two-tier: portfolio commands (`list`, `onboard`, `offboard`, `refresh`, `version`) and repo-scoped commands (`carson <repo> <command>` or `carson <command>` from CWD)
+- `govern` renamed to `receive` — single-repo only, no portfolio iteration
+- `repos` renamed to `list`
+- `--all` removed from all repo commands; use `carson list --json` to script batch operations
+- `refresh` is now portfolio-only (always refreshes all governed repos)
+
 ## 3.30.2
 
 ### What changed

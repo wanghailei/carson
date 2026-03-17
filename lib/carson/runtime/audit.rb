@@ -164,58 +164,6 @@ module Carson
 				exit_code
 			end
 
-			# Runs audit across all governed repositories.
-			def audit_all!
-				repos = config.govern_repos
-				if repos.empty?
-					puts_line "No governed repositories configured."
-					puts_line "  Run carson onboard in each repo to register."
-					return EXIT_ERROR
-				end
-
-				puts_line ""
-				puts_line "Audit all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
-				passed = 0
-				blocked = 0
-				failed = 0
-
-				repos.each do |repo_path|
-					repo_name = File.basename( repo_path )
-					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: not found"
-						record_batch_skip( command: "audit", repo_path: repo_path, reason: "path not found" )
-						failed += 1
-						next
-					end
-
-					begin
-						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
-						status = scoped_runtime.audit!
-						case status
-						when EXIT_OK
-							puts_line "#{repo_name}: ok" unless verbose?
-							clear_batch_success( command: "audit", repo_path: repo_path )
-							passed += 1
-						when EXIT_BLOCK
-							puts_line "#{repo_name}: needs attention" unless verbose?
-							blocked += 1
-						else
-							puts_line "#{repo_name}: could not complete" unless verbose?
-							record_batch_skip( command: "audit", repo_path: repo_path, reason: "audit failed" )
-							failed += 1
-						end
-					rescue StandardError => exception
-						puts_line "#{repo_name}: could not complete (#{exception.message})"
-						record_batch_skip( command: "audit", repo_path: repo_path, reason: exception.message )
-						failed += 1
-					end
-				end
-
-				puts_line ""
-				puts_line "Audit all complete: #{passed} ok, #{blocked} blocked, #{failed} failed."
-				blocked.zero? && failed.zero? ? EXIT_OK : EXIT_BLOCK
-				end
-
 			# rubocop:disable Layout/AccessModifierIndentation -- tab-width calculation produces unfixable mixed tabs+spaces
 			private
 			# rubocop:enable Layout/AccessModifierIndentation

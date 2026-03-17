@@ -742,7 +742,7 @@ module Carson
 			end
 
 			def deliver_handoff_next_steps
-				[ "carson status", "carson deliver", "carson govern --loop 300" ]
+				[ "carson status", "carson deliver" ]
 			end
 
 			def deliver_ci_poll_seconds

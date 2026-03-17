@@ -43,7 +43,7 @@ When the budget expires without integration and no hard blocker exists, deliver 
 
 ### Output contract
 
-Three outcomes: `integrated`, `deferred`, `blocked`. Each states what happened and what command to run next. Deferred and blocked exits show: `carson status` → `carson deliver` → `carson govern --loop 300`.
+Three outcomes: `integrated`, `deferred`, `blocked`. Each states what happened and what command to run next. Deferred and blocked exits show: `carson status` → `carson deliver` → `carson receive --loop 300`.
 
 ### JSON fields
 
@@ -93,13 +93,13 @@ Never describe a workflow that implies remote is authority for landing but local
 
 ---
 
-## Govern
+## Receive
 
 Autonomous portfolio-level delivery oversight: triage, dispatch, merge.
 
 ### Mental model
 
-`carson govern` runs a triage-dispatch-verify cycle across all governed repositories. It classifies each open PR, dispatches coding agents to fix issues, and merges PRs that pass all gates. With `--loop SECONDS`, it runs continuously.
+`carson receive` runs a triage-dispatch-verify cycle across all governed repositories. It classifies each open PR, dispatches coding agents to fix issues, and merges PRs that pass all gates. With `--loop SECONDS`, it runs continuously.
 
 ### PR classification
 
@@ -113,20 +113,20 @@ Autonomous portfolio-level delivery oversight: triage, dispatch, merge.
 
 ### Agent dispatch
 
-Before dispatching, govern gathers evidence specific to the objective:
+Before dispatching, receive gathers evidence specific to the objective:
 - `fix_ci`: fetches failed CI run logs via `gh run view --log-failed` (tail up to 8,000 chars).
 - `address_review`: fetches unresolved threads via GraphQL (each body up to 2,000 chars).
 - Prior failed attempt summaries are included to prevent repeated approaches.
 
-Agent provider: configured via `govern.agent.provider` — `auto` (tries codex then claude), `codex`, or `claude`.
+Agent provider: configured via `receive.agent.provider` — `auto` (tries codex then claude), `codex`, or `claude`.
 
 ### Freshness rule
 
-Govern delegates merge eligibility to GitHub's merge state. A final GitHub recheck runs immediately before every merge attempt. If GitHub reports `BEHIND`, the delivery is gated with cause "freshness" and surfaces as "refresh required". If `CLEAN`, govern integrates — even when the branch is locally behind main. Govern does not dispatch an agent to "fix" freshness blocks.
+Receive delegates merge eligibility to GitHub's merge state. A final GitHub recheck runs immediately before every merge attempt. If GitHub reports `BEHIND`, the delivery is gated with cause "freshness" and surfaces as "refresh required". If `CLEAN`, receive integrates — even when the branch is locally behind main. Receive does not dispatch an agent to "fix" freshness blocks.
 
 ### Isolation
 
-Govern is deliberately isolated from synchronous local commands. It is asynchronous, network-dependent, and advisory. Local commands (audit, review gate, sync) are fast, deterministic, and offline-capable.
+Receive is deliberately isolated from synchronous local commands. It is asynchronous, network-dependent, and advisory. Local commands (audit, review gate, sync) are fast, deterministic, and offline-capable.
 
 ---
 
@@ -258,7 +258,7 @@ External directory deletion (outside Carson) can cause the last local branch ref
 
 ## Merge-readiness model
 
-Not a feature — the shared gate that deliver and govern both use.
+Not a feature — the shared gate that deliver and receive both use.
 
 A PR is merge-ready when three independent conditions pass:
 

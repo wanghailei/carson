@@ -60,53 +60,6 @@ module Carson
 				git_system!( "switch", start_branch ) if switched && branch_exists?( branch_name: start_branch )
 			end
 
-			# Syncs main branch across all governed repositories.
-			def sync_all!
-				repos = config.govern_repos
-				if repos.empty?
-					puts_line "No governed repositories configured."
-					puts_line "  Run carson onboard in each repo to register."
-					return EXIT_ERROR
-				end
-
-				puts_line ""
-				puts_line "Sync all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
-				synced = 0
-				failed = 0
-
-				repos.each do |repo_path|
-					repo_name = File.basename( repo_path )
-					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: not found"
-						record_batch_skip( command: "sync", repo_path: repo_path, reason: "path not found" )
-						failed += 1
-						next
-					end
-
-					begin
-						scoped_runtime = build_scoped_runtime( repo_path: repo_path )
-						status = scoped_runtime.sync!
-						if status == EXIT_OK
-							puts_line "#{repo_name}: ok" unless verbose?
-							clear_batch_success( command: "sync", repo_path: repo_path )
-							synced += 1
-						else
-							puts_line "#{repo_name}: could not sync" unless verbose?
-							record_batch_skip( command: "sync", repo_path: repo_path, reason: "sync failed" )
-							failed += 1
-						end
-					rescue StandardError => exception
-						puts_line "#{repo_name}: could not sync (#{exception.message})"
-						record_batch_skip( command: "sync", repo_path: repo_path, reason: exception.message )
-						failed += 1
-					end
-				end
-
-				puts_line ""
-				puts_line "Sync all complete: #{synced} synced, #{failed} failed."
-				failed.zero? ? EXIT_OK : EXIT_ERROR
-			end
-
 		private
 
 			# Runs a git command, suppressing stdout/stderr in JSON mode to keep output clean.

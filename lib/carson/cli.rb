@@ -1,8 +1,13 @@
 # Parses command-line arguments and dispatches to Runtime operations.
+require "open3"
 require "optparse"
 
 module Carson
 	class CLI
+		PORTFOLIO_COMMANDS = %w[onboard offboard list refresh version].freeze
+		REPO_COMMANDS = %w[deliver receive sync status audit prune housekeep worktree abandon recover review template setup].freeze
+		ALL_COMMANDS = ( PORTFOLIO_COMMANDS + REPO_COMMANDS ).freeze
+
 		def self.start( arguments:, repo_root:, tool_root:, output:, error: )
 			ensure_global_artefacts!( tool_root: tool_root )
 
@@ -15,12 +20,27 @@ module Carson
 				return Runtime::EXIT_OK
 			end
 
-			if %w[repos refresh:all prune:all housekeep:all housekeep:target template:check:all audit:all sync:all status:all].include?( command )
-				verbose = parsed.fetch( :verbose, false )
+			verbose = parsed.fetch( :verbose, false )
+
+			# Portfolio commands — no repo resolution needed.
+			if %w[list refresh:all onboard offboard].include?( command )
 				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, output: output, error: error, verbose: verbose )
 				return dispatch( parsed: parsed, runtime: runtime )
 			end
 
+			# Repo commands with an explicit repo subject — resolve it.
+			if parsed.key?( :repo_subject )
+				config = Config.load( repo_root: repo_root )
+				resolved = resolve_repo_target( name: parsed.fetch( :repo_subject ), config: config )
+				if resolved.nil?
+					error.puts "#{BADGE} Not a governed repo: #{parsed.fetch( :repo_subject )}"
+					return Runtime::EXIT_ERROR
+				end
+				runtime = Runtime.new( repo_root: resolved, tool_root: tool_root, output: output, error: error, verbose: verbose )
+				return dispatch( parsed: parsed, runtime: runtime )
+			end
+
+			# Repo commands resolved from CWD.
 			target_repo_root = parsed.fetch( :repo_root, nil )
 			target_repo_root = repo_root if target_repo_root.to_s.strip.empty?
 			unless Dir.exist?( target_repo_root )
@@ -28,7 +48,6 @@ module Carson
 				return Runtime::EXIT_ERROR
 			end
 
-			verbose = parsed.fetch( :verbose, false )
 			runtime = Runtime.new( repo_root: target_repo_root, tool_root: tool_root, output: output, error: error, verbose: verbose )
 			dispatch( parsed: parsed, runtime: runtime )
 		rescue ConfigError => exception
@@ -45,9 +64,51 @@ module Carson
 			preset = parse_preset_command( arguments: arguments, output: output, parser: parser )
 			return preset.merge( verbose: verbose ) unless preset.nil?
 
-			command = arguments.shift
-			result = parse_command( command: command, arguments: arguments, error: error )
-			result.merge( verbose: verbose )
+			# Pre-scan for legacy grammar before OptionParser can reject tokens.
+			legacy = detect_legacy_grammar( arguments: arguments )
+			if legacy
+				error.puts "#{BADGE} #{legacy}"
+				return { command: :invalid, verbose: verbose }
+			end
+
+			first = arguments.first
+
+			# Portfolio command as first token.
+			if PORTFOLIO_COMMANDS.include?( first )
+				arguments.shift
+				result = parse_portfolio_command( command: first, arguments: arguments, error: error )
+				return result.merge( verbose: verbose )
+			end
+
+			# Repo command as first token — resolve from CWD.
+			if REPO_COMMANDS.include?( first )
+				arguments.shift
+				result = parse_repo_command( command: first, arguments: arguments, error: error )
+				return result.merge( verbose: verbose )
+			end
+
+			# Otherwise: first token is an explicit repo subject, second is the repo command.
+			repo_subject = arguments.shift
+			repo_command = arguments.shift
+
+			if repo_command.nil? || repo_command.strip.empty?
+				error.puts "#{BADGE} Unknown command: #{repo_subject}. Run carson --help for usage."
+				return { command: :invalid, verbose: verbose }
+			end
+
+			# Catch portfolio commands used with a repo subject.
+			if PORTFOLIO_COMMANDS.include?( repo_command ) && !REPO_COMMANDS.include?( repo_command )
+				error.puts "#{BADGE} #{repo_command} is a portfolio command. Use: carson #{repo_command}"
+				return { command: :invalid, verbose: verbose }
+			end
+
+			unless REPO_COMMANDS.include?( repo_command )
+				error.puts "#{BADGE} Unknown command: #{repo_command}. Run carson --help for usage."
+				return { command: :invalid, verbose: verbose }
+			end
+
+			result = parse_repo_command( command: repo_command, arguments: arguments, error: error )
+			result.merge( verbose: verbose, repo_subject: repo_subject )
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts parser
@@ -56,11 +117,18 @@ module Carson
 
 		def self.build_parser
 			OptionParser.new do |parser|
-				parser.banner = "Usage: carson <command> [options]"
+				parser.banner = "Usage: carson <command> [options]\n       carson <repo> <command> [options]"
 				parser.separator ""
 				parser.separator "Repository governance and workflow automation for coding agents."
 				parser.separator ""
-				parser.separator "Commands:"
+				parser.separator "Portfolio commands:"
+				parser.separator "    list         List governed repositories"
+				parser.separator "    onboard      Register a repository for governance"
+				parser.separator "    offboard     Remove a repository from governance"
+				parser.separator "    refresh      Re-install hooks and configuration (all governed repos)"
+				parser.separator "    version      Show Carson version"
+				parser.separator ""
+				parser.separator "Repository commands (from CWD or with explicit repo):"
 				parser.separator "    status       Show repository delivery state"
 				parser.separator "    setup        Initialise Carson configuration"
 				parser.separator "    audit        Run pre-commit health checks"
@@ -71,14 +139,9 @@ module Carson
 				parser.separator "    prune        Remove stale local branches"
 				parser.separator "    worktree     Manage isolated coding worktrees"
 				parser.separator "    housekeep    Sync, reap worktrees, and prune branches"
-				parser.separator "    repos        List governed repositories"
-				parser.separator "    onboard      Register a repository for governance"
-				parser.separator "    offboard     Remove a repository from governance"
-				parser.separator "    refresh      Re-install hooks and configuration"
-				parser.separator "    template     Manage canonical template files"
 				parser.separator "    review       Manage PR review workflow"
-				parser.separator "    govern       Portfolio-level PR triage loop"
-				parser.separator "    version      Show Carson version"
+				parser.separator "    template     Manage canonical template files"
+				parser.separator "    receive      Triage and advance deliveries for one repo"
 				parser.separator ""
 				parser.separator "Run `carson <command> --help` for details on a specific command."
 			end
@@ -96,46 +159,83 @@ module Carson
 			nil
 		end
 
-		def self.parse_command( command:, arguments:, error: )
+		# Detects legacy grammar patterns and returns a migration message, or nil.
+		def self.detect_legacy_grammar( arguments: )
+			tokens = arguments.dup
+
+			# Check for --all anywhere.
+			if tokens.include?( "--all" )
+				return "--all has been removed. Use carson list --json to script batch operations."
+			end
+
+			# Check first two tokens for legacy commands.
+			first = tokens[0].to_s
+			second = tokens[1].to_s
+
+			if first == "govern" || second == "govern"
+				return "carson govern has been replaced by carson <repo> receive"
+			end
+
+			if first == "repos" || second == "repos"
+				return "carson repos has been replaced by carson list"
+			end
+
+			nil
+		end
+
+		# --- portfolio command routing ---
+
+		def self.parse_portfolio_command( command:, arguments:, error: )
 			case command
 			when "version"
 				{ command: "version" }
-			when "setup"
-				parse_setup_command( arguments: arguments, error: error )
+			when "list"
+				parse_list_command( arguments: arguments, error: error )
 			when "onboard"
 				parse_onboard_command( arguments: arguments, error: error )
 			when "offboard"
 				parse_offboard_command( arguments: arguments, error: error )
 			when "refresh"
 				parse_refresh_command( arguments: arguments, error: error )
-			when "template"
-				parse_template_subcommand( arguments: arguments, error: error )
-			when "prune"
-				parse_prune_command( arguments: arguments, error: error )
-			when "worktree"
-				parse_worktree_subcommand( arguments: arguments, error: error )
-			when "repos"
-				parse_repos_command( arguments: arguments, error: error )
-			when "housekeep"
-				parse_housekeep_command( arguments: arguments, error: error )
-			when "review"
-				parse_review_subcommand( arguments: arguments, error: error )
-			when "audit"
-				parse_audit_command( arguments: arguments, error: error )
-			when "abandon"
-				parse_abandon_command( arguments: arguments, error: error )
+			else
+				error.puts "#{BADGE} Unknown portfolio command: #{command}"
+				{ command: :invalid }
+			end
+		end
+
+		# --- repo command routing ---
+
+		def self.parse_repo_command( command:, arguments:, error: )
+			case command
+			when "setup"
+				parse_setup_command( arguments: arguments, error: error )
+			when "deliver"
+				parse_deliver_command( arguments: arguments, error: error )
+			when "receive"
+				parse_receive_command( arguments: arguments, error: error )
 			when "sync"
 				parse_sync_command( arguments: arguments, error: error )
 			when "status"
 				parse_status_command( arguments: arguments, error: error )
-			when "deliver"
-				parse_deliver_command( arguments: arguments, error: error )
+			when "audit"
+				parse_audit_command( arguments: arguments, error: error )
+			when "prune"
+				parse_prune_command( arguments: arguments, error: error )
+			when "housekeep"
+				parse_housekeep_command( arguments: arguments, error: error )
+			when "worktree"
+				parse_worktree_subcommand( arguments: arguments, error: error )
+			when "abandon"
+				parse_abandon_command( arguments: arguments, error: error )
 			when "recover"
 				parse_recover_command( arguments: arguments, error: error )
-			when "govern"
-				parse_govern_subcommand( arguments: arguments, error: error )
+			when "review"
+				parse_review_subcommand( arguments: arguments, error: error )
+			when "template"
+				parse_template_subcommand( arguments: arguments, error: error )
 			else
-				{ command: command }
+				error.puts "#{BADGE} Unknown repo command: #{command}"
+				{ command: :invalid }
 			end
 		end
 
@@ -232,71 +332,123 @@ module Carson
 			{ command: :invalid }
 		end
 
+		# --- list ---
+
+		def self.parse_list_command( arguments:, error: )
+			options = { json: false }
+			list_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson list [--json]"
+				parser.separator ""
+				parser.separator "List all repositories governed by Carson."
+				parser.separator "Shows the portfolio of repos registered via carson onboard."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson list           List governed repositories"
+				parser.separator "    carson list --json    Structured output for agent consumption"
+			end
+			list_parser.parse!( arguments )
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for list: #{arguments.join( ' ' )}"
+				return { command: :invalid }
+			end
+			{ command: "list", json: options[ :json ] }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts list_parser
+			{ command: :invalid }
+		end
+
 		# --- refresh ---
 
 		def self.parse_refresh_command( arguments:, error: )
-			options = { all: false }
 			refresh_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson refresh [--all] [REPO_PATH]"
+				parser.banner = "Usage: carson refresh"
 				parser.separator ""
-				parser.separator "Re-install Carson hooks and configuration for a repository."
-				parser.separator "Defaults to the current directory. Use --all to refresh all governed repos."
-				parser.separator ""
-				parser.separator "Options:"
-				parser.on( "--all", "Refresh all governed repositories" ) { options[ :all ] = true }
+				parser.separator "Re-install Carson hooks and configuration for all governed repositories."
 				parser.separator ""
 				parser.separator "Examples:"
-				parser.separator "    carson refresh             Refresh the current repository"
-				parser.separator "    carson refresh --all       Refresh all governed repos"
+				parser.separator "    carson refresh    Refresh all governed repos"
 			end
 			refresh_parser.parse!( arguments )
-
-			if options[ :all ] && !arguments.empty?
-				error.puts "#{BADGE} --all and repo_path are mutually exclusive. Use: carson refresh --all OR carson refresh [repo_path]"
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for refresh: #{arguments.join( ' ' )}"
 				error.puts refresh_parser
 				return { command: :invalid }
 			end
-
-			return { command: "refresh:all" } if options[ :all ]
-
-			if arguments.length > 1
-				error.puts "#{BADGE} Too many arguments for refresh. Use: carson refresh [repo_path]"
-				error.puts refresh_parser
-				return { command: :invalid }
-			end
-
-			repo_path = arguments.first
-			{
-				command: "refresh",
-				repo_root: repo_path.to_s.strip.empty? ? nil : File.expand_path( repo_path )
-			}
+			{ command: "refresh:all" }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts refresh_parser
 			{ command: :invalid }
 		end
 
+		# --- receive ---
+
+		def self.parse_receive_command( arguments:, error: )
+			options = {
+				dry_run: false,
+				json: false,
+				loop_seconds: nil
+			}
+			receive_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson <repo> receive [--dry-run] [--json] [--loop SECONDS]"
+				parser.separator ""
+				parser.separator "Triage and advance deliveries for one repository."
+				parser.separator "Scans open PRs, classifies them, and takes action"
+				parser.separator "(merge, request review, or report). Runs once by default."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--dry-run", "Run all checks but do not merge or dispatch" ) { options[ :dry_run ] = true }
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles" ) do |seconds|
+					error.puts( "#{BADGE} --loop expects a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
+					options[ :loop_seconds ] = seconds
+				end
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson nexus receive                  Triage deliveries for nexus"
+				parser.separator "    carson nexus receive --dry-run        Preview actions without applying them"
+				parser.separator "    carson nexus receive --loop 300       Run continuously every 5 minutes"
+			end
+			receive_parser.parse!( arguments )
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for receive: #{arguments.join( ' ' )}"
+				error.puts receive_parser
+				return { command: :invalid }
+			end
+			{
+				command: "receive",
+				dry_run: options.fetch( :dry_run ),
+				json: options.fetch( :json ),
+				loop_seconds: options[ :loop_seconds ]
+			}
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts receive_parser
+			{ command: :invalid }
+		end
+
 		# --- prune ---
 
 		def self.parse_prune_command( arguments:, error: )
-			options = { all: false, json: false }
+			options = { json: false }
 			prune_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson prune [--all] [--json]"
+				parser.banner = "Usage: carson prune [--json]"
 				parser.separator ""
 				parser.separator "Remove stale local branches."
 				parser.separator "Cleans up branches gone from the remote, orphan branches with merged PRs,"
 				parser.separator "and absorbed branches whose content is already on main."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--all", "Prune all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson prune           Clean up stale branches in this repo"
-				parser.separator "    carson prune --all     Clean up across all governed repos"
 			end
 			prune_parser.parse!( arguments )
-			return { command: "prune:all", json: options[ :json ] } if options[ :all ]
 			{ command: "prune", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -427,7 +579,6 @@ module Carson
 			end
 
 			action = arguments.shift
-			return { command: "template:check:all" } if action == "check" && arguments.include?( "--all" )
 			return { command: "template:#{action}" } unless action == "apply"
 
 			options = { push_prep: false }
@@ -458,29 +609,26 @@ module Carson
 		# --- audit ---
 
 		def self.parse_audit_command( arguments:, error: )
-			options = { json: false, all: false }
+			options = { json: false }
 			audit_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson audit [--all] [--json]"
+				parser.banner = "Usage: carson audit [--json]"
 				parser.separator ""
 				parser.separator "Run pre-commit health checks on the repository."
 				parser.separator "Validates hooks, main-branch sync, PR status, and CI baseline."
 				parser.separator "Exits with a non-zero status when policy violations are found."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--all", "Audit all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson audit           Check repository health (also the default command)"
 				parser.separator "    carson audit --json    Structured output for agent consumption"
-				parser.separator "    carson audit --all     Audit all governed repos"
 			end
 			audit_parser.parse!( arguments )
 			unless arguments.empty?
 				error.puts "#{BADGE} Unexpected arguments for audit: #{arguments.join( ' ' )}"
 				return { command: :invalid }
 			end
-			return { command: "audit:all" } if options[ :all ]
 			{ command: "audit", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -523,28 +671,25 @@ module Carson
 		# --- sync ---
 
 		def self.parse_sync_command( arguments:, error: )
-			options = { json: false, all: false }
+			options = { json: false }
 			sync_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson sync [--all] [--json]"
+				parser.banner = "Usage: carson sync [--json]"
 				parser.separator ""
 				parser.separator "Sync the local main branch with the remote."
 				parser.separator "Fetches and fast-forwards main without switching branches."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--all", "Sync all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson sync            Pull latest changes from remote main"
 				parser.separator "    carson sync --json     Structured output for agent consumption"
-				parser.separator "    carson sync --all      Sync all governed repos"
 			end
 			sync_parser.parse!( arguments )
 			unless arguments.empty?
 				error.puts "#{BADGE} Unexpected arguments for sync: #{arguments.join( ' ' )}"
 				return { command: :invalid }
 			end
-			return { command: "sync:all" } if options[ :all ]
 			{ command: "sync", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -555,28 +700,25 @@ module Carson
 		# --- status ---
 
 		def self.parse_status_command( arguments:, error: )
-			options = { json: false, all: false }
+			options = { json: false }
 			status_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson status [--all] [--json]"
+				parser.banner = "Usage: carson status [--json]"
 				parser.separator ""
 				parser.separator "Show the current state of the repository."
 				parser.separator "Reports branch, worktrees, open PRs, stale branches, and version."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--all", "Show status for all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson status           Quick overview of repository state"
 				parser.separator "    carson status --json    Structured output for agent consumption"
-				parser.separator "    carson status --all     Portfolio-wide status overview"
 			end
 			status_parser.parse!( arguments )
 			unless arguments.empty?
 				error.puts "#{BADGE} Unexpected arguments for status: #{arguments.join( ' ' )}"
 				return { command: :invalid }
 			end
-			return { command: "status:all", json: options[ :json ] } if options[ :all ]
 			{ command: "status", json: options[ :json ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -674,83 +816,30 @@ module Carson
 			{ command: :invalid }
 		end
 
-		# --- repos ---
-
-		def self.parse_repos_command( arguments:, error: )
-			options = { json: false }
-			repos_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson repos [--json]"
-				parser.separator ""
-				parser.separator "List all repositories governed by Carson."
-				parser.separator "Shows the portfolio of repos registered via carson onboard."
-				parser.separator ""
-				parser.separator "Options:"
-				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
-				parser.separator ""
-				parser.separator "Examples:"
-				parser.separator "    carson repos           List governed repositories"
-				parser.separator "    carson repos --json    Structured output for agent consumption"
-			end
-			repos_parser.parse!( arguments )
-			unless arguments.empty?
-				error.puts "#{BADGE} Unexpected arguments for repos: #{arguments.join( ' ' )}"
-				return { command: :invalid }
-			end
-			{ command: "repos", json: options[ :json ] }
-		rescue OptionParser::ParseError => exception
-			error.puts "#{BADGE} #{exception.message}"
-			error.puts repos_parser
-			{ command: :invalid }
-		end
-
 		# --- housekeep ---
 
 		def self.parse_housekeep_command( arguments:, error: )
-			options = { all: false, json: false, dry_run: false, loop_seconds: nil }
+			options = { json: false, dry_run: false }
 			housekeep_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson housekeep [REPO] [--all] [--dry-run] [--json] [--loop SECONDS]"
+				parser.banner = "Usage: carson housekeep [--dry-run] [--json]"
 				parser.separator ""
 				parser.separator "Run housekeeping: sync main, reap dead worktrees, and prune stale branches."
-				parser.separator "Defaults to the current repository."
+				parser.separator "Operates on the current repository (or explicit repo via carson <repo> housekeep)."
 				parser.separator ""
 				parser.separator "Options:"
-				parser.on( "--all", "Housekeep all governed repositories" ) { options[ :all ] = true }
 				parser.on( "--dry-run", "Show what would be reaped/deleted without making changes" ) { options[ :dry_run ] = true }
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
-				parser.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles (requires --all)" ) do |seconds|
-					error.puts( "#{BADGE} --loop expects a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
-					options[ :loop_seconds ] = seconds
-				end
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson housekeep              Housekeep the current repository"
 				parser.separator "    carson housekeep --dry-run    Preview what housekeep would do"
-				parser.separator "    carson housekeep nexus        Housekeep a named governed repo"
-				parser.separator "    carson housekeep --all        Housekeep all governed repos"
-				parser.separator "    carson housekeep --all --loop 300   Housekeep every 5 minutes"
 			end
 			housekeep_parser.parse!( arguments )
-
-			if options[ :loop_seconds ] && !options[ :all ]
-				error.puts "#{BADGE} --loop requires --all"
+			unless arguments.empty?
+				error.puts "#{BADGE} Unexpected arguments for housekeep: #{arguments.join( ' ' )}"
+				error.puts housekeep_parser
 				return { command: :invalid }
 			end
-
-			if options[ :all ] && !arguments.empty?
-				error.puts "#{BADGE} --all and repo target are mutually exclusive. Use: carson housekeep --all OR carson housekeep [repo]"
-				return { command: :invalid }
-			end
-
-			return { command: "housekeep:all", json: options[ :json ], dry_run: options[ :dry_run ], loop_seconds: options[ :loop_seconds ] } if options[ :all ]
-
-			if arguments.length > 1
-				error.puts "#{BADGE} Too many arguments for housekeep. Use: carson housekeep [repo]"
-				return { command: :invalid }
-			end
-
-			target = arguments.shift
-			return { command: "housekeep:target", target: target, json: options[ :json ], dry_run: options[ :dry_run ] } if target
-
 			{ command: "housekeep", json: options[ :json ], dry_run: options[ :dry_run ] }
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
@@ -758,50 +847,38 @@ module Carson
 			{ command: :invalid }
 		end
 
-		# --- govern ---
+		# --- repo resolution (CLI layer) ---
 
-		def self.parse_govern_subcommand( arguments:, error: )
-			options = {
-				dry_run: false,
-				json: false,
-				loop_seconds: nil
-			}
-			govern_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson govern [--dry-run] [--json] [--loop SECONDS]"
-				parser.separator ""
-				parser.separator "Portfolio-level PR triage loop."
-				parser.separator "Scans governed repositories, classifies open PRs, and takes action"
-				parser.separator "(merge, request review, or report). Runs once by default."
-				parser.separator ""
-				parser.separator "Options:"
-				parser.on( "--dry-run", "Run all checks but do not merge or dispatch" ) { options[ :dry_run ] = true }
-				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
-				parser.on( "--loop SECONDS", Integer, "Run continuously, sleeping SECONDS between cycles" ) do |seconds|
-					error.puts( "#{BADGE} --loop expects a positive integer" ) || ( return { command: :invalid } ) if seconds < 1
-					options[ :loop_seconds ] = seconds
-				end
-				parser.separator ""
-				parser.separator "Examples:"
-				parser.separator "    carson govern                  Triage all governed repos once"
-				parser.separator "    carson govern --dry-run        Preview actions without applying them"
-				parser.separator "    carson govern --loop 300       Run continuously every 5 minutes"
+		# Resolves an explicit repo name/path to a governed repository path.
+		# Tries exact configured path first, then basename match (case-insensitive).
+		def self.resolve_repo_target( name:, config: )
+			repos = config.govern_repos
+			expanded = File.expand_path( name )
+			return expanded if repos.include?( expanded )
+
+			downcased = File.basename( name ).downcase
+			repos.find { |repo_path| File.basename( repo_path ).downcase == downcased }
+		end
+
+		# Resolves the CWD repo_root to a governed repository path.
+		# Canonicalises worktree vs main-tree via git common-dir, then matches.
+		def self.resolve_cwd_repo( repo_root:, config: )
+			canonical = canonicalise_repo_root( repo_root: repo_root )
+			repos = config.govern_repos
+			repos.find { |repo_path| File.expand_path( repo_path ) == canonical }
+		end
+
+		# Returns the canonical main worktree root for a repo_root.
+		# If inside a worktree, follows git-common-dir back to the main tree.
+		def self.canonicalise_repo_root( repo_root: )
+			stdout, _, status = Open3.capture3( "git", "-C", repo_root, "rev-parse", "--path-format=absolute", "--git-common-dir" )
+			if status.success? && !stdout.strip.empty?
+				return File.dirname( stdout.strip )
 			end
-			govern_parser.parse!( arguments )
-			unless arguments.empty?
-				error.puts "#{BADGE} Unexpected arguments for govern: #{arguments.join( ' ' )}"
-				error.puts govern_parser
-				return { command: :invalid }
-			end
-			{
-				command: "govern",
-				dry_run: options.fetch( :dry_run ),
-				json: options.fetch( :json ),
-				loop_seconds: options[ :loop_seconds ]
-			}
-		rescue OptionParser::ParseError => exception
-			error.puts "#{BADGE} #{exception.message}"
-			error.puts govern_parser
-			{ command: :invalid }
+
+			File.expand_path( repo_root )
+		rescue StandardError
+			File.expand_path( repo_root )
 		end
 
 		# --- global artefacts ---
@@ -844,8 +921,6 @@ module Carson
 				runtime.sync!( json_output: parsed.fetch( :json, false ) )
 			when "prune"
 				runtime.prune!( json_output: parsed.fetch( :json, false ) )
-			when "prune:all"
-				runtime.prune_all!
 			when "worktree:create"
 				runtime.worktree_create!( name: parsed.fetch( :worktree_name ), json_output: parsed.fetch( :json, false ) )
 			when "worktree:list"
@@ -854,8 +929,6 @@ module Carson
 				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ), json_output: parsed.fetch( :json, false ) )
 			when "onboard"
 				runtime.onboard!
-			when "refresh"
-				runtime.refresh!
 			when "refresh:all"
 				runtime.refresh_all!
 			when "offboard"
@@ -880,37 +953,16 @@ module Carson
 				runtime.review_gate!
 			when "review:sweep"
 				runtime.review_sweep!
-			when "repos"
-				runtime.repos!( json_output: parsed.fetch( :json, false ) )
-			when "housekeep"
-				runtime.housekeep!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
-			when "housekeep:target"
-				runtime.housekeep_target!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
-			when "housekeep:all"
-				loop_seconds = parsed.fetch( :loop_seconds, nil )
-				if loop_seconds
-					runtime.housekeep_loop!(
-						json_output: parsed.fetch( :json, false ),
-						dry_run: parsed.fetch( :dry_run, false ),
-						loop_seconds: loop_seconds
-					)
-				else
-					runtime.housekeep_all!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
-				end
-			when "govern"
-				runtime.govern!(
+			when "list"
+				runtime.list!( json_output: parsed.fetch( :json, false ) )
+			when "receive"
+				runtime.receive!(
 					dry_run: parsed.fetch( :dry_run, false ),
 					json_output: parsed.fetch( :json, false ),
 					loop_seconds: parsed.fetch( :loop_seconds, nil )
 				)
-			when "template:check:all"
-				runtime.template_check_all!
-			when "audit:all"
-				runtime.audit_all!
-			when "sync:all"
-				runtime.sync_all!
-			when "status:all"
-				runtime.status_all!( json_output: parsed.fetch( :json, false ) )
+			when "housekeep"
+				runtime.housekeep!( json_output: parsed.fetch( :json, false ), dry_run: parsed.fetch( :dry_run, false ) )
 			else
 				runtime.send( :puts_line, "Unknown command: #{command}" )
 				Runtime::EXIT_ERROR
