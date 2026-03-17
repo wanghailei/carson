@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   governance:
     if: github.event_name == 'pull_request'
@@ -41,8 +45,8 @@ jobs:
           CARSON_REVIEW_BOT_USERNAMES: "gemini-code-assist"
         run: ruby exe/carson review gate
 
-  smoke:
-    name: Syntax and smoke tests
+  lint:
+    name: Lint and guards
     runs-on: ubuntu-latest
     env:
       RUBOCOP_VERSION: "1.81.0"
@@ -50,13 +54,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
+
+      - name: Cache RuboCop gems
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/vendor/gems
+          key: rubocop-${{ env.RUBOCOP_VERSION }}-ruby3.4
+
+      - name: Install RuboCop
+        run: gem install --install-dir vendor/gems rubocop -v "$RUBOCOP_VERSION" rubocop-performance --no-document
 
       - name: Ruby syntax check
         run: |
@@ -65,18 +76,10 @@ jobs:
 
       - name: RuboCop access modifier indentation
         run: |
-          gem install rubocop -v "$RUBOCOP_VERSION" --no-document
-          gem install rubocop-performance --no-document
-          rubocop --config .github/linters/rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
+          GEM_HOME=${{ github.workspace }}/vendor/gems rubocop --config .github/linters/rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
 
       - name: Ruby indentation guard
         run: ruby script/ruby_indentation_guard.rb
-
-      - name: Install sqlite3 for legacy ledger migration tests
-        run: gem install sqlite3 --no-document
-
-      - name: Ruby unit tests
-        run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
 
       - name: Legacy naming guard
         run: |
@@ -99,6 +102,41 @@ jobs:
             exit 1
           fi
 
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Install sqlite3
+        run: gem install sqlite3 --no-document
+
+      - name: Ruby unit tests
+        run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
+
+  smoke-quick:
+    name: Quick smoke
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
       - name: Carson quick smoke
         run: bash script/ci_smoke.sh --quick
 
@@ -118,7 +156,7 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - name: Install sqlite3 for legacy ledger migration tests
+      - name: Install sqlite3
         run: gem install sqlite3 --no-document
 
       - name: Carson full smoke tests
