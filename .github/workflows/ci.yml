@@ -99,5 +99,27 @@ jobs:
             exit 1
           fi
 
-      - name: Carson smoke tests
+      - name: Carson quick smoke
+        run: bash script/ci_smoke.sh --quick
+
+  smoke-full:
+    name: Full smoke and review tests
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Install sqlite3 for legacy ledger migration tests
+        run: gem install sqlite3 --no-document
+
+      - name: Carson full smoke tests
         run: bash script/ci_smoke.sh
