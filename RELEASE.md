@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.30.0
+
+### What changed
+
+- **Post-PR merge eligibility is now delegated to GitHub** — After a PR exists, Carson uses GitHub's `mergeStateStatus` as the sole authority for merge eligibility instead of running a local `git merge-base --is-ancestor` check. If GitHub reports `CLEAN`, Carson proceeds regardless of local ancestor status. If GitHub reports `BEHIND`, the delivery is held. The pre-push freshness check (before any PR exists) is unchanged.
+- **Govern and deliver no longer false-block in busy repos** — In repositories where govern merges PRs serially, each merge advances main and previously made every subsequent queued PR permanently stuck unless manually rebased. Carson now integrates any PR that GitHub considers merge-eligible.
+
+### No migration required
+
+- Existing workflows continue to work unchanged. PRs that were previously false-blocked by local freshness checks will now integrate when GitHub reports them as merge-eligible.
+
 ## 3.29.1
 
 ### What changed
