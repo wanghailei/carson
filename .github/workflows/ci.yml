@@ -67,7 +67,8 @@ jobs:
           key: rubocop-${{ env.RUBOCOP_VERSION }}-ruby3.4
 
       - name: Install RuboCop
-        run: gem install --install-dir vendor/gems rubocop -v "$RUBOCOP_VERSION" rubocop-performance --no-document
+        run: |
+          gem install --install-dir vendor/gems --no-document "rubocop:$RUBOCOP_VERSION" rubocop-performance
 
       - name: Ruby syntax check
         run: |
