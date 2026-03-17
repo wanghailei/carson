@@ -15,23 +15,11 @@ Deliver owns the full path from local commits to integrated main: push, PR creat
 
 ### Freshness gate
 
-Before any merge attempt, deliver verifies the branch is current against remote main.
+Freshness enforcement has two layers:
 
-Three states:
-- **fresh** — branch is current against fetched remote main. Merge-eligible.
-- **behind** — remote main has commits not on the branch. Blocked.
-- **unknown** — fetch or comparison failed. Blocked.
+**Pre-push (local, before PR exists):** Before any push, deliver verifies the branch is current against fetched remote main using `git merge-base --is-ancestor`. Three states: fresh (proceed), behind (block), unknown (block). This is the user-facing gate — the user can act on it before a PR exists.
 
-Only `fresh` proceeds. `behind` and `unknown` both block — unknown is never treated as fresh.
-
-Freshness is checked:
-1. Before entering the settle loop.
-2. On every reassessment iteration.
-3. Immediately before any merge attempt.
-
-If main advances during the settle window, a once-fresh delivery becomes freshness-blocked mid-invocation. This is a hard block (won't self-resolve without branch refresh).
-
-`mergeStateStatus = BEHIND` is not merge-eligible. Carson treats it as a freshness block even though squash could technically succeed.
+**Post-PR (GitHub authority):** After a PR exists, Carson delegates merge eligibility to GitHub's `mergeStateStatus`. If GitHub reports `BEHIND`, the delivery is held with cause "freshness". If `CLEAN`, Carson proceeds regardless of local ancestor status. This eliminates false blocks in repos where GitHub's "require up-to-date" setting is permissive.
 
 ### Settle loop
 
@@ -47,7 +35,7 @@ Transient API failures within the budget are retried on next poll — they don't
 
 ### Hard blocks
 
-Deliver exits immediately for: CI failing, review changes requested, review gate error, freshness behind/unknown, draft PR, PR closed, merge conflict, repository policy block.
+Deliver exits immediately for: CI failing, review changes requested, review gate error, GitHub mergeStateStatus BEHIND, draft PR, PR closed, merge conflict, repository policy block.
 
 ### Deferred exit
 
@@ -59,7 +47,7 @@ Three outcomes: `integrated`, `deferred`, `blocked`. Each states what happened a
 
 ### JSON fields
 
-`watch_window_seconds`, `waited_seconds`, `merge_attempted`, `freshness.status`, `freshness.reason`. Deferred/blocked exits add `handoff.reason`, `handoff.expectation`, `handoff.next_steps`.
+`watch_window_seconds`, `waited_seconds`, `merge_attempted`, `freshness.status`, `freshness.reason`. Pre-push: freshness comes from local git. Post-PR: freshness comes from GitHub's merge state. Deferred/blocked exits add `handoff.reason`, `handoff.expectation`, `handoff.next_steps`.
 
 ---
 
@@ -134,7 +122,7 @@ Agent provider: configured via `govern.agent.provider` — `auto` (tries codex t
 
 ### Freshness rule
 
-Govern obeys the same freshness gate as deliver. It never merges a delivery whose freshness is `behind` or `unknown`. A freshness-blocked delivery surfaces as "refresh required" — govern does not dispatch an agent to "fix" it.
+Govern delegates merge eligibility to GitHub's merge state. A final GitHub recheck runs immediately before every merge attempt. If GitHub reports `BEHIND`, the delivery is gated with cause "freshness" and surfaces as "refresh required". If `CLEAN`, govern integrates — even when the branch is locally behind main. Govern does not dispatch an agent to "fix" freshness blocks.
 
 ### Isolation
 

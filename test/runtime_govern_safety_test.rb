@@ -14,6 +14,9 @@ class RuntimeGovernSafetyTest < Minitest::Test
 		create_feature_branch( repo_root, "feature/no-housekeep" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/no-housekeep", status: "queued", summary: "ready" )
 		stub_reconciliation( runtime, delivery: delivery )
+		runtime.define_singleton_method( :pull_request_state ) do |number:|
+			{ "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+		end
 		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
 			result[ :merge_method ] = "squash"
 			Carson::Runtime::EXIT_OK

@@ -221,24 +221,8 @@ module Carson
 			end
 
 			# Assesses delivery readiness and records Carson's current branch state.
+			# Post-PR freshness is delegated to GitHub's mergeStateStatus via delivery_assessment.
 			def assess_delivery!( delivery:, branch_name: )
-				freshness = assess_branch_freshness(
-					head_ref: delivery.head || branch_name,
-					remote: config.git_remote,
-					main: config.main_branch
-				)
-				unless freshness.fetch( :ready )
-					return ledger.update_delivery(
-						delivery: delivery,
-						status: "gated",
-						cause: "freshness",
-						summary: freshness.fetch( :summary ),
-						pr_number: delivery.pull_request_number,
-						pr_url: delivery.pull_request_url,
-						worktree_path: delivery.worktree_path
-					)
-				end
-
 					review = check_pr_review( number: delivery.pull_request_number, branch: branch_name, pr_url: delivery.pull_request_url )
 					ci = check_pr_ci( number: delivery.pull_request_number )
 					pr_state = pull_request_state( number: delivery.pull_request_number )
@@ -278,7 +262,14 @@ module Carson
 					last_evaluation = evaluation
 					successful_assessments += 1 if evaluation[ :assessment_success ]
 					result[ :ci ] = evaluation[ :ci ].to_s
-					result[ :freshness ] = freshness_payload( freshness: evaluation.fetch( :freshness ) ) if evaluation[ :freshness ]
+					if evaluation[ :cause ] == "freshness"
+						result[ :freshness ] = {
+							status: "behind",
+							reason: "freshness_behind",
+							summary: evaluation[ :summary ],
+							base_ref: "#{config.git_remote}/#{main}"
+						}
+					end
 
 					delivery = update_delivery_for_settle_evaluation( delivery: delivery, evaluation: evaluation )
 					result[ :summary ] = delivery.summary
@@ -297,7 +288,7 @@ module Carson
 					when :blocked
 						result[ :outcome ] = "blocked"
 						result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-						result[ :recovery ] = freshness_recovery( freshness: evaluation.fetch( :freshness ) ) if evaluation[ :cause ] == "freshness" && evaluation[ :freshness ]
+						result[ :recovery ] = "git rebase #{config.git_remote}/#{main} && carson deliver" if evaluation[ :cause ] == "freshness"
 						apply_handoff!(
 							result: result,
 							reason: evaluation.fetch( :reason ),
@@ -389,25 +380,8 @@ module Carson
 				delivery
 			end
 
+				# Post-PR freshness is delegated to GitHub's mergeStateStatus via settle_mergeability_assessment.
 				def evaluate_delivery_for_settle( branch_name:, head_ref:, pr_number:, pr_url:, main: )
-					freshness = assess_branch_freshness(
-						branch_name: branch_name,
-						head_ref: head_ref,
-						remote: config.git_remote,
-						main: main
-					)
-					unless freshness.fetch( :ready )
-						return {
-							phase: :blocked,
-							reason: freshness.fetch( :reason ),
-							cause: "freshness",
-							summary: freshness.fetch( :summary ),
-							assessment_success: freshness.fetch( :status ) != :unknown,
-							ci: :none,
-							freshness: freshness
-						}
-					end
-
 					review = check_pr_review( number: pr_number, branch: branch_name, pr_url: pr_url )
 					ci = settle_check_pr_ci( number: pr_number )
 					pr_state = pull_request_state( number: pr_number )
@@ -419,7 +393,7 @@ module Carson
 						summary: "waiting for GitHub assessment",
 						assessment_success: false,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if ci == :error || review.fetch( :status, :pass ) == :error || !pr_state.is_a?( Hash )
+					}.merge( pr_state: pr_state ) if ci == :error || review.fetch( :status, :pass ) == :error || !pr_state.is_a?( Hash )
 
 					return {
 						phase: :integrated,
@@ -428,7 +402,7 @@ module Carson
 						summary: "integrated into #{main}",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if pr_state[ "state" ] == "MERGED"
+					}.merge( pr_state: pr_state ) if pr_state[ "state" ] == "MERGED"
 					return {
 						phase: :blocked,
 						reason: "pull_request_closed",
@@ -436,7 +410,7 @@ module Carson
 						summary: "pull request closed without integration",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if pr_state[ "state" ] == "CLOSED"
+					}.merge( pr_state: pr_state ) if pr_state[ "state" ] == "CLOSED"
 
 					return {
 						phase: :blocked,
@@ -445,7 +419,7 @@ module Carson
 						summary: "pull request is still a draft",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if pr_state[ "isDraft" ]
+					}.merge( pr_state: pr_state ) if pr_state[ "isDraft" ]
 
 					return {
 						phase: :waiting,
@@ -454,7 +428,7 @@ module Carson
 						summary: "waiting for CI checks",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if ci == :pending
+					}.merge( pr_state: pr_state ) if ci == :pending
 
 					return {
 						phase: :blocked,
@@ -463,7 +437,7 @@ module Carson
 						summary: "CI checks are failing",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if ci == :fail
+					}.merge( pr_state: pr_state ) if ci == :fail
 
 					return {
 						phase: :blocked,
@@ -472,7 +446,7 @@ module Carson
 						summary: "review changes requested",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if review.fetch( :review, :none ) == :changes_requested
+					}.merge( pr_state: pr_state ) if review.fetch( :review, :none ) == :changes_requested
 
 					return {
 						phase: :waiting,
@@ -481,7 +455,7 @@ module Carson
 						summary: "waiting for review",
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if review.fetch( :review, :none ) == :review_required
+					}.merge( pr_state: pr_state ) if review.fetch( :review, :none ) == :review_required
 
 					return {
 						phase: :blocked,
@@ -490,49 +464,28 @@ module Carson
 						summary: review.fetch( :detail ).to_s,
 						assessment_success: true,
 						ci: ci
-					}.merge( freshness: freshness, pr_state: pr_state ) if review.fetch( :status, :pass ) == :fail
+					}.merge( pr_state: pr_state ) if review.fetch( :status, :pass ) == :fail
 
 					mergeability = settle_mergeability_assessment( pr_state: pr_state, main: main )
-					mergeability.merge( assessment_success: true, ci: ci, freshness: freshness, pr_state: pr_state )
+					mergeability.merge( assessment_success: true, ci: ci, pr_state: pr_state )
 				end
 
 			def settle_mergeability_assessment( pr_state:, main: )
-				mergeable = pr_state.fetch( "mergeable", "" ).to_s.upcase
-				merge_state = pr_state.fetch( "mergeStateStatus", "" ).to_s.upcase
-
-				return {
-					phase: :blocked,
-					reason: "merge_conflict",
-					cause: "merge",
-					summary: "pull request has merge conflicts"
-				} if mergeable == "CONFLICTING" || merge_state == "DIRTY" || merge_state == "CONFLICTING"
-
-				return {
-					phase: :blocked,
-					reason: "repository_policy_block",
-					cause: "merge",
-					summary: "merge is blocked by repository policy"
-				} if merge_state == "BLOCKED"
-
-				return {
-					phase: :blocked,
-					reason: "freshness_behind",
-					cause: "freshness",
-					summary: "branch is behind #{config.git_remote}/#{main}"
-				} if merge_state == "BEHIND"
-
-				return {
-					phase: :ready,
-					reason: "ready",
-					cause: nil,
-					summary: "ready to integrate into #{main}"
-				} if merge_state == "CLEAN" || mergeable == "MERGEABLE"
-
+				assessment = github_merge_assessment( pr_state: pr_state )
+				phase = if assessment[ :ready ]
+					:ready
+				elsif [ "mergeability_pending", "assessment_unavailable" ].include?( assessment[ :reason ] )
+					:waiting
+				else
+					:blocked
+				end
+				# Preserve the settle-loop's "assessment" cause for pending/unavailable states
+				cause = phase == :waiting ? "assessment" : assessment[ :cause ]
 				{
-					phase: :waiting,
-					reason: "mergeability_pending",
-					cause: "assessment",
-					summary: "waiting for GitHub mergeability"
+					phase: phase,
+					reason: assessment[ :reason ],
+					cause: cause,
+					summary: assessment[ :summary ]
 				}
 			end
 
@@ -582,29 +535,37 @@ module Carson
 				end
 			end
 
+			# Pre-merge recheck using GitHub as the authority for merge eligibility.
+			# Blocks on definite GitHub-reported issues (BEHIND, CONFLICTING, BLOCKED, draft).
+			# Allows through pending/unknown states — the merge attempt itself will succeed or fail.
 			def attempt_delivery_merge!( delivery:, remote:, main:, result: )
-				freshness = assess_branch_freshness(
-					head_ref: delivery.head || delivery.branch,
-					remote: remote,
-					main: main
-				)
-				result[ :freshness ] = freshness_payload( freshness: freshness )
-				unless freshness.fetch( :ready )
-					result[ :recovery ] = freshness_recovery( freshness: freshness )
-					return {
-						phase: :blocked,
-						attempted: false,
-						reason: freshness.fetch( :reason ),
-						delivery: ledger.update_delivery(
-							delivery: delivery,
-							status: "gated",
-							cause: "freshness",
-							summary: freshness.fetch( :summary )
-						)
-					}
-				end
-
 					pr_state = pull_request_state( number: delivery.pull_request_number )
+					merge_check = github_merge_assessment( pr_state: pr_state )
+					definite_blocker = !merge_check[ :ready ] &&
+						![ "mergeability_pending", "assessment_unavailable" ].include?( merge_check[ :reason ] )
+					if definite_blocker
+						if merge_check[ :cause ] == "freshness"
+							result[ :freshness ] = {
+								status: "behind",
+								reason: "freshness_behind",
+								summary: merge_check[ :summary ],
+								base_ref: "#{remote}/#{main}"
+							}
+						end
+						result[ :recovery ] = merge_check[ :recovery ] if merge_check[ :recovery ]
+						return {
+							phase: :blocked,
+							attempted: false,
+							reason: merge_check[ :reason ],
+							delivery: ledger.update_delivery(
+								delivery: delivery,
+								status: "gated",
+								cause: merge_check[ :cause ],
+								summary: merge_check[ :summary ]
+							)
+						}
+					end
+
 					observation = pull_request_observation_attributes( pr_state: pr_state )
 					if pr_state && pr_state[ "state" ] == "MERGED"
 						return {
@@ -890,19 +851,78 @@ module Carson
 				[ "gated", "merge", "waiting for GitHub mergeability" ]
 			end
 
-			def mergeability_assessment( pr_state: )
-				return nil unless pr_state.is_a?( Hash )
+			# Interprets GitHub's PR state into a merge readiness verdict.
+			# Pure method — no API calls. Accepts the already-fetched pr_state hash.
+			# Returns a standardised hash: { ready:, reason:, cause:, summary:, recovery: }
+			def github_merge_assessment( pr_state: )
+				unless pr_state.is_a?( Hash )
+					return {
+						ready: false,
+						reason: "assessment_unavailable",
+						cause: "merge",
+						summary: "waiting for GitHub mergeability",
+						recovery: nil
+					}
+				end
 
 				mergeable = pr_state.fetch( "mergeable", "" ).to_s.upcase
 				merge_state = pr_state.fetch( "mergeStateStatus", "" ).to_s.upcase
+				remote_main = "#{config.git_remote}/#{config.main_branch}"
 
-				return [ "gated", "policy", "pull request is still a draft" ] if pr_state[ "isDraft" ]
-				return [ "gated", "merge", "pull request has merge conflicts" ] if mergeable == "CONFLICTING" || merge_state == "DIRTY" || merge_state == "CONFLICTING"
-				return [ "gated", "merge", "merge is blocked by repository policy" ] if merge_state == "BLOCKED"
-				return [ "gated", "freshness", "branch is behind #{config.git_remote}/#{config.main_branch}" ] if merge_state == "BEHIND"
-				return [ "queued", nil, "ready to integrate into #{config.main_branch}" ] if merge_state == "CLEAN" || mergeable == "MERGEABLE"
+				return {
+					ready: false,
+					reason: "draft_pr",
+					cause: "policy",
+					summary: "pull request is still a draft",
+					recovery: nil
+				} if pr_state[ "isDraft" ]
 
-				nil
+				return {
+					ready: false,
+					reason: "merge_conflict",
+					cause: "merge",
+					summary: "pull request has merge conflicts",
+					recovery: nil
+				} if mergeable == "CONFLICTING" || merge_state == "DIRTY" || merge_state == "CONFLICTING"
+
+				return {
+					ready: false,
+					reason: "repository_policy_block",
+					cause: "merge",
+					summary: "merge is blocked by repository policy",
+					recovery: nil
+				} if merge_state == "BLOCKED"
+
+				return {
+					ready: false,
+					reason: "freshness_behind",
+					cause: "freshness",
+					summary: "branch is behind #{remote_main}",
+					recovery: "git rebase #{remote_main} && carson deliver"
+				} if merge_state == "BEHIND"
+
+				return {
+					ready: true,
+					reason: "ready",
+					cause: nil,
+					summary: "ready to integrate into #{config.main_branch}",
+					recovery: nil
+				} if merge_state == "CLEAN" || mergeable == "MERGEABLE"
+
+				{
+					ready: false,
+					reason: "mergeability_pending",
+					cause: "merge",
+					summary: "waiting for GitHub mergeability",
+					recovery: nil
+				}
+			end
+
+			def mergeability_assessment( pr_state: )
+				assessment = github_merge_assessment( pr_state: pr_state )
+				return nil if assessment[ :reason ] == "mergeability_pending" && pr_state.is_a?( Hash )
+				status = assessment[ :ready ] ? "queued" : "gated"
+				[ status, assessment[ :cause ], assessment[ :summary ] ]
 			end
 
 			def delivery_payload( delivery: )
