@@ -5,6 +5,16 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.29.1
+
+### What changed
+
+- **Delivery output now shows the remote target explicitly** — `Delivery: branch → github/main` instead of the ambiguous `→ main`, making it clear the target is the remote branch, not local.
+
+### No migration required
+
+- Existing workflows continue to work unchanged.
+
 ## 3.29.0
 
 ### What changed
