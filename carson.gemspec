@@ -37,7 +37,6 @@ Gem::Specification.new do |spec|
 		"RELEASE.md",
 		"VERSION",
 		"LICENSE",
-		"SKILL.md",
 		"icon.svg",
 		"carson.gemspec"
 	]
