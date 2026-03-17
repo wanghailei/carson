@@ -29,7 +29,82 @@ class RubyIndentationGuardTest < Minitest::Test
 		assert_empty violations
 	end
 
-	private
+	def test_outdented_private_passes
+		violations = check_content( <<~RUBY )
+			class Example
+			private
+				def helper
+					:ok
+				end
+			end
+		RUBY
+		assert_empty violations
+	end
+
+	def test_nested_outdented_private_passes
+		violations = check_content( <<~RUBY )
+			module Outer
+				class Example
+				private
+					def helper
+						:ok
+					end
+				end
+			end
+		RUBY
+		assert_empty violations
+	end
+
+	def test_indented_private_violation
+		violations = check_content( <<~RUBY )
+			class Example
+				private
+				def helper
+					:ok
+				end
+			end
+		RUBY
+		assert_equal 1, violations.size
+		assert_match( /indented access modifier/, violations.first )
+	end
+
+	def test_indented_protected_violation
+		violations = check_content( <<~RUBY )
+			class Example
+				protected
+				def helper
+					:ok
+				end
+			end
+		RUBY
+		assert_equal 1, violations.size
+		assert_match( /indented access modifier/, violations.first )
+	end
+
+	def test_access_modifier_without_following_member_passes
+		violations = check_content( <<~RUBY )
+			class Example
+			private
+			end
+		RUBY
+		assert_empty violations
+	end
+
+	def test_access_modifier_text_inside_heredoc_ignored
+		violations = check_content( <<~RUBY )
+			SAMPLE = <<~CODE
+				class Example
+					private
+					def helper
+						:ok
+					end
+				end
+			CODE
+		RUBY
+		assert_empty violations
+	end
+
+private
 
 	def check_content( content )
 		Dir.mktmpdir( "guard-test" ) do |dir|
