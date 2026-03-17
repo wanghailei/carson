@@ -5,6 +5,17 @@ Release-note scope rule:
 - `RELEASE.md` records only version deltas, breaking changes, and migration actions.
 - Operational usage guides live in `MANUAL.md` and `API.md`.
 
+## 3.30.2
+
+### What changed
+
+- **Recovery hints re-enter through Carson, not blocked raw commands** — Delivery error recovery messages no longer suggest raw `gh pr create`, `gh pr merge`, or `git rebase` commands. All recovery paths now guide the user back through Carson. Freshness blocks say "refresh this branch onto the target, then `carson deliver`" instead of teaching raw git recipes.
+- **Fast PR indentation guard restored** — The Ruby indentation guard in CI now correctly handles access modifier detection, fixing false positives that blocked PRs.
+
+### No migration required
+
+- Existing workflows continue to work unchanged.
+
 ## 3.30.1
 
 ### What changed
