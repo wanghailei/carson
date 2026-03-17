@@ -288,7 +288,7 @@ module Carson
 					when :blocked
 						result[ :outcome ] = "blocked"
 						result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-						result[ :recovery ] = "git rebase #{config.git_remote}/#{main} && carson deliver" if evaluation[ :cause ] == "freshness"
+						result[ :recovery ] = "refresh this branch onto #{config.git_remote}/#{main}, then carson deliver" if evaluation[ :cause ] == "freshness"
 						apply_handoff!(
 							result: result,
 							reason: evaluation.fetch( :reason ),
@@ -809,10 +809,9 @@ module Carson
 
 			def freshness_recovery( freshness: )
 				remote_ref = freshness.fetch( :remote_ref )
-				return "git rebase #{remote_ref} && carson deliver" if freshness.fetch( :status ) == :behind
+				return "refresh this branch onto #{remote_ref}, then carson deliver" if freshness.fetch( :status ) == :behind
 
-				remote, main = remote_ref.split( "/", 2 )
-				"git fetch #{remote} #{main} && carson deliver"
+				"carson deliver (once #{remote_ref} is reachable)"
 			end
 
 			def deliver_merge_attempt_cap
@@ -898,7 +897,7 @@ module Carson
 					reason: "freshness_behind",
 					cause: "freshness",
 					summary: "branch is behind #{remote_main}",
-					recovery: "git rebase #{remote_main} && carson deliver"
+					recovery: "refresh this branch onto #{remote_main}, then carson deliver"
 				} if merge_state == "BEHIND"
 
 				return {
@@ -1127,7 +1126,7 @@ module Carson
 
 				if lease_stderr.to_s.include?( "stale info" )
 					result[ :error ] = "force-with-lease rejected — another push landed on #{branch} since your last fetch"
-					result[ :recovery ] = "git fetch #{remote} #{branch} && carson deliver"
+					result[ :recovery ] = "inspect newer commits on #{branch}, reconcile, then carson deliver"
 				else
 					error_text = lease_stderr.to_s.strip
 					error_text = "push failed (force-with-lease)" if error_text.empty?
@@ -1175,7 +1174,7 @@ module Carson
 					error_text = stderr.to_s.strip
 					error_text = "pr create failed" if error_text.empty?
 					result[ :error ] = error_text
-					result[ :recovery ] = "gh pr create --title '#{pr_title}' --head #{branch}"
+					result[ :recovery ] = "carson deliver"
 					return [ nil, nil ]
 				end
 
@@ -1274,7 +1273,7 @@ module Carson
 					error_text = stderr.to_s.strip
 					error_text = "merge failed" if error_text.empty?
 					result[ :error ] = error_text
-					result[ :recovery ] = "gh pr merge #{number} --#{method}"
+					result[ :recovery ] = "carson deliver"
 					EXIT_ERROR
 				end
 			end

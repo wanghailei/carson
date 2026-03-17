@@ -43,7 +43,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_BLOCK, result
 		output = output_string( runtime )
 		assert_includes output, "branch is behind origin/main"
-		assert_includes output, "git rebase origin/main && carson deliver"
+		assert_includes output, "refresh this branch onto origin/main, then carson deliver"
 		refute system(
 			"git", "-C", "#{repo_root}-remote.git",
 			"show-ref", "--verify", "refs/heads/feature/behind-prepush",
@@ -72,7 +72,7 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal 0, data.fetch( "waited_seconds" )
 		assert_equal false, data.fetch( "merge_attempted" )
 		assert_includes data.fetch( "error" ), "could not verify freshness"
-		assert_includes data.fetch( "recovery" ), "git fetch origin main"
+		assert_includes data.fetch( "recovery" ), "carson deliver (once origin/main is reachable)"
 		assert_empty delivery_rows_for( runtime: runtime, branch_name: "feature/freshness-unknown" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
@@ -617,8 +617,71 @@ class RuntimeDeliverTest < Minitest::Test
 		assert_equal Carson::Runtime::EXIT_ERROR, result
 		output = output_string( runtime )
 		assert_includes output, "authentication required"
-		assert_includes output, "gh pr create"
+		assert_includes output, "carson deliver"
 		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_merge_failure_recovery_is_carson_deliver
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/merge-fail-recovery" )
+		stub_ready_assessment( runtime )
+		configure_settle_window( runtime, watch_window_seconds: 0, poll_seconds: 1 )
+		stub_settle_clock( runtime )
+		stub_pull_request_states(
+			runtime,
+			[
+				{ "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" }
+			]
+		)
+		runtime.define_singleton_method( :merge_pr! ) do |number:, result:|
+			result[ :merge_method ] = "squash"
+			result[ :error ] = "merge is blocked by repository policy"
+			result[ :recovery ] = "carson deliver"
+			Carson::Runtime::EXIT_ERROR
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		data = JSON.parse( output_string( runtime ) )
+		assert_equal "carson deliver", data.dig( "merge", "recovery" )
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_stale_force_with_lease_recovery_is_carson_first
+		runtime, repo_root, mock_path, tmp_dir = build_runtime_with_mock_gh( existing_pr: false )
+		init_git_repo_with_remote( repo_root )
+		create_feature_branch( repo_root, "feature/stale-lease" )
+		stub_ready_assessment( runtime )
+
+		push_count = 0
+		original_git_run = runtime.method( :git_run )
+		runtime.define_singleton_method( :git_run ) do |*args|
+			if args.include?( "push" )
+				push_count += 1
+				if push_count == 1
+					[ "", "! [rejected] feature/stale-lease -> feature/stale-lease (non-fast-forward)\n", false, 1 ]
+				else
+					[ "", "stale info\n", false, 1 ]
+				end
+			else
+				original_git_run.call( *args )
+			end
+		end
+
+		result = with_env( "PATH" => mock_path ) { runtime.deliver!( json_output: true ) }
+		assert_equal Carson::Runtime::EXIT_ERROR, result
+		data = JSON.parse( output_string( runtime ) )
+		assert_includes data.fetch( "recovery" ), "inspect newer commits on"
+		assert_includes data.fetch( "recovery" ), "then carson deliver"
+		refute_includes data.fetch( "recovery" ), "git fetch"
+		FileUtils.remove_entry( tmp_dir )
+	end
+
+	def test_deliver_recovery_hints_never_emit_raw_gh_or_git_rebase_recipes
+		source = File.read( File.expand_path( "../lib/carson/runtime/deliver.rb", __dir__ ) )
+		refute_match( /recovery.*=.*"gh pr create/, source, "recovery hint must not suggest raw gh pr create" )
+		refute_match( /recovery.*=.*"gh pr merge/, source, "recovery hint must not suggest raw gh pr merge" )
+		refute_match( /recovery.*=.*"git rebase.*&&\s*carson deliver/, source, "recovery hint must not chain git rebase with carson deliver" )
 	end
 
 private
