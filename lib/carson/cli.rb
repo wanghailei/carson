@@ -14,6 +14,7 @@ module Carson
 			parsed = parse_args( arguments: arguments, output: output, error: error )
 			command = parsed.fetch( :command )
 			return Runtime::EXIT_OK if command == :help
+			return Runtime::EXIT_ERROR if command == :invalid
 
 			if command == "version"
 				output.puts "#{BADGE} #{Carson::VERSION}"

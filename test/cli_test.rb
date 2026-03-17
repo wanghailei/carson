@@ -1005,4 +1005,36 @@ class CLITest < Minitest::Test
 		end
 	end
 
+	# --- :invalid early return ---
+
+	def test_invalid_command_returns_error_without_extra_output
+		output = StringIO.new
+		error = StringIO.new
+		exit_code = Carson::CLI.start(
+			arguments: [ "onboard" ],
+			repo_root: Dir.pwd,
+			tool_root: Dir.pwd,
+			output: output,
+			error: error
+		)
+		assert_equal Carson::Runtime::EXIT_ERROR, exit_code
+		assert_includes error.string, "Missing repo path"
+		refute_includes error.string, "Not inside a governed repo"
+	end
+
+	def test_legacy_govern_returns_error_without_extra_output
+		output = StringIO.new
+		error = StringIO.new
+		exit_code = Carson::CLI.start(
+			arguments: [ "govern" ],
+			repo_root: Dir.pwd,
+			tool_root: Dir.pwd,
+			output: output,
+			error: error
+		)
+		assert_equal Carson::Runtime::EXIT_ERROR, exit_code
+		assert_includes error.string, "carson govern has been replaced"
+		refute_includes error.string, "Not inside a governed repo"
+	end
+
 end
