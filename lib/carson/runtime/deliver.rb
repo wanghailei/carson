@@ -16,6 +16,7 @@ module Carson
 				result = {
 					command: "deliver",
 					branch: branch_name,
+					git_remote: remote_name,
 					watch_window_seconds: config.govern_check_wait.to_i,
 					waited_seconds: 0,
 					merge_attempted: false
@@ -948,8 +949,10 @@ module Carson
 
 				if result[ :delivery ]
 					branch = result[ :branch ]
+					remote = result[ :git_remote ] || "github"
 					main = result[ :main_branch ] || "main"
-					puts_line "Delivery: #{branch} → #{main}"
+					remote_main = "#{remote}/#{main}"
+					puts_line "Delivery: #{branch} → #{remote_main}"
 				end
 				if result[ :commit ]
 					puts_line "Committed: #{result.dig( :commit, :summary )}"
@@ -961,9 +964,9 @@ module Carson
 					summary = result[ :summary ]
 					if outcome == "integrated" || status == "integrated"
 						if result[ :merge_method ]
-							puts_line "Merged into #{main} with #{result[ :merge_method ]}."
+							puts_line "Merged into #{remote_main} with #{result[ :merge_method ]}."
 						else
-							puts_line "Merged into #{main}."
+							puts_line "Merged into #{remote_main}."
 						end
 						if result[ :synced ] == false
 							puts_line "Local #{main} sync failed — #{result[ :sync_error ]}."

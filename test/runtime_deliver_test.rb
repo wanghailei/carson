@@ -181,8 +181,8 @@ class RuntimeDeliverTest < Minitest::Test
 		output = output_string( runtime )
 		assert_includes output, "PR #99"
 		assert_includes output, "Delivery:"
-		assert_includes output, "feature/queued → main"
-		assert_includes output, "Merged into main with squash."
+		assert_includes output, "feature/queued → origin/main"
+		assert_includes output, "Merged into origin/main with squash."
 		assert_includes output, "Synced local main."
 		assert_includes output, "Merge proof: proven on main"
 
@@ -239,7 +239,7 @@ class RuntimeDeliverTest < Minitest::Test
 		result = with_env( "PATH" => mock_path ) { runtime.deliver! }
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
-		assert_includes output, "Merged into main with squash."
+		assert_includes output, "Merged into origin/main with squash."
 		delivery = delivery_row_for( runtime: runtime, branch_name: "feature/settles" )
 		assert_equal "integrated", delivery.fetch( "status" )
 		FileUtils.remove_entry( tmp_dir )
