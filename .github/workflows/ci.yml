@@ -48,8 +48,6 @@ jobs:
   lint:
     name: Lint and guards
     runs-on: ubuntu-latest
-    env:
-      RUBOCOP_VERSION: "1.81.0"
 
     steps:
       - name: Checkout
@@ -60,25 +58,12 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - name: Cache RuboCop gems
-        uses: actions/cache@v4
-        with:
-          path: /opt/hostedtoolcache/Ruby/3.4.*/x64/lib/ruby/gems/3.4.0
-          key: gems-rubocop-${{ env.RUBOCOP_VERSION }}-ruby3.4
-
-      - name: Install RuboCop
-        run: |
-          gem install --no-document "rubocop:$RUBOCOP_VERSION" rubocop-performance
-
       - name: Ruby syntax check
         run: |
           ruby -c exe/carson
           ruby -c lib/carson.rb
 
-      - name: RuboCop access modifier indentation
-        run: rubocop --config .github/linters/rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
-
-      - name: Ruby indentation guard
+      - name: Ruby indentation and access modifier guard
         run: ruby script/ruby_indentation_guard.rb
 
       - name: Legacy naming guard

@@ -22,7 +22,7 @@ module Carson
 		end
 
 		def ruby_files( repo_root: )
-			roots = %w[lib exe script .github]
+			roots = %w[lib exe script .github test]
 			patterns = roots.map { |root| File.join( repo_root, root, "**", "*.rb" ) }
 			Dir.glob( patterns, File::FNM_DOTMATCH ).select { |path| File.file?( path ) }.sort
 		end
@@ -69,4 +69,4 @@ module Carson
 	end
 end
 
-Carson::RubyIndentationGuard.run!
+Carson::RubyIndentationGuard.run! if __FILE__ == $PROGRAM_NAME
