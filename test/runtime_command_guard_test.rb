@@ -422,6 +422,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		refute status.success?, "command-guard should block git add on governed main worktree"
 		assert_includes stderr, "Main working tree is read-only"
 		assert_includes stderr, "carson worktree create"
+		assert_includes stderr, "carson deliver --commit"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
@@ -455,6 +456,22 @@ class RuntimeCommandGuardTest < Minitest::Test
 		)
 
 		assert status.success?, "command-guard should allow git add and git commit inside non-main worktree"
+	ensure
+		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
+	end
+
+	def test_command_guard_allows_git_add_and_commit_after_cd_into_feature_worktree
+		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
+		init_git_repo( repo_root )
+		write_governed_config( repo_root )
+		worktree_path = create_worktree( repo_root, "feature/cd-allowed-worktree" )
+
+		_stdout, _stderr, status = run_command_guard(
+			repo_root: repo_root,
+			command: "cd #{worktree_path} && git add README.md && git commit -m 'test'"
+		)
+
+		assert status.success?, "command-guard should respect a leading cd into a non-main worktree"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
