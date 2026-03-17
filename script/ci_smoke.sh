@@ -5,9 +5,11 @@
 set -euo pipefail
 
 QUICK_MODE=false
-if [[ "${1:-}" == "--quick" ]]; then
-	QUICK_MODE=true
-fi
+PR_CANARY=false
+case "${1:-}" in
+	--quick) QUICK_MODE=true ;;
+	--pr-canary) PR_CANARY=true ;;
+esac
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 carson_bin="$repo_root/exe/carson"
@@ -265,6 +267,14 @@ if ! echo "$status_json" | ruby -rjson -e 'JSON.parse($stdin.read)' 2>/dev/null;
 fi
 echo "PASS: status --json produces valid JSON"
 
+# Deliver on main must be blocked — safety canary.
+expect_exit 2 "deliver blocks on main branch" run_carson_with_mock_gh deliver
+
+if [[ "$PR_CANARY" == true ]]; then
+	echo "Carson PR canary smoke passed."
+	exit 0
+fi
+
 # Deliver command smoke tests — must be on a feature branch with a remote.
 git switch -c feature/deliver-smoke >/dev/null
 printf "deliver smoke\n" > deliver_smoke.txt
@@ -273,9 +283,8 @@ git -c core.hooksPath=.git/hooks commit -m "deliver smoke test" >/dev/null
 
 expect_exit 0 "deliver pushes and reports PR URL" run_carson_with_mock_gh deliver
 
-# Deliver on main should fail.
+# Return to main after deliver smoke.
 git switch main >/dev/null
-expect_exit 2 "deliver blocks on main branch" run_carson_with_mock_gh deliver
 
 # Clean up feature branch.
 git branch -D feature/deliver-smoke >/dev/null
