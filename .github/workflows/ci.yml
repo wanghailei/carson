@@ -48,8 +48,6 @@ jobs:
   lint:
     name: Lint and guards
     runs-on: ubuntu-latest
-    env:
-      RUBOCOP_VERSION: "1.81.0"
 
     steps:
       - name: Checkout
@@ -60,25 +58,12 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - name: Cache RuboCop gems
-        uses: actions/cache@v4
-        with:
-          path: /opt/hostedtoolcache/Ruby/3.4.*/x64/lib/ruby/gems/3.4.0
-          key: gems-rubocop-${{ env.RUBOCOP_VERSION }}-ruby3.4
-
-      - name: Install RuboCop
-        run: |
-          gem install --no-document "rubocop:$RUBOCOP_VERSION" rubocop-performance
-
       - name: Ruby syntax check
         run: |
           ruby -c exe/carson
           ruby -c lib/carson.rb
 
-      - name: RuboCop access modifier indentation
-        run: rubocop --config .github/linters/rubocop.yml --only Layout/AccessModifierIndentation lib exe script test
-
-      - name: Ruby indentation guard
+      - name: Ruby indentation and access modifier guard
         run: ruby script/ruby_indentation_guard.rb
 
       - name: Legacy naming guard
@@ -121,9 +106,9 @@ jobs:
       - name: Ruby unit tests
         run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
 
-  smoke-quick:
-    name: Quick smoke
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+  smoke-canary:
+    name: PR canary smoke
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
@@ -137,8 +122,8 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - name: Carson quick smoke
-        run: bash script/ci_smoke.sh --quick
+      - name: Carson PR canary
+        run: bash script/ci_smoke.sh --pr-canary
 
   smoke-full:
     name: Full smoke and review tests
