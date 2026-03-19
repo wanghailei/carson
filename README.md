@@ -27,7 +27,7 @@ Carson lives on your workstation and in CI, never inside the repositories it gov
        │
        ├─ hooks ──────────────►  commit gates and command guards
        ├─ worktree flow ──────►  create → work → deliver → housekeep
-       └─ portfolio layer ────►  status --all | refresh --all | govern
+       └─ portfolio layer ────►  list | refresh | receive
 ```
 
 The outsider boundary still matters: Carson governs repositories without becoming a runtime dependency inside them.
@@ -75,12 +75,12 @@ When one Carson-governed required check is already red on the default branch and
 Single-repo depth comes first. Once multiple repositories are onboarded, the same discipline scales out across them:
 
 ```bash
-carson status --all
-carson refresh --all
-carson govern --dry-run
+carson list
+carson refresh
+carson receive --dry-run
 ```
 
-`carson govern` is the portfolio layer. It assesses active deliveries across governed repositories, integrates ready branches, dispatches revisions for blocked work, and escalates what still needs human judgement. Governed integration is squash-only and happens one repository at a time.
+`carson <repo> receive` triages active deliveries for one repository: integrates ready branches, dispatches revisions for blocked work, and escalates what still needs human judgement. Governed integration is squash-only. Use `carson list --json` to script receive across your portfolio.
 
 ## Where to Read Next
 

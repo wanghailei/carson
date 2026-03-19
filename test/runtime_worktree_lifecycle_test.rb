@@ -265,7 +265,7 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		init_git_repo( repo_root )
 
 		carson_bin = File.expand_path( File.join( __dir__, "..", "exe", "carson" ) )
-		config_path = write_test_config( repo_root: repo_root )
+		config_path = write_test_config_governed( repo_root: repo_root )
 
 		stdout, stderr, status = Open3.capture3(
 			{ "CARSON_CONFIG_FILE" => config_path },

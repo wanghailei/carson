@@ -23,73 +23,6 @@ module Carson
 				housekeep_one( repo_path: canonical, json_output: json_output )
 			end
 
-			# Resolves a target name to a governed repo, then serves it.
-			def housekeep_target!( target:, json_output: false, dry_run: false )
-				repo_path = resolve_governed_repo( target: target )
-				unless repo_path
-					result = { command: "housekeep", status: "error", error: "Not a governed repository: #{target}", recovery: "Run carson repos to see governed repositories." }
-					return housekeep_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
-				end
-
-				if dry_run
-					scoped = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error, verbose: verbose? )
-					return scoped.housekeep_one_dry_run
-				end
-
-				housekeep_one( repo_path: repo_path, json_output: json_output )
-			end
-
-			# Knocks each governed repo's gate in turn.
-			def housekeep_all!( json_output: false, dry_run: false )
-				repos = config.govern_repos
-				if repos.empty?
-					result = { command: "housekeep", status: "error", error: "No governed repositories configured.", recovery: "Run carson onboard in each repo to register." }
-					return housekeep_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
-				end
-
-				if dry_run
-					repos.each_with_index do |repo_path, idx|
-						puts_line "" if idx > 0
-						unless Dir.exist?( repo_path )
-							puts_line "#{File.basename( repo_path )}: SKIP (path not found)"
-							next
-						end
-						scoped = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: output, error: error, verbose: verbose? )
-						scoped.housekeep_one_dry_run
-					end
-					total = repos.size
-					puts_line ""
-					puts_line "#{total} repo#{plural_suffix( count: total )} surveyed. Run without --dry-run to apply."
-					return EXIT_OK
-				end
-
-				results = []
-				repos.each do |repo_path|
-					entry = housekeep_one_entry( repo_path: repo_path, silent: json_output )
-					if entry[ :status ] == "ok"
-						clear_batch_success( command: "housekeep", repo_path: repo_path )
-					else
-						record_batch_skip( command: "housekeep", repo_path: repo_path, reason: entry[ :error ] || "housekeep failed" )
-					end
-					results << entry
-				end
-
-				succeeded = results.count { |entry| entry[ :status ] == "ok" }
-				failed = results.count { |entry| entry[ :status ] != "ok" }
-				result = { command: "housekeep", status: failed.zero? ? "ok" : "partial", repos: results, succeeded: succeeded, failed: failed }
-				housekeep_finish( result: result, exit_code: failed.zero? ? EXIT_OK : EXIT_ERROR, json_output: json_output, results: results, succeeded: succeeded, failed: failed )
-			end
-
-			def housekeep_loop!( json_output:, dry_run:, loop_seconds: )
-				run_signal_aware_loop!(
-					loop_name: "housekeep",
-					loop_seconds: loop_seconds,
-					cycle_line: ->( cycle_count ) { "housekeep cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}" }
-				) do
-					housekeep_all!( json_output: json_output, dry_run: dry_run )
-				end
-			end
-
 			# Prints a dry-run plan for this repo without making any changes.
 			# Calls reap_dead_worktrees_plan and prune_plan on self (already scoped to the repo).
 			def housekeep_one_dry_run
@@ -183,17 +116,6 @@ module Carson
 			rescue StandardError => exception
 				puts_line "#{repo_name}: did not complete (#{exception.message})" unless silent
 				{ name: repo_name, path: repo_path, status: "error", error: exception.message }
-			end
-
-			# Resolves a user-supplied target to a governed repository path.
-			# Accepts: exact path, expandable path, or basename match (case-insensitive).
-			def resolve_governed_repo( target: )
-				repos = config.govern_repos
-				expanded = File.expand_path( target )
-				return expanded if repos.include?( expanded )
-
-				downcased = File.basename( target ).downcase
-				repos.find { |repo_path| File.basename( repo_path ).downcase == downcased }
 			end
 
 			# Unified output — JSON or human-readable.

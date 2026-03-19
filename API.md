@@ -5,20 +5,25 @@ For operational usage and daily workflows, see `MANUAL.md`.
 
 ## Command interface
 
-Command form:
+Two-tier grammar:
 
 ```bash
-carson <command> [subcommand] [arguments]
+carson <command>                    # portfolio commands
+carson <repo> <command> [arguments] # repo-scoped commands (or from CWD)
 ```
+
+Portfolio commands: `list`, `onboard`, `offboard`, `refresh`, `version`.
+Repo-scoped commands: `carson <repo> <command>` or `carson <command>` when CWD is inside a governed repo.
 
 ### Setup commands
 
 | Command | Purpose |
 |---|---|
 | `carson setup` | Interactive quiz to configure remote, main branch, workflow, and canonical lint-policy path. Writes `~/.carson/config.json`. |
-| `carson onboard [repo_path]` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
-| `carson refresh [repo_path]` | Re-apply hooks, templates, and audit after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). |
-| `carson offboard [repo_path]` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
+| `carson onboard <repo_path>` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
+| `carson refresh` | Re-apply hooks, templates, and audit across all governed repos after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). Skips repos with active worktrees or uncommitted changes. |
+| `carson offboard <repo_path>` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
+| `carson list [--json]` | List all governed repositories. |
 
 ### Daily commands
 
@@ -38,33 +43,17 @@ carson <command> [subcommand] [arguments]
 | `carson worktree list [--json]` | Show every registered worktree with PR state and Carson's cleanup recommendation. |
 | `carson worktree remove <path_or_name>` | Remove a worktree safely and clean up its branch when allowed. |
 
-### Batch commands (Layer 2)
-
-All batch commands operate across every governed repository registered in `govern.repos`.
+### Receive commands
 
 | Command | Purpose |
 |---|---|
-| `carson refresh --all` | Re-apply hooks, templates, and audit across all governed repos. Skips repos with active worktrees or uncommitted changes. |
-| `carson audit --all` | Run governance audit across all governed repos. Reports pass/block/fail per repo. |
-| `carson sync --all` | Sync main branch across all governed repos. |
-| `carson prune --all` | Remove stale branches across all governed repos. |
-| `carson status --all [--json]` | Portfolio-wide delivery overview per governed repository. |
-| `carson template check --all` | Read-only template drift detection across all governed repos. |
-| `carson housekeep --all [--loop SECONDS]` | Attempt sync, then reap worktrees with strong abandonment evidence, reconcile integrated delivery worktree records from the ledger, and prune across all governed repos. Safe cleanup still runs when sync is blocked. |
+| `carson <repo> receive [--dry-run] [--json] [--loop SECONDS]` | Single-repo delivery triage: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. Live integrated rows include merge proof. |
 
-`--loop SECONDS` runs the housekeep cycle continuously, sleeping SECONDS between cycles. It requires `--all`, accepts only positive integers, and exits cleanly on `Ctrl-C` or `SIGTERM` with a cycle count summary.
-
-### Govern commands
-
-| Command | Purpose |
-|---|---|
-| `carson govern [--dry-run] [--json] [--loop SECONDS]` | Portfolio-level delivery oversight: assess active deliveries, integrate ready branches, dispatch revisions, and escalate blocked work. Live integrated rows include merge proof. |
-
-`--loop SECONDS` runs the govern cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` or `SIGTERM` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
+`--loop SECONDS` runs the receive cycle continuously, sleeping SECONDS between cycles. The loop isolates errors per cycle — a single failing cycle does not stop the daemon. `Ctrl-C` or `SIGTERM` cleanly exits with a cycle count summary. SECONDS must be a positive integer.
 
 Governed integration is fixed to `squash`. Non-squash `govern.merge.method` values are rejected by config validation.
 
-After a live integration attempt, govern reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
+After a live integration attempt, receive reports the actual outcome. Failed merges stay held at gate instead of being reported as integrated.
 
 After CI and review pass, Carson still checks GitHub mergeability. Conflicting PRs exit as `Merge blocked` with an explicit merge-conflict summary. `BEHIND` is treated as freshness failure: Carson blocks and requires a branch refresh before it will continue.
 
@@ -93,9 +82,9 @@ In `--json` mode, `deliver` still suppresses human output. Every JSON result now
 }
 ```
 
-On `main`, `branch.merge_proof` is still present with `basis: "not_applicable"`. On non-main branches with no Carson delivery record, `branch.pull_request` and `branch.merge_proof` are `null`. `status --all` remains summary-only in v1 and does not include per-repo merge proof.
+On `main`, `branch.merge_proof` is still present with `basis: "not_applicable"`. On non-main branches with no Carson delivery record, `branch.pull_request` and `branch.merge_proof` are `null`.
 
-After a successful govern merge, Carson runs the same cleanup path as `housekeep`: sync, reap safe worktrees, then prune.
+After a successful receive merge, Carson runs the same cleanup path as `housekeep`: sync, reap safe worktrees, then prune.
 
 ### Review commands
 

@@ -29,15 +29,15 @@ Carson is a worktree-first branch delivery governor for coding agents: it starts
 
 | Layer | Scope | Trigger | Examples |
 |---|---|---|---|
-| 1. Granular | Single repo | Explicit command | `deliver`, `audit`, `sync`, `status`, `housekeep`, `prune` |
-| 2. Batch | All governed repos | `--all` flag | `audit --all`, `sync --all`, `status --all`, `housekeep --all` |
-| 3. Automation | All governed repos | Event-driven (future) | Post-upgrade refresh, scheduled hygiene |
+| 1. Repo | Single repo | Explicit command or CWD | `deliver`, `audit`, `sync`, `status`, `housekeep`, `prune`, `receive` |
+| 2. Portfolio | All governed repos | Portfolio command | `list`, `refresh`, `onboard`, `offboard` |
+| 3. Scripted batch | All governed repos | Shell over `carson list --json` | Loop repo commands across portfolio |
 
-Layer 1 is the foundation. Layer 2 extends every Layer 1 command across the portfolio with `--all`. Layer 3 removes the need for even the `--all` flag.
+Layer 1 is the foundation. Layer 2 provides portfolio-level operations. Layer 3 composes repo commands across the portfolio via shell scripting.
 
 ## Scope
 
-**In scope:** Layer 1+2 commands, portfolio governance (`govern`), review governance (`review gate`, `review sweep`), managed `.github/*` templates, strict exit status contract.
+**In scope:** Repo and portfolio commands, delivery triage (`receive`), review governance (`review gate`, `review sweep`), managed `.github/*` templates, strict exit status contract.
 
 **Out of scope:** Non-squash integration policies, business-domain policy for host repos, force merges or check bypasses, Carson configuration inside host repos.
 
@@ -82,8 +82,8 @@ Layer 1 is the foundation. Layer 2 extends every Layer 1 command across the port
 ## User journey
 
 1. **Install** — `gem install carson`. No configuration wizard.
-2. **Onboard** — `carson onboard /path/to/repo`. Asks only what it cannot detect. One-time.
+2. **Onboard** — `carson onboard <repo>`. Asks only what it cannot detect. One-time.
 3. **Daily flow** — commit normally. Silence means safety. Blocks are actionable and exact.
 4. **Review + merge** — `carson review gate` verifies every comment is handled. `carson deliver` lands the branch.
-5. **Portfolio** — `carson govern` triages all repos. One command, full state.
-6. **Offboard** — `carson offboard` removes everything cleanly. No residue.
+5. **Portfolio** — `carson list` shows all repos. `carson refresh` maintains all. `carson <repo> receive` triages one.
+6. **Offboard** — `carson offboard <repo>` removes everything cleanly. No residue.

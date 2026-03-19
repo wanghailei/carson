@@ -144,56 +144,6 @@ module Carson
 				failed.zero? && pending.zero? ? EXIT_OK : EXIT_ERROR
 			end
 
-			def prune_all!
-				repos = config.govern_repos
-				if repos.empty?
-					puts_line "No governed repositories configured."
-					puts_line "  Run carson onboard in each repo to register."
-					return EXIT_ERROR
-				end
-
-				puts_line ""
-				puts_line "Prune all (#{repos.length} repo#{plural_suffix( count: repos.length )})"
-				succeeded = 0
-				failed = 0
-
-				repos.each do |repo_path|
-					repo_name = File.basename( repo_path )
-					unless Dir.exist?( repo_path )
-						puts_line "#{repo_name}: not found"
-						record_batch_skip( command: "prune", repo_path: repo_path, reason: "path not found" )
-						failed += 1
-						next
-					end
-
-					begin
-						buffer = verbose? ? output : StringIO.new
-						error_buffer = verbose? ? error : StringIO.new
-						scoped_runtime = Runtime.new( repo_root: repo_path, tool_root: tool_root, output: buffer, error: error_buffer, verbose: verbose? )
-						status = scoped_runtime.prune!
-						unless verbose?
-							summary = buffer.string.lines.last.to_s.strip
-							puts_line "#{repo_name}: #{summary.empty? ? 'OK' : summary}"
-						end
-						if status == EXIT_ERROR
-							record_batch_skip( command: "prune", repo_path: repo_path, reason: "prune failed" )
-							failed += 1
-						else
-							clear_batch_success( command: "prune", repo_path: repo_path )
-							succeeded += 1
-						end
-					rescue StandardError => exception
-						puts_line "#{repo_name}: could not complete (#{exception.message})"
-						record_batch_skip( command: "prune", repo_path: repo_path, reason: exception.message )
-						failed += 1
-					end
-				end
-
-				puts_line ""
-				puts_line "Prune all complete: #{succeeded} pruned, #{failed} failed."
-				failed.zero? ? EXIT_OK : EXIT_ERROR
-			end
-
 			# Removes Carson-managed repository integration so a host repository can retire Carson cleanly.
 			def offboard!
 				puts_verbose ""

@@ -110,4 +110,4 @@ echo "Installed Carson ${version} from ${source_label}"
 echo "Launcher linked: $carson_link"
 echo "If \`carson\` is not found, add \`$home_bin\` to PATH."
 
-"$carson_link" refresh --all || echo "Warning: one or more governed repos reported issues. Run 'carson refresh --all' to review."
+"$carson_link" refresh || echo "Warning: one or more governed repos reported issues. Run 'carson refresh' to review."

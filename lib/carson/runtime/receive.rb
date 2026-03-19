@@ -1,46 +1,47 @@
-# Carson govern — portfolio-wide oversight over branch deliveries.
-# Govern reassesses queued/gated deliveries, records revision cycles, and integrates one ready delivery at a time.
+# Carson receive — single-repo delivery triage.
+# Receive reassesses queued/gated deliveries, records revision cycles, and integrates one ready delivery at a time.
 require "json"
 require "time"
 
 module Carson
 	class Runtime
-		module Govern
-			# Portfolio-level entry point. Scans governed repos (or the current repo) and advances deliveries.
-			def govern!( dry_run: false, json_output: false, loop_seconds: nil )
+		module Receive
+			# Single-repo entry point. Advances deliveries for the current repository.
+			def receive!( dry_run: false, json_output: false, loop_seconds: nil )
 				if loop_seconds
-					govern_loop!( dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds )
+					receive_loop!( dry_run: dry_run, json_output: json_output, loop_seconds: loop_seconds )
 				else
-					govern_cycle!( dry_run: dry_run, json_output: json_output )
+					receive_cycle!( dry_run: dry_run, json_output: json_output )
 				end
 			end
 
-			def govern_cycle!( dry_run:, json_output: )
-				repositories = governed_repo_paths
-				repositories = [ repository_record.path ] if repositories.empty?
-				print_header "Governing #{repositories.length} repo#{plural_suffix( count: repositories.length )}" unless json_output
+			def receive_cycle!( dry_run:, json_output: )
+				repo_path = repository_record.path
+				repo_name = File.basename( repo_path )
+				print_header "Receiving #{repo_name}" unless json_output
 
+				repo_report = receive_repo!( repo_path: repo_path, dry_run: dry_run, silent: json_output )
 				report = {
 					cycle_at: Time.now.utc.iso8601,
 					dry_run: dry_run,
-					repositories: repositories.map { |path| govern_repo!( repo_path: path, dry_run: dry_run, silent: json_output ) }
+					repository: repo_report
 				}
 
 				if json_output
 					output.puts JSON.pretty_generate( report )
 				else
-					print_govern_summary( report: report )
+					print_receive_summary( repo_report: repo_report )
 				end
 
 				EXIT_OK
 			rescue StandardError => exception
-				puts_line "Govern did not complete: #{exception.message}"
+				puts_line "Receive did not complete: #{exception.message}"
 				EXIT_ERROR
 			end
 
-			def govern_loop!( dry_run:, json_output:, loop_seconds: )
+			def receive_loop!( dry_run:, json_output:, loop_seconds: )
 				run_signal_aware_loop!(
-					loop_name: "govern",
+					loop_name: "receive",
 					loop_seconds: loop_seconds,
 					cycle_line: ->( cycle_count ) { "cycle #{cycle_count} at #{Time.now.utc.strftime( '%Y-%m-%d %H:%M:%S UTC' )}" },
 					sleep_line: ->( seconds ) do
@@ -48,21 +49,13 @@ module Carson
 						"sleeping #{seconds}s — next cycle at #{next_at.strftime( '%Y-%m-%d %H:%M:%S %z' )}"
 					end
 				) do
-					govern_cycle!( dry_run: dry_run, json_output: json_output )
+					receive_cycle!( dry_run: dry_run, json_output: json_output )
 				end
 			end
 
 		private
 
-			def governed_repo_paths
-				config.govern_repos.map do |path|
-					expanded = File.expand_path( path )
-					next nil unless Dir.exist?( expanded )
-					expanded
-				end.compact
-			end
-
-			def govern_repo!( repo_path:, dry_run:, silent: false )
+			def receive_repo!( repo_path:, dry_run:, silent: false )
 				scoped_runtime = repo_runtime_for( repo_path: repo_path )
 				repository = Repository.new( path: repo_path, runtime: scoped_runtime )
 				deliveries = scoped_runtime.ledger.active_deliveries( repo_path: repo_path )
@@ -365,10 +358,10 @@ module Carson
 				def delivery_action_hint( delivery:, next_to_integrate:, dry_run: )
 					return nil if dry_run
 					return nil if delivery.superseded? || delivery.integrated? || delivery.failed?
-					return "integrating…" if delivery.ready? && delivery.key == next_to_integrate
+					return "integrating..." if delivery.ready? && delivery.key == next_to_integrate
 					return nil unless delivery.blocked?
 					return nil if held_delivery?( delivery: delivery )
-					delivery.revision_count >= 3 ? "escalating…" : "revising…"
+					delivery.revision_count >= 3 ? "escalating..." : "revising..."
 				end
 
 			def housekeep_repo!( repo_path: )
@@ -514,28 +507,26 @@ module Carson
 				""
 			end
 
-			def print_govern_summary( report: )
-				Array( report[ :repositories ] ).each do |repo_report|
-					if repo_report[ :error ]
-						puts_line "#{repo_report[ :repository ]}: #{repo_report[ :error ]}"
-						next
-					end
-
-					next if repo_report[ :deliveries ].empty?
-
-						repo_report[ :deliveries ].each do |delivery|
-							action_text = format_govern_action( status: delivery[ :status ], action: delivery[ :action ], cause: delivery[ :cause ] )
-							puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]} — #{action_text}"
-							puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
-							puts_line "  Merge proof: #{delivery.dig( :merge_proof, :summary )}" if delivery[ :merge_proof ]
-						end
-					end
+			def print_receive_summary( repo_report: )
+				if repo_report[ :error ]
+					puts_line "#{repo_report[ :repository ]}: #{repo_report[ :error ]}"
+					return
 				end
 
-				def format_govern_action( status:, action:, cause: )
+				return if repo_report[ :deliveries ].empty?
+
+				repo_report[ :deliveries ].each do |delivery|
+					action_text = format_receive_action( status: delivery[ :status ], action: delivery[ :action ], cause: delivery[ :cause ] )
+					puts_line "#{repo_report[ :repository ]}/#{delivery[ :branch ]} — #{action_text}"
+					puts_line "  #{delivery[ :summary ]}" unless delivery[ :summary ].to_s.empty?
+					puts_line "  Merge proof: #{delivery.dig( :merge_proof, :summary )}" if delivery[ :merge_proof ]
+				end
+			end
+
+				def format_receive_action( status:, action:, cause: )
 					case action
 					when "integrate"
-						format_govern_integration_outcome( status: status, cause: cause )
+						format_receive_integration_outcome( status: status, cause: cause )
 					when "would_integrate" then "ready to integrate (dry run)"
 					when "hold" then cause == "freshness" ? "refresh required" : "held at gate"
 					when "would_hold" then cause == "freshness" ? "would require refresh (dry run)" : "would hold at gate (dry run)"
@@ -547,7 +538,7 @@ module Carson
 				end
 			end
 
-				def format_govern_integration_outcome( status:, cause: )
+				def format_receive_integration_outcome( status:, cause: )
 					case status
 					when "integrated" then "integrated"
 					when "gated" then cause == "freshness" ? "refresh required" : "held at gate"
@@ -558,6 +549,6 @@ module Carson
 			end
 		end
 
-		include Govern
+		include Receive
 	end
 end

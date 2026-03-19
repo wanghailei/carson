@@ -95,7 +95,7 @@ module Carson
 		# Passive repository record for the current runtime context.
 		# Uses main_worktree_root so the repo_path stored in the ledger is always the
 		# canonical main tree path, regardless of which worktree the command runs from.
-		# This ensures govern (which looks up by main tree path) finds worktree deliveries.
+		# This ensures receive (which looks up by main tree path) finds worktree deliveries.
 		def repository_record
 			Repository.new( path: main_worktree_root, runtime: self )
 		end
@@ -372,9 +372,9 @@ require_relative "runtime/local"
 require_relative "runtime/audit"
 require_relative "runtime/loop_runner"
 require_relative "runtime/housekeep"
-require_relative "runtime/repos"
+require_relative "runtime/list"
 require_relative "runtime/review"
-require_relative "runtime/govern"
+require_relative "runtime/receive"
 require_relative "runtime/setup"
 require_relative "runtime/status"
 require_relative "runtime/abandon"

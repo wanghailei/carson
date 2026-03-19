@@ -15,40 +15,6 @@ module Carson
 				EXIT_OK
 			end
 
-			# Portfolio-wide status overview across all governed repositories.
-			def status_all!( json_output: false )
-				repositories = config.govern_repos
-				if repositories.empty?
-					puts_line "No governed repositories configured."
-					puts_line "  Run carson onboard in each repo to register."
-					return EXIT_ERROR
-				end
-
-				results = repositories.map do |repo_path|
-					repo_name = File.basename( repo_path )
-					unless Dir.exist?( repo_path )
-						{ name: repo_name, status: "error", error: "not found" }
-					else
-						begin
-							scoped_runtime = build_scoped_runtime( repo_path: repo_path )
-							{ name: repo_name, status: "ok" }.merge( scoped_runtime.send( :gather_status ) )
-						rescue StandardError => exception
-							{ name: repo_name, status: "error", error: exception.message }
-						end
-					end
-				end
-
-				if json_output
-					output.puts JSON.pretty_generate( { command: "status", repos: results, repositories: results } )
-				else
-					puts_line "Carson #{Carson::VERSION} — Portfolio (#{repositories.length} repo#{plural_suffix( count: repositories.length )})"
-					puts_line ""
-					results.each { |result| print_portfolio_status( result: result ) }
-				end
-
-				EXIT_OK
-			end
-
 		private
 
 			def gather_status
@@ -179,18 +145,6 @@ module Carson
 					puts_line "  #{delivery.fetch( :branch )}#{pr_ref} — #{delivery.fetch( :delivery_state )}"
 					puts_line "  #{delivery.fetch( :summary )}." unless delivery.fetch( :summary ).to_s.empty?
 				end
-			end
-
-			def print_portfolio_status( result: )
-				if result.fetch( :status ) == "error"
-					puts_line "#{result.fetch( :name )}: #{result.fetch( :error )}"
-					return
-				end
-
-				deliveries = Array( result.fetch( :branches, [] ) )
-				counts = deliveries.each_with_object( Hash.new( 0 ) ) { |delivery, memo| memo[ delivery.fetch( :delivery_state ) ] += 1 }
-				summary = counts.empty? ? "no active deliveries" : counts.map { |state, count| "#{count} #{state}" }.join( ", " )
-				puts_line "#{result.fetch( :name )} — #{summary}"
 			end
 
 			def format_sync( sync: )

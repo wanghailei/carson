@@ -1,47 +1,47 @@
-# Tests for Carson's delivery-centred govern loop.
+# Tests for Carson's delivery-centred receive loop.
 require_relative "test_helper"
 require "shellwords"
 
-class RuntimeGovernTest < Minitest::Test
+class RuntimeReceiveTest < Minitest::Test
 	include CarsonTestSupport
 
-	def test_govern_dry_run_reports_no_active_deliveries
+	def test_receive_dry_run_reports_no_active_deliveries
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_includes output_string( runtime ), "no active deliveries"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_marks_ready_delivery_for_integration
+	def test_receive_dry_run_marks_ready_delivery_for_integration
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/ready" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/ready", status: "queued", summary: "ready to integrate into main" )
 		stub_reconciliation( runtime, delivery: delivery )
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		text = output_string( runtime )
 		assert_includes text, "ready to integrate (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_marks_gated_delivery_for_revision
+	def test_receive_dry_run_marks_gated_delivery_for_revision
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/gated" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/gated", status: "gated", summary: "CI checks are failing", cause: "ci" )
 		stub_reconciliation( runtime, delivery: delivery )
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_includes output_string( runtime ), "would revise (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_requires_refresh_for_freshness_blocked_delivery
+	def test_receive_dry_run_requires_refresh_for_freshness_blocked_delivery
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/refresh-required" )
@@ -58,7 +58,7 @@ class RuntimeGovernTest < Minitest::Test
 		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
 		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "would require refresh (dry run)"
@@ -69,7 +69,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_summary_reports_held_at_gate_when_integration_fails
+	def test_receive_summary_reports_held_at_gate_when_integration_fails
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/merge-blocked" )
@@ -90,7 +90,7 @@ class RuntimeGovernTest < Minitest::Test
 		end
 		runtime.define_singleton_method( :housekeep_repo! ) { |repo_path:| flunk "housekeep should not run when merge fails" }
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "held at gate"
@@ -101,7 +101,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_summary_reports_integrated_when_merge_succeeds
+	def test_receive_summary_reports_integrated_when_merge_succeeds
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/merge-clean" )
@@ -115,7 +115,7 @@ class RuntimeGovernTest < Minitest::Test
 		stub_reconciliation( runtime, delivery: delivery )
 		stub_integration( runtime )
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "integrated"
@@ -124,7 +124,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_json_reports_merge_proof_after_integration
+	def test_receive_json_reports_merge_proof_after_integration
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/merge-proof-json" )
@@ -138,10 +138,10 @@ class RuntimeGovernTest < Minitest::Test
 		stub_reconciliation( runtime, delivery: delivery )
 		stub_integration( runtime )
 
-		result = runtime.govern!( dry_run: false, json_output: true )
+		result = runtime.receive!( dry_run: false, json_output: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		data = JSON.parse( output_string( runtime ) )
-		row = data.fetch( "repositories" ).first.fetch( "deliveries" ).first
+		row = data.fetch( "repository" ).fetch( "deliveries" ).first
 		assert_equal "integrate", row.fetch( "action" )
 		assert_equal "integrated", row.fetch( "status" )
 		assert_equal true, row.dig( "merge_proof", "proven" )
@@ -149,7 +149,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_reconciles_with_private_method_path
+	def test_receive_dry_run_reconciles_with_private_method_path
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/private-path" )
@@ -157,35 +157,35 @@ class RuntimeGovernTest < Minitest::Test
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN" } }
 		runtime.define_singleton_method( :assess_delivery! ) { |delivery:, branch_name:| delivery }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		refute_includes output_string( runtime ), "private method `reconcile_delivery!`"
 		assert_includes output_string( runtime ), "ready to integrate (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_does_not_depend_on_report_cache_path
+	def test_receive_dry_run_does_not_depend_on_report_cache_path
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/no-cache" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/no-cache", status: "queued", summary: "ready to integrate into main" )
 		stub_reconciliation( runtime, delivery: delivery )
-		runtime.define_singleton_method( :report_dir_path ) { raise "govern should not write report cache" }
+		runtime.define_singleton_method( :report_dir_path ) { raise "receive should not write report cache" }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_includes output_string( runtime ), "ready to integrate (dry run)"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_from_root_sees_delivery_created_in_worktree
+	def test_receive_dry_run_from_root_sees_delivery_created_in_worktree
 		with_feature_worktree_runtimes(
-			branch_name: "codex/govern-worktree",
-			worktree_name: "govern-worktree"
+			branch_name: "codex/receive-worktree",
+			worktree_name: "receive-worktree"
 		) do |root_runtime, worktree_runtime, _repo_root, worktree_path|
 			worktree_runtime.ledger.upsert_delivery(
 				repository: worktree_runtime.send( :repository_record ),
-				branch_name: "codex/govern-worktree",
+				branch_name: "codex/receive-worktree",
 				head: worktree_runtime.send( :current_head ),
 				worktree_path: worktree_path,
 				pr_number: 84,
@@ -196,13 +196,13 @@ class RuntimeGovernTest < Minitest::Test
 			)
 			stub_reconciliation( root_runtime, delivery: nil )
 
-			result = root_runtime.govern!( dry_run: true )
+			result = root_runtime.receive!( dry_run: true )
 			assert_equal Carson::Runtime::EXIT_OK, result
 			assert_includes output_string( root_runtime ), "ready to integrate (dry run)"
 		end
 	end
 
-	def test_govern_integrates_first_ready_delivery
+	def test_receive_integrates_first_ready_delivery
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/integrate" )
@@ -210,7 +210,7 @@ class RuntimeGovernTest < Minitest::Test
 		stub_reconciliation( runtime, delivery: delivery )
 		stub_integration( runtime )
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
@@ -218,7 +218,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_rechecks_github_state_before_merge
+	def test_receive_rechecks_github_state_before_merge
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/freshness-recheck" )
@@ -237,7 +237,7 @@ class RuntimeGovernTest < Minitest::Test
 			raise "merge should not run when GitHub reports BEHIND"
 		end
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		assert_includes output, "refresh required"
@@ -248,7 +248,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_does_not_run_housekeep_after_successful_merge
+	def test_receive_does_not_run_housekeep_after_successful_merge
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/housekeep" )
@@ -262,17 +262,17 @@ class RuntimeGovernTest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 		runtime.define_singleton_method( :housekeep_one_entry ) do |repo_path:, silent:|
-			raise "housekeep should not run after merge — govern uses fetch-only"
+			raise "housekeep should not run after merge — receive uses fetch-only"
 		end
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_escalates_delivery_after_three_revisions
+	def test_receive_escalates_delivery_after_three_revisions
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/escalate" )
@@ -287,7 +287,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		stub_reconciliation( runtime, delivery: delivery )
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "escalated", row.fetch( "status" )
@@ -295,7 +295,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_reconciles_merged_pr_as_integrated
+	def test_receive_reconciles_merged_pr_as_integrated
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/merged" )
@@ -306,7 +306,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
@@ -314,7 +314,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_reconciles_stale_integrating_open_pr_back_to_queued
+	def test_receive_reconciles_stale_integrating_open_pr_back_to_queued
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/stale-open" )
@@ -329,7 +329,7 @@ class RuntimeGovernTest < Minitest::Test
 		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
 		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "queued", row.fetch( "status" )
@@ -337,7 +337,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_reconciles_stale_integrating_merged_pr_as_integrated
+	def test_receive_reconciles_stale_integrating_merged_pr_as_integrated
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/stale-merged" )
@@ -350,7 +350,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
@@ -358,7 +358,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_reconciles_stale_integrating_closed_pr_as_failed
+	def test_receive_reconciles_stale_integrating_closed_pr_as_failed
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/stale-closed" )
@@ -371,7 +371,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "CLOSED" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "failed", row.fetch( "status" )
@@ -379,7 +379,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_reconciles_closed_pr_as_failed
+	def test_receive_reconciles_closed_pr_as_failed
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/closed" )
@@ -390,7 +390,7 @@ class RuntimeGovernTest < Minitest::Test
 		)
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "CLOSED" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "failed", row.fetch( "status" )
@@ -398,7 +398,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_reconciles_advanced_head_as_superseded
+	def test_receive_reconciles_advanced_head_as_superseded
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/advanced" )
@@ -415,7 +415,7 @@ class RuntimeGovernTest < Minitest::Test
 		system( "git", "-C", repo_root, "commit", "-m", "advance head", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "checkout", "main", out: File::NULL, err: File::NULL )
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "superseded", row.fetch( "status" )
@@ -423,7 +423,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_does_not_mark_conflicting_pr_as_ready
+	def test_receive_dry_run_does_not_mark_conflicting_pr_as_ready
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/conflicting" )
@@ -440,7 +440,7 @@ class RuntimeGovernTest < Minitest::Test
 		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
 		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		output = output_string( runtime )
 		refute_includes output, "ready to integrate (dry run)"
@@ -451,7 +451,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_escalates_when_no_agent_provider
+	def test_receive_escalates_when_no_agent_provider
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/no-agent" )
@@ -463,7 +463,7 @@ class RuntimeGovernTest < Minitest::Test
 		stub_reconciliation( runtime, delivery: delivery )
 		runtime.define_singleton_method( :select_agent_provider ) { nil }
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "escalated", row.fetch( "status" )
@@ -471,7 +471,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_loop_prints_sleep_announcement
+	def test_receive_loop_prints_sleep_announcement
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		cycle_count = 0
@@ -480,14 +480,14 @@ class RuntimeGovernTest < Minitest::Test
 			raise Interrupt if cycle_count >= 1
 		end
 
-		result = runtime.govern!( dry_run: true, loop_seconds: 300 )
+		result = runtime.receive!( dry_run: true, loop_seconds: 300 )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		text = output_string( runtime )
 		assert_match( /sleeping 300s — next cycle at \d{4}-\d{2}-\d{2}/, text )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_loop_stops_after_term_requested_during_sleep
+	def test_receive_loop_stops_after_term_requested_during_sleep
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		handlers = {}
@@ -509,23 +509,23 @@ class RuntimeGovernTest < Minitest::Test
 			now += seconds
 			handlers.fetch( "TERM" ).call
 		end
-		runtime.define_singleton_method( :govern_cycle! ) do |dry_run:, json_output:|
+		runtime.define_singleton_method( :receive_cycle! ) do |dry_run:, json_output:|
 			cycle_count += 1
 			Carson::Runtime::EXIT_OK
 		end
 
-		result = runtime.govern!( dry_run: true, loop_seconds: 300 )
+		result = runtime.receive!( dry_run: true, loop_seconds: 300 )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal 1, cycle_count
 		assert_includes restored, [ "INT", "DEFAULT-INT" ]
 		assert_includes restored, [ "TERM", "DEFAULT-TERM" ]
 		text = output_string( runtime )
 		assert_match( /sleeping 300s — next cycle at \d{4}-\d{2}-\d{2}/, text )
-		assert_includes text, "govern loop stopped after 1 cycle"
+		assert_includes text, "receive loop stopped after 1 cycle"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_prints_progress_hint_before_integration
+	def test_receive_prints_progress_hint_before_integration
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/hint" )
@@ -533,28 +533,28 @@ class RuntimeGovernTest < Minitest::Test
 		stub_reconciliation( runtime, delivery: delivery )
 		stub_integration( runtime )
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		text = output_string( runtime )
 		assert_includes text, "feature/hint — integrating"
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_dry_run_omits_progress_hints
+	def test_receive_dry_run_omits_progress_hints
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/dry" )
 		delivery = create_delivery( runtime: runtime, repo_root: repo_root, branch_name: "feature/dry", status: "queued", summary: "ready to integrate into main" )
 		stub_reconciliation( runtime, delivery: delivery )
 
-		result = runtime.govern!( dry_run: true )
+		result = runtime.receive!( dry_run: true )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		text = output_string( runtime )
 		refute_match( /integrating…/, text )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_integrates_delivery_behind_locally_but_clean_on_github
+	def test_receive_integrates_delivery_behind_locally_but_clean_on_github
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/behind-local-clean-gh" )
@@ -581,7 +581,7 @@ class RuntimeGovernTest < Minitest::Test
 		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
 		stub_integration( runtime )
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		row = delivery_data( runtime: runtime, key: delivery.key )
 		assert_equal "integrated", row.fetch( "status" )
@@ -589,7 +589,7 @@ class RuntimeGovernTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_govern_integrates_later_ready_delivery_when_first_item_is_merge_blocked
+	def test_receive_integrates_later_ready_delivery_when_first_item_is_merge_blocked
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/conflicting" )
@@ -629,7 +629,7 @@ class RuntimeGovernTest < Minitest::Test
 		end
 		runtime.define_singleton_method( :fetch_for_merge_proof! ) { |repo_path:| nil }
 
-		result = runtime.govern!( dry_run: false )
+		result = runtime.receive!( dry_run: false )
 		assert_equal Carson::Runtime::EXIT_OK, result
 		assert_equal [ 43 ], merged_numbers
 		conflicting_row = delivery_data( runtime: runtime, key: conflicting.key )
