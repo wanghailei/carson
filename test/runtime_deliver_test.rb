@@ -14,6 +14,21 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_deliver_from_worktree_resolves_worktree_branch
+		with_feature_worktree_runtimes( branch_name: "fix/worktree-deliver", worktree_name: "worktree-deliver" ) do |_root_runtime, worktree_runtime, _repo_root, worktree_path|
+			File.write( File.join( worktree_path, "change.txt" ), "deliver me" )
+			system( "git", "-C", worktree_path, "add", "change.txt", out: File::NULL, err: File::NULL )
+			system( "git", "-C", worktree_path, "commit", "-m", "worktree change", out: File::NULL, err: File::NULL )
+
+			# Deliver will fail on push (no real remote for worktree branch), but it must
+			# NOT fail with "cannot deliver from main" — the branch guard must see the
+			# worktree's branch, not the main tree's branch.
+			worktree_runtime.deliver!
+			output = output_string( worktree_runtime )
+			refute_includes output, "cannot deliver from main"
+		end
+	end
+
 	def test_deliver_blocks_when_worktree_is_dirty_without_commit_flag
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )

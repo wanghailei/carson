@@ -57,7 +57,7 @@ module Carson
 				return Runtime::EXIT_ERROR
 			end
 
-			runtime = Runtime.new( repo_root: resolved, tool_root: tool_root, output: output, error: error, verbose: verbose )
+			runtime = Runtime.new( repo_root: resolved, tool_root: tool_root, output: output, error: error, verbose: verbose, work_dir: target_repo_root )
 			dispatch( parsed: parsed, runtime: runtime )
 		rescue ConfigError => exception
 			error.puts "#{BADGE} Configuration problem: #{exception.message}"

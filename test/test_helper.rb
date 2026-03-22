@@ -112,11 +112,12 @@ module CarsonTestSupport
 					verbose: false
 				)
 				worktree_runtime = Carson::Runtime.new(
-					repo_root: worktree_path,
+					repo_root: repo_root,
 					tool_root: File.expand_path( "..", __dir__ ),
 					output: StringIO.new,
 					error: StringIO.new,
-					verbose: false
+					verbose: false,
+					work_dir: worktree_path
 				)
 			end
 
