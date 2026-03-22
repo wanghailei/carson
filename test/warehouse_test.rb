@@ -1,6 +1,7 @@
 # Tests for Carson::Warehouse — the repository with story-language methods.
 # Tests real git operations against temporary repositories. No mocking.
 require_relative "test_helper"
+require_relative "../lib/carson/parcel"
 require "open3"
 
 class WarehouseTest < Minitest::Test
@@ -29,31 +30,31 @@ class WarehouseTest < Minitest::Test
 	# --- Identity ---
 
 	def test_path_returns_warehouse_location
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		assert_equal @repo_path, warehouse.path
 	end
 
 	# --- What the warehouse knows ---
 
 	def test_current_label_returns_active_branch
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		assert_equal "main", warehouse.current_label
 	end
 
 	def test_current_label_follows_branch_changes
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/login", out: File::NULL, err: File::NULL )
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		assert_equal "feature/login", warehouse.current_label
 	end
 
 	def test_current_head_returns_commit_sha
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		expected_sha, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "HEAD" )
 		assert_equal expected_sha.strip, warehouse.current_head
 	end
 
 	def test_main_label_defaults_to_main
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		assert_equal "main", warehouse.main_label
 	end
 
@@ -62,9 +63,9 @@ class WarehouseTest < Minitest::Test
 		assert_equal "trunk", warehouse.main_label
 	end
 
-	def test_bureau_address_defaults_to_origin
+	def test_bureau_address_defaults_to_github
 		warehouse = Carson::Warehouse.new( path: @repo_path )
-		assert_equal "origin", warehouse.bureau_address
+		assert_equal "github", warehouse.bureau_address
 	end
 
 	def test_bureau_address_uses_config_value
@@ -76,7 +77,7 @@ class WarehouseTest < Minitest::Test
 
 	def test_prepare_stages_and_commits
 		File.write( File.join( @repo_path, "new_file.txt" ), "content" )
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		warehouse.prepare!( message: "add new file" )
 
 		log, = Open3.capture3( "git", "-C", @repo_path, "log", "--oneline", "-1" )
@@ -85,7 +86,7 @@ class WarehouseTest < Minitest::Test
 
 	def test_prepare_returns_truthy_on_success
 		File.write( File.join( @repo_path, "file.txt" ), "content" )
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		result = warehouse.prepare!( message: "test commit" )
 		assert result
 	end
@@ -96,8 +97,9 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "add", "shipped.txt", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "commit", "-m", "ship this", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
-		result = warehouse.ship( "feature/ship-test" )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		parcel = Carson::Parcel.new( label: "feature/ship-test", head: warehouse.current_head )
+		result = warehouse.ship( parcel )
 		assert result
 
 		# Verify the remote received the branch.
@@ -116,8 +118,9 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "add", "custom.txt", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "commit", "-m", "custom remote", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
-		result = warehouse.ship( "feature/custom-remote", remote: "upstream" )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		parcel = Carson::Parcel.new( label: "feature/custom-remote", head: warehouse.current_head )
+		result = warehouse.ship( parcel, remote: "upstream" )
 		assert result
 
 		remote_branches, = Open3.capture3( "git", "-C", second_remote, "branch" )
@@ -139,7 +142,7 @@ class WarehouseTest < Minitest::Test
 		# Before fetch, our repo doesn't know about the new commit.
 		before_sha, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "origin/main" )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		result = warehouse.fetch_latest
 		assert result
 
@@ -148,15 +151,15 @@ class WarehouseTest < Minitest::Test
 	end
 
 	def test_fetch_latest_uses_custom_remote
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		result = warehouse.fetch_latest( remote: "origin" )
 		assert result
 	end
 
 	def test_includes_latest_when_up_to_date
-		warehouse = Carson::Warehouse.new( path: @repo_path )
-		# On main, which is up to date with origin/main.
-		assert warehouse.includes_latest?( "main" )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		parcel = Carson::Parcel.new( label: "main", head: warehouse.current_head )
+		assert warehouse.includes_latest?( parcel )
 	end
 
 	def test_includes_latest_false_when_behind
@@ -173,11 +176,12 @@ class WarehouseTest < Minitest::Test
 		# Create a feature branch on the original repo without fetching.
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/behind", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		# Fetch so we know about the new remote commit.
 		warehouse.fetch_latest
 
-		refute warehouse.includes_latest?( "feature/behind" )
+		parcel = Carson::Parcel.new( label: "feature/behind", head: warehouse.current_head )
+		refute warehouse.includes_latest?( parcel )
 	end
 
 	# --- Inventory ---
@@ -187,7 +191,7 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/beta", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		labels = warehouse.labels
 
 		assert_includes labels, "main"
@@ -204,7 +208,7 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "merge", "feature/merged", "--no-ff", "-m", "merge merged", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		assert warehouse.label_absorbed?( "feature/merged" )
 	end
 
@@ -214,12 +218,12 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "add", "unmerged.txt", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "commit", "-m", "on unmerged branch", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		refute warehouse.label_absorbed?( "feature/unmerged" )
 	end
 
 	def test_shelves_returns_worktree_paths
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		shelves = warehouse.shelves
 
 		# At minimum, the main worktree should be present.
@@ -229,7 +233,7 @@ class WarehouseTest < Minitest::Test
 	# --- Error handling ---
 
 	def test_prepare_fails_gracefully_with_nothing_to_commit
-		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		result = warehouse.prepare!( message: "nothing here" )
 		refute result
 	end
@@ -240,8 +244,9 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "add", "bad.txt", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "commit", "-m", "bad remote test", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: @repo_path )
-		result = warehouse.ship( "feature/bad-remote", remote: "nonexistent" )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		parcel = Carson::Parcel.new( label: "feature/bad-remote", head: warehouse.current_head )
+		result = warehouse.ship( parcel, remote: "nonexistent" )
 		refute result
 	end
 end

@@ -8,7 +8,7 @@ module Carson
 	class Warehouse
 		attr_reader :path
 
-		def initialize( path:, main_label: "main", bureau_address: "origin" )
+		def initialize( path:, main_label: "main", bureau_address: "github" )
 			@path = path
 			@main_label = main_label
 			@bureau_address = bureau_address
@@ -38,10 +38,10 @@ module Carson
 
 		# --- Warehouse operations ---
 
-		# Send a label to the bureau (git push -u).
-		# Returns true on success, false on failure.
-		def ship( label, remote: bureau_address )
-			_, _, status = git( "push", "-u", remote, label )
+		# Ship a parcel to the bureau.
+		# The warehouse sends the parcel's label to the remote.
+		def ship( parcel, remote: bureau_address )
+			_, _, status = git( "push", "-u", remote, parcel.label )
 			status.success?
 		end
 
@@ -54,10 +54,10 @@ module Carson
 			status.success?
 		end
 
-		# Is the label up to date with the registry?
-		# Checks whether the remote main tip is an ancestor of the given label.
-		def includes_latest?( label, registry: "#{bureau_address}/#{main_label}" )
-			_, _, status = git( "merge-base", "--is-ancestor", registry, label )
+		# Does the parcel include the latest registry state?
+		# Checks whether the remote main tip is an ancestor of the parcel's head.
+		def includes_latest?( parcel, registry: "#{bureau_address}/#{main_label}" )
+			_, _, status = git( "merge-base", "--is-ancestor", registry, parcel.head )
 			status.success?
 		end
 
