@@ -35,6 +35,17 @@ Carson is a worktree-first branch delivery governor for coding agents: it starts
 
 Layer 1 is the foundation. Layer 2 provides portfolio-level operations. Layer 3 composes repo commands across the portfolio via shell scripting.
 
+## Directory model
+
+Two `.github/` directories serve different roles:
+
+| Directory | Purpose | Contents |
+|-----------|---------|----------|
+| `config/.github/` | Distribution payload — what Carson uploads to governed repos on their behalf | `hooks/` (git hooks installed to `~/.carson/hooks/`) |
+| `.github/` | Carson serving itself — Carson's own repo configuration | `workflows/`, `linters/` |
+
+`config/.github/` is the single source of truth for everything Carson distributes. `carson refresh` reads from here when installing hooks and managed files into governed repos.
+
 ## Scope
 
 **In scope:** Repo and portfolio commands, delivery triage (`receive`), review governance (`review gate`, `review sweep`), managed `.github/*` templates, strict exit status contract.

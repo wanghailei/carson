@@ -880,7 +880,7 @@ class CLITest < Minitest::Test
 
 	def test_ensure_global_artefacts_installs_command_guard_when_missing
 		tool_root = Dir.mktmpdir( "carson-cli-test" )
-		hooks_dir = File.join( tool_root, "hooks" )
+		hooks_dir = File.join( tool_root, "config", ".github", "hooks" )
 		FileUtils.mkdir_p( hooks_dir )
 		File.write( File.join( hooks_dir, "command-guard" ), "#!/usr/bin/env bash\nexit 0\n" )
 
@@ -903,7 +903,7 @@ class CLITest < Minitest::Test
 
 	def test_ensure_global_artefacts_skips_when_template_missing
 		tool_root = Dir.mktmpdir( "carson-cli-test" )
-		# No hooks/command-guard in tool_root — should silently skip.
+		# No config/.github/hooks/command-guard in tool_root — should silently skip.
 		Carson::CLI.ensure_global_artefacts!( tool_root: tool_root )
 		# No assertion needed — just confirm it does not raise.
 	ensure
@@ -912,7 +912,7 @@ class CLITest < Minitest::Test
 
 	def test_ensure_global_artefacts_skips_when_target_is_identical
 		tool_root = Dir.mktmpdir( "carson-cli-test" )
-		hooks_dir = File.join( tool_root, "hooks" )
+		hooks_dir = File.join( tool_root, "config", ".github", "hooks" )
 		FileUtils.mkdir_p( hooks_dir )
 		source_content = "#!/usr/bin/env bash\nexit 0\n"
 		source = File.join( hooks_dir, "command-guard" )
@@ -946,7 +946,7 @@ class CLITest < Minitest::Test
 
 	def test_ensure_global_artefacts_updates_when_content_differs
 		tool_root = Dir.mktmpdir( "carson-cli-test" )
-		hooks_dir = File.join( tool_root, "hooks" )
+		hooks_dir = File.join( tool_root, "config", ".github", "hooks" )
 		FileUtils.mkdir_p( hooks_dir )
 		File.write( File.join( hooks_dir, "command-guard" ), "#!/usr/bin/env bash\n# v2\nexit 0\n" )
 
