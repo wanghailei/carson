@@ -81,11 +81,6 @@ mkdir -p "$tmp_root/fakehome"
 export HOME="$tmp_root/fakehome"
 export CARSON_HOOKS_PATH="$tmp_root/global-hooks"
 export CARSON_BIN="$carson_bin"
-smoke_config_path="$tmp_root/carson-config.json"
-cat > "$smoke_config_path" <<EOF
-{}
-EOF
-export CARSON_CONFIG_FILE="$smoke_config_path"
 cleanup() {
 	rm -rf "$tmp_root"
 }
@@ -95,6 +90,20 @@ remote_repo="$tmp_root/remote.git"
 work_repo="$tmp_root/work"
 init_repo="$tmp_root/init-work"
 mock_bin="$tmp_root/mock-bin"
+
+# Write smoke config after work_repo is defined so it can be registered
+# as a governed repo. CWD repo commands (status, deliver, audit) require
+# the repo to appear in govern.repos.
+smoke_config_path="$tmp_root/carson-config.json"
+cat > "$smoke_config_path" <<EOF
+{
+	"govern": {
+		"state_path": "$tmp_root/carson-state.json",
+		"repos": ["$work_repo"]
+	}
+}
+EOF
+export CARSON_CONFIG_FILE="$smoke_config_path"
 
 git init --bare "$remote_repo" >/dev/null
 git clone "$remote_repo" "$work_repo" >/dev/null
@@ -321,7 +330,7 @@ printf "#!/usr/bin/env bash\n" > bin/carson
 chmod +x bin/carson
 printf "name: Carson governance\n" > .github/workflows/carson-governance.yml
 printf "name: Carson policy\n" > .github/workflows/carson_policy.yml
-expect_exit 0 "offboard removes Carson integration artefacts" run_carson offboard
+expect_exit 0 "offboard removes Carson integration artefacts" run_carson offboard "$init_repo"
 if git config --get core.hooksPath >/dev/null 2>&1; then
 	echo "FAIL: offboard did not unset Carson-managed core.hooksPath" >&2
 	exit 1
@@ -343,7 +352,7 @@ for removed_path in \
 	fi
 done
 echo "PASS: offboard cleaned Carson-managed repo artefacts"
-expect_exit 0 "offboard is idempotent on an already cleaned repo" run_carson offboard
+expect_exit 0 "offboard is idempotent on an already cleaned repo" run_carson offboard "$init_repo"
 expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 
 # Validate core setup flows (sync/hook/template).
@@ -403,7 +412,13 @@ mkdir -p "$template_canonical_dir"
 printf "bug:\n  - changed-files:\n      - any-glob-to-any-file: '**/*'\n" > "$template_canonical_dir/labeler.yml"
 template_config_path="$tmp_root/template-config.json"
 cat > "$template_config_path" <<EOF
-{"lint":{"canonical":"$template_canonical_dir"}}
+{
+	"lint": {"canonical": "$template_canonical_dir"},
+	"govern": {
+		"state_path": "$tmp_root/template-state.json",
+		"repos": ["$work_repo"]
+	}
+}
 EOF
 
 expect_exit 2 "template check reports drift when managed github files are missing" run_carson_with_config "$template_config_path" template check
@@ -520,37 +535,37 @@ printf 'runtime\n' > .tools/carson/README
 expect_exit 2 "outsider boundary blocks host repo .tools/carson" run_carson audit
 rm -rf .tools
 
-# Govern smoke tests.
+# Receive smoke tests.
 cd "$work_repo"
-original_hooks_path_govern="$(git config --get core.hooksPath || true)"
+original_hooks_path_receive="$(git config --get core.hooksPath || true)"
 git config core.hooksPath .git/hooks
 git add -A >/dev/null
-git diff --cached --quiet || git commit -m "commit templates for govern smoke tests" >/dev/null
+git diff --cached --quiet || git commit -m "commit templates for receive smoke tests" >/dev/null
 git push origin main >/dev/null
-if [[ -n "$original_hooks_path_govern" ]]; then
-	git config core.hooksPath "$original_hooks_path_govern"
+if [[ -n "$original_hooks_path_receive" ]]; then
+	git config core.hooksPath "$original_hooks_path_receive"
 else
 	git config --unset core.hooksPath 2>/dev/null || true
 fi
-expect_exit 0 "govern --dry-run completes with no open PRs" run_carson_with_mock_gh govern --dry-run
-govern_output="$(run_carson_with_mock_gh govern --dry-run --json)"
-if [[ "$govern_output" != *"dry_run"* ]]; then
-	echo "FAIL: govern --dry-run --json did not produce JSON output" >&2
-	echo "actual output: $govern_output" >&2
+expect_exit 0 "receive --dry-run completes with no open PRs" run_carson_with_mock_gh receive --dry-run
+receive_output="$(run_carson_with_mock_gh receive --dry-run --json)"
+if [[ "$receive_output" != *"dry_run"* ]]; then
+	echo "FAIL: receive --dry-run --json did not produce JSON output" >&2
+	echo "actual output: $receive_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run --json produces structured output"
+echo "PASS: receive --dry-run --json produces structured output"
 
-# Govern with mock PR data: recreate a fresh active delivery first so the dry-run
+# Receive with mock PR data: recreate a fresh active delivery first so the dry-run
 # path is assessing a current branch, not the stale smoke delivery from earlier.
 git switch -c feature/deliver-smoke >/dev/null
-printf "govern ready smoke\n" > govern_ready_smoke.txt
-git add govern_ready_smoke.txt
-git -c core.hooksPath=.git/hooks commit -m "govern ready smoke" >/dev/null
-expect_exit 0 "deliver refreshes active delivery for govern ready smoke" run_carson_with_mock_gh deliver
+printf "receive ready smoke\n" > receive_ready_smoke.txt
+git add receive_ready_smoke.txt
+git -c core.hooksPath=.git/hooks commit -m "receive ready smoke" >/dev/null
+expect_exit 0 "deliver refreshes active delivery for receive ready smoke" run_carson_with_mock_gh deliver
 git switch main >/dev/null
 
-# Govern with mock PR data: ready PR in dry-run.
+# Receive with mock PR data: ready PR in dry-run.
 cat > "$mock_bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -587,20 +602,20 @@ exit 1
 GHEOF
 chmod +x "$mock_bin/gh"
 
-govern_ready_output="$(run_carson_with_mock_gh govern --dry-run)"
-if [[ "$govern_ready_output" != *"ready"* ]]; then
-	echo "FAIL: govern --dry-run did not classify ready PR" >&2
-	echo "actual output: $govern_ready_output" >&2
+receive_ready_output="$(run_carson_with_mock_gh receive --dry-run)"
+if [[ "$receive_ready_output" != *"ready"* ]]; then
+	echo "FAIL: receive --dry-run did not classify ready PR" >&2
+	echo "actual output: $receive_ready_output" >&2
 	exit 1
 fi
-if [[ "$govern_ready_output" != *"ready to integrate (dry run)"* ]]; then
-	echo "FAIL: govern --dry-run did not recommend integration for ready PR" >&2
-	echo "actual output: $govern_ready_output" >&2
+if [[ "$receive_ready_output" != *"ready to integrate (dry run)"* ]]; then
+	echo "FAIL: receive --dry-run did not recommend integration for ready PR" >&2
+	echo "actual output: $receive_ready_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run classifies ready PR and recommends integration"
+echo "PASS: receive --dry-run classifies ready PR and recommends integration"
 
-# Govern with failing CI PR.
+# Receive with failing CI PR.
 cat > "$mock_bin/gh" <<'GHEOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -625,18 +640,18 @@ exit 1
 GHEOF
 chmod +x "$mock_bin/gh"
 
-govern_fail_output="$(run_carson_with_mock_gh govern --dry-run)"
-if [[ "$govern_fail_output" != *"would revise (dry run)"* ]]; then
-	echo "FAIL: govern --dry-run did not recommend revision for CI-failing PR" >&2
-	echo "actual output: $govern_fail_output" >&2
+receive_fail_output="$(run_carson_with_mock_gh receive --dry-run)"
+if [[ "$receive_fail_output" != *"would revise (dry run)"* ]]; then
+	echo "FAIL: receive --dry-run did not recommend revision for CI-failing PR" >&2
+	echo "actual output: $receive_fail_output" >&2
 	exit 1
 fi
-if [[ "$govern_fail_output" != *"CI checks are failing"* ]]; then
-	echo "FAIL: govern --dry-run did not report failing CI summary" >&2
-	echo "actual output: $govern_fail_output" >&2
+if [[ "$receive_fail_output" != *"CI checks are failing"* ]]; then
+	echo "FAIL: receive --dry-run did not report failing CI summary" >&2
+	echo "actual output: $receive_fail_output" >&2
 	exit 1
 fi
-echo "PASS: govern --dry-run classifies CI-failing PR and recommends revision"
+echo "PASS: receive --dry-run classifies CI-failing PR and recommends revision"
 
 # Restore original mock gh for remaining tests.
 cat > "$mock_bin/gh" <<'EOF'

@@ -30,6 +30,19 @@ jobs:
         with:
           ruby-version: "3.4"
 
+      - name: Configure governance
+        run: |
+          mkdir -p /tmp/carson-ci
+          cat > /tmp/carson-ci/config.json <<EOF
+          {
+            "govern": {
+              "state_path": "/tmp/carson-ci/state.json",
+              "repos": ["$GITHUB_WORKSPACE"]
+            }
+          }
+          EOF
+          echo "CARSON_CONFIG_FILE=/tmp/carson-ci/config.json" >> "$GITHUB_ENV"
+
       - name: Refresh
         run: ruby exe/carson refresh
 

@@ -134,7 +134,7 @@ module Carson
 			end
 
 			def main_worktree_context?
-				realpath_safe( repo_root ) == realpath_safe( main_worktree_root )
+				realpath_safe( work_dir ) == realpath_safe( main_worktree_root )
 			end
 
 			def inside_git_work_tree?

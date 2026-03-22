@@ -23,16 +23,20 @@ module Carson
 		DISPOSITION_TOKENS = %w[accepted rejected deferred].freeze
 
 		# Runtime wiring for repository context, tool paths, and output streams.
-		def initialize( repo_root:, tool_root:, output:, error:, in_stream: $stdin, verbose: false )
+		# work_dir: the actual directory for git/gh command execution. When running
+		# from a worktree, this is the worktree path; repo_root remains the canonical
+		# main tree root for config, ledger, and path resolution.
+		def initialize( repo_root:, tool_root:, output:, error:, in_stream: $stdin, verbose: false, work_dir: nil )
 			@repo_root = repo_root
+			@work_dir = work_dir || repo_root
 			@tool_root = tool_root
 			@output = output
 			@error = error
 			@in = in_stream
 			@verbose = verbose
 			@config = Config.load( repo_root: repo_root )
-			@git_adapter = Adapters::Git.new( repo_root: repo_root )
-			@github_adapter = Adapters::GitHub.new( repo_root: repo_root )
+			@git_adapter = Adapters::Git.new( repo_root: @work_dir )
+			@github_adapter = Adapters::GitHub.new( repo_root: @work_dir )
 			@template_sync_result = nil
 		end
 
@@ -47,7 +51,7 @@ module Carson
 
 	private
 
-		attr_reader :repo_root, :tool_root, :output, :error, :in, :config, :git_adapter, :github_adapter
+		attr_reader :repo_root, :work_dir, :tool_root, :output, :error, :in, :config, :git_adapter, :github_adapter
 
 		# Ruby 2.6 treats bare `in` awkwardly because of pattern-matching parsing.
 		# Keep the original ivar/reader for compatibility, but expose a safe helper name.

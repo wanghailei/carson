@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 carson_bin="$repo_root/exe/carson"
 
 run_carson() {
-	HOME="$tmp_root/home" ruby "$carson_bin" "$@"
+	HOME="$tmp_root/home" CARSON_CONFIG_FILE="$review_config_path" ruby "$carson_bin" "$@"
 }
 
 exit_text() {
@@ -58,6 +58,17 @@ mock_log="$mock_root/gh.log"
 mkdir -p "$mock_bin" "$mock_state"
 git init --bare "$remote_repo" >/dev/null
 git clone "$remote_repo" "$work_repo" >/dev/null
+
+# Register work_repo as governed so CWD repo commands resolve correctly.
+review_config_path="$tmp_root/carson-config.json"
+cat > "$review_config_path" <<CFGEOF
+{
+	"govern": {
+		"state_path": "$tmp_root/carson-state.json",
+		"repos": ["$work_repo"]
+	}
+}
+CFGEOF
 
 cat > "$mock_bin/gh" <<'EOF'
 #!/usr/bin/env bash
