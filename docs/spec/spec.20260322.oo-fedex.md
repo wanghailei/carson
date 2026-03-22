@@ -20,18 +20,25 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 ║                    FedEx  →  Carson                             ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
-║  Parcel (package)          →  Committed changes on a branch      ║
-║  Sender                    →  The agent (AI or human)            ║
 ║  FedEx (the company)       →  Carson (the service)               ║
+║  Courier (employee)        →  Delivery person (one per task)     ║
+║  Cleaner (employee)        →  Warehouse cleaner                  ║
+║  Dispatcher (employee)     →  Delivery monitor                   ║
+║                                                                  ║
 ║  Warehouse                 →  Repository                         ║
 ║  Shelf                     →  Worktree                           ║
 ║  Shelf label               →  Branch name                        ║
-║  Courier (employee)        →  The delivery person (one per task) ║
+║  Parcel (package)          →  Committed changes on a branch      ║
+║  Sender                    →  The agent (AI or human)            ║
+║                                                                  ║
 ║  Ship to sorting facility  →  git push                           ║
 ║  Customs paperwork         →  Pull Request (filed with GitHub)   ║
 ║  Customs inspection        →  CI checks + code review            ║
+║  Customs inspector         →  CI system                          ║
+║  Review officer            →  Code reviewer                      ║
 ║  Customs clearance         →  Checks pass, review approved       ║
 ║  Delivery attempt          →  Merge attempt                      ║
+║  Registry (accepted files) →  Remote main branch                 ║
 ║  Recipient signs           →  GitHub confirms merge              ║
 ║  Proof of delivery         →  Merge proof                        ║
 ║  Tracking record           →  Delivery record in ledger          ║
@@ -46,39 +53,6 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-## Core Insight: What Are the Real Objects?
-
-Through iterative design, we stripped away procedural thinking to find the essential domain concepts:
-
-### What IS and what ISN'T a domain object
-
-| Concept | Is it an object? | What it actually is |
-|---------|-----------------|---------------------|
-| **Parcel** | YES — the protagonist | The committed changes being delivered |
-| **Carson** | YES — the company | The delivery service |
-| **Courier** | YES — the employee | The delivery person assigned to a warehouse |
-| **Delivery** | YES — the receipt | Carson's internal tracking record |
-| Branch | NO — a label | A shelf label in the warehouse |
-| Worktree | NO — a shelf | The physical space where agents work |
-| PullRequest | NO — paperwork | A request paper filed with the GitHub bureau |
-| Git | NO — a tool | A tool the courier uses, like a hand truck |
-| GitHub | NO — a bureau | The external customs authority |
-| Assessment | NO — not a concept | The courier reading the bureau's response |
-| Freshness | NO — not a concept | A precondition check, not a domain concept |
-| Runtime | NO — meaningless | Was the courier all along |
-
-### Key design decisions and why
-
-**PullRequest is not a domain object.** A PR is the request paper Carson files with the GitHub bureau. It's paperwork — a tracking number and a URL. GitHub requires it as part of THEIR process. It's not Carson's domain concept. The PR number is data that Carson tracks, not an object with behaviour.
-
-**Branch is not an object.** A branch is a label on a shelf. Like a sticky note. It identifies where a parcel sits, but it has no behaviour of its own.
-
-**Assessment is not an object.** Earlier designs tried to create Assessment as a standalone class that receives extracted data and computes readiness. That's procedural thinking — a function disguised as a class. The courier reads the bureau's response and decides what to do next. There's no "Assessment" in the FedEx world.
-
-**Freshness is not a concept.** The "is the branch up to date with main?" check is a precondition — a guard clause in the delivery process. Post-push, GitHub reports the same thing as `mergeStateStatus: BEHIND`. It's part of the courier's customs check, not a standalone concept.
-
-**Runtime IS the Courier.** The current `Runtime` class has no clear identity — it's a god object. But it's actually a courier assigned to a warehouse. It has a repo (the warehouse it serves), a worktree (the shelf it works at), and tools (git, gh). It picks up parcels and delivers them.
-
 ## Carson — The Company
 
 ```
@@ -90,6 +64,13 @@ Through iterative design, we stripped away procedural thinking to find the essen
 ║  "We deliver your changes. Safely. Every time."                  ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  EMPLOYEES (Carson's people — each a role, each a class)         ║
+║  ┌────────────┐  ┌────────────┐  ┌────────────┐                 ║
+║  │  Courier   │  │  Cleaner   │  │ Dispatcher  │                ║
+║  │  delivers  │  │  tidies    │  │  monitors   │                ║
+║  │  parcels   │  │  warehouse │  │  deliveries │                ║
+║  └────────────┘  └────────────┘  └────────────┘                 ║
 ║                                                                  ║
 ║  Clients (governed repos):                                       ║
 ║                                                                  ║
@@ -109,11 +90,11 @@ Through iterative design, we stripped away procedural thinking to find the essen
 
 Carson is the company. It:
 - Manages a portfolio of client warehouses (governed repos)
-- Assigns couriers to warehouses
+- Assigns employees (Courier, Cleaner, Dispatcher) to warehouses
 - Provides company policies (governance rules, merge methods, review gates)
 - Onboards and offboards clients
 
-## The Warehouse (a governed repo)
+## The Warehouse (Repository)
 
 ```
   Repository: ~/Dev/nexus
@@ -122,8 +103,7 @@ Carson is the company. It:
   Shelves (worktrees), each with a label (branch):
 
   ┌─────────────────────────────────┐
-  │  main                           │  ← the destination counter
-  │ (customers collect from here)   │     (remote main at GitHub)
+  │  main                           │  ← the local reference
   │                                 │
   └─────────────────────────────────┘
 
@@ -147,30 +127,72 @@ Carson is the company. It:
 ```
 
 A warehouse (repository) has:
-- A destination counter (main branch + remote)
 - Shelves (worktrees) with labels (branches)
 - Parcels on shelves (committed changes)
-- Couriers working at shelves
+- Employees working at shelves
+- A configuration (.carson.yml)
 
-## The Courier (currently Runtime)
+## The Bureau (GitHub) and Its Registry
 
-The courier is the Carson employee who does the actual work. They are assigned to one warehouse and work at one shelf at a time.
+The bureau is the external authority. It has two functions:
+
+1. **Customs window** — where bureaucrats inspect parcels (CI checks, code review)
+2. **Registry** — where accepted parcels are filed permanently (remote main branch)
+
+The registry IS remote main. It's the official record. What production sees. What customers collect from. All accepted parcels live here.
+
+```
+  The Bureau (GitHub)
+  ┌──────────────────────────────────────────────┐
+  │                                              │
+  │  Customs Window                              │
+  │  ┌─────────────┐  ┌──────────────────┐       │
+  │  │ Inspector   │  │ Review Officer   │       │
+  │  │ (CI)        │  │ (code review)    │       │
+  │  └──────┬──────┘  └────────┬─────────┘       │
+  │         │                  │                  │
+  │         └──────┬───────────┘                  │
+  │                ▼                              │
+  │  ┌──────────────────────────────────┐         │
+  │  │         Registry (main)          │         │
+  │  │                                  │         │
+  │  │  All accepted parcels live here  │         │
+  │  │  This is what production sees    │         │
+  │  └──────────────────────────────────┘         │
+  │                                              │
+  └──────────────────────────────────────────────┘
+```
+
+## Employees — Each Command Has a Role
+
+The current `Runtime` is every employee rolled into one. That's a god object. Each role should be its own class.
+
+| Command | Role | What they do |
+|---|---|---|
+| `deliver` | **Courier** | Picks up parcel, ships it, files customs form, waits, delivers |
+| `housekeep` | **Cleaner** | Removes empty shelves, prunes old labels, sweeps the warehouse |
+| `govern` | **Dispatcher** | Monitors dispatch board, re-attempts delivery when customs clears |
+| `abandon` | **Courier** | Returns parcel to sender, withdraws customs form |
+| `recover` | **Courier** | Salvages a stuck parcel, re-enters the delivery process |
+| `status` | **Dispatcher** | Reads the tracking board — where is every parcel? |
+
+### The Courier
+
+The delivery person. Assigned to a warehouse, works at a shelf, delivers parcels.
 
 ```
 ╔═══════════════════════════════════════════════════╗
 ║               Carson::Courier                     ║
 ║            (the delivery person)                  ║
 ║                                                   ║
-║  assigned to: a repository (the warehouse)        ║
-║  works at:    a worktree/branch (a shelf)         ║
+║  assigned to: a warehouse (repository)            ║
+║  works at:    a shelf (worktree/branch)           ║
 ║  uses:        git, gh (tools of the trade)        ║
 ║                                                   ║
 ║  can:                                             ║
-║    deliver( parcel )   — ship it to main          ║
-║    monitor             — watch in-transit parcels ║
-║    housekeep           — clean the warehouse      ║
-║    abandon( parcel )   — return to sender         ║
-║    status              — check all parcels        ║
+║    deliver( parcel )  — ship parcel to registry   ║
+║    abandon( parcel )  — return to sender          ║
+║    recover( parcel )  — salvage a stuck parcel    ║
 ║                                                   ║
 ║  knows:                                           ║
 ║    the warehouse config                           ║
@@ -179,88 +201,98 @@ The courier is the Carson employee who does the actual work. They are assigned t
 ╚═══════════════════════════════════════════════════╝
 ```
 
-The courier maps to the current code:
+### The Cleaner
 
-| Current code | FedEx meaning |
-|---|---|
-| `Runtime.new( repo_root: )` | Assign a courier to a warehouse |
-| `runtime.deliver!` | Courier delivers a parcel |
-| `runtime.govern!` | Courier monitors the dispatch board |
-| `runtime.housekeep!` | Courier cleans the warehouse |
-| Multiple `Runtime` instances, same repo | Multiple couriers at one warehouse |
-| Worktree isolation (CONCURRENCY.md) | Each courier works at their own shelf |
-| Scope ownership, conflict protocol | Couriers coordinate so they don't collide |
-
-## The Parcel (committed changes)
-
-The parcel is the protagonist — the thing being delivered. Without a parcel, there's no delivery. Everything else exists to serve it.
+The warehouse maintainer. Removes empty shelves, prunes stale labels.
 
 ```
 ╔═══════════════════════════════════════════════════╗
-║                 Carson::Parcel                    ║
-║           (the committed changes)                 ║
+║               Carson::Cleaner                     ║
+║          (the warehouse cleaner)                  ║
+║                                                   ║
+║  assigned to: a warehouse (repository)            ║
+║                                                   ║
+║  can:                                             ║
+║    housekeep  — full warehouse sweep              ║
+║    reap( shelf )  — remove one empty shelf        ║
+║    prune( label ) — remove one stale label        ║
 ║                                                   ║
 ║  knows:                                           ║
-║    branch    — the shelf label it sits on         ║
-║    head      — the tip of its changes             ║
-║    worktree  — the shelf it sits on               ║
-║                                                   ║
-║  is: the thing being delivered                    ║
-║  does NOT deliver itself — the courier does that  ║
+║    which shelves are empty (merged worktrees)     ║
+║    which labels are stale (merged branches)       ║
 ╚═══════════════════════════════════════════════════╝
 ```
 
-A parcel:
-- Is created by agents who commit changes onto a branch
-- Sits on a shelf (worktree) with a label (branch name)
-- Has concrete contents: the commits between merge-base and HEAD
-- Is the INPUT to a delivery — the courier picks it up and delivers it
+### The Dispatcher
 
-## The Delivery (tracking record / receipt)
-
-The delivery is Carson's internal tracking record. It's the receipt. It records the parcel's journey through the delivery process.
+The delivery monitor. Watches all in-transit parcels, takes action when customs clears.
 
 ```
 ╔═══════════════════════════════════════════════════╗
-║                Carson::Delivery                   ║
-║             (the tracking record)                 ║
+║              Carson::Dispatcher                   ║
+║           (the delivery monitor)                  ║
+║                                                   ║
+║  assigned to: a warehouse (repository)            ║
+║                                                   ║
+║  can:                                             ║
+║    monitor     — watch all in-transit deliveries  ║
+║    reconcile   — update tracking records          ║
+║    status      — report the dispatch board        ║
 ║                                                   ║
 ║  knows:                                           ║
-║    parcel        — what was delivered              ║
-║    tracking_no   — PR number (#42)                ║
-║    status        — where in the journey           ║
-║    cause         — why it's held (if gated)       ║
-║    summary       — human-readable state           ║
-║    proof         — proof of delivery              ║
-║                                                   ║
-║  is: Carson's internal receipt                    ║
-║  updated BY the courier, not self-updating        ║
+║    all active tracking records (deliveries)       ║
+║    the bureau's current response for each         ║
 ╚═══════════════════════════════════════════════════╝
 ```
+
+## Every Concept Is an Object
+
+| Object | What it IS | What it knows | What it does |
+|---|---|---|---|
+| **Carson** | The company | Portfolio of warehouses | Assigns employees, onboards clients |
+| **Courier** | Delivery person | Their warehouse, their shelf | Delivers parcels, files customs forms |
+| **Cleaner** | Warehouse cleaner | The warehouse state | Removes shelves, prunes labels |
+| **Dispatcher** | Delivery monitor | All tracking records | Watches, reconciles, reports |
+| **Warehouse** | The repository | Path, config, shelves | Holds shelves and parcels |
+| **Shelf** | A worktree | Path, label, occupant | Holds parcels, can be removed |
+| **Label** | A branch name | Name, merged status | Identifies a shelf |
+| **Parcel** | Committed changes | Branch, head, commits | The thing being delivered |
+| **Customs Form** | A Pull Request | Number, URL, state | Filed with bureau, gets processed |
+| **Delivery** | Tracking record | Status, cause, proof | Records the parcel's journey |
+| **Bureau** | GitHub | Bureaucrats, registry | Inspects, accepts/rejects parcels |
+| **Inspector** | CI system | Test results | Inspects parcel quality |
+| **Review Officer** | Code reviewer | Review decision | Reviews parcel contents |
+| **Registry** | Remote main | All accepted parcels | The official record — what production sees |
 
 ## The Delivery Flow
 
 ```
-  Agent                    Courier                  GitHub
+  Agent                    Courier                  Bureau (GitHub)
     │                        │                        │
     │  "deliver this parcel" │                        │
     ├───────────────────────►│                        │
     │                        │                        │
-    │                        │── pick up parcel       │
-    │                        │   (read branch state)  │
+    │                        │── pick up Parcel       │
+    │                        │   from Shelf           │
     │                        │                        │
     │                        │── ship it ────────────►│
     │                        │   (git push)           │
     │                        │                        │
-    │                        │── file customs paper ─►│
+    │                        │── file Customs Form ──►│
     │                        │   (gh pr create)       │
     │                        │         ┌──────────────┤
     │                        │         │ tracking #42 │
     │                        │◄────────┘              │
     │                        │                        │
     │                        │── check customs ──────►│
-    │                        │   (gh pr checks)       │
-    │                        │         ┌──────────────┤
+    │                        │                  ┌─────┤
+    │                        │                  │     │
+    │                        │          Inspector     │
+    │                        │          checks...     │
+    │                        │          Review Officer │
+    │                        │          reviews...    │
+    │                        │                  │     │
+    │                        │         ┌────────┘     │
     │                        │         │ CI running   │
     │                        │◄────────┘              │
     │                        │         ·              │
@@ -271,23 +303,28 @@ The delivery is Carson's internal tracking record. It's the receipt. It records 
     │                        │         │ cleared      │
     │                        │◄────────┘              │
     │                        │                        │
-    │                        │── deliver please ─────►│
+    │                        │── please accept ──────►│
     │                        │   (gh pr merge)        │
-    │                        │         ┌──────────────┤
+    │                        │                        │
+    │                        │              ┌─────────┤
+    │                        │              │ Parcel  │
+    │                        │              │ entered │
+    │                        │              │ into    │
+    │                        │              │ Registry│
+    │                        │         ┌────┘         │
     │                        │         │ accepted     │
     │                        │◄────────┘              │
     │                        │                        │
     │                        │── collect proof        │
-    │                        │── write receipt        │
+    │                        │── write Delivery       │
+    │                        │   record (receipt)     │
     │                        │                        │
-    │  "delivered, receipt:"  │                        │
+    │  "delivered, receipt:" │                        │
     │◄───────────────────────┤                        │
     │                        │                        │
 ```
 
 ## Delivery Status Flow (the parcel's journey)
-
-The delivery record tracks where the parcel is in its journey:
 
 ```
   ┌──────────┐     ┌──────────┐     ┌──────────┐
@@ -314,89 +351,103 @@ The delivery record tracks where the parcel is in its journey:
                              │ ┌──────────┐ ┌──────────┐
                              └►│Delivered │ │ Bounced  │
                                │(merged)  │ │ (merge   │
-                               │          │ │  failed) │
-                               └──────────┘ └──────────┘
+                               │ → entered│ │  failed) │
+                               │ Registry │ └──────────┘
+                               └──────────┘
 ```
 
-## All Carson Services
-
-Every Carson command maps to a FedEx operation:
+## The Cleaner's Work
 
 ```
-deliver    = Ship a parcel to main
-             The core service. Pick up, ship, file paperwork,
-             wait for customs, deliver, write receipt.
-
-govern     = Dispatch center
-             Monitor all in-transit parcels. When customs clears,
-             attempt delivery. Reconcile tracking records.
-
-status     = Package tracking
-             "Where is my parcel?" Report the state of all
-             parcels and the warehouse.
-
-abandon    = Return to sender
-             Cancel the shipment. Close the customs paperwork.
-             Clean up the shelf.
-
-housekeep  = Warehouse cleanup
-             Clear delivered parcels off shelves. Remove empty
-             shelves (worktrees). Sweep old labels (branches).
-
-recover    = Salvage
-             Rescue a stuck or lost parcel. Re-enter the
-             delivery process from a recovery point.
+  Cleaner                    Warehouse
+    │                          │
+    │── scan for empty ───────►│
+    │   shelves                │
+    │         ┌────────────────┤
+    │         │ 3 empty shelves│
+    │◄────────┘                │
+    │                          │
+    │── remove shelf ─────────►│  (git worktree remove)
+    │── remove shelf ─────────►│
+    │── remove shelf ─────────►│
+    │                          │
+    │── scan for stale ───────►│
+    │   labels                 │
+    │         ┌────────────────┤
+    │         │ 5 stale labels │
+    │◄────────┘                │
+    │                          │
+    │── prune label ──────────►│  (git branch -d)
+    │── prune label ──────────►│
+    │   ···                    │
+    │                          │
 ```
 
-## The Complete Domain Model
+## The Dispatcher's Work
 
 ```
-Carson (the company)
-  │
-  ├── manages many warehouses (governed repos)
-  │
-  └── assigns Couriers to warehouses
-       │
-       Courier (the delivery person — currently Runtime)
-       ├── assigned to one warehouse (repo)
-       ├── works at one shelf (worktree/branch)
-       ├── picks up Parcels (committed changes)
-       ├── delivers them:
-       │     ship (push) → file paperwork (PR) →
-       │     wait for customs (CI/review) → deliver (merge)
-       ├── writes Delivery receipts (ledger records)
-       └── uses tools: git, gh
+  Dispatcher              Delivery Records        Bureau
+    │                          │                     │
+    │── read dispatch board ──►│                     │
+    │         ┌────────────────┤                     │
+    │         │ 2 in-transit   │                     │
+    │◄────────┘                │                     │
+    │                          │                     │
+    │── check customs ──────────────────────────────►│
+    │   for each parcel        │                     │
+    │                          │         ┌───────────┤
+    │                          │         │ #42 clear │
+    │                          │         │ #43 held  │
+    │◄───────────────────────────────────┘           │
+    │                          │                     │
+    │── update record ────────►│  (#42 → cleared)    │
+    │── update record ────────►│  (#43 → still held) │
+    │                          │                     │
+    │── attempt delivery ──────────────────────────►│
+    │   for #42                │                     │
+    │                          │         ┌───────────┤
+    │                          │         │ accepted  │
+    │◄───────────────────────────────────┘           │
+    │                          │                     │
+    │── update record ────────►│  (#42 → delivered)  │
+    │                          │                     │
 ```
 
-Three domain classes:
+## Why Runtime Was Wrong
 
-```
-Carson::Parcel    — the committed changes (the thing being delivered)
-Carson::Courier   — the delivery person (currently Runtime)
-Carson::Delivery  — the tracking record (the receipt)
-```
+Runtime was every employee rolled into one person doing every job. That's not a person — it's a department pretending to be one employee. In OO, each role is its own object with its own identity, its own state, its own responsibilities.
 
-Everything else is either:
-- A label (branch name)
-- A shelf (worktree)
-- A tool (git, gh)
-- An external bureau (GitHub)
-- Paperwork (PR number, URL)
+| What Runtime did | Who should do it |
+|---|---|
+| `deliver!` | **Courier** — delivers parcels |
+| `govern!` | **Dispatcher** — monitors deliveries |
+| `housekeep!` | **Cleaner** — tidies the warehouse |
+| `abandon!` | **Courier** — returns parcel to sender |
+| `recover!` | **Courier** — salvages stuck parcels |
+| `status` | **Dispatcher** — reads the dispatch board |
+| held git_run, gh_run | Tools — each employee uses them |
+| held config, ledger | Company resources — shared by employees |
 
-## What Pure OO Means Here
+## Design Principles Applied
 
-Lessons from 99 Bottles of OOP that shaped this design:
+1. **Everything is an object.** Worktrees, branches, PRs, GitHub, CI, reviewers — all objects with identity, state, and behaviour. Not "just labels" or "just paperwork."
 
-1. **Objects hold their own state.** The Parcel knows its contents. The Courier knows their warehouse. The Delivery knows its status. No data extraction between objects.
+2. **Objects hold their own state.** The Parcel knows its contents. The Customs Form knows its status. The Shelf knows its label. No data extraction between objects.
 
-2. **No primitives where objects belong.** The six incompatible assessment hashes in the old code were primitive obsession. The courier reads the bureau's response and acts — no intermediate "Assessment" object needed.
+3. **Each role is its own class.** Courier, Cleaner, Dispatcher — not one god-class doing everything. Each has a clear identity and clear responsibilities.
 
-3. **The orchestrator is thin.** The Courier creates a Parcel, delivers it, writes a Delivery. Like `Bottles` creates `BottleNumber.for(number)` and asks for lyrics. The logic lives in the objects, not the orchestrator.
+4. **The orchestrator is thin.** Each employee creates domain objects and sends them messages. The Courier creates a Customs Form and files it. The Cleaner scans Shelves and removes empty ones.
 
-4. **Dependencies are tools, not objects.** Git and GitHub are tools the courier uses. They're not domain objects. You don't create a "Hammer" class when building a house.
+5. **Dependencies are tools, not identity.** Git and gh are tools employees use. They're not domain objects. They're implementation detail inside the employees.
 
-5. **Name from the domain, not the implementation.** Runtime → Courier. deliver.rb → the delivery service. "Assessment" → the courier reading the bureau's response. Every name comes from the FedEx metaphor, not from code structure.
+6. **Name from the domain.** Every name comes from the FedEx metaphor. Runtime → Courier/Cleaner/Dispatcher. deliver.rb → the Courier's delivery process. "Assessment" → the Courier reading the bureau's response. "Freshness" → a precondition check, not a concept.
 
 ## Design Status
 
-This spec defines the domain model — what the objects ARE, what they know, how they relate. The next step is to design the classes: constructors, methods, messages, and the internal decomposition of the Courier's delivery process.
+This spec defines the complete domain model:
+- What the objects ARE
+- What they know
+- How they relate
+- How they interact (sequence flows)
+
+The next step is to design the classes: constructors, methods, messages, and the mapping from current code to new objects.
