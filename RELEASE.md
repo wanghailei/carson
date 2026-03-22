@@ -15,6 +15,19 @@ Release-note scope rule:
 - `--all` removed from all repo commands; use `carson list --json` to script batch operations
 - `refresh` is now portfolio-only (always refreshes all governed repos)
 
+## 3.30.3
+
+### What changed
+
+- **Worktree branch resolution fixed** — `carson deliver` (and all other repo commands) now correctly resolve the current branch when running from inside a worktree. Previously, the CLI canonicalised the worktree path to the main tree root, causing the Git adapter to run all commands from the main tree. This meant `current_branch` returned `main` instead of the worktree's branch, blocking delivery with a false "cannot deliver from main" error.
+- **`onboard`/`offboard` use specified repo path** — Portfolio commands with a `<repo_path>` argument now use that path for the Runtime, not the invoking CWD. Previously the argument was parsed but ignored.
+- **`main_worktree_context?` correctly detects worktrees** — The dirty-tree audit guard now compares the actual working directory against the main worktree root, preventing false "main working tree has uncommitted changes" blocks when working in a worktree.
+- **CI smoke tests aligned with CWD governance** — All smoke test repos are now registered as governed, `offboard` calls pass the required `<repo_path>` argument, and legacy `govern` references are updated to `receive`.
+
+### No migration required
+
+- Existing workflows continue to work unchanged.
+
 ## 3.30.2
 
 ### What changed
