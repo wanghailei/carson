@@ -24,8 +24,11 @@ module Carson
 			verbose = parsed.fetch( :verbose, false )
 
 			# Portfolio commands — no repo resolution needed.
+			# onboard/offboard carry a parsed repo_root from their <repo_path> argument;
+			# list and refresh:all use the invoking CWD.
 			if %w[list refresh:all onboard offboard].include?( command )
-				runtime = Runtime.new( repo_root: repo_root, tool_root: tool_root, output: output, error: error, verbose: verbose )
+				effective_root = parsed.key?( :repo_root ) ? parsed.fetch( :repo_root ) : repo_root
+				runtime = Runtime.new( repo_root: effective_root, tool_root: tool_root, output: output, error: error, verbose: verbose )
 				return dispatch( parsed: parsed, runtime: runtime )
 			end
 

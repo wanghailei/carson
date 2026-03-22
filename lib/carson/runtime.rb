@@ -51,7 +51,7 @@ module Carson
 
 	private
 
-		attr_reader :repo_root, :tool_root, :output, :error, :in, :config, :git_adapter, :github_adapter
+		attr_reader :repo_root, :work_dir, :tool_root, :output, :error, :in, :config, :git_adapter, :github_adapter
 
 		# Ruby 2.6 treats bare `in` awkwardly because of pattern-matching parsing.
 		# Keep the original ivar/reader for compatibility, but expose a safe helper name.
