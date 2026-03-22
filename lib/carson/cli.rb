@@ -906,7 +906,7 @@ module Carson
 		# referenced by Claude Code's PreToolUse hook. It must exist regardless of
 		# whether `carson refresh` has been run in any governed repo.
 		def self.ensure_global_artefacts!( tool_root: )
-			source = File.join( tool_root, "hooks", "command-guard" )
+			source = File.join( tool_root, "config", ".github", "hooks", "command-guard" )
 			return unless File.file?( source )
 
 			hooks_base = File.expand_path( "~/.carson/hooks" )
