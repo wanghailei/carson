@@ -125,16 +125,16 @@ module Carson
 			merged_output.lines.map { it.strip }.include?( name )
 		end
 
-	private
-
-		# The main worktree root — resolves correctly even from inside a side worktree.
-		# Used by sync! to fast-forward local main without switching branches.
+		# The main warehouse location — resolves correctly even from a side shelf.
+		# Used by sync! and ledger recording to always reference the canonical path.
 		def main_worktree_root
 			git_common_dir, = git( "rev-parse", "--path-format=absolute", "--git-common-dir" )
 			common = git_common_dir.strip
 			# If it ends with /.git, the parent is the main worktree root.
 			common.end_with?( "/.git" ) ? File.dirname( common ) : common
 		end
+
+	private
 
 		# All git commands go through this single gateway.
 		# Returns [stdout, stderr, status].

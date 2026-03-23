@@ -194,8 +194,11 @@ module Carson
 		def record( parcel, status:, summary: nil )
 			return unless @ledger
 
+			# The ledger needs a repository-like object with .path pointing
+			# to the main warehouse root (not a side shelf).
+			repo = Struct.new( :path ).new( @warehouse.main_worktree_root )
 			@ledger.upsert_delivery(
-				repository: nil,
+				repository: repo,
 				branch_name: parcel.label,
 				head: parcel.head,
 				worktree_path: @warehouse.path,
