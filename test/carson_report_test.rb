@@ -77,4 +77,23 @@ class CarsonReportTest < Minitest::Test
 
 		assert_includes output.string, "PR closed externally"
 	end
+
+	def test_report_human_shows_sync_failure
+		result = { label: "feature/sync-fail", outcome: "delivered", synced: false }
+		output = StringIO.new
+		Carson.report( result, format: :human, output: output )
+
+		assert_includes output.string, "Merged"
+		assert_includes output.string, "not synced"
+		assert_includes output.string, "carson sync"
+	end
+
+	def test_report_human_omits_sync_line_when_key_absent
+		result = { label: "feature/no-sync-key", outcome: "delivered" }
+		output = StringIO.new
+		Carson.report( result, format: :human, output: output )
+
+		assert_includes output.string, "Merged"
+		refute_includes output.string, "synced"
+	end
 end
