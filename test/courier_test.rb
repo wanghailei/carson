@@ -73,6 +73,26 @@ class CourierTest < Minitest::Test
 		assert_match( /behind/, result[ :error ] )
 	end
 
+	def test_blocks_delivery_when_fetch_fails
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/fetch-fail", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "change.txt" ), "test" )
+		system( "git", "-C", @repo_path, "add", "change.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "change", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		# Stub fetch_latest to simulate network failure.
+		warehouse.define_singleton_method( :fetch_latest ) { |**| false }
+
+		courier = Carson::Courier.new( warehouse )
+		parcel = Carson::Parcel.new( label: "feature/fetch-fail", head: warehouse.current_head )
+
+		result = courier.deliver( parcel )
+		assert_equal Carson::Courier::BLOCKED, result[ :exit ]
+		assert_match( /fetch failed/, result[ :error ] )
+		assert_match( /carson sync/, result[ :recovery ] )
+	end
+
 	# --- Packing ---
 
 	def test_packs_before_shipping_when_commit_message_provided
