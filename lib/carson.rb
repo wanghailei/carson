@@ -31,7 +31,7 @@ module Carson
 		case result[ :outcome ]
 		when "delivered"
 			output.puts "#{BADGE} Delivered."
-			output.puts "#{BADGE} Synced local main." if result[ :synced ]
+			output.puts "#{BADGE} Warehouse updated to latest standard." if result[ :synced ]
 		when "held"
 			output.puts "#{BADGE} Held \u2014 #{result[ :hold_summary ]}."
 		when "rejected"
