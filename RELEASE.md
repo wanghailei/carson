@@ -42,7 +42,7 @@ Release-note scope rule:
 
 - **`carson deliver` waits for CI and merges automatically** — `carson deliver` now polls GitHub up to 6 times (default 30s interval) instead of checking once and returning immediately. PRs that pass CI are merged without re-running `carson deliver`. Agents that relied on instant return should expect it to block for up to 3 minutes.
 - **Hold reasons renamed** — JSON output field `hold_reason` values changed: `inspector_pending` → `pending_at_registry`, `inspector_failed` → `failed_at_registry`, `inspector_error` → `error_at_registry`. Agents parsing these values must update.
-- **Hold messages include recovery commands** — Human output for held deliveries now shows actionable next steps (e.g. `→ git rebase origin/main` then `→ carson deliver`) instead of prose descriptions.
+- **Hold messages include recovery commands** — Human output for held deliveries now shows actionable next steps (e.g. `→ carson deliver`) instead of prose descriptions.
 
 ### New
 
@@ -71,7 +71,8 @@ Release-note scope rule:
 
 ### What changed
 
-- **Recovery hints re-enter through Carson, not blocked raw commands** — Delivery error recovery messages no longer suggest raw `gh pr create`, `gh pr merge`, or `git rebase` commands. All recovery paths now guide the user back through Carson. Freshness blocks say "refresh this branch onto the target, then `carson deliver`" instead of teaching raw git recipes.
+- **Recovery hints re-enter through Carson, not blocked raw commands** — Delivery error recovery messages no longer suggest raw `gh pr create` or `gh pr merge`. All recovery paths guide the user back through Carson.
+- **Auto-rebase on delivery** — `carson deliver` automatically rebases the branch when it's behind remote main. Only blocks if the rebase hits a conflict. No more manual `git rebase` before delivery.
 - **Fast PR indentation guard restored** — The Ruby indentation guard in CI now correctly handles access modifier detection, fixing false positives that blocked PRs.
 
 ### No migration required
