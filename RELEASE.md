@@ -11,6 +11,15 @@ Release-note scope rule:
 
 - CLI grammar is now two-tier: portfolio commands (`list`, `onboard`, `offboard`, `refresh`, `version`) and repo-scoped commands (`carson <repo> <command>` or `carson <command>` from CWD)
 
+## 4.0.3
+
+### Fixed
+
+- **No-checks repos can now merge** (#465) — `Waybill#cleared?` required CI to pass, but repos with no CI checks returned `:none`. These repos were permanently held. Now `:none` is treated as non-blocking.
+- **Sync failure reported explicitly** — When local main fails to sync after a merge, `carson deliver` now prints "Local main not synced — run carson sync." instead of silently omitting the line.
+- **Freshness fetch failure blocks delivery** — `Courier#deliver` ignored the return value of `fetch_latest`. If the fetch failed (network error), Carson reasoned from stale refs. Now blocks immediately with "cannot verify freshness — fetch failed" and Carson-first recovery.
+- **PR data reaches the ledger** — The Courier's `record` method hardcoded `pr_number: nil` and `pr_url: nil`. Filed deliveries had no PR reference in the ledger. Now passes waybill tracking number and URL.
+
 ## 4.0.2
 
 ### Fixed
