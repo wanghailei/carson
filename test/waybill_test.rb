@@ -139,6 +139,29 @@ class WaybillTest < Minitest::Test
 		assert waybill.mergeability_pending?
 	end
 
+	# --- No-checks repositories (#465) ---
+
+	def test_cleared_when_no_ci_checks
+		waybill = build_filed_waybill
+		waybill.stub_bureau_response(
+			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" },
+			ci: :none
+		)
+		assert waybill.cleared?, "repo with no CI checks should clear when merge state is clean"
+		refute waybill.held?
+	end
+
+	def test_held_reason_not_ci_when_no_checks
+		waybill = build_filed_waybill
+		waybill.stub_bureau_response(
+			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "BEHIND" },
+			ci: :none
+		)
+		assert waybill.held?
+		assert_equal "behind_registry", waybill.hold_reason,
+			"no-checks repo held for merge reason, not CI"
+	end
+
 	# --- Observation data ---
 
 	def test_to_observation_returns_state_hash

@@ -98,7 +98,7 @@ module Carson
 		def cleared?
 			return false unless filed?
 			return false if draft?
-			return false unless @ci == :pass
+			return false unless @ci == :pass || @ci == :none
 			return false if merge_conflicting? || merge_behind? || merge_policy_blocked?
 			merge_status = @state&.dig( "mergeStateStatus" ).to_s.upcase
 			mergeable = @state&.dig( "mergeable" ).to_s.upcase
