@@ -136,6 +136,62 @@ class CourierTest < Minitest::Test
 		assert recordings.any? { it[ :status ] == "preparing" }
 	end
 
+	def test_ledger_final_record_includes_pr_data
+		# Directly exercise the record method with a known waybill to prove
+		# pr_number and pr_url reach the ledger.
+		recordings = []
+		fake_ledger = Object.new
+		fake_ledger.define_singleton_method( :upsert_delivery ) do |**kwargs|
+			recordings << kwargs
+		end
+
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake", bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
+		parcel = Carson::Parcel.new( label: "feature/pr-data", head: "abc123" )
+
+		# A waybill with known PR data (as if filing succeeded).
+		waybill = Carson::Waybill.new(
+			label: "feature/pr-data",
+			warehouse_path: "/tmp/fake",
+			tracking_number: 99,
+			url: "https://github.com/owner/repo/pull/99"
+		)
+
+		# Call record directly — this is what deliver calls after the outcome.
+		courier.send( :record, parcel, status: "filed", summary: nil, waybill: waybill )
+
+		assert_equal 1, recordings.length
+		record = recordings.first
+		assert_equal 99, record[ :pr_number ],
+			"pr_number should be the waybill tracking number"
+		assert_equal "https://github.com/owner/repo/pull/99", record[ :pr_url ],
+			"pr_url should be the waybill URL"
+	end
+
+	def test_ledger_preparing_record_has_nil_pr_data
+		# The "preparing" record is created before the waybill exists.
+		# Verify pr_number and pr_url are nil.
+		recordings = []
+		fake_ledger = Object.new
+		fake_ledger.define_singleton_method( :upsert_delivery ) do |**kwargs|
+			recordings << kwargs
+		end
+
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake", bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
+		parcel = Carson::Parcel.new( label: "feature/no-waybill", head: "def456" )
+
+		# Call record without a waybill — this is what deliver calls at "preparing".
+		courier.send( :record, parcel, status: "preparing", summary: "delivery accepted" )
+
+		assert_equal 1, recordings.length
+		record = recordings.first
+		assert_nil record[ :pr_number ],
+			"preparing record should have nil pr_number (no waybill yet)"
+		assert_nil record[ :pr_url ],
+			"preparing record should have nil pr_url (no waybill yet)"
+	end
+
 	# --- Receive latest standard after acceptance ---
 
 	def test_receives_latest_standard_after_acceptance

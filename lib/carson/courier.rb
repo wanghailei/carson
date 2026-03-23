@@ -176,7 +176,7 @@ module Carson
 			@warehouse.unseal_shelf! if outcome == "delivered" || outcome == "held" || outcome == "rejected"
 
 			# Update the ledger with the final outcome.
-			record( parcel, status: outcome || "filed", summary: result[ :hold_reason ] )
+			record( parcel, status: outcome || "filed", summary: result[ :hold_reason ], waybill: waybill )
 
 			result[ :exit ] ||= OK
 			result
@@ -258,7 +258,7 @@ module Carson
 
 		# Record a delivery state change in the ledger.
 		# No-op when no ledger is injected (e.g. tests).
-		def record( parcel, status:, summary: nil )
+		def record( parcel, status:, summary: nil, waybill: nil )
 			return unless @ledger
 
 			# The ledger needs a repository-like object with .path pointing
@@ -269,8 +269,8 @@ module Carson
 				branch_name: parcel.label,
 				head: parcel.head,
 				worktree_path: @warehouse.path,
-				pr_number: nil,
-				pr_url: nil,
+				pr_number: waybill&.tracking_number,
+				pr_url: waybill&.url,
 				status: status,
 				summary: summary,
 				cause: nil
