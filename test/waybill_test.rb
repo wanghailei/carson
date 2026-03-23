@@ -66,8 +66,8 @@ class WaybillTest < Minitest::Test
 			ci: :pending
 		)
 		assert waybill.held?
-		assert_equal "inspector_pending", waybill.hold_reason
-		assert_equal "waiting for customs inspection", waybill.hold_summary
+		assert_equal "pending_at_registry", waybill.hold_reason
+		assert_equal "waiting for bureaucrats to check", waybill.hold_summary
 	end
 
 	def test_held_when_ci_fails
@@ -77,7 +77,7 @@ class WaybillTest < Minitest::Test
 			ci: :fail
 		)
 		assert waybill.held?
-		assert_equal "inspector_failed", waybill.hold_reason
+		assert_equal "failed_at_registry", waybill.hold_reason
 	end
 
 	def test_held_when_draft

@@ -33,37 +33,41 @@ class CarsonReportTest < Minitest::Test
 		assert_includes output.string, "carson deliver"
 	end
 
-	def test_report_human_shows_ci_pending
-		result = { label: "feature/ci", outcome: "held", hold_reason: "inspector_pending" }
+	def test_report_human_shows_ci_pending_with_recovery
+		result = { label: "feature/ci", outcome: "held", hold_reason: "pending_at_registry" }
 		output = StringIO.new
 		Carson.report( result, format: :human, output: output )
 
 		assert_includes output.string, "Waiting for CI checks"
+		assert_includes output.string, "carson status"
 	end
 
-	def test_report_human_shows_ci_failed
-		result = { label: "feature/ci-fail", outcome: "held", hold_reason: "inspector_failed" }
+	def test_report_human_shows_ci_failed_with_recovery
+		result = { label: "feature/ci-fail", outcome: "held", hold_reason: "failed_at_registry" }
 		output = StringIO.new
 		Carson.report( result, format: :human, output: output )
 
 		assert_includes output.string, "CI checks failed"
-	end
-
-	def test_report_human_shows_merge_conflict
-		result = { label: "feature/conflict", outcome: "held", hold_reason: "merge_conflict" }
-		output = StringIO.new
-		Carson.report( result, format: :human, output: output )
-
-		assert_includes output.string, "Merge conflict with main"
-	end
-
-	def test_report_human_shows_deferred
-		result = { label: "feature/deferred", outcome: "deferred" }
-		output = StringIO.new
-		Carson.report( result, format: :human, output: output )
-
-		assert_includes output.string, "Merge deferred"
 		assert_includes output.string, "carson deliver"
+	end
+
+	def test_report_human_shows_merge_conflict_with_rebase_command
+		result = { label: "feature/conflict", outcome: "held", hold_reason: "merge_conflict", remote_main: "origin/main" }
+		output = StringIO.new
+		Carson.report( result, format: :human, output: output )
+
+		assert_includes output.string, "Merge conflict with origin/main"
+		assert_includes output.string, "git rebase origin/main"
+		assert_includes output.string, "carson deliver"
+	end
+
+	def test_report_human_shows_filed_with_status_command
+		result = { label: "feature/filed", outcome: "filed" }
+		output = StringIO.new
+		Carson.report( result, format: :human, output: output )
+
+		assert_includes output.string, "hasn't responded yet"
+		assert_includes output.string, "carson status"
 	end
 
 	def test_report_human_shows_pr_closed

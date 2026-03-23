@@ -2,12 +2,18 @@
 module Carson
 	# The delivery person — picks up parcels and delivers them to the registry.
 	#
-	# In the FedEx metaphor, the courier is a Carson employee assigned to
-	# a warehouse. They pick up a parcel, ship it to the bureau, file a
-	# waybill, and check the bureau's response.
+	# The courier is a Carson employee assigned to a warehouse. They pick up
+	# a parcel, ship it to the bureau, file a waybill, and wait at the
+	# registry while the bureaucrats check it.
 	#
 	# The courier is a thin orchestrator: it creates a Waybill and sends it
 	# messages. The domain logic lives in the objects, not the courier.
+	#
+	# == The bureau
+	#
+	# The bureau is a registry (GitHub) where bureaucrats work. They check
+	# parcels (CI, review, mergeability) and either accept them into the
+	# registry or hold them with a reason.
 	#
 	# == Situations the courier encounters
 	#
@@ -18,11 +24,11 @@ module Carson
 	#   02. Parcel behind standard — not based on client's latest standard.
 	#   03. Shipping fails — warehouse couldn't push to the bureau.
 	#   04. Waybill filing fails — bureau rejected the paperwork.
-	#   05. Inspector pending — customs inspection (CI) still running.
-	#   06. Inspector fails — customs inspection (CI) failed.
-	#   07. Review officer pending — review still in progress.
-	#   08. Review changes requested — officer wants corrections.
-	#   09. Merge conflict — parcel has conflicts with registry contents.
+	#   05. Pending at registry — bureaucrats still checking (CI running).
+	#   06. Failed at registry — bureaucrats rejected (CI failed).
+	#   07. Review pending — review still in progress.
+	#   08. Review changes requested — reviewer wants corrections.
+	#   09. Merge conflict — parcel conflicts with registry contents.
 	#   10. Behind standard (post-filing) — standard changed since shipping.
 	#   11. Policy block — bureau regulation prevents acceptance.
 	#   12. Draft waybill — form not finalised.
@@ -33,16 +39,17 @@ module Carson
 	#   17. Parcel already delivered — already in registry.
 	#   18. Waybill closed — cancelled by someone externally.
 	#
-	# == Design: no polling
+	# == Design: wait and poll at the registry
 	#
-	# The courier does NOT wait at the customs window. It files the waybill,
-	# checks the bureau's response once, and reports back. If the bureau hasn't
-	# cleared the parcel yet, the courier reports "held" with the reason.
-	# Re-dispatch is Carson Co.'s responsibility (the monitor command).
+	# The courier waits at the registry while the bureaucrats check the parcel.
+	# It polls up to MAX_CHECKS_AT_REGISTRY times, pausing between each check.
+	# If the bureaucrats give a definitive answer (accepted or rejected), the
+	# courier acts immediately. If the checks are exhausted without a definitive
+	# answer, the courier reports "filed" — the parcel is still at the registry.
 	#
 	# == Future: destination modes
 	#
-	# Currently remote-centred (ship → waybill → bureau customs → registry).
+	# Currently remote-centred (ship → waybill → registry → acceptance).
 	# A future local-centred mode merges locally; remote is a synced backup.
 	# The destination mode should be injectable, not baked in.
 	class Courier
@@ -51,16 +58,24 @@ module Carson
 		ERROR = 1
 		BLOCKED = 2
 
-		def initialize( warehouse, ledger: nil, merge_method: "rebase" )
+		# The courier checks the registry up to 6 times before leaving.
+		MAX_CHECKS_AT_REGISTRY = 6
+
+		def initialize( warehouse, ledger: nil, merge_method: "rebase", poll_interval_at_registry: 30 )
 			@warehouse = warehouse
 			@ledger = ledger
 			@merge_method = merge_method
+			@poll_interval_at_registry = poll_interval_at_registry
 		end
 
 		# Deliver a parcel to the registry.
-		# Ships it, files a waybill, checks the bureau's response, requests acceptance.
+		# Ships it, files a waybill, waits at the registry for the bureaucrats.
 		def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
-			result = { command: "deliver", label: parcel.label }
+			result = {
+				command: "deliver",
+				label: parcel.label,
+				remote_main: "#{@warehouse.bureau_address}/#{@warehouse.main_label}"
+			}
 
 			# 01. Parcel on main — cannot deliver from the destination.
 			if parcel.on_main?( @warehouse.main_label )
@@ -100,9 +115,10 @@ module Carson
 			# 02. Parcel behind standard — not based on client's latest standard.
 			@warehouse.fetch_latest( registry: @warehouse.main_label )
 			unless @warehouse.based_on_latest_standard?( parcel )
+				remote_main = "#{@warehouse.bureau_address}/#{@warehouse.main_label}"
 				return blocked( result,
-					"branch is behind #{@warehouse.bureau_address}/#{@warehouse.main_label}",
-					recovery: "rebase onto #{@warehouse.bureau_address}/#{@warehouse.main_label}, then carson deliver" )
+					"branch is behind #{remote_main}",
+					recovery: "git rebase #{remote_main}, then carson deliver" )
 			end
 
 			# The courier picks up the parcel — start tracking.
@@ -128,8 +144,8 @@ module Carson
 			result[ :tracking_number ] = waybill.tracking_number
 			result[ :url ] = waybill.url
 
-			# Check the bureau's response — one check, no polling.
-			check_bureau( waybill, result )
+			# Wait at the registry while the bureaucrats check the parcel.
+			wait_and_poll_at_registry( waybill, result )
 
 			# Update the ledger with the final outcome.
 			record( parcel, status: result[ :outcome ] || "filed", summary: result[ :hold_reason ] )
@@ -140,47 +156,68 @@ module Carson
 
 	private
 
-		# Check the bureau's response once. No polling, no waiting.
-		# If cleared → request acceptance. If held → report why.
-		# Re-dispatch is Carson Co.'s job (the monitor command).
-		def check_bureau( waybill, result )
-			waybill.refresh!
+		# Wait at the registry, polling the bureaucrats up to MAX_CHECKS_AT_REGISTRY
+		# times. The courier stays until a definitive answer comes back or the
+		# checks are exhausted.
+		def wait_and_poll_at_registry( waybill, result )
+			MAX_CHECKS_AT_REGISTRY.times do |check|
+				waybill.refresh!
 
-			# 14/17. Already accepted — parcel is in the registry.
-			if waybill.accepted?
-				result[ :outcome ] = "delivered"
-				result[ :synced ] = @warehouse.receive_latest_standard!
-				return
-			end
-
-			# 18. Waybill closed — cancelled externally.
-			if waybill.rejected?
-				result[ :outcome ] = "rejected"
-				result[ :exit ] = BLOCKED
-				return
-			end
-
-			# Cleared or mergeability pending — try to accept.
-			if waybill.cleared? || waybill.mergeability_pending?
-				waybill.accept!( method: @merge_method )
-
+				# 14/17. Already accepted — parcel is in the registry.
 				if waybill.accepted?
 					result[ :outcome ] = "delivered"
 					result[ :synced ] = @warehouse.receive_latest_standard!
 					return
 				end
+
+				# 18. Waybill closed — cancelled externally.
+				if waybill.rejected?
+					result[ :outcome ] = "rejected"
+					result[ :exit ] = BLOCKED
+					return
+				end
+
+				# Cleared or mergeability pending — try to accept.
+				if waybill.cleared? || waybill.mergeability_pending?
+					waybill.accept!( method: @merge_method )
+
+					if waybill.accepted?
+						result[ :outcome ] = "delivered"
+						result[ :synced ] = @warehouse.receive_latest_standard!
+						return
+					end
+				end
+
+				# 05-12. Definitively blocked — courier takes parcel back.
+				if definitively_blocked?( waybill )
+					result[ :outcome ] = "held"
+					result[ :exit ] = BLOCKED
+					result[ :hold_reason ] = waybill.hold_reason
+					return
+				end
+
+				# Still waiting — pause before the next check.
+				pause_between_polls unless check == MAX_CHECKS_AT_REGISTRY - 1
 			end
 
-			# 05-12. Held by the bureau — report the reason.
-			if waybill.held?
-				result[ :outcome ] = "held"
-				result[ :exit ] = BLOCKED
-				result[ :hold_reason ] = waybill.hold_reason
-				return
-			end
-
-			# Filed but no definitive response yet.
+			# Exhausted all checks — bureau hasn't given a definitive answer.
 			result[ :outcome ] = "filed"
+			result[ :hold_reason ] = waybill.hold_reason
+		end
+
+		# Is the waybill blocked by something that won't resolve by waiting?
+		# CI failure, merge conflict, policy block — the courier should take
+		# the parcel back immediately.
+		def definitively_blocked?( waybill )
+			return false unless waybill.held?
+			reason = waybill.hold_reason
+			[ "failed_at_registry", "merge_conflict",
+				"behind_registry", "policy_block", "draft" ].include?( reason )
+		end
+
+		# Pause between poll checks. Overridable for test isolation.
+		def pause_between_polls
+			sleep @poll_interval_at_registry
 		end
 
 		# Record a delivery state change in the ledger.
