@@ -379,4 +379,55 @@ class WarehouseTest < Minitest::Test
 		result = warehouse.ship( parcel, remote: "nonexistent" )
 		refute result
 	end
+
+	# --- Shelf seal ---
+
+	def test_sealed_false_by_default
+		warehouse = Carson::Warehouse.new( path: @repo_path )
+		refute warehouse.sealed?
+	end
+
+	def test_seal_and_unseal_shelf
+		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse.seal_shelf!( tracking_number: 42 )
+
+		assert warehouse.sealed?
+		assert_equal "42", warehouse.sealed_tracking_number
+
+		warehouse.unseal_shelf!
+		refute warehouse.sealed?
+		assert_nil warehouse.sealed_tracking_number
+	end
+
+	def test_pack_blocked_when_shelf_sealed
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/sealed", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "sealed.txt" ), "sealed" )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse.seal_shelf!( tracking_number: 99 )
+
+		error = assert_raises( RuntimeError ) do
+			warehouse.pack!( message: "should be blocked" )
+		end
+		assert_includes error.message, "sealed"
+		assert_includes error.message, "PR #99"
+	end
+
+	def test_pack_allowed_after_shelf_unsealed
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/unsealed", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "unsealed.txt" ), "unsealed" )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse.seal_shelf!( tracking_number: 100 )
+		warehouse.unseal_shelf!
+
+		assert warehouse.pack!( message: "should work after unseal" )
+	end
+
+	def test_unseal_is_safe_when_not_sealed
+		warehouse = Carson::Warehouse.new( path: @repo_path )
+		# Should not raise.
+		warehouse.unseal_shelf!
+		refute warehouse.sealed?
+	end
 end

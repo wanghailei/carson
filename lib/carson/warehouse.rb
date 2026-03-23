@@ -91,11 +91,41 @@ module Carson
 		end
 
 		# Pack a parcel — stage all changes and commit.
+		# Refuses if the shelf is sealed (parcel already in flight).
 		# Returns true on success, false on failure.
 		def pack!( message: )
+			if sealed?
+				raise "Shelf is sealed — parcel in flight (PR ##{sealed_tracking_number}). " \
+					"Create a new worktree to continue working."
+			end
 			git( "add", "-A" )
 			_, _, status = git( "commit", "-m", message )
 			status.success?
+		end
+
+		# --- Shelf seal ---
+
+		# Seal the shelf — no more packing until the delivery outcome is confirmed.
+		# The courier seals the shelf after shipping and filing the waybill.
+		def seal_shelf!( tracking_number: )
+			File.write( delivering_marker_path, tracking_number.to_s )
+		end
+
+		# Unseal the shelf — the courier brought back the parcel.
+		# Called when the delivery outcome is held or rejected.
+		def unseal_shelf!
+			File.delete( delivering_marker_path ) if File.exist?( delivering_marker_path )
+		end
+
+		# Is this shelf sealed for a delivery in flight?
+		def sealed?
+			File.exist?( delivering_marker_path )
+		end
+
+		# The tracking number of the in-flight delivery (nil if not sealed).
+		def sealed_tracking_number
+			return nil unless sealed?
+			File.read( delivering_marker_path ).strip
 		end
 
 		# Receive the latest standard from the registry after a parcel is accepted.
@@ -141,6 +171,11 @@ module Carson
 		end
 
 	private
+
+		# Path to the delivery marker file — signals the shelf is sealed.
+		def delivering_marker_path
+			File.join( path, ".carson-delivering" )
+		end
 
 		# All git commands go through this single gateway.
 		# Returns [stdout, stderr, status].

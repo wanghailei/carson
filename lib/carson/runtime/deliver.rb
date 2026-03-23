@@ -22,7 +22,8 @@ module Carson
 				courier = Courier.new( warehouse,
 				ledger: ledger,
 				merge_method: config.govern_merge_method,
-				poll_interval_at_registry: config.poll_interval_at_registry
+				poll_interval_at_registry: config.poll_interval_at_registry,
+				output: output
 			)
 
 				result = courier.deliver( parcel,
