@@ -134,7 +134,7 @@ module Carson
 			end
 
 			# Announce the delivery.
-			say "Carson is delivering branch #{parcel.label} to #{result[ :remote_main ]}..."
+			say "Carson is delivering committed changes on branch #{parcel.label} to #{result[ :remote_main ]}..."
 
 			# The courier picks up the parcel — start tracking.
 			record( parcel, status: "preparing", summary: "delivery accepted" )
