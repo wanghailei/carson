@@ -211,7 +211,7 @@ module Carson
 		def definitively_blocked?( waybill )
 			return false unless waybill.held?
 			reason = waybill.hold_reason
-			[ "failed_at_registry", "error_at_registry", "merge_conflict",
+			[ "failed_at_registry", "merge_conflict",
 				"behind_registry", "policy_block", "draft" ].include?( reason )
 		end
 
