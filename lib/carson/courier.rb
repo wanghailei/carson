@@ -40,10 +40,12 @@ module Carson
 	# A future local-centred mode merges locally; remote is a synced backup.
 	# The destination mode should be injectable, not baked in.
 	class Courier
-		# Comments TODO.
+		# Exit codes — shared contract between Carson employees and the CLI.
 		OK = 0
 		ERROR = 1
 		BLOCKED = 2
+
+		# Maximum merge attempts before the courier stops retrying (situation 13/15).
 		MERGE_ATTEMPT_CAP = 3
 
 		def initialize( warehouse, output: $stdout, verbose: false )
@@ -100,7 +102,9 @@ module Carson
 		end
 
 	private
-		# WHL: Shall an attr_reader be private?
+
+		# The warehouse is the courier's internal knowledge — callers never
+		# reach through the courier to access the warehouse directly.
 		attr_reader :warehouse
 
 		# The courier waits at the customs window, checking periodically.
@@ -155,14 +159,18 @@ module Carson
 			end
 		end
 
+		# How the bureau accepts parcels into the registry.
+		# Injected from warehouse config in the future.
 		def merge_method
 			"rebase"
 		end
 
+		# Seconds between customs checks while settling.
 		def poll_interval
 			5
 		end
 
+		# Build a blocked result — the courier cannot proceed.
 		def blocked( result, message, recovery: nil )
 			result[ :exit ] = BLOCKED
 			result[ :error ] = message
