@@ -125,7 +125,11 @@ module Carson
 			parcel = Parcel.new( label: parcel.label, head: @warehouse.current_head, shelf: parcel.shelf )
 
 			# 02. Parcel behind standard — not based on client's latest standard.
-			@warehouse.fetch_latest( registry: @warehouse.main_label )
+			unless @warehouse.fetch_latest( registry: @warehouse.main_label )
+				return blocked( result,
+					"cannot verify freshness \u2014 fetch failed",
+					recovery: "carson sync, then carson deliver" )
+			end
 			unless @warehouse.based_on_latest_standard?( parcel )
 				remote_main = "#{@warehouse.bureau_address}/#{@warehouse.main_label}"
 				return blocked( result,
