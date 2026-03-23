@@ -180,7 +180,7 @@ module Carson
 			outcome = result[ :outcome ]
 			@warehouse.unseal_shelf! if outcome == "delivered" || outcome == "held" || outcome == "rejected"
 
-			# Update the ledger with the final outcome.
+			# Update the ledger with the final outcome and PR identity.
 			record( parcel, status: outcome || "filed", summary: result[ :hold_reason ], waybill: waybill )
 
 			result[ :exit ] ||= OK
@@ -262,7 +262,7 @@ module Carson
 		end
 
 		# Record a delivery state change in the ledger.
-		# No-op when no ledger is injected (e.g. tests).
+		# When a waybill is provided, its PR identity is persisted.
 		def record( parcel, status:, summary: nil, waybill: nil )
 			return unless @ledger
 

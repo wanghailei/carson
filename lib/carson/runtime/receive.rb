@@ -127,6 +127,16 @@ module Carson
 					)
 				end
 
+				# No PR number — courier failed to record it. Cannot reconcile against GitHub.
+				unless delivery.pull_request_number
+					return ledger.update_delivery(
+						delivery: delivery,
+						status: "failed",
+						cause: "policy",
+						summary: "PR number missing from delivery record — run carson deliver to refile"
+					)
+				end
+
 				pr_state = pull_request_state( number: delivery.pull_request_number )
 				if pr_state && pr_state[ "state" ] == "MERGED"
 					return ledger.update_delivery(

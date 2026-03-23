@@ -441,6 +441,62 @@ class CourierTest < Minitest::Test
 		assert_equal "delivered", result[ :outcome ]
 	end
 
+	# --- Ledger records PR identity from waybill ---
+
+	def test_final_record_includes_pr_number_and_url_from_waybill
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/pr-identity", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "pr.txt" ), "pr identity" )
+		system( "git", "-C", @repo_path, "add", "pr.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "pr identity test", out: File::NULL, err: File::NULL )
+
+		recordings = []
+		fake_ledger = Object.new
+		fake_ledger.define_singleton_method( :upsert_delivery ) do |**kwargs|
+			recordings << kwargs
+		end
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
+		parcel = Carson::Parcel.new( label: "feature/pr-identity", head: warehouse.current_head )
+
+		# Deliver — waybill filing will fail (no gh in test), so only the
+		# preparing record is written. To test the final record path, we
+		# call record directly with a waybill that has PR data.
+		waybill = Carson::Waybill.new( label: "feature/pr-identity", warehouse_path: @repo_path, tracking_number: 99 )
+		waybill.instance_variable_set( :@url, "https://github.com/test/repo/pull/99" )
+
+		courier.send( :record, parcel, status: "filed", summary: "bureau undecided", waybill: waybill )
+
+		final = recordings.last
+		assert_equal 99, final[ :pr_number ]
+		assert_equal "https://github.com/test/repo/pull/99", final[ :pr_url ]
+	end
+
+	def test_initial_record_has_nil_pr_when_no_waybill
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/no-waybill", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "nw.txt" ), "no waybill" )
+		system( "git", "-C", @repo_path, "add", "nw.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "no waybill test", out: File::NULL, err: File::NULL )
+
+		recordings = []
+		fake_ledger = Object.new
+		fake_ledger.define_singleton_method( :upsert_delivery ) do |**kwargs|
+			recordings << kwargs
+		end
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
+		parcel = Carson::Parcel.new( label: "feature/no-waybill", head: warehouse.current_head )
+
+		courier.send( :record, parcel, status: "preparing", summary: "delivery accepted" )
+
+		initial = recordings.last
+		assert_nil initial[ :pr_number ]
+		assert_nil initial[ :pr_url ]
+	end
+
 	# --- Result includes remote_main ---
 
 	def test_result_includes_remote_main
