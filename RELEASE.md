@@ -11,6 +11,14 @@ Release-note scope rule:
 
 - CLI grammar is now two-tier: portfolio commands (`list`, `onboard`, `offboard`, `refresh`, `version`) and repo-scoped commands (`carson <repo> <command>` or `carson <command>` from CWD)
 
+## 4.0.2
+
+### Fixed
+
+- **Seal marker moved outside worktree** — `.carson-delivering` marker now lives at `~/.carson/seals/` instead of inside the worktree. The in-worktree marker polluted `git status`, showed as untracked in editors, and blocked `carson deliver` via the dirty-tree guard. Seal file includes the worktree path for debugging.
+- **`receive_latest_standard!` works from worktrees** (#451) — `git fetch origin main:main` failed when `main` was checked out in the main worktree ("fatal: refusing to fetch into branch checked out"). Now uses `merge --ff-only` when main is checked out, fetch refspec otherwise.
+- **Audit seal check delegates to Warehouse** — `carson audit` no longer hardcodes the marker path; it creates a Warehouse and asks `sealed?`. Single source of truth for seal location.
+
 ## 4.0.1
 
 ### What changed
