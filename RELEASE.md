@@ -15,6 +15,25 @@ Release-note scope rule:
 - `--all` removed from all repo commands; use `carson list --json` to script batch operations
 - `refresh` is now portfolio-only (always refreshes all governed repos)
 
+## 4.0.0
+
+### Breaking
+
+- **Courier waits at the registry** — `carson deliver` now polls the bureau up to 6 times (default 30s interval) instead of checking once and leaving. PRs that pass CI are merged automatically without re-running `carson deliver`. Agents that relied on instant return from `carson deliver` should expect it to block for up to 3 minutes.
+- **Hold reasons renamed** — JSON output field `hold_reason` values changed: `inspector_pending` → `pending_at_registry`, `inspector_failed` → `failed_at_registry`, `inspector_error` → `error_at_registry`. Agents parsing these values must update.
+- **Hold messages include recovery commands** — Human output for held deliveries now shows actionable recovery steps (e.g. `→ git rebase origin/main` then `→ carson deliver`) instead of prose descriptions.
+- **Bureau model simplified** — No more "customs" or "inspector" in the domain model. The bureau is a registry where bureaucrats check parcels. Internal only — no user-facing impact beyond the hold_reason rename above.
+
+### New
+
+- **`deliver.poll_interval_at_registry` config** — Controls how long the courier waits between registry checks (default 30 seconds). Override via config or `CARSON_POLL_INTERVAL_AT_REGISTRY` environment variable.
+- **`filed` outcome** — When the courier exhausts all checks without a definitive answer, it reports "filed" with `→ carson status` as the next step, instead of the old "deferred" with `→ carson deliver`.
+
+### Migration
+
+- If you parse `hold_reason` from JSON output, update: `inspector_pending` → `pending_at_registry`, `inspector_failed` → `failed_at_registry`, `inspector_error` → `error_at_registry`.
+- `carson deliver` now takes up to ~3 minutes (6 checks × 30s). Adjust timeouts in CI or automation scripts if needed.
+
 ## 3.30.3
 
 ### What changed
