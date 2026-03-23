@@ -9,18 +9,6 @@ module Carson
 			# Delegates to the OO domain model: Warehouse → Courier → Waybill.
 			# The Courier orchestrates the delivery; Carson renders the result.
 			def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
-				# Pre-flight: dirty tree check (Courier doesn't know about this yet).
-				if working_tree_dirty? && commit_message.to_s.strip.empty?
-					result = { command: "deliver", error: "working tree is dirty",
-						recovery: "carson deliver --commit \"describe this delivery\"", exit: EXIT_BLOCK }
-					return deliver_oo_finish( result: result, json_output: json_output )
-				end
-				if !working_tree_dirty? && !commit_message.to_s.strip.empty?
-					result = { command: "deliver", error: "working tree is already clean",
-						recovery: "carson deliver", exit: EXIT_BLOCK }
-					return deliver_oo_finish( result: result, json_output: json_output )
-				end
-
 				warehouse = Warehouse.new(
 					path: work_dir,
 					main_label: config.main_branch,
@@ -31,7 +19,7 @@ module Carson
 					label: current_branch,
 					head: current_head
 				)
-				courier = Courier.new( warehouse, ledger: ledger )
+				courier = Courier.new( warehouse, ledger: ledger, merge_method: config.govern_merge_method )
 
 				result = courier.deliver( parcel,
 					title: title,

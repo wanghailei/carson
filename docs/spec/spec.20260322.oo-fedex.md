@@ -113,13 +113,15 @@ The warehouse manages itself. It packs parcels, checks its own compliance, and s
 ║    shelves, labels                                ║
 ║                                                   ║
 ║  can:                                             ║
+║    clean?                   — any uncommitted changes?║
 ║    pack!( message: )        — prepare a parcel    ║
 ║    submit_compliance!       — ensure templates ok ║
 ║    sweep!                   — clean shelves/labels║
 ║    ship( parcel )           — send to bureau      ║
 ║    fetch_latest             — get registry state  ║
 ║    based_on_latest_standard?( parcel ) — production check  ║
-║    rebase_on_latest_standard!         — rebase to latest    ║
+║    rebase_on_latest_standard!  — rebase shelf to latest   ║
+║    receive_latest_standard!    — update local standard    ║
 ║    settle!                  — push to backup      ║
 ║    label_absorbed?( name )  — merged into main?   ║
 ║                                                   ║

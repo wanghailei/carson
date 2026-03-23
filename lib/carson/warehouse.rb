@@ -41,6 +41,12 @@ module Carson
 			@bureau_address
 		end
 
+		# Is the warehouse floor clean? No uncommitted changes on the current shelf.
+		def clean?
+			output, _, status = git( "status", "--porcelain" )
+			status.success? && output.strip.empty?
+		end
+
 		# --- Warehouse operations ---
 
 		# Ship a parcel to the bureau.
@@ -92,10 +98,10 @@ module Carson
 			status.success?
 		end
 
-		# Sync the warehouse's local main with the registry after a parcel is accepted.
+		# Receive the latest standard from the registry after a parcel is accepted.
 		# Fast-forwards local main without switching branches.
 		# Returns true on success, false on failure.
-		def sync!( remote: bureau_address )
+		def receive_latest_standard!( remote: bureau_address )
 			_, _, status = Open3.capture3(
 				"git", "-C", main_worktree_root,
 				"fetch", remote, "#{main_label}:#{main_label}"

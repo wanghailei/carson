@@ -73,6 +73,19 @@ class WarehouseTest < Minitest::Test
 		assert_equal "upstream", warehouse.bureau_address
 	end
 
+	# --- Cleanliness ---
+
+	def test_clean_when_nothing_uncommitted
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		assert warehouse.clean?
+	end
+
+	def test_not_clean_when_dirty
+		File.write( File.join( @repo_path, "dirty.txt" ), "uncommitted" )
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		refute warehouse.clean?
+	end
+
 	# --- Compliance ---
 
 	def test_submit_compliance_passes_without_checker
@@ -271,9 +284,9 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "rebase", "--abort", out: File::NULL, err: File::NULL )
 	end
 
-	# --- Sync ---
+	# --- Receive latest standard ---
 
-	def test_sync_fast_forwards_local_main
+	def test_receive_latest_standard_fast_forwards_local_main
 		# Advance remote main via a second clone.
 		second_clone = File.join( @tmpdir, "second-clone-sync" )
 		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
@@ -293,7 +306,7 @@ class WarehouseTest < Minitest::Test
 		local_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 		remote_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "origin/main" )
 
-		result = warehouse.sync!
+		result = warehouse.receive_latest_standard!
 		assert result
 
 		# After sync, local main should match the remote.

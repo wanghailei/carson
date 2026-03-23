@@ -21,14 +21,41 @@ class CourierTest < Minitest::Test
 		assert_match( /cannot deliver from main/, result[ :error ] )
 	end
 
+	def test_blocks_when_dirty_without_commit_message
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/dirty", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "dirty.txt" ), "uncommitted" )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse )
+		parcel = Carson::Parcel.new( label: "feature/dirty", head: warehouse.current_head )
+
+		result = courier.deliver( parcel )
+		assert_equal Carson::Courier::BLOCKED, result[ :exit ]
+		assert_match( /dirty/, result[ :error ] )
+	end
+
+	def test_blocks_when_clean_with_commit_message
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/clean-commit", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse )
+		parcel = Carson::Parcel.new( label: "feature/clean-commit", head: warehouse.current_head )
+
+		result = courier.deliver( parcel, commit_message: "nothing here" )
+		assert_equal Carson::Courier::BLOCKED, result[ :exit ]
+		assert_match( /already clean/, result[ :error ] )
+	end
+
 	def test_blocks_delivery_when_behind_registry
-		dir = setup_repo_with_remote
+		setup_repo_with_remote
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 
-		# Create a feature branch
+		# Create a feature branch.
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/behind", out: File::NULL, err: File::NULL )
 
-		# Advance main on the remote
+		# Advance main on the remote.
 		second = File.join( @tmpdir, "second" )
 		system( "git", "clone", @remote_path, second, out: File::NULL, err: File::NULL )
 		system( "git", "-C", second, "config", "user.email", "t@t.com", out: File::NULL, err: File::NULL )
@@ -55,7 +82,6 @@ class CourierTest < Minitest::Test
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		courier = Carson::Courier.new( warehouse )
-		# Parcel created before packing — head will change after pack.
 		parcel = Carson::Parcel.new( label: "feature/pack", head: warehouse.current_head )
 
 		courier.deliver( parcel, commit_message: "pack this parcel" )
@@ -63,19 +89,6 @@ class CourierTest < Minitest::Test
 		# Verify the commit was created.
 		log, = Open3.capture3( "git", "-C", @repo_path, "log", "--oneline", "-1" )
 		assert_includes log, "pack this parcel"
-	end
-
-	def test_packing_fails_with_nothing_to_commit
-		setup_repo_with_remote
-		system( "git", "-C", @repo_path, "checkout", "-b", "feature/empty-pack", out: File::NULL, err: File::NULL )
-
-		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		courier = Carson::Courier.new( warehouse )
-		parcel = Carson::Parcel.new( label: "feature/empty-pack", head: warehouse.current_head )
-
-		result = courier.deliver( parcel, commit_message: "nothing here" )
-		assert_equal Carson::Courier::ERROR, result[ :exit ]
-		assert_match( /packing failed/, result[ :error ] )
 	end
 
 	# --- Ledger ---
@@ -103,9 +116,9 @@ class CourierTest < Minitest::Test
 		assert recordings.any? { it[ :status ] == "preparing" }
 	end
 
-	# --- Sync after acceptance ---
+	# --- Receive latest standard after acceptance ---
 
-	def test_syncs_local_main_after_acceptance
+	def test_receives_latest_standard_after_acceptance
 		setup_repo_with_remote
 
 		# Create a feature branch and commit.
@@ -122,7 +135,6 @@ class CourierTest < Minitest::Test
 		warehouse.ship( parcel )
 
 		# Simulate: the bureau merges the PR into remote main.
-		# (In real life, gh pr merge does this. We simulate with git merge on the remote.)
 		bare_work = File.join( @tmpdir, "bare-work" )
 		system( "git", "clone", @remote_path, bare_work, out: File::NULL, err: File::NULL )
 		system( "git", "-C", bare_work, "config", "user.email", "t@t.com", out: File::NULL, err: File::NULL )
@@ -130,11 +142,10 @@ class CourierTest < Minitest::Test
 		system( "git", "-C", bare_work, "merge", "origin/feature/sync-proof", "--no-ff", "-m", "merge", out: File::NULL, err: File::NULL )
 		system( "git", "-C", bare_work, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
-		# Record local main BEFORE sync.
+		# Record local main BEFORE receiving latest standard.
 		local_main_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 
-		# Create a waybill and stub it to report accepted.
-		# Override refresh! so it doesn't overwrite the stub via gh CLI.
+		# Stub a waybill reporting acceptance. Override refresh! to preserve the stub.
 		waybill = Carson::Waybill.new( label: "feature/sync-proof", warehouse_path: @repo_path )
 		waybill.stub_bureau_response(
 			state: { "state" => "MERGED", "mergedAt" => "2026-03-23T00:00:00Z" },
@@ -142,17 +153,17 @@ class CourierTest < Minitest::Test
 		)
 		waybill.define_singleton_method( :refresh! ) { self }
 
-		# Simulate the settle loop seeing acceptance — call the private settle method.
+		# Call check_bureau — the courier's single-check method.
 		result = { command: "deliver", label: "feature/sync-proof" }
-		courier.send( :settle, waybill, result )
+		courier.send( :check_bureau, waybill, result )
 
 		# PROOF: outcome is "delivered" and local main has advanced.
 		assert_equal "delivered", result[ :outcome ]
-		assert result[ :synced ], "expected sync! to succeed"
+		assert result[ :synced ], "expected receive_latest_standard! to succeed"
 
 		local_main_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 		refute_equal local_main_before.strip, local_main_after.strip,
-			"local main should have advanced after sync"
+			"local main should have advanced after receiving latest standard"
 	end
 
 	# --- Shipping ---
