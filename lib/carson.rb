@@ -17,7 +17,8 @@ module Carson
 		end
 	end
 
-	# Human-readable delivery report — the secondary format.
+	# Human-readable delivery report — technical language for agents and humans.
+	# Story language is internal (source code). Output speaks the client's language.
 	def self.report_human( result, output: $stdout )
 		if result[ :error ]
 			output.puts "#{BADGE} #{result[ :error ]}"
@@ -30,15 +31,30 @@ module Carson
 
 		case result[ :outcome ]
 		when "delivered"
-			output.puts "#{BADGE} Delivered."
-			output.puts "#{BADGE} Warehouse updated to latest standard." if result[ :synced ]
+			output.puts "#{BADGE} Merged."
+			output.puts "#{BADGE} Local main synced." if result[ :synced ]
 		when "held"
-			output.puts "#{BADGE} Held \u2014 #{result[ :hold_summary ]}."
+			output.puts "#{BADGE} #{translate_hold( result[ :hold_reason ] )}"
 		when "rejected"
-			output.puts "#{BADGE} Rejected \u2014 waybill closed externally."
+			output.puts "#{BADGE} PR closed externally."
 		when "deferred"
-			output.puts "#{BADGE} Deferred \u2014 watch window expired."
+			output.puts "#{BADGE} Merge deferred \u2014 still waiting."
 			output.puts "  \u2192 carson deliver"
+		end
+	end
+
+	# Translate internal hold reasons to technical language agents understand.
+	def self.translate_hold( reason )
+		case reason
+		when "draft" then "PR is still a draft."
+		when "inspector_pending" then "Waiting for CI checks."
+		when "inspector_failed" then "CI checks failed."
+		when "inspector_error" then "Unable to assess CI checks."
+		when "merge_conflict" then "Merge conflict with main."
+		when "behind_registry" then "Branch is behind main."
+		when "policy_block" then "Blocked by branch protection rules."
+		when "mergeability_pending" then "GitHub is calculating mergeability."
+		else "Waiting for merge readiness."
 		end
 	end
 
