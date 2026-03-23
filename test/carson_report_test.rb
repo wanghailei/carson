@@ -21,7 +21,7 @@ class CarsonReportTest < Minitest::Test
 		assert_includes output.string, "Delivery: feature/test"
 		assert_includes output.string, "PR #42"
 		assert_includes output.string, "Delivered"
-		assert_includes output.string, "Synced local main"
+		assert_includes output.string, "Warehouse updated to latest standard"
 	end
 
 	def test_report_human_shows_error_with_recovery
