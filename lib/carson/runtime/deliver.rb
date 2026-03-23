@@ -231,7 +231,7 @@ module Carson
 					when :blocked
 						result[ :outcome ] = "blocked"
 						result[ :waited_seconds ] = elapsed_settle_seconds( started_at: started_at )
-						result[ :recovery ] = "refresh this branch onto #{config.git_remote}/#{main}, then carson deliver" if evaluation[ :cause ] == "freshness"
+						result[ :recovery ] = "carson deliver" if evaluation[ :cause ] == "freshness"
 						apply_handoff!(
 							result: result,
 							reason: evaluation.fetch( :reason ),
