@@ -12,10 +12,11 @@ module Carson
 	class Warehouse
 		attr_reader :path
 
-		def initialize( path:, main_label: "main", bureau_address: "github" )
+		def initialize( path:, main_label: "main", bureau_address: "github", compliance_checker: nil )
 			@path = path
 			@main_label = main_label
 			@bureau_address = bureau_address
+			@compliance_checker = compliance_checker
 		end
 
 		# --- What the warehouse knows ---
@@ -65,6 +66,16 @@ module Carson
 			status.success?
 		end
 
+		# Ensure the warehouse complies with company standards (template sync).
+		# Delegates to the injected compliance checker. If no checker is set,
+		# the warehouse assumes compliance — no templates to enforce.
+		# Returns a hash: { compliant: true/false, committed: true/false, error: nil/string }
+		def submit_compliance!
+			return { compliant: true, committed: false } unless @compliance_checker
+
+			@compliance_checker.call( self )
+		end
+
 		# Update the warehouse's production standard — rebase onto latest registry state.
 		# Called after the bureau refuses a parcel for being behind standard.
 		# Returns true on success, false on failure.
@@ -78,6 +89,17 @@ module Carson
 		def pack!( message: )
 			git( "add", "-A" )
 			_, _, status = git( "commit", "-m", message )
+			status.success?
+		end
+
+		# Sync the warehouse's local main with the registry after a parcel is accepted.
+		# Fast-forwards local main without switching branches.
+		# Returns true on success, false on failure.
+		def sync!( remote: bureau_address )
+			_, _, status = Open3.capture3(
+				"git", "-C", main_worktree_root,
+				"fetch", remote, "#{main_label}:#{main_label}"
+			)
 			status.success?
 		end
 
@@ -104,6 +126,15 @@ module Carson
 		end
 
 	private
+
+		# The main worktree root — resolves correctly even from inside a side worktree.
+		# Used by sync! to fast-forward local main without switching branches.
+		def main_worktree_root
+			git_common_dir, = git( "rev-parse", "--path-format=absolute", "--git-common-dir" )
+			common = git_common_dir.strip
+			# If it ends with /.git, the parent is the main worktree root.
+			common.end_with?( "/.git" ) ? File.dirname( common ) : common
+		end
 
 		# All git commands go through this single gateway.
 		# Returns [stdout, stderr, status].

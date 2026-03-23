@@ -73,6 +73,31 @@ class WarehouseTest < Minitest::Test
 		assert_equal "upstream", warehouse.bureau_address
 	end
 
+	# --- Compliance ---
+
+	def test_submit_compliance_passes_without_checker
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		result = warehouse.submit_compliance!
+		assert result[ :compliant ]
+		refute result[ :committed ]
+	end
+
+	def test_submit_compliance_delegates_to_checker
+		checker = ->( _warehouse ) { { compliant: true, committed: true } }
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin", compliance_checker: checker )
+		result = warehouse.submit_compliance!
+		assert result[ :compliant ]
+		assert result[ :committed ]
+	end
+
+	def test_submit_compliance_reports_failure
+		checker = ->( _warehouse ) { { compliant: false, committed: false, error: "template drift" } }
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin", compliance_checker: checker )
+		result = warehouse.submit_compliance!
+		refute result[ :compliant ]
+		assert_equal "template drift", result[ :error ]
+	end
+
 	# --- Warehouse operations ---
 
 	def test_pack_stages_and_commits
@@ -244,6 +269,36 @@ class WarehouseTest < Minitest::Test
 
 		# Clean up the failed rebase so teardown can remove the directory.
 		system( "git", "-C", @repo_path, "rebase", "--abort", out: File::NULL, err: File::NULL )
+	end
+
+	# --- Sync ---
+
+	def test_sync_fast_forwards_local_main
+		# Advance remote main via a second clone.
+		second_clone = File.join( @tmpdir, "second-clone-sync" )
+		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+		File.write( File.join( second_clone, "synced.txt" ), "synced" )
+		system( "git", "-C", second_clone, "add", "synced.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "commit", "-m", "advance for sync", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Switch to a feature branch so we're not on main.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/sync-test", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+
+		# Local main should be behind before sync.
+		local_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
+		remote_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "origin/main" )
+
+		result = warehouse.sync!
+		assert result
+
+		# After sync, local main should match the remote.
+		local_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
+		refute_equal local_before.strip, local_after.strip
 	end
 
 	# --- Inventory ---
