@@ -4,7 +4,7 @@ module Carson
 	#
 	# In the FedEx metaphor, the courier is a Carson employee assigned to
 	# a warehouse. They pick up a parcel, ship it to the bureau, file a
-	# waybill, wait at the customs window, and collect proof of delivery.
+	# waybill, and check the bureau's response.
 	#
 	# The courier is a thin orchestrator: it creates a Waybill and sends it
 	# messages. The domain logic lives in the objects, not the courier.
@@ -15,7 +15,7 @@ module Carson
 	# delivery flow. The number appears in the code comment where it's handled.
 	#
 	#   01. Parcel on main — cannot deliver from the destination.
-	#   02. Parcel behind registry — parcel doesn't include latest registry state.
+	#   02. Parcel behind standard — not based on client's latest standard.
 	#   03. Shipping fails — warehouse couldn't push to the bureau.
 	#   04. Waybill filing fails — bureau rejected the paperwork.
 	#   05. Inspector pending — customs inspection (CI) still running.
@@ -23,16 +23,22 @@ module Carson
 	#   07. Review officer pending — review still in progress.
 	#   08. Review changes requested — officer wants corrections.
 	#   09. Merge conflict — parcel has conflicts with registry contents.
-	#   10. Behind registry (post-filing) — registry advanced since shipping.
+	#   10. Behind standard (post-filing) — standard changed since shipping.
 	#   11. Policy block — bureau regulation prevents acceptance.
 	#   12. Draft waybill — form not finalised.
-	#   13. Mergeability pending — bureau still processing merge eligibility.
+	#   13. Mergeability pending — bureau still processing eligibility.
 	#   14. Acceptance succeeds — parcel enters the registry. Delivered.
-	#   15. Acceptance fails — classify why, retry or hold.
+	#   15. Acceptance fails — classify why, report.
 	#   16. Bureau unreachable — cannot contact the bureau.
 	#   17. Parcel already delivered — already in registry.
 	#   18. Waybill closed — cancelled by someone externally.
-	#   19. Watch window expires — end of courier's shift. Deferred.
+	#
+	# == Design: no polling
+	#
+	# The courier does NOT wait at the customs window. It files the waybill,
+	# checks the bureau's response once, and reports back. If the bureau hasn't
+	# cleared the parcel yet, the courier reports "held" with the reason.
+	# Re-dispatch is Carson Co.'s responsibility (the monitor command).
 	#
 	# == Future: destination modes
 	#
@@ -45,18 +51,14 @@ module Carson
 		ERROR = 1
 		BLOCKED = 2
 
-		# Maximum merge attempts before the courier stops retrying (situation 13/15).
-		MERGE_ATTEMPT_CAP = 3
-
-		def initialize( warehouse, ledger: nil, output: $stdout, verbose: false )
+		def initialize( warehouse, ledger: nil, merge_method: "rebase" )
 			@warehouse = warehouse
 			@ledger = ledger
-			@output = output
-			@verbose = verbose
+			@merge_method = merge_method
 		end
 
 		# Deliver a parcel to the registry.
-		# Ships it, files a waybill, waits for customs, requests acceptance.
+		# Ships it, files a waybill, checks the bureau's response, requests acceptance.
 		def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
 			result = { command: "deliver", label: parcel.label }
 
@@ -67,6 +69,18 @@ module Carson
 					recovery: "carson worktree create <name>" )
 			end
 
+			# Dirty tree guard — the warehouse knows if its floor is clean.
+			if commit_message && @warehouse.clean?
+				return blocked( result,
+					"working tree is already clean",
+					recovery: "carson deliver" )
+			end
+			if !commit_message && !@warehouse.clean?
+				return blocked( result,
+					"working tree is dirty",
+					recovery: "carson deliver --commit \"describe this delivery\"" )
+			end
+
 			# Submit compliance — ensure templates are in sync before delivery.
 			compliance = @warehouse.submit_compliance!
 			unless compliance[ :compliant ]
@@ -74,20 +88,21 @@ module Carson
 			end
 
 			# Pack the parcel if the sender provided a commit message.
-			if commit_message
+			# Skip if compliance already committed everything (tree is now clean).
+			if commit_message && !@warehouse.clean?
 				unless @warehouse.pack!( message: commit_message )
 					return error( result, "packing failed — nothing to commit?" )
 				end
-				# Refresh the parcel's head after packing (commit SHA changed).
-				parcel = Parcel.new( label: parcel.label, head: @warehouse.current_head, shelf: parcel.shelf )
 			end
+			# Refresh parcel head — compliance or pack may have created commits.
+			parcel = Parcel.new( label: parcel.label, head: @warehouse.current_head, shelf: parcel.shelf )
 
 			# 02. Parcel behind standard — not based on client's latest standard.
 			@warehouse.fetch_latest( registry: @warehouse.main_label )
 			unless @warehouse.based_on_latest_standard?( parcel )
 				return blocked( result,
-					"parcel is behind #{@warehouse.bureau_address}/#{@warehouse.main_label}",
-					recovery: "refresh this branch onto #{@warehouse.bureau_address}/#{@warehouse.main_label}, then carson deliver" )
+					"branch is behind #{@warehouse.bureau_address}/#{@warehouse.main_label}",
+					recovery: "rebase onto #{@warehouse.bureau_address}/#{@warehouse.main_label}, then carson deliver" )
 			end
 
 			# The courier picks up the parcel — start tracking.
@@ -95,7 +110,7 @@ module Carson
 
 			# 03. Shipping fails — warehouse couldn't push to the bureau.
 			unless @warehouse.ship( parcel )
-				return error( result, "shipping failed" )
+				return error( result, "push failed" )
 			end
 
 			# File a waybill with the bureau.
@@ -107,17 +122,17 @@ module Carson
 
 			# 04. Waybill filing fails — bureau rejected the paperwork.
 			unless waybill.filed?
-				return error( result, "waybill filing failed", recovery: "carson deliver" )
+				return error( result, "PR creation failed", recovery: "carson deliver" )
 			end
 
 			result[ :tracking_number ] = waybill.tracking_number
 			result[ :url ] = waybill.url
 
-			# Wait at the customs window.
-			settle( waybill, result )
+			# Check the bureau's response — one check, no polling.
+			check_bureau( waybill, result )
 
 			# Update the ledger with the final outcome.
-			record( parcel, status: result[ :outcome ] || "deferred", summary: result[ :hold_summary ] )
+			record( parcel, status: result[ :outcome ] || "filed", summary: result[ :hold_reason ] )
 
 			result[ :exit ] ||= OK
 			result
@@ -125,68 +140,47 @@ module Carson
 
 	private
 
-		# The courier waits at the customs window, checking periodically.
-		# When the bureau clears the parcel, the courier requests acceptance.
-		# Handles situations 05-19.
-		def settle( waybill, result )
-			started = Process.clock_gettime( Process::CLOCK_MONOTONIC )
-			merge_attempts = 0
-			watch_window = 30
+		# Check the bureau's response once. No polling, no waiting.
+		# If cleared → request acceptance. If held → report why.
+		# Re-dispatch is Carson Co.'s job (the monitor command).
+		def check_bureau( waybill, result )
+			waybill.refresh!
 
-			loop do
-				waybill.refresh!
+			# 14/17. Already accepted — parcel is in the registry.
+			if waybill.accepted?
+				result[ :outcome ] = "delivered"
+				result[ :synced ] = @warehouse.receive_latest_standard!
+				return
+			end
 
-				# 14/17. Acceptance succeeds / parcel already delivered.
+			# 18. Waybill closed — cancelled externally.
+			if waybill.rejected?
+				result[ :outcome ] = "rejected"
+				result[ :exit ] = BLOCKED
+				return
+			end
+
+			# Cleared or mergeability pending — try to accept.
+			if waybill.cleared? || waybill.mergeability_pending?
+				waybill.accept!( method: @merge_method )
+
 				if waybill.accepted?
 					result[ :outcome ] = "delivered"
-					result[ :synced ] = @warehouse.sync!
+					result[ :synced ] = @warehouse.receive_latest_standard!
 					return
 				end
-
-				# 18. Waybill closed — cancelled externally.
-				if waybill.rejected?
-					result[ :outcome ] = "rejected"
-					result[ :exit ] = BLOCKED
-					return
-				end
-
-				# 14. Cleared — request acceptance. Also attempt on 13 (mergeability pending).
-				if waybill.cleared? || ( waybill.mergeability_pending? && merge_attempts < MERGE_ATTEMPT_CAP )
-					waybill.accept!( method: merge_method )
-					merge_attempts += 1
-					# 15. Acceptance fails — loop continues to re-assess.
-					next if waybill.accepted?
-				end
-
-				# 05-12. Held by a definite blocker — stop waiting.
-				if waybill.held? && !waybill.mergeability_pending?
-					result[ :outcome ] = "held"
-					result[ :exit ] = BLOCKED
-					result[ :hold_reason ] = waybill.hold_reason
-					result[ :hold_summary ] = waybill.hold_summary
-					return
-				end
-
-				# 19. Watch window expires — end of shift.
-				elapsed = Process.clock_gettime( Process::CLOCK_MONOTONIC ) - started
-				if elapsed >= watch_window
-					result[ :outcome ] = "deferred"
-					return
-				end
-
-				sleep poll_interval
 			end
-		end
 
-		# How the bureau accepts parcels into the registry.
-		# Injected from warehouse config in the future.
-		def merge_method
-			"rebase"
-		end
+			# 05-12. Held by the bureau — report the reason.
+			if waybill.held?
+				result[ :outcome ] = "held"
+				result[ :exit ] = BLOCKED
+				result[ :hold_reason ] = waybill.hold_reason
+				return
+			end
 
-		# Seconds between customs checks while settling.
-		def poll_interval
-			5
+			# Filed but no definitive response yet.
+			result[ :outcome ] = "filed"
 		end
 
 		# Record a delivery state change in the ledger.
