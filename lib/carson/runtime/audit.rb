@@ -185,11 +185,12 @@ module Carson
 
 				# Check if the workbench is sealed (parcel in flight).
 				# Returns EXIT_BLOCK if sealed, nil otherwise.
+				# Delegates to Warehouse so the seal path is resolved in one place.
 				def audit_sealed_workbench( json_output: )
-					marker_path = File.join( work_dir, ".carson-delivering" )
-					return nil unless File.exist?( marker_path )
+					warehouse = Warehouse.new( path: work_dir )
+					return nil unless warehouse.sealed?
 
-					tracking_number = File.read( marker_path ).strip rescue "unknown"
+					tracking_number = warehouse.sealed_tracking_number || "unknown"
 					if json_output
 						require "json"
 						output.puts JSON.pretty_generate( {

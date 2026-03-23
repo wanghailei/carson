@@ -25,6 +25,9 @@ class WarehouseTest < Minitest::Test
 
 	def teardown
 		FileUtils.rm_rf( @tmpdir )
+		# Clean up seal files created during tests.
+		seals_dir = File.join( ENV.fetch( "HOME" ), ".carson", "seals" )
+		FileUtils.rm_rf( seals_dir ) if Dir.exist?( seals_dir )
 	end
 
 	# --- Identity ---
@@ -429,5 +432,49 @@ class WarehouseTest < Minitest::Test
 		# Should not raise.
 		warehouse.unseal_shelf!
 		refute warehouse.sealed?
+	end
+
+	def test_seal_does_not_dirty_worktree
+		warehouse = Carson::Warehouse.new( path: @repo_path )
+		warehouse.seal_shelf!( tracking_number: 42 )
+
+		assert warehouse.clean?, "seal marker should not appear in git status"
+
+		warehouse.unseal_shelf!
+	end
+
+	# --- Receive latest standard from worktree ---
+
+	def test_receive_latest_standard_from_worktree
+		# Create a worktree — main stays checked out in the main tree.
+		worktree_path = File.join( @tmpdir, "worktree" )
+		system( "git", "-C", @repo_path, "worktree", "add", "-b", "feature/wt-sync",
+			worktree_path, out: File::NULL, err: File::NULL )
+
+		# Advance remote main via a second clone.
+		second_clone = File.join( @tmpdir, "second-clone-wt" )
+		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+		File.write( File.join( second_clone, "wt-synced.txt" ), "synced" )
+		system( "git", "-C", second_clone, "add", "wt-synced.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "commit", "-m", "advance for wt sync", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Create warehouse from the worktree (the normal courier scenario).
+		warehouse = Carson::Warehouse.new( path: worktree_path, bureau_address: "origin" )
+
+		local_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
+
+		result = warehouse.receive_latest_standard!
+		assert result, "receive_latest_standard! should succeed from worktree"
+
+		local_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
+		refute_equal local_before.strip, local_after.strip,
+			"local main should advance after receive_latest_standard! from worktree"
+
+		# Cleanup worktree.
+		system( "git", "-C", @repo_path, "worktree", "remove", worktree_path,
+			out: File::NULL, err: File::NULL )
 	end
 end

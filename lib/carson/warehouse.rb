@@ -2,6 +2,8 @@
 # parcels (committed changes) are stored on shelves (worktrees) with
 # labels (branches). Git commands are hidden inside — callers never
 # see git terms.
+require "digest"
+require "fileutils"
 require "open3"
 
 module Carson
@@ -107,8 +109,12 @@ module Carson
 
 		# Seal the shelf — no more packing until the delivery outcome is confirmed.
 		# The courier seals the shelf after shipping and filing the waybill.
+		# The marker lives outside the worktree (~/.carson/seals/) so it does
+		# not pollute git status or block delivery with a dirty-tree guard.
 		def seal_shelf!( tracking_number: )
-			File.write( delivering_marker_path, tracking_number.to_s )
+			marker = delivering_marker_path
+			FileUtils.mkdir_p( File.dirname( marker ) )
+			File.write( marker, "#{tracking_number}\n#{@path}" )
 		end
 
 		# Unseal the shelf — the courier brought back the parcel.
@@ -125,18 +131,43 @@ module Carson
 		# The tracking number of the in-flight delivery (nil if not sealed).
 		def sealed_tracking_number
 			return nil unless sealed?
-			File.read( delivering_marker_path ).strip
+			File.read( delivering_marker_path ).lines.first.strip
 		end
 
 		# Receive the latest standard from the registry after a parcel is accepted.
 		# Fast-forwards local main without switching branches.
 		# Returns true on success, false on failure.
+		#
+		# Two paths depending on the main worktree's checkout state:
+		# - Main checked out → merge --ff-only (updates ref + working tree).
+		# - Main not checked out → fetch refspec (updates ref only, safe when
+		#   no worktree has the branch).
 		def receive_latest_standard!( remote: bureau_address )
-			_, _, status = Open3.capture3(
-				"git", "-C", main_worktree_root,
-				"fetch", remote, "#{main_label}:#{main_label}"
+			root = main_worktree_root
+
+			# Fetch remote tracking refs — always safe, even when main is checked out.
+			_, _, fetch_status = Open3.capture3( "git", "-C", root, "fetch", remote )
+			return false unless fetch_status.success?
+
+			# Determine how to advance local main.
+			head_ref, _, head_status = Open3.capture3(
+				"git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"
 			)
-			status.success?
+			return false unless head_status.success?
+
+			if head_ref.strip == @main_label
+				# Main is checked out in the main worktree — fast-forward via merge.
+				_, _, merge_status = Open3.capture3(
+					"git", "-C", root, "merge", "--ff-only", "#{remote}/#{@main_label}"
+				)
+				merge_status.success?
+			else
+				# Main is not checked out — safe to update the ref via fetch refspec.
+				_, _, refspec_status = Open3.capture3(
+					"git", "-C", root, "fetch", remote, "#{@main_label}:#{@main_label}"
+				)
+				refspec_status.success?
+			end
 		end
 
 		# --- Inventory ---
@@ -173,8 +204,12 @@ module Carson
 	private
 
 		# Path to the delivery marker file — signals the shelf is sealed.
+		# Lives outside the worktree at ~/.carson/seals/<sha256-of-path>
+		# so it does not pollute git status.
 		def delivering_marker_path
-			File.join( path, ".carson-delivering" )
+			seals_dir = File.join( Dir.home, ".carson", "seals" )
+			key = Digest::SHA256.hexdigest( @path )
+			File.join( seals_dir, key )
 		end
 
 		# All git commands go through this single gateway.
