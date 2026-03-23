@@ -74,7 +74,23 @@ module Carson
 
 				puts_line "#{repository.name}: #{deliveries.length} active deliver#{deliveries.length == 1 ? 'y' : 'ies'}" unless silent
 
+				# Collect worktree paths of filed deliveries before reconciliation.
+				# Receive takes over lifecycle management — the courier's polling window is over.
+				filed_worktree_paths = deliveries
+					.select( &:filed? )
+					.map( &:worktree_path )
+					.compact
+					.reject { |path| path.to_s.strip.empty? }
+
 				reconciled = deliveries.map { |item| scoped_runtime.send( :reconcile_delivery!, delivery: item ) }
+
+				# Unseal worktrees that were filed — receive now owns the delivery lifecycle.
+				unless dry_run
+					filed_worktree_paths.each do |worktree_path|
+						Warehouse.new( path: worktree_path ).unseal_shelf!
+					end
+				end
+
 				next_to_integrate = reconciled.find( &:ready? )&.key
 
 				reconciled.each do |delivery|
