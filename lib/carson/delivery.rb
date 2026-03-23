@@ -1,7 +1,7 @@
 # Passive ledger record for one branch delivery attempt.
 module Carson
 	class Delivery
-		ACTIVE_STATES = %w[preparing gated queued integrating escalated].freeze
+		ACTIVE_STATES = %w[preparing gated queued integrating escalated filed].freeze
 		BLOCKED_STATES = %w[gated escalated].freeze
 		READY_STATES = %w[queued].freeze
 		TERMINAL_STATES = %w[integrated failed superseded].freeze
@@ -58,6 +58,10 @@ module Carson
 
 		def ready?
 			READY_STATES.include?( status )
+		end
+
+		def filed?
+			status == "filed"
 		end
 
 		def integrated?

@@ -641,6 +641,128 @@ class RuntimeReceiveTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# --- Filed delivery reconciliation ---
+
+	def test_receive_reconciles_filed_delivery_as_integrated_when_pr_merged
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-merged" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/filed-merged", status: "filed",
+			summary: "bureau hasn't responded yet"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
+
+		result = runtime.receive!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "integrated", row.fetch( "status" )
+		refute_nil row.fetch( "integrated_at" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_receive_reconciles_filed_delivery_to_gated_when_ci_pending
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-pending" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/filed-pending", status: "filed",
+			summary: "bureau hasn't responded yet"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "OPEN", "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" } }
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pending }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+
+		result = runtime.receive!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "gated", row.fetch( "status" )
+		assert_equal "ci", row.fetch( "cause" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_receive_reconciles_filed_delivery_as_failed_when_pr_closed
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-closed" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/filed-closed", status: "filed",
+			summary: "bureau hasn't responded yet"
+		)
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "CLOSED" } }
+
+		result = runtime.receive!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "failed", row.fetch( "status" )
+		assert_includes row.fetch( "summary" ), "closed without integration"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_receive_integrates_filed_delivery_when_all_clear
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-ready" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/filed-ready", status: "filed",
+			summary: "bureau hasn't responded yet"
+		)
+		runtime.define_singleton_method( :check_pr_ci ) { |number:| :pass }
+		runtime.define_singleton_method( :check_pr_review ) { |number:, branch:, pr_url: nil| { status: :pass, review: :approved, detail: "" } }
+		stub_integration( runtime )
+
+		result = runtime.receive!( dry_run: false )
+		assert_equal Carson::Runtime::EXIT_OK, result
+		row = delivery_data( runtime: runtime, key: delivery.key )
+		assert_equal "integrated", row.fetch( "status" )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_receive_unseals_worktree_for_filed_delivery
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-unseal" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/filed-unseal", status: "filed",
+			summary: "bureau hasn't responded yet"
+		)
+		# Seal the worktree as the courier would have.
+		warehouse = Carson::Warehouse.new( path: repo_root )
+		warehouse.seal_shelf!( tracking_number: 42 )
+		assert warehouse.sealed?, "precondition: worktree should be sealed"
+
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
+
+		runtime.receive!( dry_run: false )
+		refute warehouse.sealed?, "worktree should be unsealed after receive reconciles filed delivery"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	def test_receive_dry_run_does_not_unseal_filed_worktree
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-dry" )
+		delivery = create_delivery(
+			runtime: runtime, repo_root: repo_root,
+			branch_name: "feature/filed-dry", status: "filed",
+			summary: "bureau hasn't responded yet"
+		)
+		warehouse = Carson::Warehouse.new( path: repo_root )
+		warehouse.seal_shelf!( tracking_number: 42 )
+
+		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
+
+		runtime.receive!( dry_run: true )
+		assert warehouse.sealed?, "dry run should not unseal the worktree"
+		warehouse.unseal_shelf!
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 private
 
 	def stub_reconciliation( runtime, delivery: )
