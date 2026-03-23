@@ -100,7 +100,7 @@ module Carson
 		end
 
 	private
-
+		# WHL: Shall an attr_reader be private?
 		attr_reader :warehouse
 
 		# The courier waits at the customs window, checking periodically.
