@@ -10,6 +10,19 @@ Release-note scope rule:
 ### Breaking
 
 - CLI grammar is now two-tier: portfolio commands (`list`, `onboard`, `offboard`, `refresh`, `version`) and repo-scoped commands (`carson <repo> <command>` or `carson <command>` from CWD)
+
+## 4.0.1
+
+### What changed
+
+- **Workbench seal** — `carson deliver` seals the workbench after shipping. `pack!` refuses while sealed ("Shelf is sealed — parcel in flight"). `carson audit` blocks `git commit` on sealed workbenches. Delivered/held/rejected unseals; filed stays sealed.
+- **Delivery progress** — `carson deliver` announces what it's doing: "Carson is delivering committed changes on branch X to Y…" and reports each poll check with count.
+- **Seal guard in `carson audit`** — moved from bash hook template to Ruby. The pre-commit hook calls `carson audit` which checks for `.carson-delivering` marker.
+- **`error_at_registry` is transient** — CI assessment errors no longer cause immediate rejection. The courier keeps polling.
+
+### Known limitation
+
+- The workbench seal blocks `git commit` but does not block file edits (Write/Edit tools). That requires Claude Code PreToolUse hooks — a separate enforcement layer.
 - `govern` renamed to `receive` — single-repo only, no portfolio iteration
 - `repos` renamed to `list`
 - `--all` removed from all repo commands; use `carson list --json` to script batch operations

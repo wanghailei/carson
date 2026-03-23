@@ -482,7 +482,29 @@ All 531 tests pass. New classes work alongside existing code.
 17. Rename commands: govern→monitor, housekeep→sweep, abandon→return, recover→salvage, status→track
 18. Remove Runtime — absorbed by domain objects
 
-552 tests pass (21 skipped — RuntimeDeliverTest pending OO adaptation).
+566 tests pass (21 skipped — RuntimeDeliverTest pending OO adaptation).
+
+### Phase 3 — Workbench seal and delivery progress (done, 4.0.1)
+
+19. ~~Courier waits and polls at registry (MAX_CHECKS_AT_REGISTRY=6, configurable interval)~~ (done)
+20. ~~Hold reasons renamed: `inspector_*` → `*_at_registry`~~ (done)
+21. ~~`Carson.translate_hold` returns `[diagnosis, *recovery_commands]` — output is actionable~~ (done)
+22. ~~Delivery progress: courier reports opening line + per-check status~~ (done)
+23. ~~Workbench seal: `seal_shelf!`, `unseal_shelf!`, `sealed?`, `pack!` guard~~ (done)
+24. ~~Seal guard in `carson audit` — blocks `git commit` on sealed workbench~~ (done)
+25. ~~`deliver.poll_interval_at_registry` config with env override~~ (done)
+26. ~~`error_at_registry` treated as transient, not definitive~~ (done)
+
+### Phase 4 — Open items
+
+27. Workbench seal enforcement gap: Carson governs git (pre-commit hook → `carson audit`). It cannot govern file edits — that's Claude Code's domain (PreToolUse hooks). The seal blocks commits but not Write/Edit. See § Enforcement Layers.
+28. Rename "shelf" → "workbench" — a workbench is where the agent works, a shelf just stores things. Affects spec, code comments, method names.
+29. `monitor` command — Carson Co. watches bureau feedback, notifies clients, dispatches couriers for unattended deliveries.
+30. `warehouse.sweep!` (absorb housekeep)
+31. `settle!` (local-centred backup push)
+32. Courier: `return` and `salvage` commands
+33. Rename commands: govern→monitor, housekeep→sweep, abandon→return, recover→salvage, status→track
+34. Remove Runtime — absorbed by domain objects
 
 ## Coding Conventions
 
@@ -546,11 +568,87 @@ The user said "Go!" expecting overnight marathon implementation. The agent invok
 
 **Lesson:** When the user gives an execution command ("Go!", "Do it", "Marathon"), write code immediately. Never invoke planning skills, never ask execution method, never produce documents about code instead of code. The skill process chain is guidance, not a gate. The user's direct command overrides any skill workflow.
 
+### Unsealed workbench after delivery (2026-03-23)
+
+Agent modified files on a workbench after `carson deliver` failed ("held"). The workbench had unstaged changes when the next rebase was attempted: "cannot rebase: You have unstaged changes." The agent blamed a Carson bug. It was a system design gap — no mechanical enforcement prevented the agent from working on the workbench while its parcel was in flight.
+
+**Lesson:** Convention is not enforcement. If the system allows the mistake, the system has the defect — not the agent. The workbench seal (`seal_shelf!`, `sealed?`, `pack!` guard, `carson audit` check) was built as a response. But the seal only governs git commits. File-level enforcement requires Claude Code's PreToolUse hooks — a separate enforcement layer Carson does not control. Full enforcement requires both layers.
+
+### Agent rushes, places code in wrong location (2026-03-23)
+
+Agent put a seal guard (bash code) in `config/.github/hooks/pre-commit` — a GitHub configuration template, not a Carson feature location. The seal is Carson logic; it belongs in Carson's Ruby code (`carson audit`). The agent skipped planning and jumped to code.
+
+**Lesson:** Plan before code, even for "obvious" fixes. Especially for shared artifacts that affect every governed repo. The question "where does this belong?" is a design question, not an implementation detail.
+
 ### Short timeout, wrong recovery (2026-03-23)
 
 The original Courier had a 30-second polling loop: check bureau status every 5 seconds, give up if not cleared within the window. Two problems: (a) 30 seconds was too short — CI takes minutes, so the courier always timed out, and (b) the recovery action was "re-deliver" (run `carson deliver` again) instead of "check status." Re-delivering created a new attempt instead of checking the existing parcel. The agent was told to ship again when the parcel was already at the registry being checked.
 
 **Lesson:** Waiting at the registry IS the courier's job — that's where parcels get checked. The problem was never "polling vs. not polling." It was the short timeout and the wrong recovery action. The courier now waits at the registry with configurable patience (MAX_CHECKS_AT_REGISTRY=6, configurable poll interval). If checks are exhausted before bureaucrats finish, the courier reports "filed" with the tracking number — not "failed." The recovery action is "check status" (`carson track`), not "re-deliver."
+
+## Workbench Seal
+
+Once a parcel ships and the waybill is filed, the warehouse seals the workbench. No more packing until the delivery outcome is confirmed. This prevents the agent from modifying a workbench while its parcel is in flight at the registry.
+
+**Lifecycle:**
+
+| Outcome | Seal action | Why |
+|---|---|---|
+| Delivered | Unseal (workbench is done — housekeep removes it) | Parcel accepted, workbench served its purpose |
+| Held / rejected | Unseal (courier brought parcel back) | Agent can fix and re-deliver |
+| Filed (checks exhausted) | Stays sealed | Parcel still at the registry — no changes allowed |
+
+**Mechanism:** `.carson-delivering` marker file containing the PR number. `warehouse.pack!` refuses when sealed. `carson audit` (via pre-commit hook) blocks `git commit` on sealed workbenches.
+
+**Enforcement gap:** Carson governs git operations. It cannot govern file edits — that's Claude Code's domain. The seal blocks commits but does not block Write/Edit tools. See § Enforcement Layers.
+
+**Crash recovery:** If Carson is killed mid-delivery, the marker survives. The next `carson deliver` or `carson status` finds the marker, reads the PR number, and checks the waybill to determine the current state.
+
+## Enforcement Layers
+
+Carson and Claude Code are two separate enforcement systems with different domains.
+
+| Layer | Domain | Mechanism | What it governs |
+|---|---|---|---|
+| **Carson** | Git operations | Pre-commit hook → `carson audit`, pre-push hook, delivery guards | Commits, pushes, merges, PR creation, branch operations |
+| **Claude Code** | Agent tools | PreToolUse hooks, deny patterns, `settings.json` | File edits (Write, Edit), shell commands (Bash), destructive operations |
+| **TAI global hooks** | Cross-project safety | `~/AI/enforce/hooks/pre-commit`, bash-write-guard, main-tree-write-guard | Main branch commits, secret files, main tree writes |
+
+Carson cannot prevent an agent from editing files on a sealed workbench. It can only prevent the agent from committing or delivering those edits. The PreToolUse layer (Claude Code hooks) is the right place for file-level enforcement.
+
+**Implication:** The workbench seal is partial enforcement. Full enforcement requires both layers working together — Carson seals the workbench (blocks commits), and a Claude Code hook blocks file edits on sealed workbenches.
+
+## Output Is Commands
+
+Carson's output is for agents. Agents execute commands. Every held or blocked delivery message includes actionable recovery steps — not prose descriptions, but executable commands.
+
+```
+⧓ CI checks failed.
+  → carson deliver
+
+⧓ Merge conflict with origin/main.
+  → git rebase origin/main
+  → carson deliver
+
+⧓ Bureau hasn't responded yet.
+  → carson status
+```
+
+`Carson.translate_hold` returns `[diagnosis, *recovery_commands]`. The diagnosis says what happened. Each recovery step is a command the agent can run directly. Messages use the config's `git_remote` and `main_branch` to name exact refs.
+
+**Delivery progress** — the courier reports what it's doing during polling:
+
+```
+⧓ Carson is delivering committed changes on branch oo/feature to origin/main...
+⧓ PR #440  https://github.com/…/pull/440
+⧓ waiting for bureaucrats to check (1/6)...
+⧓ waiting for bureaucrats to check (2/6)...
+⧓ Merged.
+```
+
+## Naming: Workbench vs Shelf
+
+Under discussion. "Shelf" is passive storage — parcels sit there. "Workbench" is where the agent actively works: edits, builds, tests, packs. The parcel is built on the workbench, then handed to the courier. You seal the workbench during delivery, not a storage shelf. Decision pending.
 
 ## Design Principles
 
