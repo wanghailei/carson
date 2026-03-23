@@ -743,6 +743,36 @@ class RuntimeReceiveTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	def test_receive_fails_filed_delivery_with_nil_pr_number
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		create_feature_branch( repo_root, "feature/filed-no-pr" )
+
+		# Manually upsert with pr_number: nil to simulate the courier bug.
+		repository = runtime.send( :repository_record )
+		head = `git -C #{Shellwords.escape( repo_root )} rev-parse feature/filed-no-pr`.strip
+		runtime.ledger.upsert_delivery(
+			repository: repository,
+			branch_name: "feature/filed-no-pr",
+			head: head,
+			worktree_path: repo_root,
+			pr_number: nil,
+			pr_url: nil,
+			status: "filed",
+			summary: "bureau undecided",
+			cause: nil
+		)
+
+		result = runtime.receive!( dry_run: true )
+		assert_equal Carson::Runtime::EXIT_OK, result
+
+		state = JSON.parse( File.read( runtime.ledger.path ) )
+		entry = state[ "deliveries" ].values.find { |d| d[ "branch_name" ] == "feature/filed-no-pr" }
+		assert_equal "failed", entry.fetch( "status" )
+		assert_includes entry.fetch( "summary" ), "PR number missing"
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	def test_receive_dry_run_does_not_unseal_filed_worktree
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
