@@ -5,7 +5,11 @@
 # on a branch, then call Carson to deliver it.
 #
 # The parcel does not deliver itself. The courier does that.
+# The parcel does not pack itself. The warehouse does that.
 module Carson
+	# The committed changes being delivered. Knows its label (branch),
+	# head (commit SHA), and shelf (worktree). The protagonist of every
+	# delivery — without a parcel, there is nothing to deliver.
 	class Parcel
 		attr_reader :label, :head, :shelf
 

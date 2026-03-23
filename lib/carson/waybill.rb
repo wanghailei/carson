@@ -10,6 +10,10 @@ require "json"
 require "open3"
 
 module Carson
+	# The shipping document filed with the bureau (GitHub PR). Has a
+	# tracking number, knows the bureau's response (cleared/held/accepted/
+	# rejected), and can ask the bureau to accept the parcel into the
+	# registry. Uses gh CLI internally — that's a tool, not the domain.
 	class Waybill
 		attr_reader :tracking_number, :url, :label
 

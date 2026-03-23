@@ -5,6 +5,10 @@
 require "open3"
 
 module Carson
+	# A governed repository — the warehouse where parcels are stored on
+	# shelves (worktrees) with labels (branches). Wraps git operations
+	# with story-language methods. An intelligent warehouse that manages
+	# itself: packing parcels, checking compliance, and sweeping up.
 	class Warehouse
 		attr_reader :path
 
