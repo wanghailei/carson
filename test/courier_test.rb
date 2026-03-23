@@ -46,6 +46,63 @@ class CourierTest < Minitest::Test
 		assert_match( /behind/, result[ :error ] )
 	end
 
+	# --- Packing ---
+
+	def test_packs_before_shipping_when_commit_message_provided
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/pack", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "dirty.txt" ), "uncommitted" )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse )
+		# Parcel created before packing — head will change after pack.
+		parcel = Carson::Parcel.new( label: "feature/pack", head: warehouse.current_head )
+
+		courier.deliver( parcel, commit_message: "pack this parcel" )
+
+		# Verify the commit was created.
+		log, = Open3.capture3( "git", "-C", @repo_path, "log", "--oneline", "-1" )
+		assert_includes log, "pack this parcel"
+	end
+
+	def test_packing_fails_with_nothing_to_commit
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/empty-pack", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse )
+		parcel = Carson::Parcel.new( label: "feature/empty-pack", head: warehouse.current_head )
+
+		result = courier.deliver( parcel, commit_message: "nothing here" )
+		assert_equal Carson::Courier::ERROR, result[ :exit ]
+		assert_match( /packing failed/, result[ :error ] )
+	end
+
+	# --- Ledger ---
+
+	def test_records_delivery_when_ledger_provided
+		setup_repo_with_remote
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/ledger", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "ledger.txt" ), "track me" )
+		system( "git", "-C", @repo_path, "add", "ledger.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "ledger test", out: File::NULL, err: File::NULL )
+
+		recordings = []
+		fake_ledger = Object.new
+		fake_ledger.define_singleton_method( :upsert_delivery ) do |**kwargs|
+			recordings << kwargs
+		end
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
+		parcel = Carson::Parcel.new( label: "feature/ledger", head: warehouse.current_head )
+
+		courier.deliver( parcel )
+
+		# At least the initial "preparing" record should exist.
+		assert recordings.any? { it[ :status ] == "preparing" }
+	end
+
 	# --- Shipping ---
 
 	def test_ships_parcel_to_bureau

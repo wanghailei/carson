@@ -6,118 +6,68 @@ module Carson
 			DELIVER_MERGE_ATTEMPT_CAP = 3
 
 			# Entry point for `carson deliver`.
-			# Pushes the current branch, ensures a PR exists, records delivery state,
-			# waits for merge readiness, and integrates when the path is clear.
-			# When --commit is supplied, Carson creates one all-dirty agent-authored commit first.
+			# Delegates to the OO domain model: Warehouse → Courier → Waybill.
+			# The Courier orchestrates the delivery; Carson renders the result.
 			def deliver!( title: nil, body_file: nil, commit_message: nil, json_output: false )
-				branch_name = current_branch
-				main_branch = config.main_branch
-				remote_name = config.git_remote
-				result = {
-					command: "deliver",
-					branch: branch_name,
-					git_remote: remote_name,
-					watch_window_seconds: config.govern_check_wait.to_i,
-					waited_seconds: 0,
-					merge_attempted: false
-				}
-
-				if branch_name == main_branch
-					result[ :error ] = "cannot deliver from #{main_branch}"
-					result[ :recovery ] = "carson worktree create <name>"
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
+				# Pre-flight: dirty tree check (Courier doesn't know about this yet).
+				if working_tree_dirty? && commit_message.to_s.strip.empty?
+					result = { command: "deliver", error: "working tree is dirty",
+						recovery: "carson deliver --commit \"describe this delivery\"", exit: EXIT_BLOCK }
+					return deliver_oo_finish( result: result, json_output: json_output )
+				end
+				if !working_tree_dirty? && !commit_message.to_s.strip.empty?
+					result = { command: "deliver", error: "working tree is already clean",
+						recovery: "carson deliver", exit: EXIT_BLOCK }
+					return deliver_oo_finish( result: result, json_output: json_output )
 				end
 
-				initial_dirty = working_tree_dirty?
-				if initial_dirty && commit_message.to_s.strip.empty?
-					result[ :error ] = "working tree is dirty"
-					result[ :recovery ] = "carson deliver --commit \"describe this delivery\""
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				end
-
-				if !initial_dirty && !commit_message.to_s.strip.empty?
-					result[ :commit ] = blocked_commit_payload(
-						message: commit_message,
-						summary: "blocked — working tree is already clean"
-					)
-					result[ :error ] = "working tree is already clean"
-					result[ :recovery ] = "carson deliver"
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				end
-
-				sync_exit, sync_diagnostics = deliver_template_sync
-				if sync_exit == EXIT_ERROR
-					result[ :error ] = sync_diagnostics.to_s.strip.empty? ? "template sync failed" : sync_diagnostics.strip
-					return deliver_finish( result: result, exit_code: sync_exit, json_output: json_output )
-				end
-				template_sync_committed = sync_exit == EXIT_BLOCK
-
-				unless commit_message.to_s.strip.empty?
-					commit_exit = prepare_delivery_commit!(
-						commit_message: commit_message,
-						template_sync_committed: template_sync_committed,
-						result: result
-					)
-					return deliver_finish( result: result, exit_code: commit_exit, json_output: json_output ) unless commit_exit == EXIT_OK
-				end
-
-				freshness = assess_branch_freshness(
-					head_ref: current_head,
-					remote: remote_name,
-					main: main_branch
+				warehouse = Warehouse.new(
+					path: work_dir,
+					main_label: config.main_branch,
+					bureau_address: config.git_remote,
+					compliance_checker: method( :deliver_compliance_checker )
 				)
-				result[ :freshness ] = freshness_payload( freshness: freshness )
-				unless freshness.fetch( :ready )
-					result[ :summary ] = freshness.fetch( :summary )
-					result[ :error ] = freshness.fetch( :summary )
-					result[ :recovery ] = freshness_recovery( freshness: freshness )
-					result[ :main_branch ] = main_branch
-					return deliver_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
-				end
+				parcel = Parcel.new(
+					label: current_branch,
+					head: current_head
+				)
+				courier = Courier.new( warehouse, ledger: ledger )
 
-				push_exit = push_branch!( branch: branch_name, remote: remote_name, result: result )
-				return deliver_finish( result: result, exit_code: push_exit, json_output: json_output ) unless push_exit == EXIT_OK
-
-				pr_number, pr_url = find_or_create_pr!(
-					branch: branch_name,
+				result = courier.deliver( parcel,
 					title: title,
 					body_file: body_file,
-					result: result
-				)
-				return deliver_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output ) if pr_number.nil?
-
-				branch = branch_record( name: branch_name )
-				delivery = ledger.upsert_delivery(
-					repository: repository_record,
-					branch_name: branch.name,
-					head: branch.head || current_head,
-					worktree_path: branch.worktree || repo_root,
-					pr_number: pr_number,
-					pr_url: pr_url,
-					status: "preparing",
-					summary: "delivery accepted",
-					cause: nil
-				)
-				delivery = settle_delivery!(
-					delivery: delivery,
-					branch_name: branch.name,
-					remote: remote_name,
-					main: main_branch,
-					result: result
+					commit_message: commit_message
 				)
 
-				result[ :pr_number ] = pr_number
-				result[ :pr_url ] = pr_url
-				result[ :ci ] = "pass" if delivery.integrated?
-				result[ :delivery ] = delivery_payload( delivery: delivery )
-				result[ :main_branch ] = main_branch
-				result[ :summary ] = delivery.summary
-				result[ :next_step ] = deliver_next_step( delivery: delivery, result: result )
-
-				deliver_finish( result: result, exit_code: EXIT_OK, json_output: json_output )
+				deliver_oo_finish( result: result, json_output: json_output )
 			end
 
 		private
+
+			# --- OO bridge methods ---
+
+			# Compliance checker for the Warehouse. Wraps the existing template_apply!
+			# machinery and returns the hash contract submit_compliance! expects.
+			def deliver_compliance_checker( _warehouse )
+				sync_exit, sync_diagnostics = deliver_template_sync
+				case sync_exit
+				when EXIT_OK
+					{ compliant: true, committed: false }
+				when EXIT_BLOCK
+					{ compliant: true, committed: true }
+				else
+					{ compliant: false, committed: false, error: sync_diagnostics.to_s.strip.empty? ? "template sync failed" : sync_diagnostics.strip }
+				end
+			end
+
+			# Render the OO result — JSON or human via Carson.report.
+			def deliver_oo_finish( result:, json_output: )
+				format = json_output ? :json : :human
+				Carson.report( result, format: format, output: output )
+				result[ :exit ] || Courier::OK
+			end
+
+			# --- Legacy deliver methods (used by receive!, status!, etc.) ---
 
 			def prepare_delivery_commit!( commit_message:, template_sync_committed:, result: )
 				if working_tree_dirty?

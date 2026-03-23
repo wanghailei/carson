@@ -48,41 +48,60 @@ module Carson
 		# Maximum merge attempts before the courier stops retrying (situation 13/15).
 		MERGE_ATTEMPT_CAP = 3
 
-		def initialize( warehouse, output: $stdout, verbose: false )
+		def initialize( warehouse, ledger: nil, output: $stdout, verbose: false )
 			@warehouse = warehouse
+			@ledger = ledger
 			@output = output
 			@verbose = verbose
 		end
 
 		# Deliver a parcel to the registry.
 		# Ships it, files a waybill, waits for customs, requests acceptance.
-		def deliver( parcel, title: nil, body_file: nil )
+		def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
 			result = { command: "deliver", label: parcel.label }
 
 			# 01. Parcel on main — cannot deliver from the destination.
-			if parcel.on_main?( warehouse.main_label )
+			if parcel.on_main?( @warehouse.main_label )
 				return blocked( result,
-					"cannot deliver from #{warehouse.main_label}",
+					"cannot deliver from #{@warehouse.main_label}",
 					recovery: "carson worktree create <name>" )
 			end
 
-			# 02. Parcel behind registry — must include latest registry state.
-			warehouse.fetch_latest( registry: warehouse.main_label )
-			unless warehouse.includes_latest?( parcel )
-				return blocked( result,
-					"parcel is behind #{warehouse.bureau_address}/#{warehouse.main_label}",
-					recovery: "refresh this branch onto #{warehouse.bureau_address}/#{warehouse.main_label}, then carson deliver" )
+			# Submit compliance — ensure templates are in sync before delivery.
+			compliance = @warehouse.submit_compliance!
+			unless compliance[ :compliant ]
+				return error( result, compliance[ :error ] || "compliance check failed" )
 			end
 
+			# Pack the parcel if the sender provided a commit message.
+			if commit_message
+				unless @warehouse.pack!( message: commit_message )
+					return error( result, "packing failed — nothing to commit?" )
+				end
+				# Refresh the parcel's head after packing (commit SHA changed).
+				parcel = Parcel.new( label: parcel.label, head: @warehouse.current_head, shelf: parcel.shelf )
+			end
+
+			# 02. Parcel behind standard — not based on client's latest standard.
+			@warehouse.fetch_latest( registry: @warehouse.main_label )
+			unless @warehouse.based_on_latest_standard?( parcel )
+				return blocked( result,
+					"parcel is behind #{@warehouse.bureau_address}/#{@warehouse.main_label}",
+					recovery: "refresh this branch onto #{@warehouse.bureau_address}/#{@warehouse.main_label}, then carson deliver" )
+			end
+
+			# The courier picks up the parcel — start tracking.
+			record( parcel, status: "preparing", summary: "delivery accepted" )
+
 			# 03. Shipping fails — warehouse couldn't push to the bureau.
-			unless warehouse.ship( parcel )
+			unless @warehouse.ship( parcel )
 				return error( result, "shipping failed" )
 			end
 
 			# File a waybill with the bureau.
 			waybill = Waybill.new(
 				label: parcel.label,
-				warehouse_path: warehouse.path
+				warehouse_path: @warehouse.path
 			)
 			waybill.file!( title: title, body_file: body_file )
 
@@ -97,15 +116,14 @@ module Carson
 			# Wait at the customs window.
 			settle( waybill, result )
 
+			# Update the ledger with the final outcome.
+			record( parcel, status: result[ :outcome ] || "deferred", summary: result[ :hold_summary ] )
+
 			result[ :exit ] ||= OK
 			result
 		end
 
 	private
-
-		# The warehouse is the courier's internal knowledge — callers never
-		# reach through the courier to access the warehouse directly.
-		attr_reader :warehouse
 
 		# The courier waits at the customs window, checking periodically.
 		# When the bureau clears the parcel, the courier requests acceptance.
@@ -121,6 +139,7 @@ module Carson
 				# 14/17. Acceptance succeeds / parcel already delivered.
 				if waybill.accepted?
 					result[ :outcome ] = "delivered"
+					result[ :synced ] = @warehouse.sync!
 					return
 				end
 
@@ -168,6 +187,27 @@ module Carson
 		# Seconds between customs checks while settling.
 		def poll_interval
 			5
+		end
+
+		# Record a delivery state change in the ledger.
+		# No-op when no ledger is injected (e.g. tests).
+		def record( parcel, status:, summary: nil )
+			return unless @ledger
+
+			# The ledger needs a repository-like object with .path pointing
+			# to the main warehouse root (not a side shelf).
+			repo = Struct.new( :path ).new( @warehouse.main_worktree_root )
+			@ledger.upsert_delivery(
+				repository: repo,
+				branch_name: parcel.label,
+				head: parcel.head,
+				worktree_path: @warehouse.path,
+				pr_number: nil,
+				pr_url: nil,
+				status: status,
+				summary: summary,
+				cause: nil
+			)
 		end
 
 		# Build a blocked result — the courier cannot proceed.
