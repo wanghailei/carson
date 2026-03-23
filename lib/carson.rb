@@ -34,7 +34,11 @@ module Carson
 		case result[ :outcome ]
 		when "delivered"
 			output.puts "#{BADGE} Merged."
-			output.puts "#{BADGE} Local main synced." if result[ :synced ]
+			if result[ :synced ]
+				output.puts "#{BADGE} Local main synced."
+			elsif result.key?( :synced )
+				output.puts "#{BADGE} Local main not synced \u2014 run carson sync."
+			end
 		when "held"
 			diagnosis, *recovery_steps = translate_hold( result[ :hold_reason ], remote_main: remote_main )
 			output.puts "#{BADGE} #{diagnosis}"
