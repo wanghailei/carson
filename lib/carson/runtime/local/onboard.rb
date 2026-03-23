@@ -120,8 +120,14 @@ module Carson
 
 					safety = portfolio_repo_safety( repo_path: repo_path )
 					unless safety.fetch( :safe )
+						# Hooks write to ~/.carson/hooks/, not the repo — always safe to refresh.
+						hooks_status = refresh_hooks_single_repo( repo_path: repo_path )
 						reason = safety.fetch( :reasons ).join( ", " )
-						puts_line "#{repo_name}: PENDING (#{reason})"
+						if hooks_status == EXIT_OK
+							puts_line "#{repo_name}: hooks refreshed, templates pending (#{reason})"
+						else
+							puts_line "#{repo_name}: PENDING (#{reason})"
+						end
 						record_batch_skip( command: "refresh", repo_path: repo_path, reason: reason )
 						pending += 1
 						next
@@ -301,6 +307,16 @@ module Carson
 				status
 			rescue StandardError => exception
 				puts_line "#{repo_name}: could not complete (#{exception.message})"
+				EXIT_ERROR
+			end
+
+			# Refreshes hooks only for a governed repo using a scoped Runtime.
+			# Used when the full refresh is blocked by active worktrees or uncommitted
+			# changes — hooks write to ~/.carson/hooks/ and do not touch the working tree.
+			def refresh_hooks_single_repo( repo_path: )
+				scoped_runtime = build_scoped_runtime( repo_path: repo_path )
+				scoped_runtime.refresh_hooks!
+			rescue StandardError
 				EXIT_ERROR
 			end
 
