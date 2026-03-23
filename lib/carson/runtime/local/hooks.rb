@@ -2,6 +2,13 @@
 module Carson
 	class Runtime
 		module Local
+			# Refreshes hooks only — safe to run regardless of worktree or
+			# uncommitted-changes state, because hooks write to ~/.carson/hooks/
+			# and only touch .git/config, not the working tree.
+			def refresh_hooks!
+				prepare!
+			end
+
 		private
 
 			# Installs required hook files and enforces repository hook path.

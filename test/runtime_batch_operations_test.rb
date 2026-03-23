@@ -69,7 +69,7 @@ class RuntimeBatchOperationsTest < Minitest::Test
 				status = runtime.refresh_all!
 				output = output.string
 				assert_includes output, "clean: OK"
-				assert_includes output, "dirty: PENDING (uncommitted changes)"
+				assert_includes output, "dirty: hooks refreshed, templates pending (uncommitted changes)"
 				assert_equal Carson::Runtime::EXIT_ERROR, status
 			end
 		end
