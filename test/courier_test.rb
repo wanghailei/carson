@@ -48,14 +48,17 @@ class CourierTest < Minitest::Test
 		assert_match( /already clean/, result[ :error ] )
 	end
 
-	def test_blocks_delivery_when_behind_registry
+	def test_auto_rebases_when_behind_registry
 		setup_repo_with_remote
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 
-		# Create a feature branch.
+		# Create a feature branch with a commit.
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/behind", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "feature.txt" ), "feature work" )
+		system( "git", "-C", @repo_path, "add", "feature.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "feature commit", out: File::NULL, err: File::NULL )
 
-		# Advance main on the remote.
+		# Advance main on the remote (no conflict — different file).
 		second = File.join( @tmpdir, "second" )
 		system( "git", "clone", @remote_path, second, out: File::NULL, err: File::NULL )
 		system( "git", "-C", second, "config", "user.email", "t@t.com", out: File::NULL, err: File::NULL )
@@ -65,12 +68,45 @@ class CourierTest < Minitest::Test
 		system( "git", "-C", second, "commit", "--no-verify", "-m", "advance main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", second, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
-		courier = Carson::Courier.new( warehouse )
+		output = StringIO.new
+		courier = Carson::Courier.new( warehouse, output: output )
 		parcel = Carson::Parcel.new( label: "feature/behind", head: warehouse.current_head )
+
+		courier.deliver( parcel )
+
+		# PROOF: courier rebased instead of blocking — the rebase message appeared
+		# and the branch now contains the remote advance commit.
+		assert_includes output.string, "rebasing"
+		log, = Open3.capture3( "git", "-C", @repo_path, "log", "--oneline" )
+		assert_includes log, "advance main"
+	end
+
+	def test_blocks_on_rebase_conflict
+		setup_repo_with_remote
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+
+		# Create a feature branch that edits README.md.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/conflict", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "README.md" ), "# Conflict" )
+		system( "git", "-C", @repo_path, "add", "README.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "conflict commit", out: File::NULL, err: File::NULL )
+
+		# Advance main on the remote with a conflicting change to the same file.
+		second = File.join( @tmpdir, "second" )
+		system( "git", "clone", @remote_path, second, out: File::NULL, err: File::NULL )
+		system( "git", "-C", second, "config", "user.email", "t@t.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second, "config", "user.name", "T", out: File::NULL, err: File::NULL )
+		File.write( File.join( second, "README.md" ), "# Different" )
+		system( "git", "-C", second, "add", "README.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second, "commit", "--no-verify", "-m", "conflicting main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		courier = Carson::Courier.new( warehouse )
+		parcel = Carson::Parcel.new( label: "feature/conflict", head: warehouse.current_head )
 
 		result = courier.deliver( parcel )
 		assert_equal Carson::Courier::BLOCKED, result[ :exit ]
-		assert_match( /behind/, result[ :error ] )
+		assert_match( /rebase conflict/, result[ :error ] )
 	end
 
 	def test_blocks_delivery_when_fetch_fails

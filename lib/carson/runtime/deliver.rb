@@ -752,7 +752,7 @@ module Carson
 
 			def freshness_recovery( freshness: )
 				remote_ref = freshness.fetch( :remote_ref )
-				return "refresh this branch onto #{remote_ref}, then carson deliver" if freshness.fetch( :status ) == :behind
+				return "carson deliver" if freshness.fetch( :status ) == :behind
 
 				"carson deliver (once #{remote_ref} is reachable)"
 			end
@@ -840,7 +840,7 @@ module Carson
 					reason: "freshness_behind",
 					cause: "freshness",
 					summary: "branch is behind #{remote_main}",
-					recovery: "refresh this branch onto #{remote_main}, then carson deliver"
+					recovery: "carson deliver"
 				} if merge_state == "BEHIND"
 
 				return {

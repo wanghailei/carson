@@ -125,16 +125,21 @@ module Carson
 			parcel = Parcel.new( label: parcel.label, head: @warehouse.current_head, shelf: parcel.shelf )
 
 			# 02. Parcel behind standard — not based on client's latest standard.
+			#     The courier rebases automatically. Only blocks on conflict.
 			unless @warehouse.fetch_latest( registry: @warehouse.main_label )
 				return blocked( result,
-					"cannot verify freshness \u2014 fetch failed",
+					"cannot verify freshness — fetch failed",
 					recovery: "carson sync, then carson deliver" )
 			end
 			unless @warehouse.based_on_latest_standard?( parcel )
 				remote_main = "#{@warehouse.bureau_address}/#{@warehouse.main_label}"
-				return blocked( result,
-					"branch is behind #{remote_main}",
-					recovery: "git rebase #{remote_main}, then carson deliver" )
+				say "Branch is behind #{remote_main} — rebasing..."
+				unless @warehouse.rebase_on_latest_standard!
+					return blocked( result,
+						"rebase conflict onto #{remote_main}",
+						recovery: "resolve conflicts, then carson deliver" )
+				end
+				parcel = Parcel.new( label: parcel.label, head: @warehouse.current_head, shelf: parcel.shelf )
 			end
 
 			# Announce the delivery.
