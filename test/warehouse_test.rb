@@ -75,19 +75,19 @@ class WarehouseTest < Minitest::Test
 
 	# --- Warehouse operations ---
 
-	def test_prepare_stages_and_commits
+	def test_pack_stages_and_commits
 		File.write( File.join( @repo_path, "new_file.txt" ), "content" )
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		warehouse.prepare!( message: "add new file" )
+		warehouse.pack!( message: "add new file" )
 
 		log, = Open3.capture3( "git", "-C", @repo_path, "log", "--oneline", "-1" )
 		assert_includes log, "add new file"
 	end
 
-	def test_prepare_returns_truthy_on_success
+	def test_pack_returns_truthy_on_success
 		File.write( File.join( @repo_path, "file.txt" ), "content" )
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		result = warehouse.prepare!( message: "test commit" )
+		result = warehouse.pack!( message: "test commit" )
 		assert result
 	end
 
@@ -156,13 +156,13 @@ class WarehouseTest < Minitest::Test
 		assert result
 	end
 
-	def test_includes_latest_when_up_to_date
+	def test_based_on_latest_standard_when_up_to_date
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		parcel = Carson::Parcel.new( label: "main", head: warehouse.current_head )
-		assert warehouse.includes_latest?( parcel )
+		assert warehouse.based_on_latest_standard?( parcel )
 	end
 
-	def test_includes_latest_false_when_behind
+	def test_based_on_latest_standard_false_when_behind
 		# Make a second clone, push a new commit.
 		second_clone = File.join( @tmpdir, "second-clone-ancestor" )
 		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
@@ -181,7 +181,69 @@ class WarehouseTest < Minitest::Test
 		warehouse.fetch_latest
 
 		parcel = Carson::Parcel.new( label: "feature/behind", head: warehouse.current_head )
-		refute warehouse.includes_latest?( parcel )
+		refute warehouse.based_on_latest_standard?( parcel )
+	end
+
+	# --- Production standard ---
+
+	def test_update_standard_rebases_onto_registry
+		# Advance main on the remote via a second clone.
+		second_clone = File.join( @tmpdir, "second-clone-rebase" )
+		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+		File.write( File.join( second_clone, "advanced.txt" ), "advanced" )
+		system( "git", "-C", second_clone, "add", "advanced.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "commit", "-m", "advance registry", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Create a feature branch on original repo (behind registry).
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/needs-rebase", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "feature.txt" ), "feature work" )
+		system( "git", "-C", @repo_path, "add", "feature.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "feature commit", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		warehouse.fetch_latest
+
+		# Confirm behind before updating.
+		parcel = Carson::Parcel.new( label: "feature/needs-rebase", head: warehouse.current_head )
+		refute warehouse.based_on_latest_standard?( parcel )
+
+		# Update standard — rebase onto registry.
+		result = warehouse.rebase_on_latest_standard!
+		assert result
+
+		# After rebase, the parcel should be based on the latest standard.
+		rebased_parcel = Carson::Parcel.new( label: "feature/needs-rebase", head: warehouse.current_head )
+		assert warehouse.based_on_latest_standard?( rebased_parcel )
+	end
+
+	def test_update_standard_returns_false_on_conflict
+		# Advance main on remote with a conflicting file.
+		second_clone = File.join( @tmpdir, "second-clone-conflict" )
+		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
+		File.write( File.join( second_clone, "conflict.txt" ), "remote version" )
+		system( "git", "-C", second_clone, "add", "conflict.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "commit", "-m", "remote conflict", out: File::NULL, err: File::NULL )
+		system( "git", "-C", second_clone, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Create a feature branch with the same file, different content.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/conflict", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "conflict.txt" ), "local version" )
+		system( "git", "-C", @repo_path, "add", "conflict.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "local conflict", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		warehouse.fetch_latest
+
+		result = warehouse.rebase_on_latest_standard!
+		refute result
+
+		# Clean up the failed rebase so teardown can remove the directory.
+		system( "git", "-C", @repo_path, "rebase", "--abort", out: File::NULL, err: File::NULL )
 	end
 
 	# --- Inventory ---
@@ -232,9 +294,9 @@ class WarehouseTest < Minitest::Test
 
 	# --- Error handling ---
 
-	def test_prepare_fails_gracefully_with_nothing_to_commit
+	def test_pack_fails_gracefully_with_nothing_to_commit
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		result = warehouse.prepare!( message: "nothing here" )
+		result = warehouse.pack!( message: "nothing here" )
 		refute result
 	end
 

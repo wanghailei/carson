@@ -118,8 +118,8 @@ The warehouse manages itself. It packs parcels, checks its own compliance, and s
 ║    sweep!                   — clean shelves/labels║
 ║    ship( parcel )           — send to bureau      ║
 ║    fetch_latest             — get registry state  ║
-║    based_on_latest?( parcel ) — production check  ║
-║    update_standard!         — rebase to latest    ║
+║    based_on_latest_standard?( parcel ) — production check  ║
+║    rebase_on_latest_standard!         — rebase to latest    ║
 ║    settle!                  — push to backup      ║
 ║    label_absorbed?( name )  — merged into main?   ║
 ║                                                   ║
@@ -131,7 +131,7 @@ The warehouse manages itself. It packs parcels, checks its own compliance, and s
 A parcel's content is produced based on the **client's standard** (the registry state). Before shipping, the courier checks whether the parcel was **based on the latest standard**.
 
 ```ruby
-warehouse.based_on_latest?( parcel )  # produced to latest client standard?
+warehouse.based_on_latest_standard?( parcel )  # produced to latest client standard?
 ```
 
 This is verified at two points:
@@ -139,7 +139,7 @@ This is verified at two points:
 2. **After client refusal** — the warehouse updates its production standard:
 
 ```ruby
-warehouse.update_standard!  # rebase onto latest registry state
+warehouse.rebase_on_latest_standard!  # rebase onto latest registry state
 ```
 
 ## The Bureau and Its Registry
@@ -363,9 +363,9 @@ All 531 tests pass. New classes work alongside existing code.
 
 ### Phase 2 — Make it live (next)
 
-1. Rename `includes_latest?` → `based_on_latest?`
-2. Add `update_standard!` (rebase onto latest registry)
-3. Add `warehouse.pack!` (absorb commit preparation)
+1. ~~Rename `includes_latest?` → `based_on_latest_standard?`~~ (done)
+2. ~~Add `rebase_on_latest_standard!` (rebase onto latest registry)~~ (done)
+3. ~~Rename `prepare!` → `pack!`~~ (done)
 4. Add `warehouse.submit_compliance!` (absorb template sync)
 5. Add `warehouse.sweep!` (absorb housekeep)
 6. Add `settle!` (local-centred backup push)
@@ -410,7 +410,7 @@ Every situation a class can encounter is numbered in its class documentation. Th
 
 ```ruby
 # 02. Parcel behind standard — not based on client's latest standard.
-unless @warehouse.based_on_latest?( parcel )
+unless @warehouse.based_on_latest_standard?( parcel )
 	return blocked( result, "parcel is behind ..." )
 end
 ```
@@ -421,9 +421,9 @@ This makes the code auditable — you can verify every documented situation has 
 
 ### Unsync'd local main cascade (2026-03-23)
 
-Not syncing local main (`warehouse.update_standard!`) after a merge caused a cascade: merge conflicts, extra PRs, lost commits, multiple rebase attempts. The exact situation `based_on_latest?` is designed to prevent.
+Not syncing local main (`warehouse.rebase_on_latest_standard!`) after a merge caused a cascade: merge conflicts, extra PRs, lost commits, multiple rebase attempts. The exact situation `based_on_latest_standard?` is designed to prevent.
 
-**Lesson:** Always sync local main immediately after any merge reaches the registry. This is `warehouse.update_standard!` — not optional, not deferrable. The cost of skipping it compounds with every subsequent operation.
+**Lesson:** Always sync local main immediately after any merge reaches the registry. This is `warehouse.rebase_on_latest_standard!` — not optional, not deferrable. The cost of skipping it compounds with every subsequent operation.
 
 ### Sub-agents and OO (2026-03-23)
 

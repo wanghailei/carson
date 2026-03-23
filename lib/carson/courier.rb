@@ -60,29 +60,29 @@ module Carson
 			result = { command: "deliver", label: parcel.label }
 
 			# 01. Parcel on main — cannot deliver from the destination.
-			if parcel.on_main?( warehouse.main_label )
+			if parcel.on_main?( @warehouse.main_label )
 				return blocked( result,
-					"cannot deliver from #{warehouse.main_label}",
+					"cannot deliver from #{@warehouse.main_label}",
 					recovery: "carson worktree create <name>" )
 			end
 
-			# 02. Parcel behind registry — must include latest registry state.
-			warehouse.fetch_latest( registry: warehouse.main_label )
-			unless warehouse.includes_latest?( parcel )
+			# 02. Parcel behind standard — not based on client's latest standard.
+			@warehouse.fetch_latest( registry: @warehouse.main_label )
+			unless @warehouse.based_on_latest_standard?( parcel )
 				return blocked( result,
-					"parcel is behind #{warehouse.bureau_address}/#{warehouse.main_label}",
-					recovery: "refresh this branch onto #{warehouse.bureau_address}/#{warehouse.main_label}, then carson deliver" )
+					"parcel is behind #{@warehouse.bureau_address}/#{@warehouse.main_label}",
+					recovery: "refresh this branch onto #{@warehouse.bureau_address}/#{@warehouse.main_label}, then carson deliver" )
 			end
 
 			# 03. Shipping fails — warehouse couldn't push to the bureau.
-			unless warehouse.ship( parcel )
+			unless @warehouse.ship( parcel )
 				return error( result, "shipping failed" )
 			end
 
 			# File a waybill with the bureau.
 			waybill = Waybill.new(
 				label: parcel.label,
-				warehouse_path: warehouse.path
+				warehouse_path: @warehouse.path
 			)
 			waybill.file!( title: title, body_file: body_file )
 
@@ -102,10 +102,6 @@ module Carson
 		end
 
 	private
-
-		# The warehouse is the courier's internal knowledge — callers never
-		# reach through the courier to access the warehouse directly.
-		attr_reader :warehouse
 
 		# The courier waits at the customs window, checking periodically.
 		# When the bureau clears the parcel, the courier requests acceptance.

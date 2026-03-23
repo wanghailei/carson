@@ -58,16 +58,24 @@ module Carson
 			status.success?
 		end
 
-		# Does the parcel include the latest registry state?
-		# Checks whether the remote main tip is an ancestor of the parcel's head.
-		def includes_latest?( parcel, registry: "#{bureau_address}/#{main_label}" )
+		# Is the parcel based on the client's latest production standard?
+		# Checks whether the registry tip is an ancestor of the parcel's head.
+		def based_on_latest_standard?( parcel, registry: "#{bureau_address}/#{main_label}" )
 			_, _, status = git( "merge-base", "--is-ancestor", registry, parcel.head )
 			status.success?
 		end
 
-		# Stage all changes and commit (prepare a parcel).
+		# Update the warehouse's production standard — rebase onto latest registry state.
+		# Called after the bureau refuses a parcel for being behind standard.
 		# Returns true on success, false on failure.
-		def prepare!( message: )
+		def rebase_on_latest_standard!( registry: "#{bureau_address}/#{main_label}" )
+			_, _, status = git( "rebase", registry )
+			status.success?
+		end
+
+		# Pack a parcel — stage all changes and commit.
+		# Returns true on success, false on failure.
+		def pack!( message: )
 			git( "add", "-A" )
 			_, _, status = git( "commit", "-m", message )
 			status.success?
