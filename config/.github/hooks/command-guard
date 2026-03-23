@@ -96,6 +96,9 @@ on_main_branch=false
 delivery_pattern='(^|&&|\|\||;|\|)\s*gh\s+pr\s+(create|merge)\b'
 worktree_pattern='(^|&&|\|\||;|\|)\s*git\s+worktree\s+(add|remove)\b'
 pull_rebase_pattern='(^|&&|\|\||;|\|)\s*git\s+pull([^;&|]|\\\|)*--rebase\b'
+fetch_pattern='(^|&&|\|\||;|\|)\s*git\s+fetch\b'
+rebase_pattern='(^|&&|\|\||;|\|)\s*git\s+rebase\b'
+rebase_continue_pattern='(^|&&|\|\||;|\|)\s*git\s+rebase\s+--(continue|abort|skip)\b'
 main_mutation_pattern='(^|&&|\|\||;|\|)\s*git\s+(add|commit)\b'
 
 if grep -qE "$delivery_pattern" <<<"$command_text"; then
@@ -114,6 +117,21 @@ if grep -qE "$pull_rebase_pattern" <<<"$command_text"; then
 	block_command \
 		"This repo is Carson-governed — use \`carson sync\` instead of raw \`git pull --rebase\`." \
 		"Use \`carson sync\` instead — it owns main-branch alignment in governed repos."
+fi
+
+if grep -qE "$fetch_pattern" <<<"$command_text"; then
+	block_command \
+		"This repo is Carson-governed — do not use raw \`git fetch\`." \
+		"Carson commands handle fetching internally. Use \`carson deliver\` or \`carson sync\`."
+fi
+
+if grep -qE "$rebase_pattern" <<<"$command_text"; then
+	# Allow conflict resolution: --continue, --abort, --skip.
+	if ! grep -qE "$rebase_continue_pattern" <<<"$command_text"; then
+		block_command \
+			"This repo is Carson-governed — do not use raw \`git rebase\`." \
+			"\`carson deliver\` rebases automatically when the branch is behind."
+	fi
 fi
 
 if [ "$on_main_worktree" = true ] && [ "$on_main_branch" = true ] && grep -qE "$main_mutation_pattern" <<<"$command_text"; then
