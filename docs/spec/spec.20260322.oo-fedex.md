@@ -176,7 +176,7 @@ warehouse.receive_latest_standard!              # update warehouse's local copy
 **The standard pair:**
 - `based_on_latest_standard?` — **query.** Is this parcel produced against the latest standard? Checked before every delivery.
 - `rebase_on_latest_standard!` — **fix for shelves.** When a shelf (feature branch) falls behind the standard, rebase it. Used when the courier blocks a delivery for being behind.
-- `receive_latest_standard!` — **fix for the warehouse.** After the bureau accepts a parcel, the registry has new content. The warehouse's local copy of the standard (local main) is now stale. This method fast-forwards it without switching branches.
+- `receive_latest_standard!` — **fix for the warehouse.** After the bureau accepts a parcel, the registry has new content. The warehouse's local copy of the standard (local main) is now stale. This method fast-forwards it without switching branches. Uses a dual-path approach: `merge --ff-only` when main is checked out in the main worktree (the normal production case), fetch refspec when main is not checked out.
 
 **Use case — before shipping:** An agent committed changes on `feature/login` yesterday. Overnight, another PR was merged into main. This morning, the agent runs `carson deliver`. The courier fetches the latest standard, checks `based_on_latest_standard?` — returns false. The courier blocks: "branch is behind origin/main." The agent rebases and delivers again.
 
@@ -598,11 +598,11 @@ Once a parcel ships and the waybill is filed, the warehouse seals the workbench.
 | Held / rejected | Unseal (courier brought parcel back) | Agent can fix and re-deliver |
 | Filed (checks exhausted) | Stays sealed | Parcel still at the registry — no changes allowed |
 
-**Mechanism:** `.carson-delivering` marker file containing the PR number. `warehouse.pack!` refuses when sealed. `carson audit` (via pre-commit hook) blocks `git commit` on sealed workbenches.
+**Mechanism:** Seal marker file at `~/.carson/seals/<sha256-of-worktree-path>` containing the PR number and worktree path. Lives outside the worktree so it does not pollute `git status`. `warehouse.pack!` refuses when sealed. `carson audit` (via pre-commit hook) blocks `git commit` on sealed workbenches.
 
 **Enforcement gap:** Carson governs git operations. It cannot govern file edits — that's Claude Code's domain. The seal blocks commits but does not block Write/Edit tools. See § Enforcement Layers.
 
-**Crash recovery:** If Carson is killed mid-delivery, the marker survives. The next `carson deliver` or `carson status` finds the marker, reads the PR number, and checks the waybill to determine the current state.
+**Crash recovery:** If Carson is killed mid-delivery, the marker survives at `~/.carson/seals/`. The next `carson deliver` or `carson status` finds the marker, reads the PR number, and checks the waybill to determine the current state.
 
 ## Enforcement Layers
 
