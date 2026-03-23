@@ -4,3 +4,4 @@ tmp/
 *.gem
 .claude/
 carson-review*/
+.carson-delivering

@@ -340,6 +340,61 @@ class CourierTest < Minitest::Test
 		assert_equal "github/main", result[ :remote_main ]
 	end
 
+	# --- Progress output ---
+
+	def test_courier_prints_progress_during_poll
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
+		output = StringIO.new
+		courier = Carson::Courier.new( warehouse, output: output )
+		courier.define_singleton_method( :pause_between_polls ) {}
+
+		waybill = Carson::Waybill.new( label: "feature/progress", warehouse_path: "/tmp/fake", tracking_number: 10 )
+		check_count = 0
+		waybill.define_singleton_method( :refresh! ) do
+			check_count += 1
+			if check_count < 3
+				stub_bureau_response(
+					state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+					ci: :pending
+				)
+			else
+				stub_bureau_response(
+					state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" },
+					ci: :pass
+				)
+			end
+			self
+		end
+		waybill.define_singleton_method( :accept! ) do |method:|
+			stub_bureau_response( state: { "state" => "MERGED" } )
+			self
+		end
+
+		result = {}
+		courier.send( :wait_and_poll_at_registry, waybill, result )
+
+		assert_equal "delivered", result[ :outcome ]
+		assert_includes output.string, "(1/6)"
+		assert_includes output.string, "(2/6)"
+	end
+
+	def test_courier_silent_without_output
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
+		courier = Carson::Courier.new( warehouse, output: nil )
+
+		waybill = Carson::Waybill.new( label: "feature/silent", warehouse_path: "/tmp/fake", tracking_number: 11 )
+		waybill.stub_bureau_response(
+			state: { "state" => "MERGED" },
+			ci: :pass
+		)
+		waybill.define_singleton_method( :refresh! ) { self }
+
+		result = {}
+		# Should not raise — nil output is safe.
+		courier.send( :wait_and_poll_at_registry, waybill, result )
+		assert_equal "delivered", result[ :outcome ]
+	end
+
 private
 
 	def setup_repo_with_remote
