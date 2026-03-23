@@ -7,6 +7,12 @@ module Carson
 	class Runtime
 		module Audit
 			def audit!( json_output: false )
+				# Sealed workbench guard — hard block before anything else.
+				# The warehouse seals the workbench when a parcel ships.
+				# No commits allowed until the delivery outcome is confirmed.
+				sealed_result = audit_sealed_workbench( json_output: json_output )
+				return sealed_result unless sealed_result.nil?
+
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
 				unless head_exists?
@@ -175,6 +181,30 @@ module Carson
 					when "attention" then "Audit: needs attention."
 					else "Audit: #{state}"
 					end
+				end
+
+				# Check if the workbench is sealed (parcel in flight).
+				# Returns EXIT_BLOCK if sealed, nil otherwise.
+				def audit_sealed_workbench( json_output: )
+					marker_path = File.join( work_dir, ".carson-delivering" )
+					return nil unless File.exist?( marker_path )
+
+					tracking_number = File.read( marker_path ).strip rescue "unknown"
+					if json_output
+						require "json"
+						output.puts JSON.pretty_generate( {
+							command: "audit",
+							status: "block",
+							reason: "workbench_sealed",
+							tracking_number: tracking_number,
+							recovery: "carson worktree create <name>",
+							exit_code: EXIT_BLOCK
+						} )
+					else
+						puts_line "Workbench is sealed — parcel in flight (PR ##{tracking_number})."
+						puts_line "  \u2192 carson worktree create <name>"
+					end
+					EXIT_BLOCK
 				end
 
 				def audit_working_tree_report

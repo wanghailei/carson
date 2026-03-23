@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- Shelf seal guard ---
-# Block commits when the workbench is sealed (parcel in flight).
-# The warehouse writes .carson-delivering when the courier ships.
-if [[ -f ".carson-delivering" ]]; then
-	tracking_number=$(cat .carson-delivering 2>/dev/null || echo "unknown")
-	echo "Carson: workbench is sealed — parcel in flight (PR #${tracking_number})." >&2
-	echo "Create a new worktree to continue working: carson worktree create <name>" >&2
-	exit 1
-fi
-
 if [[ -n "${CARSON_BIN:-}" ]]; then
 	carson_command=( "$CARSON_BIN" )
 elif command -v carson >/dev/null 2>&1; then
