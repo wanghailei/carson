@@ -169,6 +169,20 @@ The bureau (GitHub) has two functions: customs inspection and the official regis
   └──────────────────────────────────────────────┘
 ```
 
+## Output Rendering
+
+Output is for agents by default. Human is the second class.
+
+JSON is the primary output format — agents consume it. Human-readable is secondary. The output concern does not belong on the Courier or any domain object. It belongs at the company level — Carson formats the result for whoever is listening.
+
+```ruby
+result = courier.deliver( parcel )
+Carson.report( result, format: :json )  # default — agents
+Carson.report( result, format: :human ) # secondary — humans
+```
+
+The Courier returns a result hash. Carson decides how to render it. Domain objects never know or care about output format.
+
 ## The Courier — A Robot
 
 The courier is a robot employee. Assigned to a warehouse. Delivers parcels to the bureau.
@@ -360,6 +374,68 @@ All 531 tests pass. New classes work alongside existing code.
 9. Carson Co. absorbs `monitor` and `track` (no Dispatcher)
 10. Rename commands: govern→monitor, housekeep→sweep, abandon→return, recover→salvage, status→track
 11. Remove Runtime — absorbed by domain objects
+
+## Coding Conventions
+
+### No private `attr_reader`
+
+`attr_reader` exists to create a public interface method. For purely internal state, use the instance variable directly. A private `attr_reader` creates a method where a direct variable access suffices.
+
+```ruby
+# Wrong — attr_reader for internal-only access
+class Courier
+private
+	attr_reader :warehouse
+
+	def settle( waybill )
+		warehouse.main_label  # calls private method
+	end
+end
+
+# Right — direct instance variable for internal state
+class Courier
+	def initialize( warehouse )
+		@warehouse = warehouse
+	end
+
+	def settle( waybill )
+		@warehouse.main_label  # direct, simple, honest
+	end
+end
+```
+
+### Numbered situations in code comments
+
+Every situation a class can encounter is numbered in its class documentation. The number appears as a code comment on the method or branch that handles it:
+
+```ruby
+# 02. Parcel behind standard — not based on client's latest standard.
+unless @warehouse.based_on_latest?( parcel )
+	return blocked( result, "parcel is behind ..." )
+end
+```
+
+This makes the code auditable — you can verify every documented situation has a handler, and every handler references a documented situation.
+
+## Scars
+
+### Unsync'd local main cascade (2026-03-23)
+
+Not syncing local main (`warehouse.update_standard!`) after a merge caused a cascade: merge conflicts, extra PRs, lost commits, multiple rebase attempts. The exact situation `based_on_latest?` is designed to prevent.
+
+**Lesson:** Always sync local main immediately after any merge reaches the registry. This is `warehouse.update_standard!` — not optional, not deferrable. The cost of skipping it compounds with every subsequent operation.
+
+### Sub-agents and OO (2026-03-23)
+
+A sub-agent was dispatched to build `Carson::Warehouse` with explicit instruction to read `CODING/RUBY.md` § Pure OO Design. The sub-agent followed style rules perfectly — tabs, spaces, `it` parameter, story language, hidden git. But it committed primitive obsession: `ship( label )` taking a string where a `Parcel` object belongs.
+
+**Lesson:** Sub-agents read rules but do not internalise them. The enforcement mechanism is code review, not instruction. Every sub-agent's work must be reviewed for OO violations before merge. The rules prevent gross errors; only review catches the subtle ones.
+
+### "Go" means code (2026-03-22)
+
+The user said "Go!" expecting overnight marathon implementation. The agent invoked the writing-plans skill, wrote a 300-line plan document, asked "Subagent-driven or inline?", and stopped. The user woke up to zero code.
+
+**Lesson:** When the user gives an execution command ("Go!", "Do it", "Marathon"), write code immediately. Never invoke planning skills, never ask execution method, never produce documents about code instead of code. The skill process chain is guidance, not a gate. The user's direct command overrides any skill workflow.
 
 ## Design Principles
 
