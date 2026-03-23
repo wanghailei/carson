@@ -103,6 +103,58 @@ class CourierTest < Minitest::Test
 		assert recordings.any? { it[ :status ] == "preparing" }
 	end
 
+	# --- Sync after acceptance ---
+
+	def test_syncs_local_main_after_acceptance
+		setup_repo_with_remote
+
+		# Create a feature branch and commit.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/sync-proof", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "sync.txt" ), "sync proof" )
+		system( "git", "-C", @repo_path, "add", "sync.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "sync proof commit", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		courier = Carson::Courier.new( warehouse )
+		parcel = Carson::Parcel.new( label: "feature/sync-proof", head: warehouse.current_head )
+
+		# Ship the parcel (real git push).
+		warehouse.ship( parcel )
+
+		# Simulate: the bureau merges the PR into remote main.
+		# (In real life, gh pr merge does this. We simulate with git merge on the remote.)
+		bare_work = File.join( @tmpdir, "bare-work" )
+		system( "git", "clone", @remote_path, bare_work, out: File::NULL, err: File::NULL )
+		system( "git", "-C", bare_work, "config", "user.email", "t@t.com", out: File::NULL, err: File::NULL )
+		system( "git", "-C", bare_work, "config", "user.name", "T", out: File::NULL, err: File::NULL )
+		system( "git", "-C", bare_work, "merge", "origin/feature/sync-proof", "--no-ff", "-m", "merge", out: File::NULL, err: File::NULL )
+		system( "git", "-C", bare_work, "push", "origin", "main", out: File::NULL, err: File::NULL )
+
+		# Record local main BEFORE sync.
+		local_main_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
+
+		# Create a waybill and stub it to report accepted.
+		# Override refresh! so it doesn't overwrite the stub via gh CLI.
+		waybill = Carson::Waybill.new( label: "feature/sync-proof", warehouse_path: @repo_path )
+		waybill.stub_bureau_response(
+			state: { "state" => "MERGED", "mergedAt" => "2026-03-23T00:00:00Z" },
+			ci: :pass
+		)
+		waybill.define_singleton_method( :refresh! ) { self }
+
+		# Simulate the settle loop seeing acceptance — call the private settle method.
+		result = { command: "deliver", label: "feature/sync-proof" }
+		courier.send( :settle, waybill, result )
+
+		# PROOF: outcome is "delivered" and local main has advanced.
+		assert_equal "delivered", result[ :outcome ]
+		assert result[ :synced ], "expected sync! to succeed"
+
+		local_main_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
+		refute_equal local_main_before.strip, local_main_after.strip,
+			"local main should have advanced after sync"
+	end
+
 	# --- Shipping ---
 
 	def test_ships_parcel_to_bureau
