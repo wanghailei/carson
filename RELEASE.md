@@ -19,15 +19,14 @@ Release-note scope rule:
 
 ### Breaking
 
-- **Courier waits at the registry** — `carson deliver` now polls the bureau up to 6 times (default 30s interval) instead of checking once and leaving. PRs that pass CI are merged automatically without re-running `carson deliver`. Agents that relied on instant return from `carson deliver` should expect it to block for up to 3 minutes.
+- **`carson deliver` waits for CI and merges automatically** — `carson deliver` now polls GitHub up to 6 times (default 30s interval) instead of checking once and returning immediately. PRs that pass CI are merged without re-running `carson deliver`. Agents that relied on instant return should expect it to block for up to 3 minutes.
 - **Hold reasons renamed** — JSON output field `hold_reason` values changed: `inspector_pending` → `pending_at_registry`, `inspector_failed` → `failed_at_registry`, `inspector_error` → `error_at_registry`. Agents parsing these values must update.
-- **Hold messages include recovery commands** — Human output for held deliveries now shows actionable recovery steps (e.g. `→ git rebase origin/main` then `→ carson deliver`) instead of prose descriptions.
-- **Bureau model simplified** — No more "customs" or "inspector" in the domain model. The bureau is a registry where bureaucrats check parcels. Internal only — no user-facing impact beyond the hold_reason rename above.
+- **Hold messages include recovery commands** — Human output for held deliveries now shows actionable next steps (e.g. `→ git rebase origin/main` then `→ carson deliver`) instead of prose descriptions.
 
 ### New
 
-- **`deliver.poll_interval_at_registry` config** — Controls how long the courier waits between registry checks (default 30 seconds). Override via config or `CARSON_POLL_INTERVAL_AT_REGISTRY` environment variable.
-- **`filed` outcome** — When the courier exhausts all checks without a definitive answer, it reports "filed" with `→ carson status` as the next step, instead of the old "deferred" with `→ carson deliver`.
+- **`deliver.poll_interval_at_registry` config** — Controls how long `carson deliver` waits between CI checks (default 30 seconds). Override via config or `CARSON_POLL_INTERVAL_AT_REGISTRY` environment variable.
+- **`filed` outcome** — When `carson deliver` exhausts all checks without a definitive answer from GitHub, it reports "filed" with `→ carson status` as the next step, instead of the old "deferred" with `→ carson deliver`.
 
 ### Migration
 
