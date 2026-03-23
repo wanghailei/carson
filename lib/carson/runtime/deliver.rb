@@ -19,7 +19,11 @@ module Carson
 					label: current_branch,
 					head: current_head
 				)
-				courier = Courier.new( warehouse, ledger: ledger, merge_method: config.govern_merge_method )
+				courier = Courier.new( warehouse,
+				ledger: ledger,
+				merge_method: config.govern_merge_method,
+				poll_interval_at_registry: config.poll_interval_at_registry
+			)
 
 				result = courier.deliver( parcel,
 					title: title,

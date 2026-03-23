@@ -1,9 +1,13 @@
 # The shipping document filed with the bureau (GitHub PR).
 #
-# In the FedEx metaphor, the courier files a waybill with the bureau
-# when shipping a parcel. The waybill has a tracking number (PR number),
-# knows the bureau's response (CI, review, mergeability), and can ask
-# the bureau to accept the parcel into the registry.
+# The courier files a waybill with the bureau when delivering a parcel.
+# The waybill has a tracking number (PR number), knows the bureau's
+# response (cleared/held/accepted/rejected), and can ask the bureau
+# to accept the parcel into the registry.
+#
+# The bureau is a registry where bureaucrats work. They check parcels
+# (CI, review, mergeability) and either accept them into the registry
+# or hold them with a reason.
 #
 # The waybill uses gh CLI internally — that's a tool, not the domain.
 require "json"
@@ -11,9 +15,10 @@ require "open3"
 
 module Carson
 	# The shipping document filed with the bureau (GitHub PR). Has a
-	# tracking number, knows the bureau's response (cleared/held/accepted/
-	# rejected), and can ask the bureau to accept the parcel into the
-	# registry. Uses gh CLI internally — that's a tool, not the domain.
+	# tracking number, knows the bureaucrats' response (cleared/held/
+	# accepted/rejected), and can ask the bureau to accept the parcel
+	# into the registry. Uses gh CLI internally — that's a tool, not
+	# the domain.
 	class Waybill
 		attr_reader :tracking_number, :url, :label
 
@@ -89,7 +94,7 @@ module Carson
 		end
 
 		# Has the bureau cleared the parcel for delivery?
-		# All inspectors pass, no merge blocks, merge state is clean.
+		# All bureaucrats pass, no merge blocks, merge state is clean.
 		def cleared?
 			return false unless filed?
 			return false if draft?
@@ -109,9 +114,9 @@ module Carson
 		# Why is the waybill being held?
 		def hold_reason
 			return "draft" if draft?
-			return "inspector_pending" if @ci == :pending
-			return "inspector_failed" if @ci == :fail
-			return "inspector_error" if @ci == :error
+			return "pending_at_registry" if @ci == :pending
+			return "failed_at_registry" if @ci == :fail
+			return "error_at_registry" if @ci == :error
 			return "merge_conflict" if merge_conflicting?
 			return "behind_registry" if merge_behind?
 			return "policy_block" if merge_policy_blocked?
@@ -122,9 +127,9 @@ module Carson
 		def hold_summary
 			case hold_reason
 			when "draft" then "waybill is still a draft"
-			when "inspector_pending" then "waiting for customs inspection"
-			when "inspector_failed" then "customs inspection failed"
-			when "inspector_error" then "unable to assess customs inspection"
+			when "pending_at_registry" then "waiting for bureaucrats to check"
+			when "failed_at_registry" then "bureaucrats rejected the parcel"
+			when "error_at_registry" then "unable to reach the bureaucrats"
 			when "merge_conflict" then "parcel has conflicts with registry"
 			when "behind_registry" then "parcel is behind the registry"
 			when "policy_block" then "blocked by bureau policy"

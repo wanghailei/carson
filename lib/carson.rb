@@ -29,32 +29,48 @@ module Carson
 		output.puts "#{BADGE} Delivery: #{result[ :label ]}" if result[ :label ]
 		output.puts "#{BADGE} PR ##{result[ :tracking_number ]}  #{result[ :url ]}" if result[ :tracking_number ]
 
+		remote_main = result[ :remote_main ] || "origin/main"
+
 		case result[ :outcome ]
 		when "delivered"
 			output.puts "#{BADGE} Merged."
 			output.puts "#{BADGE} Local main synced." if result[ :synced ]
 		when "held"
-			output.puts "#{BADGE} #{translate_hold( result[ :hold_reason ] )}"
+			diagnosis, *recovery_steps = translate_hold( result[ :hold_reason ], remote_main: remote_main )
+			output.puts "#{BADGE} #{diagnosis}"
+			recovery_steps.each do |step|
+				output.puts "  \u2192 #{step}"
+			end
 		when "rejected"
 			output.puts "#{BADGE} PR closed externally."
-		when "deferred"
-			output.puts "#{BADGE} Merge deferred \u2014 still waiting."
-			output.puts "  \u2192 carson deliver"
+		when "filed"
+			output.puts "#{BADGE} Bureau hasn't responded yet. Run carson status to check back."
 		end
 	end
 
-	# Translate internal hold reasons to technical language agents understand.
-	def self.translate_hold( reason )
+	# Translate internal hold reasons to agent-actionable output.
+	# Returns [ diagnosis, *recovery_steps ]. The diagnosis says what
+	# happened. Each recovery step is a command the agent can execute.
+	def self.translate_hold( reason, remote_main: "origin/main" )
 		case reason
-		when "draft" then "PR is still a draft."
-		when "inspector_pending" then "Waiting for CI checks."
-		when "inspector_failed" then "CI checks failed."
-		when "inspector_error" then "Unable to assess CI checks."
-		when "merge_conflict" then "Merge conflict with main."
-		when "behind_registry" then "Branch is behind main."
-		when "policy_block" then "Blocked by branch protection rules."
-		when "mergeability_pending" then "GitHub is calculating mergeability."
-		else "Waiting for merge readiness."
+		when "draft"
+			[ "PR is still a draft." ]
+		when "pending_at_registry"
+			[ "Waiting for CI checks.", "carson status" ]
+		when "failed_at_registry"
+			[ "CI checks failed.", "carson deliver" ]
+		when "error_at_registry"
+			[ "Unable to assess CI checks.", "carson status" ]
+		when "merge_conflict"
+			[ "Merge conflict with #{remote_main}.", "git rebase #{remote_main}", "carson deliver" ]
+		when "behind_registry"
+			[ "Branch is behind #{remote_main}.", "git rebase #{remote_main}", "carson deliver" ]
+		when "policy_block"
+			[ "Blocked by branch protection rules." ]
+		when "mergeability_pending"
+			[ "GitHub is calculating mergeability.", "carson status" ]
+		else
+			[ "Waiting for merge readiness.", "carson status" ]
 		end
 	end
 

@@ -18,7 +18,7 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║                    FedEx  →  Carson                             ║
+║                    FedEx  →  Carson                              ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  FedEx (the company)       →  Carson (the company, the CLI)      ║
@@ -26,21 +26,21 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 ║                                                                  ║
 ║  Warehouse (intelligent)   →  Carson::Warehouse                  ║
 ║  Shelf                     →  Carson::Shelf                      ║
-║  Shelf label               →  Carson::Label                     ║
+║  Shelf label               →  Carson::Label                      ║
 ║  Parcel (package)          →  Carson::Parcel                     ║
 ║  Waybill (shipping doc)    →  Carson::Waybill                    ║
 ║  Tracking record           →  Carson::Delivery                   ║
 ║  Sender / Client           →  The agent (AI or human)            ║
 ║                                                                  ║
-║  Bureau (customs office)   →  GitHub                             ║
-║  Customs inspector         →  CI system                          ║
-║  Review officer            →  Code reviewer                      ║
+║  Bureau (registry office)  →  GitHub                             ║
+║  Bureaucrat (CI)           →  CI system                          ║
+║  Bureaucrat (review)       →  Code reviewer                      ║
 ║  Registry                  →  Remote main branch                 ║
 ║  Production standard       →  Registry state (what rebase checks)║
 ║                                                                  ║
 ║  Ship                      →  git push (hidden inside)           ║
 ║  File waybill              →  gh pr create (hidden inside)       ║
-║  Customs inspection        →  CI checks + code review            ║
+║  Registry check            →  CI checks + code review            ║
 ║  Accept into registry      →  gh pr merge (hidden inside)        ║
 ║  Proof of delivery         →  Merge proof                        ║
 ║  Pack                      →  git add + git commit               ║
@@ -69,7 +69,7 @@ Carson speaks two languages. Mixing them is a defect.
 | JSON payloads | Technical | Agents |
 | Recovery instructions | Technical | Agents and humans |
 
-**Rationale:** When FedEx tells you your package status, they don't say "the customs inspector is reviewing your parcel at the bureau." They say "your package is at the sorting facility, expected delivery Tuesday." They speak the customer's language, not their internal operational language. Carson's clients are coding agents. They understand "PR #437 — waiting for CI checks", not "held — unable to assess customs inspection."
+**Rationale:** When FedEx tells you your package status, they don't say "the bureaucrat is reviewing your parcel at the registry." They say "your package is at the sorting facility, expected delivery Tuesday." They speak the customer's language, not their internal operational language. Carson's clients are coding agents. They understand "PR #437 — waiting for CI checks", not "held — pending at registry."
 
 **Use case:** A Claude agent runs `carson deliver` and gets back `"branch is behind origin/main"`. It knows exactly what to do — `git rebase origin/main`. If it got "parcel is behind the production standard", it would need to decode the metaphor before acting. The metaphor serves the developer reading source code; the output serves the agent executing commands.
 
@@ -96,7 +96,7 @@ The previous design had four roles (Courier, Cleaner, Dispatcher). Refined to th
 ║  │  Routes commands to employees               │                 ║
 ║  │  Receives bureau feedback                   │                 ║
 ║  │  Notifies clients IMMEDIATELY               │                 ║
-║  │  Dispatches courier when work is needed      │                 ║
+║  │  Dispatches courier when work is needed      │                ║
 ║  │  Manages warehouse portfolio                │                 ║
 ║  └─────────────────────────────────────────────┘                 ║
 ║                                                                  ║
@@ -106,15 +106,15 @@ The previous design had four roles (Courier, Cleaner, Dispatcher). Refined to th
 ║  │  (robot)   │  ← does one errand, reports back                 ║
 ║  └────────────┘                                                  ║
 ║                                                                  ║
-║  INTELLIGENT WAREHOUSES (self-managing)                           ║
-║  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           ║
-║  │  ~/AI        │  │  ~/Dev/      │  │  ~/Dev/      │  ···     ║
-║  │              │  │   nexus      │  │   carson     │           ║
-║  │  Packs       │  │              │  │              │           ║
-║  │  Sweeps      │  │  Packs       │  │  Packs       │           ║
-║  │  Complies    │  │  Sweeps      │  │  Sweeps      │           ║
-║  │  Cleans      │  │  Complies    │  │  Complies    │           ║
-║  └──────────────┘  └──────────────┘  └──────────────┘           ║
+║  INTELLIGENT WAREHOUSES (self-managing)                          ║
+║  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            ║
+║  │  ~/AI        │  │  ~/Dev/      │  │  ~/Dev/      │  ···       ║
+║  │              │  │   nexus      │  │   carson     │            ║
+║  │  Packs       │  │              │  │              │            ║
+║  │  Sweeps      │  │  Packs       │  │  Packs       │            ║
+║  │  Complies    │  │  Sweeps      │  │  Sweeps      │            ║
+║  │  Cleans      │  │  Complies    │  │  Complies    │            ║
+║  └──────────────┘  └──────────────┘  └──────────────┘            ║
 ║                                                                  ║
 ║  The more clients, the better. Good business.                    ║
 ║                                                                  ║
@@ -202,22 +202,19 @@ Shelf: oo/phase2         (parcel delivered, accepted)
 
 ## The Bureau and Its Registry
 
-The bureau (GitHub) has two functions: customs inspection and the official registry. The registry IS remote main — where all accepted parcels are filed permanently.
+The bureau (GitHub) is a registry where bureaucrats work. Bureaucrats at the registry check parcels (CI, review, mergeability). The registry is where accepted parcels live (remote main).
 
 ```
   The Bureau (GitHub)
   ┌──────────────────────────────────────────────┐
   │                                              │
-  │  Customs Window                              │
-  │  ┌─────────────┐  ┌──────────────────┐       │
-  │  │ Inspector   │  │ Review Officer   │       │
-  │  │ (CI)        │  │ (code review)    │       │
-  │  └──────┬──────┘  └────────┬─────────┘       │
-  │         │                  │                  │
-  │         └──────┬───────────┘                  │
-  │                ▼                              │
+  │  Registry                                    │
   │  ┌──────────────────────────────────┐         │
-  │  │         Registry (main)          │         │
+  │  │                                  │         │
+  │  │  Bureaucrats check parcels here  │         │
+  │  │  ┌──────────┐  ┌─────────────┐  │         │
+  │  │  │ CI check │  │ Review check│  │         │
+  │  │  └──────────┘  └─────────────┘  │         │
   │  │                                  │         │
   │  │  All accepted parcels live here  │         │
   │  │  This is what production sees    │         │
@@ -229,7 +226,7 @@ The bureau (GitHub) has two functions: customs inspection and the official regis
 
 ### Bureau Feedback Model
 
-The bureau processes asynchronously — CI runs take minutes, reviews take hours. Carson does **not** sit and wait for the bureau. The courier files the waybill, checks once, and reports back. When the bureau's state changes, Carson Co. is responsible for notifying the client.
+The bureau processes asynchronously — CI runs take minutes, reviews take hours. The courier waits at the registry while bureaucrats check the parcel, polling periodically (up to MAX_CHECKS_AT_REGISTRY=6 times, with configurable poll interval). If the checks clear, the courier reports the definitive answer. If checks are exhausted, the courier reports "filed" — the parcel is at the registry, bureaucrats are still checking. Carson Co. is responsible for follow-up notification when the bureau's state changes.
 
 ```
 Bureau state changes (CI passes, review approved, PR merged)
@@ -239,7 +236,7 @@ Bureau state changes (CI passes, review approved, PR merged)
   → If no work needed (just status), no courier dispatch
 ```
 
-**The client is the priority, not the courier.** When customs clears a parcel, the most important thing is telling the sender (agent) that their changes are through. The courier is a tool — it gets dispatched when there's an errand. The client gets informed because they're waiting.
+**The client is the priority, not the courier.** When the registry clears a parcel, the most important thing is telling the sender (agent) that their changes are through. The courier is a tool — it gets dispatched when there's an errand. The client gets informed because they're waiting.
 
 | Event | Who needs to know first | Then what |
 |---|---|---|
@@ -248,9 +245,9 @@ Bureau state changes (CI passes, review approved, PR merged)
 | CI fails | **Client** — "CI failed, here's why" | No courier needed |
 | Review comments | **Client** — "review comments on your PR" | No courier needed |
 
-**Use case:** An agent runs `carson deliver` at 2pm. CI takes 10 minutes. The courier files the waybill, checks once (CI pending), reports "Waiting for CI checks." The agent continues other work. At 2:10pm, CI passes. Carson Co. (via `monitor`) detects the change, informs the agent: "PR #437 — CI passed, merging." The courier is dispatched, merges, and the agent is told: "Merged. Local main synced."
+**Use case:** An agent runs `carson deliver` at 2pm. CI takes 3 minutes. The courier files the waybill, waits at the registry while bureaucrats check (polling periodically). CI passes within the poll window. The courier merges and reports: "Merged. Local main synced." If CI takes longer than the poll window, the courier reports "filed — waiting for CI checks" and the agent continues other work. When CI passes, Carson Co. (via `monitor`) detects the change, informs the agent: "PR #437 — CI passed, merging."
 
-**Anti-pattern (old design):** The courier sat at the customs window for 30 seconds, polling every 5 seconds. If CI took longer than 30 seconds (it always does), the courier gave up: "Merge deferred — watch window expired." The agent had to manually re-run `carson deliver`. This is like FedEx calling you and saying "please call us again in 5 minutes to check on your package." No real delivery service works this way.
+**Anti-pattern (old design):** The old design had two problems: (a) a 30-second timeout was too short — CI takes minutes, so the courier always timed out, and (b) the recovery action was "re-deliver" (run `carson deliver` again) instead of "check status." The agent had to manually re-run `carson deliver`, which created a new PR attempt instead of checking the existing one. This is like FedEx losing your tracking number and asking you to ship again. The fix: the courier waits at the registry with enough patience (configurable polls), and if checks are exhausted, reports the parcel as "filed" with the tracking number — not "failed."
 
 ## Output Rendering
 
@@ -268,37 +265,44 @@ The Courier returns a result hash. Carson decides how to render it. Domain objec
 
 Output uses **technical language** — the client's language. `Carson.translate_hold` maps internal hold reasons to technical terms:
 
-| Internal reason | Client sees |
-|---|---|
-| `inspector_pending` | "Waiting for CI checks." |
-| `inspector_failed` | "CI checks failed." |
-| `merge_conflict` | "Merge conflict with main." |
-| `behind_registry` | "Branch is behind main." |
-| `policy_block` | "Blocked by branch protection rules." |
-| `draft` | "PR is still a draft." |
+| Internal reason | Client sees | Recovery |
+|---|---|---|
+| `pending_at_registry` | "Waiting for CI checks." | "Run `carson track` to check status." |
+| `failed_at_registry` | "CI checks failed." | "Fix failures, push, and run `carson deliver`." |
+| `error_at_registry` | "CI check error — inconclusive." | "Re-run CI or run `carson deliver`." |
+| `merge_conflict` | "Merge conflict with main." | "Rebase on main, resolve conflicts, and re-deliver." |
+| `behind_registry` | "Branch is behind main." | "Run `git rebase origin/main` and re-deliver." |
+| `policy_block` | "Blocked by branch protection rules." | "Check branch protection settings." |
+| `draft` | "PR is still a draft." | "Mark PR as ready for review." |
 
 ## The Courier — A Robot
 
-The courier is a robot employee. Assigned to a warehouse. Delivers parcels to the bureau. Does one errand, reports back. Does NOT wait at the customs window.
+The courier is a robot employee. Assigned to a warehouse. Delivers parcels to the bureau. Does one errand, reports back. Waits at the registry while bureaucrats check the parcel.
 
 ```
-╔═══════════════════════════════════════════════════╗
-║             Carson::Courier                       ║
-║           (the delivery robot)                    ║
-║                                                   ║
-║  assigned to: a warehouse                         ║
-║  injected:    merge_method, ledger                ║
-║                                                   ║
-║  can:                                             ║
-║    deliver( parcel )  — ship parcel to registry   ║
-║    return( parcel )   — return to sender           ║
-║    salvage( parcel )  — rescue stuck parcel        ║
-║                                                   ║
-║  design:                                          ║
-║    NO polling. Check bureau once, report back.    ║
-║    Re-dispatch is Carson Co.'s responsibility.    ║
-║                                                   ║
-╚═══════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════╗
+║             Carson::Courier                               ║
+║           (the delivery robot)                            ║
+║                                                           ║
+║  assigned to: a warehouse                                 ║
+║  injected:    merge_method, ledger,                       ║
+║               MAX_CHECKS_AT_REGISTRY = 6,                 ║
+║               poll_interval_at_registry                   ║
+║                                                           ║
+║  can:                                                     ║
+║    deliver( parcel )            — ship parcel to registry  ║
+║    return( parcel )             — return to sender          ║
+║    salvage( parcel )            — rescue stuck parcel       ║
+║    wait_and_poll_at_registry    — poll bureaucrats          ║
+║    pause_between_polls          — sleep between checks     ║
+║    definitively_blocked?        — hard failure?             ║
+║                                                           ║
+║  design:                                                  ║
+║    Waits at registry while bureaucrats check.             ║
+║    Polls up to MAX_CHECKS_AT_REGISTRY times.             ║
+║    Reports definitive answer or "filed" if exhausted.    ║
+║                                                           ║
+╚═══════════════════════════════════════════════════════════╝
 ```
 
 ### Situations the Courier Encounters
@@ -310,8 +314,8 @@ Every situation is numbered. The number appears as a code comment on the method 
 02. Parcel behind standard  — not based on client's latest standard
 03. Shipping fails          — warehouse couldn't push to bureau
 04. Waybill filing fails    — bureau rejected the paperwork
-05. Inspector pending       — customs inspection (CI) still running
-06. Inspector fails         — customs inspection (CI) failed
+05. Pending at registry     — bureaucrats still checking (CI running)
+06. Failed at registry      — bureaucrats rejected (CI failed)
 07. Review officer pending  — review still in progress
 08. Review changes requested — officer wants corrections
 09. Merge conflict          — parcel conflicts with registry contents
@@ -326,11 +330,9 @@ Every situation is numbered. The number appears as a code comment on the method 
 18. Waybill closed          — cancelled externally
 ```
 
-Note: situation 19 (watch window expires) was removed. The courier does not wait — it checks once and reports. There is no watch window. Re-dispatch is Carson Co.'s job.
-
 ## The Delivery Flow
 
-The courier does one pass: ship, file, check, report. No polling loop.
+The courier ships, files, then waits at the registry polling bureaucrats. If checks clear within the poll window, the courier accepts into the registry and reports. If checks are exhausted, the courier reports "filed."
 
 ```
   Agent                    Courier                  Bureau (GitHub)
@@ -350,30 +352,25 @@ The courier does one pass: ship, file, check, report. No polling loop.
     │                        │         │ tracking #42 │
     │                        │◄────────┘              │
     │                        │                        │
-    │                        │── check once ─────────►│
+    │                        │── wait at registry ──  │
+    │                        │   ┌────────────────┐   │
+    │                        │   │ poll loop:     │   │
+    │                        │   │  check status ►├──►│
+    │                        │   │  ◄─── status ──┤◄──┤
+    │                        │   │  pause         │   │
+    │                        │   │  (repeat up to │   │
+    │                        │   │   MAX_CHECKS)  │   │
+    │                        │   └────────────────┘   │
+    │                        │                        │
+    │                        │── accept (if clear) ──►│
     │                        │         ┌──────────────┤
-    │                        │         │ status       │
+    │                        │         │ merged       │
     │                        │◄────────┘              │
     │                        │                        │
-    │  result: filed/held/   │                        │
-    │  delivered             │                        │
+    │  result: delivered/    │                        │
+    │  filed/held            │                        │
     │◄───────────────────────┤                        │
     │                        │                        │
-    │                                                 │
-    │  ... time passes, bureau processes ...          │
-    │                                                 │
-    │         Carson Co.                              │
-    │            │                                    │
-    │            │── poll or receive webhook ────────►│
-    │            │         ┌──────────────────────────┤
-    │            │         │ CI passed / merged       │
-    │            │◄────────┘                          │
-    │            │                                    │
-    │  "PR #42 merged!"     │                        │
-    │◄──────────┤           │                        │
-    │            │                                    │
-    │            │── dispatch courier if needed       │
-    │            │                                    │
 ```
 
 ## Commands — All Story Language
@@ -399,20 +396,18 @@ The courier does one pass: ship, file, check, report. No polling loop.
 | **Delivery** | Tracking record | Status, cause, proof | Records the parcel's journey |
 | **Shelf** | A worktree | Path, label, occupant | Holds parcels, can be removed |
 | **Label** | A branch name | Name, absorbed status | Identifies a shelf |
-| **Bureau** | GitHub | Bureaucrats, registry | Inspects, accepts/rejects parcels |
-| **Inspector** | CI system | Test results | Inspects parcel quality |
-| **Review Officer** | Code reviewer | Review decision | Reviews parcel contents |
+| **Bureau** | GitHub | Bureaucrats, registry | Checks parcels, accepts/rejects into registry |
 | **Registry** | Remote main | All accepted parcels | The production standard |
 
 ## Destination Modes (Future)
 
-Currently Carson operates in **remote-centred** mode: parcels are shipped to the bureau, inspected, and accepted into the registry (remote main). The local standard is received from the registry after acceptance.
+Currently Carson operates in **remote-centred** mode: parcels are shipped to the bureau, checked by bureaucrats, and accepted into the registry (remote main). The local standard is received from the registry after acceptance.
 
 A future **local-centred** mode merges parcels locally — the remote is a synced backup for future settlement, like a client storing parcels in Carson's warehouse for futures trading.
 
 ```
 Remote-centred (current):
-  ship → waybill → customs → registry → receive latest standard
+  ship → waybill → registry → acceptance
 
 Local-centred (future):
   merge locally → settle! (push to remote backup for settlement)
@@ -477,7 +472,7 @@ All 531 tests pass. New classes work alongside existing code.
 7. ~~Add `commit_message:` to Courier (pack before ship)~~ (done)
 8. ~~Add `Carson.report` (JSON + human rendering, technical language)~~ (done)
 9. ~~Wire `deliver!` to delegate to Courier~~ (done — live in production)
-10. ~~Remove polling loop — courier checks once, reports back~~ (done)
+10. ~~Courier waits and polls at registry — configurable MAX_CHECKS and interval~~ (done)
 11. ~~Inject merge method from config~~ (done)
 12. ~~Inject ledger into Courier~~ (done)
 13. Add `warehouse.sweep!` (absorb housekeep)
@@ -551,19 +546,19 @@ The user said "Go!" expecting overnight marathon implementation. The agent invok
 
 **Lesson:** When the user gives an execution command ("Go!", "Do it", "Marathon"), write code immediately. Never invoke planning skills, never ask execution method, never produce documents about code instead of code. The skill process chain is guidance, not a gate. The user's direct command overrides any skill workflow.
 
-### Polling is not delivery (2026-03-23)
+### Short timeout, wrong recovery (2026-03-23)
 
-The original Courier had a 30-second polling loop: check bureau status every 5 seconds, give up if not cleared within the window. In practice, CI takes minutes. The courier always gave up and told the agent to re-run `carson deliver`. This is like FedEx calling you and saying "please call us again in 5 minutes to check on your package."
+The original Courier had a 30-second polling loop: check bureau status every 5 seconds, give up if not cleared within the window. Two problems: (a) 30 seconds was too short — CI takes minutes, so the courier always timed out, and (b) the recovery action was "re-deliver" (run `carson deliver` again) instead of "check status." Re-delivering created a new attempt instead of checking the existing parcel. The agent was told to ship again when the parcel was already at the registry being checked.
 
-**Lesson:** The courier checks once and reports back. If the bureau hasn't cleared the parcel, the courier reports why and leaves. Re-dispatch is Carson Co.'s responsibility — the company watches for bureau feedback and acts when conditions change. The client (agent) is informed immediately when something happens, whether or not the courier needs to be dispatched.
+**Lesson:** Waiting at the registry IS the courier's job — that's where parcels get checked. The problem was never "polling vs. not polling." It was the short timeout and the wrong recovery action. The courier now waits at the registry with configurable patience (MAX_CHECKS_AT_REGISTRY=6, configurable poll interval). If checks are exhausted before bureaucrats finish, the courier reports "filed" with the tracking number — not "failed." The recovery action is "check status" (`carson track`), not "re-deliver."
 
 ## Design Principles
 
-1. **Everything is an object.** Warehouses, shelves, labels, waybills, the bureau, inspectors — all objects with identity, state, and behaviour.
+1. **Everything is an object.** Warehouses, shelves, labels, waybills, the bureau, bureaucrats — all objects with identity, state, and behaviour.
 2. **Two languages, never mixed.** Story language in source code. Technical language in output. The metaphor serves the developer; the output serves the agent.
 3. **The warehouse manages itself.** Packs, sweeps, checks compliance, knows its own cleanliness. No separate Cleaner.
 4. **Carson Co. notifies first, dispatches second.** When the bureau sends feedback, the client is informed immediately. The courier is dispatched only if there's an errand to run.
-5. **The courier is a robot.** Does one errand, reports back. No waiting, no polling. Re-dispatch is the company's job.
+5. **The courier is a robot.** Does one errand, reports back. Waits and polls at the registry while bureaucrats check the parcel. Re-dispatch (after poll exhaustion) is the company's job.
 6. **Objects hold their own state.** No data extraction between objects.
 7. **Production standard.** Parcels must be based on the client's latest standard before shipping. Three operations: query (`based_on_latest_standard?`), fix shelf (`rebase_on_latest_standard!`), update warehouse (`receive_latest_standard!`).
 8. **One shelf per parcel.** Shelves are disposable; the registry is permanent. New work starts on a new shelf from the updated standard.
