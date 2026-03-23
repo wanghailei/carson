@@ -68,7 +68,7 @@ module Carson
 		when "merge_conflict"
 			[ "Merge conflict with #{remote_main}.", "git rebase #{remote_main}", "carson deliver" ]
 		when "behind_registry"
-			[ "Branch is behind #{remote_main}.", "git rebase #{remote_main}", "carson deliver" ]
+			[ "Branch is behind #{remote_main}.", "carson deliver" ]
 		when "policy_block"
 			[ "Blocked by branch protection rules." ]
 		when "mergeability_pending"

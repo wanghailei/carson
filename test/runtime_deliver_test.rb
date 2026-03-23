@@ -77,7 +77,7 @@ class RuntimeDeliverTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
-	def test_deliver_blocks_before_push_when_branch_is_behind_remote_main
+	def test_deliver_auto_rebases_when_branch_is_behind_remote_main
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo_with_remote( repo_root )
 		create_feature_branch( repo_root, "feature/behind-prepush" )
@@ -88,17 +88,16 @@ class RuntimeDeliverTest < Minitest::Test
 		system( "git", "-C", repo_root, "push", "origin", "main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", repo_root, "checkout", "feature/behind-prepush", out: File::NULL, err: File::NULL )
 
-		result = runtime.deliver!
-		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		runtime.deliver!
 		output = output_string( runtime )
-		assert_includes output, "branch is behind origin/main"
-		assert_includes output, "refresh this branch onto origin/main, then carson deliver"
-		refute system(
+		# The courier rebased automatically instead of blocking.
+		assert_includes output, "rebasing"
+		# The branch was pushed (rebase succeeded, delivery continued past freshness).
+		assert system(
 			"git", "-C", "#{repo_root}-remote.git",
 			"show-ref", "--verify", "refs/heads/feature/behind-prepush",
 			out: File::NULL, err: File::NULL
 		)
-		assert_empty delivery_rows_for( runtime: runtime, branch_name: "feature/behind-prepush" )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
