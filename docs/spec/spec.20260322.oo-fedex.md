@@ -1,6 +1,7 @@
 # Carson OO Domain Model — The FedEx Metaphor
 
 Spec date: 2026-03-22
+Updated: 2026-03-23
 
 ## Origin
 
@@ -21,11 +22,9 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  FedEx (the company)       →  Carson (the company, the CLI)      ║
-║  Courier (employee)        →  Carson::Courier                    ║
-║  Cleaner (employee)        →  Carson::Cleaner                    ║
-║  Dispatcher (employee)     →  Carson::Dispatcher                 ║
+║  Courier (robot employee)  →  Carson::Courier                    ║
 ║                                                                  ║
-║  Warehouse                 →  Carson::Warehouse                  ║
+║  Warehouse (intelligent)   →  Carson::Warehouse                  ║
 ║  Shelf                     →  Carson::Shelf                      ║
 ║  Shelf label               →  Carson::Label                     ║
 ║  Parcel (package)          →  Carson::Parcel                     ║
@@ -37,19 +36,28 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 ║  Customs inspector         →  CI system                          ║
 ║  Review officer            →  Code reviewer                      ║
 ║  Registry                  →  Remote main branch                 ║
+║  Client standard           →  Registry state (what rebase checks)║
 ║                                                                  ║
 ║  Ship                      →  git push (hidden inside)           ║
 ║  File waybill              →  gh pr create (hidden inside)       ║
 ║  Customs inspection        →  CI checks + code review            ║
 ║  Accept into registry      →  gh pr merge (hidden inside)        ║
 ║  Proof of delivery         →  Merge proof                        ║
+║  Pack                      →  git add + git commit               ║
+║  Submit compliance         →  Template sync                      ║
+║  Sweep                     →  Worktree/branch cleanup            ║
+║  Settle                    →  Push to remote backup (local mode) ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-## Carson — The Company
+## Architecture — Three Roles
 
-Carson IS the CLI. When the agent calls `carson deliver`, they're talking to Carson directly. Carson is both the company and the entry point.
+The previous design had four roles (Courier, Cleaner, Dispatcher). Refined to three:
+
+1. **Carson Co.** — the company itself handles dispatch (monitoring, tracking). No separate Dispatcher. In an AI-run company, the company IS the dispatcher.
+2. **Courier** — a robot that delivers parcels.
+3. **Warehouse** — intelligent and autonomous. Packs parcels, checks compliance, sweeps itself.
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
@@ -61,22 +69,28 @@ Carson IS the CLI. When the agent calls `carson deliver`, they're talking to Car
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
-║  EMPLOYEES (each a role, each a class)                           ║
-║  ┌────────────┐  ┌────────────┐  ┌────────────┐                 ║
-║  │  Courier   │  │  Cleaner   │  │ Dispatcher  │                ║
-║  │  delivers  │  │  sweeps    │  │  monitors   │                ║
-║  │  parcels   │  │  warehouse │  │  deliveries │                ║
-║  └────────────┘  └────────────┘  └────────────┘                 ║
+║  THE COMPANY (Carson module — CLI + dispatch)                    ║
+║  ┌─────────────────────────────────────────────┐                 ║
+║  │  Routes commands to employees               │                 ║
+║  │  Monitors all deliveries (no Dispatcher)    │                 ║
+║  │  Tracks parcel status                       │                 ║
+║  │  Manages warehouse portfolio                │                 ║
+║  └─────────────────────────────────────────────┘                 ║
 ║                                                                  ║
-║  Clients (governed warehouses):                                  ║
+║  ROBOT EMPLOYEES                                                 ║
+║  ┌────────────┐                                                  ║
+║  │  Courier   │  ← delivers parcels to the bureau                ║
+║  │  (robot)   │                                                  ║
+║  └────────────┘                                                  ║
 ║                                                                  ║
+║  INTELLIGENT WAREHOUSES (self-managing)                           ║
 ║  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           ║
 ║  │  ~/AI        │  │  ~/Dev/      │  │  ~/Dev/      │  ···     ║
-║  │  warehouse   │  │   nexus      │  │   carson     │           ║
-║  │              │  │  warehouse   │  │  warehouse   │           ║
-║  │  Courier A ──┤  │              │  │              │           ║
-║  │  Courier B ──┤  │  Courier C ──┤  │  Courier D ──┤           ║
-║  │              │  │              │  │              │           ║
+║  │              │  │   nexus      │  │   carson     │           ║
+║  │  Packs       │  │              │  │              │           ║
+║  │  Sweeps      │  │  Packs       │  │  Packs       │           ║
+║  │  Complies    │  │  Sweeps      │  │  Sweeps      │           ║
+║  │              │  │  Complies    │  │  Complies    │           ║
 ║  └──────────────┘  └──────────────┘  └──────────────┘           ║
 ║                                                                  ║
 ║  The more clients, the better. Good business.                    ║
@@ -84,110 +98,48 @@ Carson IS the CLI. When the agent calls `carson deliver`, they're talking to Car
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-```ruby
-# exe/carson — this IS Carson
-Carson.run( ARGV )
+## The Warehouse — Intelligent and Autonomous
 
-# Inside Carson
-module Carson
-	def self.run( arguments )
-		command, options = parse( arguments )
-		warehouse = Warehouse.new( path: Dir.pwd )
-
-		case command
-		when "deliver"
-			parcel = Parcel.new(
-				label: warehouse.current_label,
-				head: warehouse.current_head,
-				shelf: Dir.pwd
-			)
-			Courier.new( warehouse ).deliver( parcel, **options )
-		when "return"
-			parcel = Parcel.new( label: warehouse.current_label, head: warehouse.current_head )
-			Courier.new( warehouse ).return_to_sender( parcel )
-		when "salvage"
-			parcel = Parcel.new( label: warehouse.current_label, head: warehouse.current_head )
-			Courier.new( warehouse ).salvage( parcel )
-		when "monitor"
-			Dispatcher.new( warehouse ).monitor!( **options )
-		when "track"
-			Dispatcher.new( warehouse ).track
-		when "sweep"
-			Cleaner.new( warehouse ).sweep!( **options )
-		end
-	end
-end
-```
-
-## Commands — All Story Language
-
-| Command | Employee | Meaning |
-|---|---|---|
-| `carson deliver` | Courier | Ship parcel to the registry |
-| `carson return` | Courier | Return parcel to sender |
-| `carson salvage` | Courier | Rescue a stuck parcel |
-| `carson monitor` | Dispatcher | Watch over all parcels continuously |
-| `carson track` | Dispatcher | Where is everything right now? |
-| `carson sweep` | Cleaner | Clean the warehouse |
-
-## The Warehouse
-
-A warehouse is a governed repository. It has shelves (worktrees) with labels (branches), parcels on shelves (committed changes), and a filing cabinet (ledger).
+The warehouse manages itself. It packs parcels, checks its own compliance, and sweeps up. No separate Cleaner employee needed.
 
 ```
-  Warehouse: ~/Dev/nexus
-  ═══════════════════════════════════════════════════
-
-  Shelves, each with a label:
-
-  ┌─────────────────────────────────┐
-  │  main                           │  ← local reference
-  └─────────────────────────────────┘
-
-  ┌─────────────────────────────────┐
-  │  feature/login                  │  ← label
-  │                                 │
-  │    Parcel                       │  ← committed changes
-  │    (3 commits, ready to ship)   │
-  │                                 │
-  │    Courier A is here            │
-  └─────────────────────────────────┘
-
-  ┌─────────────────────────────────┐
-  │  fix/payment-bug                │
-  │                                 │
-  │    Parcel                       │
-  │    (1 commit, ready to ship)    │
-  │                                 │
-  │    Courier B is here            │
-  └─────────────────────────────────┘
+╔═══════════════════════════════════════════════════╗
+║          Carson::Warehouse                        ║
+║      (intelligent, self-managing)                 ║
+║                                                   ║
+║  knows:                                           ║
+║    path, current_label, current_head              ║
+║    main_label, bureau_address                     ║
+║    shelves, labels                                ║
+║                                                   ║
+║  can:                                             ║
+║    pack!( message: )        — prepare a parcel    ║
+║    submit_compliance!       — ensure templates ok ║
+║    sweep!                   — clean shelves/labels║
+║    ship( parcel )           — send to bureau      ║
+║    fetch_latest             — get registry state  ║
+║    based_on_latest?( parcel ) — production check  ║
+║    update_standard!         — rebase to latest    ║
+║    settle!                  — push to backup      ║
+║    label_absorbed?( name )  — merged into main?   ║
+║                                                   ║
+╚═══════════════════════════════════════════════════╝
 ```
+
+### Production Standard
+
+A parcel's content is produced based on the **client's standard** (the registry state). Before shipping, the courier checks whether the parcel was **based on the latest standard**.
 
 ```ruby
-class Carson::Warehouse
-	def initialize( path: )
+warehouse.based_on_latest?( parcel )  # produced to latest client standard?
+```
 
-	# What the warehouse knows
-	def current_label             # which label is active on the current shelf
-	def current_head              # tip of the parcel on current shelf
-	def main_label                # the destination label (from config)
-	def bureau_address            # the bureau's address (from config)
+This is verified at two points:
+1. **Before shipping** — the courier checks. If not based on latest, blocked.
+2. **After client refusal** — the warehouse updates its production standard:
 
-	# Warehouse operations
-	def ship( parcel )            # send parcel to the bureau
-	def fetch_latest              # get latest registry state from bureau
-	def includes_latest?( parcel ) # is parcel up to date with registry?
-	def prepare!( message: )      # stage and commit (prepare a parcel)
-
-	# Inventory
-	def shelves                   # all shelves
-	def labels                    # all labels
-	def label_absorbed?( name )   # has this label been merged into main?
-
-	# Config and filing cabinet
-	def config
-	def ledger                    # hidden — Delivery accesses it
-end
+```ruby
+warehouse.update_standard!  # rebase onto latest registry state
 ```
 
 ## The Bureau and Its Registry
@@ -211,172 +163,85 @@ The bureau (GitHub) has two functions: customs inspection and the official regis
   │  │                                  │         │
   │  │  All accepted parcels live here  │         │
   │  │  This is what production sees    │         │
+  │  │  This IS the client standard     │         │
   │  └──────────────────────────────────┘         │
   │                                              │
   └──────────────────────────────────────────────┘
 ```
 
-## Employees
+## The Courier — A Robot
 
-Each Carson command has a dedicated employee. The current `Runtime` was every employee rolled into one god object. Each role is now its own class.
+The courier is a robot employee. Assigned to a warehouse. Delivers parcels to the bureau.
 
-### Courier — delivers parcels
-
-```ruby
-class Carson::Courier
-	def initialize( warehouse, output: $stdout, verbose: false )
-
-	# Services
-	def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
-	def return_to_sender( parcel )
-	def salvage( parcel )
-
-	private
-
-	# The courier waits at the customs window
-	def settle( waybill, delivery )
-	# The courier updates the tracking record
-	def update_tracking( delivery, waybill )
-end
+```
+╔═══════════════════════════════════════════════════╗
+║             Carson::Courier                       ║
+║           (the delivery robot)                    ║
+║                                                   ║
+║  assigned to: a warehouse                         ║
+║  uses:        warehouse methods + waybill          ║
+║                                                   ║
+║  can:                                             ║
+║    deliver( parcel )  — ship parcel to registry   ║
+║    return( parcel )   — return to sender           ║
+║    salvage( parcel )  — rescue stuck parcel        ║
+║                                                   ║
+╚═══════════════════════════════════════════════════╝
 ```
 
-### Cleaner — sweeps the warehouse
+### Situations the Courier Encounters
 
-```ruby
-class Carson::Cleaner
-	def initialize( warehouse, output: $stdout )
+Every situation is numbered. The number appears as a code comment on the method that handles it.
 
-	def sweep!              # full warehouse cleanup
-	def reap( shelf )       # remove one empty shelf
-	def prune( label )      # remove one stale label
-end
+```
+01. Parcel on main          — cannot deliver from the destination
+02. Parcel behind standard  — not based on client's latest standard
+03. Shipping fails          — warehouse couldn't push to bureau
+04. Waybill filing fails    — bureau rejected the paperwork
+05. Inspector pending       — customs inspection (CI) still running
+06. Inspector fails         — customs inspection (CI) failed
+07. Review officer pending  — review still in progress
+08. Review changes requested — officer wants corrections
+09. Merge conflict          — parcel conflicts with registry contents
+10. Behind standard (post)  — standard changed since shipping
+11. Policy block            — bureau regulation prevents acceptance
+12. Draft waybill           — form not finalised
+13. Mergeability pending    — bureau still processing eligibility
+14. Acceptance succeeds     — parcel enters registry. Delivered.
+15. Acceptance fails        — classify why, retry or hold
+16. Bureau unreachable      — cannot contact the bureau
+17. Already delivered       — parcel already in registry
+18. Waybill closed          — cancelled externally
+19. Watch window expires    — end of shift. Deferred.
 ```
 
-### Dispatcher — monitors all parcels
+## Commands — All Story Language
 
-The dispatcher is permanently assigned to a warehouse. They monitor all in-transit parcels, take action when customs clears, and report the state of the warehouse when asked.
-
-```ruby
-class Carson::Dispatcher
-	def initialize( warehouse, output: $stdout )
-
-	def monitor!( loop_seconds: nil )   # continuous monitoring
-	def track                           # point-in-time report
-	def reconcile( delivery )           # update one tracking record
-end
-```
-
-## Domain Objects
-
-### Parcel — the committed changes
-
-The protagonist. The thing being delivered. Created by agents who commit changes onto a shelf.
-
-```ruby
-class Carson::Parcel
-	attr_reader :label, :head, :shelf
-
-	def initialize( label:, head:, shelf: nil )
-
-	def on_main?( main_label )
-end
-```
-
-### Waybill — the shipping document
-
-Filed with the bureau. Has a tracking number. Knows what the bureaucrats say. Can ask the bureau to accept the parcel.
-
-```ruby
-class Carson::Waybill
-	attr_reader :tracking_number, :url, :label
-
-	def initialize( label:, warehouse: )
-
-	# Filing
-	def filed?
-	def file!( title:, body_file: nil )
-
-	# Bureau's response (call refresh! first)
-	def refresh!              # check with the bureau
-	def cleared?              # all bureaucrats approve
-	def held?                 # something is blocking
-	def hold_reason           # "inspector_pending", "review_changes", etc.
-	def hold_summary          # human-readable explanation
-	def accepted?             # parcel entered the registry
-	def rejected?             # waybill closed without acceptance
-	def draft?
-
-	# Request acceptance
-	def accept!( method: )    # ask bureau to accept the parcel into registry
-end
-```
-
-### Delivery — the tracking record
-
-Carson's internal receipt. Records the parcel's journey. Persists itself (hides the ledger).
-
-```ruby
-class Carson::Delivery
-	attr_reader :status, :tracking_number, :cause, :summary, :proof
-
-	def self.create( warehouse:, parcel:, tracking_number:, tracking_url: )
-	def self.active_for( warehouse: )
-
-	def update( status:, cause: nil, summary: nil )
-	def mark_delivered( proof: )
-
-	def delivered?
-	def held?
-	def cleared?
-	def failed?
-end
-```
-
-### Shelf — a worktree
-
-A shelf in the warehouse. Has a label. Can be occupied or empty. The cleaner removes empty ones.
-
-```ruby
-class Carson::Shelf
-	attr_reader :path, :label
-
-	def occupied?           # is someone working here?
-	def removable?          # not occupied, not current directory
-	def remove!
-end
-```
-
-### Label — a branch name
-
-A label on a shelf. Can be pruned when the shelf is gone and the parcel has been delivered.
-
-```ruby
-class Carson::Label
-	attr_reader :name
-
-	def absorbed?           # has this label been merged into the registry?
-	def prune!
-end
-```
+| Command | Who handles | Meaning |
+|---|---|---|
+| `carson deliver` | Courier | Ship parcel to the registry |
+| `carson return` | Courier | Return parcel to sender |
+| `carson salvage` | Courier | Rescue a stuck parcel |
+| `carson monitor` | Carson Co. | Watch over all parcels continuously |
+| `carson track` | Carson Co. | Where is everything right now? |
+| `carson sweep` | Warehouse | Clean shelves and stale labels |
 
 ## Every Concept Is an Object
 
 | Object | What it IS | What it knows | What it does |
 |---|---|---|---|
-| **Carson** | The company | Portfolio of warehouses | Routes commands to employees |
-| **Courier** | Delivery person | Their warehouse, their shelf | Delivers, returns, salvages parcels |
-| **Cleaner** | Warehouse cleaner | The warehouse state | Sweeps shelves, prunes labels |
-| **Dispatcher** | Delivery monitor | All tracking records | Monitors, tracks, reconciles |
-| **Warehouse** | The repository | Path, config, shelves, labels | Ships parcels, checks inventory |
+| **Carson** | The company | Portfolio of warehouses | Routes commands, dispatches, monitors |
+| **Courier** | Delivery robot | Its warehouse | Delivers, returns, salvages parcels |
+| **Warehouse** | Intelligent repo | Path, config, shelves, labels | Packs, ships, sweeps, checks compliance |
+| **Parcel** | Committed changes | Label, head, shelf | The thing being delivered |
+| **Waybill** | Shipping document | Tracking number, bureau response | Filed with bureau, tracks approval |
+| **Delivery** | Tracking record | Status, cause, proof | Records the parcel's journey |
 | **Shelf** | A worktree | Path, label, occupant | Holds parcels, can be removed |
 | **Label** | A branch name | Name, absorbed status | Identifies a shelf |
-| **Parcel** | Committed changes | Label, head, shelf | The thing being delivered |
-| **Waybill** | Shipping document | Tracking number, bureau's response | Filed with bureau, tracks approval |
-| **Delivery** | Tracking record | Status, cause, proof | Records the parcel's journey |
 | **Bureau** | GitHub | Bureaucrats, registry | Inspects, accepts/rejects parcels |
 | **Inspector** | CI system | Test results | Inspects parcel quality |
 | **Review Officer** | Code reviewer | Review decision | Reviews parcel contents |
-| **Registry** | Remote main | All accepted parcels | The official record |
+| **Registry** | Remote main | All accepted parcels | The client standard |
 
 ## The Delivery Flow
 
@@ -386,12 +251,9 @@ end
     │  "deliver this parcel" │                        │
     ├───────────────────────►│                        │
     │                        │                        │
-    │                        │── pick up Parcel       │
-    │                        │   from Shelf           │
-    │                        │                        │
     │                        │── check: parcel        │
-    │                        │   up to date with      │
-    │                        │   registry?            │
+    │                        │   based on latest      │
+    │                        │   client standard?     │
     │                        │                        │
     │                        │── ship ───────────────►│
     │                        │                        │
@@ -401,25 +263,13 @@ end
     │                        │◄────────┘              │
     │                        │                        │
     │                        │── check customs ──────►│
-    │                        │                  ┌─────┤
     │                        │          Inspector     │
-    │                        │          checks...     │
     │                        │          Review Officer │
-    │                        │          reviews...    │
-    │                        │                  │     │
-    │                        │         ┌────────┘     │
-    │                        │         │ held / clear │
-    │                        │◄────────┘              │
-    │                        │         ·              │
-    │                        │       (wait)           │
-    │                        │         ·              │
-    │                        │── check customs ──────►│
     │                        │         ┌──────────────┤
     │                        │         │ cleared      │
     │                        │◄────────┘              │
     │                        │                        │
     │                        │── please accept ──────►│
-    │                        │                        │
     │                        │              ┌─────────┤
     │                        │              │ Parcel  │
     │                        │              │ entered │
@@ -430,182 +280,103 @@ end
     │                        │                        │
     │                        │── collect proof        │
     │                        │── write Delivery       │
-    │                        │   (tracking record)    │
     │                        │                        │
     │  "delivered, receipt:" │                        │
     │◄───────────────────────┤                        │
     │                        │                        │
 ```
 
-## Delivery Status Flow
+## Destination Modes (Future)
+
+Currently Carson operates in **remote-centred** mode: parcels are shipped to the bureau, inspected, and accepted into the registry (remote main). The local main is synced from the registry after acceptance.
+
+A future **local-centred** mode merges parcels locally — the remote is a synced backup for future settlement, like a client storing parcels in Carson's warehouse for futures trading.
 
 ```
-  ┌──────────┐     ┌──────────┐     ┌──────────┐
-  │ Picked   │────►│ Shipped  │────►│  In      │
-  │ up       │     │          │     │ Customs  │
-  └──────────┘     └──────────┘     │(waybill  │
-                                     │ filed)   │
-                                     └────┬─────┘
-                                          │
-                              ┌───────────┼───────────┐
-                              ▼           ▼           ▼
-                        ┌──────────┐ ┌──────────┐ ┌──────────┐
-                        │ Held     │ │ Cleared  │ │ Rejected │
-                        │(inspector│ │ (ready)  │ │ (closed) │
-                        │ or review│ └────┬─────┘ └──────────┘
-                        │ pending) │      │
-                        └────┬─────┘      ▼
-                             │      ┌──────────┐
-                             │      │Delivering│
-                             │      │(accepting│
-                             │      │ into     │
-                             │      │ registry)│
-                             │      └────┬─────┘
-                             │           │
-                             │      ┌────┴─────┐
-                             │      ▼          ▼
-                             │ ┌──────────┐ ┌──────────┐
-                             └►│Delivered │ │ Bounced  │
-                               │(entered  │ │(accept   │
-                               │ registry)│ │ failed)  │
-                               └──────────┘ └──────────┘
+Remote-centred (current):
+  ship → waybill → customs → registry → sync local main
+
+Local-centred (future):
+  merge locally → settle! (push to remote backup for settlement)
 ```
 
-## The Cleaner's Work
+The Warehouse and Courier must be designed so the destination mode is injectable, not baked in.
 
-```
-  Cleaner                    Warehouse
-    │                          │
-    │── scan for empty ───────►│
-    │   shelves                │
-    │         ┌────────────────┤
-    │         │ 3 empty shelves│
-    │◄────────┘                │
-    │                          │
-    │── remove shelf ─────────►│
-    │── remove shelf ─────────►│
-    │── remove shelf ─────────►│
-    │                          │
-    │── scan for stale ───────►│
-    │   labels                 │
-    │         ┌────────────────┤
-    │         │ 5 stale labels │
-    │◄────────┘                │
-    │                          │
-    │── prune label ──────────►│
-    │── prune label ──────────►│
-    │   ···                    │
-    │                          │
-```
+## Runtime Is Not Needed
 
-## The Dispatcher's Work
+Once the employees and domain objects absorb Runtime's responsibilities, Runtime dissolves:
 
-```
-  Dispatcher              Tracking Records        Bureau
-    │                          │                     │
-    │── read dispatch board ──►│                     │
-    │         ┌────────────────┤                     │
-    │         │ 2 in-transit   │                     │
-    │◄────────┘                │                     │
-    │                          │                     │
-    │── check customs ──────────────────────────────►│
-    │   for each parcel        │                     │
-    │                          │         ┌───────────┤
-    │                          │         │ #42 clear │
-    │                          │         │ #43 held  │
-    │◄───────────────────────────────────┘           │
-    │                          │                     │
-    │── update record ────────►│  (#42 → cleared)    │
-    │── update record ────────►│  (#43 → still held) │
-    │                          │                     │
-    │── request acceptance ─────────────────────────►│
-    │   for #42                │                     │
-    │                          │         ┌───────────┤
-    │                          │         │ accepted  │
-    │◄───────────────────────────────────┘           │
-    │                          │                     │
-    │── update record ────────►│  (#42 → delivered)  │
-    │                          │                     │
-```
+| Runtime provides | Who takes over |
+|---|---|
+| `git_run` | Warehouse (wraps git internally) |
+| `gh_run` | Waybill (wraps gh internally) |
+| Config | Warehouse loads it |
+| Ledger | Delivery hides it |
+| Output streams | Carson handles rendering |
+| Template management | Warehouse compliance |
+| Review gate | Injected into Waybill |
+| Exit codes | Defined on each employee |
 
-## File Layout — All Story Names
+## File Layout
 
 ```
 lib/carson/
-  carson.rb              ← the company (entry point, argument parsing)
-  courier.rb             ← the delivery person
-  cleaner.rb             ← the warehouse cleaner
-  dispatcher.rb          ← the delivery monitor
-  warehouse.rb           ← the repository
+  carson.rb              ← the company (entry point, routing, dispatch)
+  courier.rb             ← the delivery robot
+  warehouse.rb           ← the intelligent repository
+  parcel.rb              ← the committed changes
+  waybill.rb             ← the shipping document
+  delivery.rb            ← the tracking record
   shelf.rb               ← the worktree
   label.rb               ← the branch
-  parcel.rb              ← the committed changes
-  waybill.rb             ← the shipping document (PR)
-  delivery.rb            ← the tracking record
   config.rb              ← warehouse configuration
   ledger.rb              ← filing cabinet (hidden behind Delivery)
 ```
 
-## Naming Rule
+## Implementation Status
 
-All class names, method names, and command names use story language. Git and GitHub terms are hidden inside method bodies and private variables.
+### Phase 1 — Foundation (done)
 
-| Story name (public) | Git/GitHub term (hidden inside) |
-|---|---|
-| `Warehouse` | repository, git repo |
-| `Shelf` | worktree |
-| `Label` | branch |
-| `Parcel` | committed changes |
-| `Waybill` | pull request |
-| `Delivery` | delivery record (same) |
-| `warehouse.ship( parcel )` | `git push` |
-| `warehouse.fetch_latest` | `git fetch` |
-| `warehouse.current_label` | `git rev-parse --abbrev-ref HEAD` |
-| `warehouse.includes_latest?( parcel )` | `git merge-base --is-ancestor` |
-| `waybill.file!` | `gh pr create` |
-| `waybill.cleared?` | CI pass + review approved + mergeable |
-| `waybill.accept!` | `gh pr merge` |
-| `shelf.remove!` | `git worktree remove` |
-| `label.prune!` | `git branch -d` |
+| Class | Lines | Tests | Status |
+|---|---|---|---|
+| Carson::Parcel | 24 | 7 tests, 8 assertions | Merged |
+| Carson::Warehouse | 105 | 22 tests, 33 assertions | Merged |
+| Carson::Waybill | 196 | 16 tests, 29 assertions | Merged |
+| Carson::Courier | 160 | 3 tests, 8 assertions | Merged |
+| Wiring (carson.rb) | +3 | — | Merged |
 
-## Why Runtime Was Wrong
+All 531 tests pass. New classes work alongside existing code.
 
-Runtime was every employee rolled into one person doing every job. That's not a person — it's a department pretending to be one employee. In OO, each role is its own object with its own identity, state, and responsibilities.
+### Phase 2 — Make it live (next)
 
-| What Runtime did | Who should do it |
-|---|---|
-| `deliver!` | **Courier** — delivers parcels |
-| `govern!` | **Dispatcher** — monitors deliveries |
-| `housekeep!` | **Cleaner** — sweeps the warehouse |
-| `abandon!` | **Courier** — returns parcel to sender |
-| `recover!` | **Courier** — salvages stuck parcels |
-| `status` | **Dispatcher** — reads the dispatch board |
-| held git_run, gh_run | Tools — each employee and the warehouse use them |
-| held config, ledger | Company resources — warehouse provides them |
+1. Rename `includes_latest?` → `based_on_latest?`
+2. Add `update_standard!` (rebase onto latest registry)
+3. Add `warehouse.pack!` (absorb commit preparation)
+4. Add `warehouse.submit_compliance!` (absorb template sync)
+5. Add `warehouse.sweep!` (absorb housekeep)
+6. Add `settle!` (local-centred backup push)
+7. Mature Courier to handle all 19 situations with ledger integration
+8. Make `deliver!` delegate to Courier
+9. Carson Co. absorbs `monitor` and `track` (no Dispatcher)
+10. Rename commands: govern→monitor, housekeep→sweep, abandon→return, recover→salvage, status→track
+11. Remove Runtime — absorbed by domain objects
 
-## Design Principles Applied
+## Design Principles
 
-1. **Everything is an object.** Warehouses, shelves, labels, waybills, the bureau, inspectors, review officers — all objects with identity, state, and behaviour.
+1. **Everything is an object.** Warehouses, shelves, labels, waybills, the bureau, inspectors — all objects with identity, state, and behaviour.
+2. **One set of concepts.** Story language everywhere in public interfaces. Git and GitHub hidden inside.
+3. **The warehouse manages itself.** Packs, sweeps, checks compliance. No separate Cleaner.
+4. **Carson dispatches directly.** No separate Dispatcher. The company IS the dispatcher.
+5. **The courier is a robot.** Every employee is automated.
+6. **Objects hold their own state.** No data extraction between objects.
+7. **Production standard.** Parcels must be based on the client's latest standard before shipping.
+8. **Destination mode is injectable.** Remote-centred now, local-centred later.
+9. **Runtime dissolves.** Its responsibilities are absorbed by the objects they belong to.
+10. **Numbered situations.** Every courier situation has a code number in the comments.
 
-2. **One set of concepts.** Story language everywhere in public interfaces. Git and GitHub terms hidden inside. A developer reads the code and sees a delivery service, not a git wrapper.
+## References
 
-3. **Each role is its own class.** Courier, Cleaner, Dispatcher — not one god-class doing everything. Each has a clear identity and clear responsibilities.
-
-4. **Objects hold their own state.** The Parcel knows its contents. The Waybill knows the bureau's response. The Delivery knows its status. No data extraction between objects.
-
-5. **Carson IS the entry point.** The company is the CLI. When the agent calls `carson deliver`, Carson creates the right employee and assigns them the work.
-
-6. **Dependencies are tools, not identity.** Git and gh are tools employees and the warehouse use internally. They're implementation detail, not domain concepts.
-
-## Design Status
-
-This spec defines the complete domain model:
-- What the objects ARE
-- What they know
-- How they relate
-- How they interact (sequence flows)
-- What the public interfaces look like (story language)
-- How commands map to employees
-- How files are organised
-
-Next step: implement.
+- 99 Bottles of OOP (Sandi Metz, Katrina Owen, TJ Stankus)
+- Rails source patterns (github.com/rails/rails)
+- ~/AI/core/CODING/RUBY.md § Pure OO Design
+- ~/AI/docs/study/ruby-pure-oo.md
