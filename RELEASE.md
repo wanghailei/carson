@@ -7,6 +7,12 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.1.2
+
+### Fixed
+
+- **Hook templates misplaced under `.github/`** — `config/.github/hooks/` moved to `config/hooks/`. Git hooks are local mechanisms installed to `~/.carson/hooks/`, not GitHub configuration. The previous path falsely implied a relationship with GitHub's `.github/` convention.
+
 ## 4.1.1
 
 ### Fixed
