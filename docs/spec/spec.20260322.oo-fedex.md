@@ -411,21 +411,22 @@ Local-centred (future):
 
 The Warehouse and Courier must be designed so the destination mode is injectable, not baked in.
 
-## Runtime Is Not Needed
+## Why Runtime Was Wrong
 
-Once the employees and domain objects absorb Runtime's responsibilities, Runtime dissolves:
+Runtime mixed company work, warehouse work, and courier work into one object. The fix is not to make Runtime smaller. The fix is to move each responsibility to the object that actually owns it.
 
-| Runtime provides | Who takes over |
+| Concern | Real owner |
 |---|---|
-| `git_run` | Warehouse (wraps git internally) |
-| `gh_run` | Waybill (wraps gh internally) |
-| Config | Warehouse loads it |
-| Ledger | Delivery hides it |
-| Output streams | Carson handles rendering |
-| Template management | Warehouse compliance |
-| Review gate | Injected into Waybill |
-| Exit codes | Defined on each employee |
-| Dirty tree check | Warehouse (`clean?`) |
+| command routing and rendering | **Carson** |
+| repo-local state (workbench, branch, stash, cleanliness, occupancy) | **Warehouse** |
+| parcel delivery orchestration | **Courier** |
+| shipping document state | **Waybill** |
+| delivery tracking state | **Delivery** |
+| compliance and local standard management | **Warehouse** |
+
+A worktree, a branch, or a stash entry is not a runtime concern but warehouse state.
+
+Runtime disappears when those responsibilities are absorbed by the objects they belong to.
 
 ## File Layout
 
