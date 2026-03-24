@@ -330,8 +330,12 @@ module Carson
 
 		# Checks whether a governed repo is safe for batch operations.
 		# Returns { safe: true/false, reasons: [...] }.
-		# Safe means: no active worktrees beyond main, no uncommitted changes.
+		# Safe means: no uncommitted changes in the main working tree.
 		# Non-git directories pass through as safe — let the command handle the error.
+		#
+		# Active worktrees are NOT checked. Template apply writes to .github/ in the
+		# main working tree only; template propagate creates its own /tmp/ worktree.
+		# Neither interacts with agent worktrees.
 		def portfolio_repo_safety( repo_path: )
 			git = Adapters::Git.new( repo_root: repo_path )
 
@@ -340,17 +344,6 @@ module Carson
 			return { safe: true, reasons: [] } unless git_ok && stdout.to_s.strip == "true"
 
 			reasons = []
-
-			# Sweep stale worktrees (merged branches) before counting active ones
-			# so only genuinely active worktrees block the operation.
-			scoped_runtime = build_scoped_runtime( repo_path: repo_path )
-			scoped_runtime.sweep_stale_worktrees!
-			worktrees = scoped_runtime.worktree_list
-			main_root = scoped_runtime.realpath_safe( repo_path )
-			active = worktrees.reject { |worktree| worktree.path == main_root }
-			if active.any?
-				reasons << "#{active.count} active worktree#{active.count == 1 ? '' : 's'}"
-			end
 
 			# Uncommitted changes in the main working tree.
 			stdout, _, success, = git.run( "status", "--porcelain" )

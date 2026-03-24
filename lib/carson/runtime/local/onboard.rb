@@ -311,8 +311,8 @@ module Carson
 			end
 
 			# Refreshes hooks only for a governed repo using a scoped Runtime.
-			# Used when the full refresh is blocked by active worktrees or uncommitted
-			# changes — hooks write to ~/.carson/hooks/ and do not touch the working tree.
+			# Used when the full refresh is blocked by uncommitted changes —
+			# hooks write to ~/.carson/hooks/ and do not touch the working tree.
 			def refresh_hooks_single_repo( repo_path: )
 				scoped_runtime = build_scoped_runtime( repo_path: repo_path )
 				scoped_runtime.refresh_hooks!
