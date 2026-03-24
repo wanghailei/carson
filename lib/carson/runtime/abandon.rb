@@ -140,17 +140,18 @@ module Carson
 				end
 
 				if worktree
-					check = Worktree.remove_check( path: worktree.path, runtime: self, force: false, skip_unpushed: true )
+					check = worktree_warehouse.assess_teardown( worktree, force: false, skip_unpushed: true )
 					return nil if check.fetch( :status ) == :ok
 
-					recovery = check.fetch( :recovery )
-					if check.fetch( :error ) == "worktree has uncommitted changes"
+					recovery = check[ :recovery ]
+					if check[ :error ] == "worktree has uncommitted changes"
 						recovery = "commit or discard the changes, then retry carson abandon #{branch}"
 					end
 
+					exit_code = check[ :status ] == :block ? EXIT_BLOCK : EXIT_ERROR
 					return {
-						exit_code: check.fetch( :exit_code ),
-						error: check.fetch( :error ),
+						exit_code: exit_code,
+						error: check[ :error ],
 						recovery: recovery
 					}
 				end

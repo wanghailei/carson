@@ -1,31 +1,46 @@
 # Thin worktree delegate layer on Runtime.
-# Lifecycle operations live on Carson::Worktree; this module delegates
-# and keeps only methods that genuinely belong on Runtime (path resolution,
-# CWD branch detection).
+# Lifecycle operations delegate to Warehouse::Workbench.
+# Keeps only methods that genuinely belong on Runtime (path resolution,
+# CWD branch detection, output rendering).
 module Carson
 	class Runtime
 		module Local
 
-			# --- Delegates to Carson::Worktree ---
+			# --- Delegates to Warehouse::Workbench ---
 
 			# Creates a new worktree under .claude/worktrees/<name>.
 			def worktree_create!( name:, json_output: false )
-				Worktree.create!( name: name, runtime: self, json_output: json_output )
+				result = worktree_warehouse.build_workbench!( name: name )
+				finish_worktree( result: result, json_output: json_output )
 			end
 
 			# Removes a worktree: directory, git registration, and branch.
 			def worktree_remove!( worktree_path:, force: false, skip_unpushed: false, json_output: false )
-				Worktree.remove!( path: worktree_path, runtime: self, force: force, skip_unpushed: skip_unpushed, json_output: json_output )
+				wh = worktree_warehouse
+				workbench = wh.workbench_named( worktree_path )
+				unless workbench
+					return finish_worktree(
+						result: { command: "worktree remove", status: "error",
+							name: File.basename( worktree_path ),
+							error: "#{worktree_path} is not a registered worktree",
+							recovery: "git worktree list" },
+						json_output: json_output )
+				end
+				result = wh.tear_down_workbench!( workbench, force: force, skip_unpushed: skip_unpushed )
+				finish_worktree( result: result, json_output: json_output )
 			end
 
 			# Removes agent-owned worktrees whose branch content is already on main.
+			# Still uses Worktree.sweep_stale! which needs classify_worktree_cleanup
+			# on Runtime. Migrates to warehouse.sweep_workbenches! when housekeep
+			# is absorbed (Phase 4 item 40).
 			def sweep_stale_worktrees!
 				Worktree.sweep_stale!( runtime: self )
 			end
 
 			# Returns all registered worktrees as Carson::Worktree instances.
 			def worktree_list
-				Worktree.list( runtime: self )
+				worktree_warehouse.workbenches
 			end
 
 			# Human and JSON status surface for all registered worktrees.
@@ -108,6 +123,65 @@ module Carson
 			end
 
 		private
+
+			# Build a Warehouse for workbench operations.
+			# Always rooted at the main worktree so workbench management
+			# works correctly even when called from inside a worktree.
+			def worktree_warehouse
+				Warehouse.new(
+					path: main_worktree_root,
+					main_label: config.main_branch,
+					bureau_address: config.git_remote
+				)
+			end
+
+			# Render a workbench operation result as JSON or human text.
+			# Returns the exit code for CLI dispatch.
+			def finish_worktree( result:, json_output: false )
+				exit_code = result.fetch( :exit_code, nil )
+				status = result[ :status ]
+
+				# Derive exit code from status if not explicitly set.
+				exit_code ||= case status
+					when "ok" then EXIT_OK
+					when "block" then EXIT_BLOCK
+					else EXIT_ERROR
+				end
+
+				result[ :exit_code ] = exit_code
+
+				if json_output
+					output.puts JSON.pretty_generate( result )
+				else
+					print_worktree_result( result: result )
+				end
+
+				exit_code
+			end
+
+			# Human-readable output for worktree operation results.
+			def print_worktree_result( result: )
+				command = result[ :command ]
+				status = result[ :status ]
+
+				case status
+				when "ok"
+					case command
+					when "worktree create"
+						puts_line "Worktree created: #{result[ :name ]}"
+						puts_line "  Path: #{result[ :path ]}"
+						puts_line "  Branch: #{result[ :branch ]}"
+					when "worktree remove"
+						puts_line "Worktree removed: #{result[ :name ]}" unless verbose?
+					end
+				when "error"
+					puts_line result[ :error ]
+					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
+				when "block"
+					puts_line "#{result[ :error ]&.capitalize || 'Held'}: #{result[ :name ]}"
+					puts_line "  → #{result[ :recovery ]}" if result[ :recovery ]
+				end
+			end
 
 			def worktree_inventory
 				worktree_list.map { |worktree| worktree_inventory_entry( worktree: worktree ) }

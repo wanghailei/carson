@@ -420,6 +420,16 @@ module Carson
 			false
 		end
 
+		# Is the workbench surface clean? (no uncommitted changes)
+		def clean?
+			return false unless exists?
+
+			stdout, = Open3.capture3( "git", "status", "--porcelain", chdir: path )
+			stdout.to_s.strip.empty?
+		rescue StandardError
+			false
+		end
+
 	# rubocop:disable Layout/AccessModifierIndentation -- tab-width calculation produces unfixable mixed tabs+spaces
 	private
 	# rubocop:enable Layout/AccessModifierIndentation
