@@ -1,0 +1,11 @@
+name: Gate
+
+on:
+  pull_request:
+
+jobs:
+  gate:
+    name: Gate
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "OK"
