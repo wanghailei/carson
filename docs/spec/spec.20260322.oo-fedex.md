@@ -657,9 +657,13 @@ Carson's output is for agents. Agents execute commands. Every held or blocked de
 ⧓ Merged.
 ```
 
-## Naming: Workbench vs Shelf
+## Naming Decision — Workbench
 
-Under discussion. "Shelf" is passive storage — parcels sit there. "Workbench" is where the agent actively works: edits, builds, tests, packs. The parcel is built on the workbench, then handed to the courier. You seal the workbench during delivery, not a storage shelf. Decision pending.
+This is settled. The active place where the agent works is a **workbench**, not a shelf.
+
+A shelf is passive storage. A workbench is where the agent edits, builds, tests, and packs a parcel. The parcel is built on the workbench, handed to the courier, and the workbench is what gets sealed during delivery.
+
+“Workbench” is therefore the correct domain name for the agent’s active local place of work.
 
 ## Design Principles
 
