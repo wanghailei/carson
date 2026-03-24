@@ -1,18 +1,21 @@
 # A governed repository. In the FedEx metaphor, the warehouse is where
-# parcels (committed changes) are stored on shelves (worktrees) with
-# labels (branches). Git and gh commands are hidden inside — callers
-# never see git or GitHub terms.
+# parcels are built on workbenches (worktrees) with labels (branches).
+# Git and gh commands are hidden inside — callers never see git or
+# GitHub terms.
 require "digest"
 require "fileutils"
 require "json"
 require "open3"
 
+require_relative "warehouse/workbench"
+
 module Carson
-	# A governed repository — the warehouse where parcels are stored on
-	# shelves (worktrees) with labels (branches). Wraps git operations
+	# A governed repository — the warehouse where parcels are built on
+	# workbenches (worktrees) with labels (branches). Wraps git operations
 	# with story-language methods. An intelligent warehouse that manages
 	# itself: packing parcels, checking compliance, and sweeping up.
 	class Warehouse
+		include Workbench
 		attr_reader :path
 
 		def initialize( path:, main_label: "main", bureau_address: "github", compliance_checker: nil )
