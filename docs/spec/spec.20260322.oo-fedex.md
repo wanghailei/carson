@@ -373,16 +373,17 @@ The courier ships, files, then waits at the registry polling bureaucrats. If che
     │                        │                        │
 ```
 
-## Commands — All Story Language
+## Agent Surface — Working with Carson Daily
+
+For an agent working with Carson daily, the public surface is:
 
 | Command | Who handles | Meaning |
 |---|---|---|
-| `carson deliver` | Courier | Ship parcel to the registry |
-| `carson return` | Courier | Return parcel to sender |
-| `carson salvage` | Courier | Rescue a stuck parcel |
-| `carson monitor` | Carson Co. | Watch bureau feedback, notify clients, dispatch couriers |
-| `carson track` | Carson Co. | Where is everything right now? |
-| `carson sweep` | Warehouse | Clean shelves and stale labels |
+| `carson checkin` | Carson Co. → Warehouse | Ask the Warehouse to prepare a fresh workbench from the latest standard |
+| `carson deliver` | Carson Co. → Courier | Send the current parcel to the Bureau |
+| `carson checkout` | Carson Co. → Warehouse | Ask the Warehouse to release the workbench and local custody when safe |
+
+These are the public agent verbs. Worktrees, branches, and stash entries remain real, but they are warehouse machinery behind the surface.
 
 ## Every Concept Is an Object
 
