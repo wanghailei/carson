@@ -295,8 +295,15 @@ expect_exit 0 "deliver pushes and reports PR URL" run_carson_with_mock_gh delive
 # Return to main after deliver smoke.
 git switch main >/dev/null
 
-# Clean up feature branch.
+# Clean up feature branch, remote branch, and delivery seal.
+# The deliver test leaves a sealed workbench (parcel in flight) because the
+# mock gh cannot complete the merge lifecycle. Without cleanup, every
+# subsequent audit test hits the seal guard and exits 2 before reaching
+# the logic under test. The remote branch must also be removed so later
+# tests can reuse the branch name.
 git branch -D feature/deliver-smoke >/dev/null
+git push origin --delete feature/deliver-smoke >/dev/null 2>&1 || true
+rm -rf "$HOME/.carson/seals"
 echo "PASS: deliver smoke tests"
 
 if [[ "$QUICK_MODE" == true ]]; then
