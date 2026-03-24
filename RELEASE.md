@@ -7,6 +7,12 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.1.1
+
+### Fixed
+
+- **`carson refresh` blocked by active worktrees** (#492) — `portfolio_repo_safety` counted active worktrees and blocked template application when any existed. Template apply writes to `.github/` in the main working tree only; template propagate creates its own `/tmp/` worktree. Neither interacts with agent worktrees. Speculative guard removed; uncommitted-changes check retained.
+
 ## 4.1.0
 
 ### Breaking
