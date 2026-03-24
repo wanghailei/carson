@@ -5,21 +5,21 @@ module Carson
 	BADGE = "\u29D3".freeze # ⧓ BLACK BOWTIE (U+29D3)
 
 	# The company renders results for whoever is listening.
-	# JSON is the primary format (agents consume it). Human-readable is secondary.
+	# JSON is the primary format (agents consume it). Text is secondary.
 	# Domain objects return result hashes — Carson decides how to present them.
 	def self.report( result, format: :json, output: $stdout )
 		case format
 		when :json
 			require "json"
 			output.puts JSON.pretty_generate( result )
-		when :human
-			report_human( result, output: output )
+		when :text
+			report_text( result, output: output )
 		end
 	end
 
-	# Human-readable delivery report — technical language for agents and humans.
+	# Text delivery report — client language for agents.
 	# Story language is internal (source code). Output speaks the client's language.
-	def self.report_human( result, output: $stdout )
+	def self.report_text( result, output: $stdout )
 		if result[ :error ]
 			output.puts "#{BADGE} #{result[ :error ]}"
 			output.puts "  \u2192 #{result[ :recovery ]}" if result[ :recovery ]
@@ -40,45 +40,39 @@ module Carson
 				output.puts "#{BADGE} Local main not synced \u2014 run carson sync."
 			end
 		when "held"
-			diagnosis, *recovery_steps = translate_hold( result[ :hold_reason ], remote_main: remote_main )
-			output.puts "#{BADGE} #{diagnosis}"
-			recovery_steps.each do |step|
+			summary = result[ :hold_summary ] || "Waiting for merge readiness."
+			output.puts "#{BADGE} #{summary}"
+			recovery_steps_for_hold( result[ :hold_reason ], remote_main: remote_main ).each do |step|
 				output.puts "  \u2192 #{step}"
 			end
 		when "rejected"
 			output.puts "#{BADGE} PR closed externally."
 		when "filed"
-			output.puts "#{BADGE} Bureau hasn't responded yet. Run carson status to check back."
+			summary = result[ :hold_summary ] || "Waiting for merge readiness."
+			diagnostic = result[ :diagnostic ] ? " (#{result[ :diagnostic ]})" : ""
+			output.puts "#{BADGE} #{summary}#{diagnostic}"
+			output.puts "  \u2192 carson status"
 		end
 	end
 
-	# Translate internal hold reasons to agent-actionable output.
-	# Returns [ diagnosis, *recovery_steps ]. The diagnosis says what
-	# happened. Each recovery step is a command the agent can execute.
-	def self.translate_hold( reason, remote_main: "origin/main" )
+	# Recovery commands for a held delivery.
+	# The report knows what commands to suggest for each situation.
+	def self.recovery_steps_for_hold( reason, remote_main: "origin/main" )
 		case reason
-		when "draft"
-			[ "PR is still a draft." ]
-		when "pending_at_registry"
-			[ "Waiting for CI checks.", "carson status" ]
-		when "failed_at_registry"
-			[ "CI checks failed.", "carson deliver" ]
-		when "error_at_registry"
-			[ "Unable to assess CI checks.", "carson status" ]
+		when "pending_at_bureau", "mergeability_pending", "error_at_bureau"
+			[ "carson status" ]
+		when "failed_at_bureau"
+			[ "carson deliver" ]
 		when "merge_conflict"
-			[ "Merge conflict with #{remote_main}.", "git rebase #{remote_main}", "carson deliver" ]
-		when "behind_registry"
-			[ "Branch is behind #{remote_main}.", "carson deliver" ]
-		when "policy_block"
-			[ "Blocked by branch protection rules." ]
-		when "mergeability_pending"
-			[ "GitHub is calculating mergeability.", "carson status" ]
+			[ "git rebase #{remote_main}", "carson deliver" ]
+		when "behind_bureau"
+			[ "carson deliver" ]
 		else
-			[ "Waiting for merge readiness.", "carson status" ]
+			[]
 		end
 	end
 
-	private_class_method :report_human
+	private_class_method :report_text, :recovery_steps_for_hold
 end
 
 require_relative "carson/repository"
@@ -87,8 +81,8 @@ require_relative "carson/delivery"
 require_relative "carson/revision"
 require_relative "carson/ledger"
 require_relative "carson/parcel"
-require_relative "carson/warehouse"
 require_relative "carson/waybill"
+require_relative "carson/warehouse"
 require_relative "carson/courier"
 require_relative "carson/worktree"
 require_relative "carson/config"

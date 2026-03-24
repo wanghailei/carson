@@ -1,19 +1,22 @@
 # Carson Co.
 module Carson
-	# The delivery person — picks up parcels and delivers them to the registry.
+	# The delivery person — picks up parcels and delivers them to the bureau.
 	#
 	# The courier is a Carson employee assigned to a warehouse. They pick up
-	# a parcel, ship it to the bureau, file a waybill, and wait at the
-	# registry while the bureaucrats check it.
+	# a parcel, ask the warehouse to ship it, file a waybill, and wait at
+	# the bureau while the bureaucrats check it.
 	#
-	# The courier is a thin orchestrator: it creates a Waybill and sends it
-	# messages. The domain logic lives in the objects, not the courier.
+	# The courier is a thin orchestrator: it asks the warehouse to interact
+	# with the bureau, reads the waybill for status, and reports results.
+	# The domain logic lives in the objects, not the courier.
 	#
 	# == The bureau
 	#
-	# The bureau is a registry (GitHub) where bureaucrats work. They check
-	# parcels (CI, review, mergeability) and either accept them into the
-	# registry or hold them with a reason.
+	# The bureau (GitHub) is where bureaucrats work. They check parcels
+	# (CI, review, mergeability) and either accept them into the registry
+	# or hold them with a reason. The warehouse owns the connection to
+	# the bureau — the courier asks the warehouse to check, file, and
+	# register.
 	#
 	# == Shelf seal
 	#
@@ -32,8 +35,8 @@ module Carson
 	#   02. Parcel behind standard — not based on client's latest standard.
 	#   03. Shipping fails — warehouse couldn't push to the bureau.
 	#   04. Waybill filing fails — bureau rejected the paperwork.
-	#   05. Pending at registry — bureaucrats still checking (CI running).
-	#   06. Failed at registry — bureaucrats rejected (CI failed).
+	#   05. Pending at bureau — bureaucrats still checking (CI running).
+	#   06. Failed at bureau — bureaucrats rejected (CI failed).
 	#   07. Review pending — review still in progress.
 	#   08. Review changes requested — reviewer wants corrections.
 	#   09. Merge conflict — parcel conflicts with registry contents.
@@ -47,18 +50,18 @@ module Carson
 	#   17. Parcel already delivered — already in registry.
 	#   18. Waybill closed — cancelled by someone externally.
 	#
-	# == Design: wait and poll at the registry
+	# == Design: wait and poll at the bureau
 	#
-	# The courier waits at the registry while the bureaucrats check the parcel.
-	# It polls up to MAX_CHECKS_AT_REGISTRY times, pausing between each check.
+	# The courier waits at the bureau while the bureaucrats check the parcel.
+	# It polls up to MAX_CHECKS_AT_BUREAU times, pausing between each check.
 	# If the bureaucrats give a definitive answer (accepted or rejected), the
 	# courier acts immediately. If the checks are exhausted without a definitive
-	# answer, the courier reports "filed" — the parcel is still at the registry
+	# answer, the courier reports "filed" — the parcel is still at the bureau
 	# and the shelf stays sealed.
 	#
 	# == Future: destination modes
 	#
-	# Currently remote-centred (ship → waybill → registry → acceptance).
+	# Currently remote-centred (ship → waybill → bureau → acceptance).
 	# A future local-centred mode merges locally; remote is a synced backup.
 	# The destination mode should be injectable, not baked in.
 	class Courier
@@ -69,19 +72,19 @@ module Carson
 
 		BADGE = "\u29D3".freeze
 
-		# The courier checks the registry up to 6 times before leaving.
-		MAX_CHECKS_AT_REGISTRY = 6
+		# The courier checks the bureau up to 6 times before leaving.
+		MAX_CHECKS_AT_BUREAU = 6
 
-		def initialize( warehouse, ledger: nil, merge_method: "rebase", poll_interval_at_registry: 30, output: $stdout )
+		def initialize( warehouse, ledger: nil, merge_method: "rebase", poll_interval_at_bureau: 30, output: $stdout )
 			@warehouse = warehouse
 			@ledger = ledger
 			@merge_method = merge_method
-			@poll_interval_at_registry = poll_interval_at_registry
+			@poll_interval_at_bureau = poll_interval_at_bureau
 			@output = output
 		end
 
 		# Deliver a parcel to the registry.
-		# Ships it, files a waybill, seals the shelf, waits at the registry.
+		# Ships it, files a waybill, seals the shelf, waits at the bureau.
 		def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
 			result = {
 				command: "deliver",
@@ -153,15 +156,11 @@ module Carson
 				return error( result, "push failed" )
 			end
 
-			# File a waybill with the bureau.
-			waybill = Waybill.new(
-				label: parcel.label,
-				warehouse_path: @warehouse.path
-			)
-			waybill.file!( title: title, body_file: body_file )
+			# File a waybill with the bureau — the warehouse handles the gh call.
+			waybill = @warehouse.file_waybill_for!( parcel, title: title, body_file: body_file )
 
 			# 04. Waybill filing fails — bureau rejected the paperwork.
-			unless waybill.filed?
+			unless waybill
 				return error( result, "PR creation failed", recovery: "carson deliver" )
 			end
 
@@ -171,8 +170,8 @@ module Carson
 			# Seal the shelf — no more packing until the outcome is confirmed.
 			@warehouse.seal_shelf!( tracking_number: waybill.tracking_number )
 
-			# Wait at the registry while the bureaucrats check the parcel.
-			wait_and_poll_at_registry( waybill, result )
+			# Wait at the bureau while the bureaucrats check the parcel.
+			wait_and_poll_at_bureau( waybill, result )
 
 			# Unseal based on outcome:
 			# delivered/held/rejected → unseal (shelf done or parcel returned)
@@ -189,12 +188,12 @@ module Carson
 
 	private
 
-		# Wait at the registry, polling the bureaucrats up to MAX_CHECKS_AT_REGISTRY
+		# Wait at the bureau, polling the bureaucrats up to MAX_CHECKS_AT_BUREAU
 		# times. The courier stays until a definitive answer comes back or the
 		# checks are exhausted.
-		def wait_and_poll_at_registry( waybill, result )
-			MAX_CHECKS_AT_REGISTRY.times do |check|
-				waybill.refresh!
+		def wait_and_poll_at_bureau( waybill, result )
+			MAX_CHECKS_AT_BUREAU.times do |check|
+				@warehouse.check_parcel_at_bureau_with( waybill )
 
 				# 14/17. Already accepted — parcel is in the registry.
 				if waybill.accepted?
@@ -210,9 +209,9 @@ module Carson
 					return
 				end
 
-				# Cleared or mergeability pending — try to accept.
+				# Cleared or mergeability pending — ask the warehouse to register.
 				if waybill.cleared? || waybill.mergeability_pending?
-					waybill.accept!( method: @merge_method )
+					@warehouse.register_parcel_at_bureau_with!( waybill, method: @merge_method )
 
 					if waybill.accepted?
 						result[ :outcome ] = "delivered"
@@ -226,19 +225,25 @@ module Carson
 					result[ :outcome ] = "held"
 					result[ :exit ] = BLOCKED
 					result[ :hold_reason ] = waybill.hold_reason
+					result[ :hold_summary ] = waybill.hold_summary( remote_main: result[ :remote_main ] )
+					result[ :diagnostic ] = waybill.ci_diagnostic
 					return
 				end
 
-				# Report progress — the courier tells what the bureaucrats said.
-				say "#{waybill.hold_summary} (#{check + 1}/#{MAX_CHECKS_AT_REGISTRY})..."
+				# Report progress — client-language summary from the waybill.
+				summary = waybill.hold_summary( remote_main: result[ :remote_main ] )
+				detail = waybill.ci_diagnostic ? " \u2014 #{waybill.ci_diagnostic}" : ""
+				say "#{summary}#{detail} (#{check + 1}/#{MAX_CHECKS_AT_BUREAU})..."
 
 				# Still waiting — pause before the next check.
-				pause_between_polls unless check == MAX_CHECKS_AT_REGISTRY - 1
+				pause_between_polls unless check == MAX_CHECKS_AT_BUREAU - 1
 			end
 
 			# Exhausted all checks — bureau hasn't given a definitive answer.
 			result[ :outcome ] = "filed"
 			result[ :hold_reason ] = waybill.hold_reason
+			result[ :hold_summary ] = waybill.hold_summary( remote_main: result[ :remote_main ] )
+			result[ :diagnostic ] = waybill.ci_diagnostic
 		end
 
 		# Is the waybill blocked by something that won't resolve by waiting?
@@ -247,8 +252,8 @@ module Carson
 		def definitively_blocked?( waybill )
 			return false unless waybill.held?
 			reason = waybill.hold_reason
-			[ "failed_at_registry", "merge_conflict",
-				"behind_registry", "policy_block", "draft" ].include?( reason )
+			[ "failed_at_bureau", "merge_conflict",
+				"behind_bureau", "policy_block", "draft" ].include?( reason )
 		end
 
 		# The courier speaks — reports progress to whoever is listening.
@@ -258,7 +263,7 @@ module Carson
 
 		# Pause between poll checks. Overridable for test isolation.
 		def pause_between_polls
-			sleep @poll_interval_at_registry
+			sleep @poll_interval_at_bureau
 		end
 
 		# Record a delivery state change in the ledger.

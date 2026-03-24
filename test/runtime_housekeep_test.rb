@@ -360,7 +360,7 @@ class RuntimeHousekeepTest < Minitest::Test
 		assert_empty runtime.ledger.integrated_deliveries( repo_path: repo_root )
 
 		output = runtime.instance_variable_get( :@output ).string
-		assert_includes output, "Reaped worktree: delivered (feature/delivered) — integrated delivery recorded in ledger"
+		assert_includes output, "Reaped worktree: delivered (feature/delivered) — merged — delivery recorded"
 		destroy_runtime_repo( repo_root: repo_root )
 	ensure
 		Carson::Worktree.define_singleton_method( :find, original_find ) if original_find
