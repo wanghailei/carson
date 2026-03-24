@@ -7,12 +7,10 @@ module Carson
 	class Ledger
 		UNSET = Object.new
 		ACTIVE_DELIVERY_STATES = Delivery::ACTIVE_STATES
-		SQLITE_HEADER = "SQLite format 3\0".b.freeze
 
 		def initialize( path: )
 			@path = File.expand_path( path )
 			FileUtils.mkdir_p( File.dirname( @path ) )
-			migrate_legacy_state_if_needed!
 		end
 
 		attr_reader :path
@@ -273,22 +271,6 @@ module Carson
 			)
 		end
 
-		def migrate_legacy_state_if_needed!
-			# Skip lock acquisition entirely when no legacy SQLite file exists.
-			# Read-only file checks are safe without the lock; the migration
-			# itself is idempotent so a narrow race is harmless.
-			return unless state_path_requires_migration?
-
-			with_state_lock do |lock_file|
-				lock_file.flock( File::LOCK_EX )
-				source_path = legacy_sqlite_source_path
-				next unless source_path
-
-				state = load_legacy_sqlite_state( path: source_path )
-				save_state!( state )
-			end
-		end
-
 		def with_state_lock
 			lock_path = "#{path}.lock"
 			FileUtils.mkdir_p( File.dirname( lock_path ) )
@@ -297,110 +279,6 @@ module Carson
 			File.open( lock_path, File::RDWR | File::CREAT ) do |lock_file|
 				yield lock_file
 			end
-		end
-
-		def legacy_sqlite_source_path
-			return nil unless state_path_requires_migration?
-			return path if sqlite_database_file?( path: path )
-
-			legacy_path = legacy_state_path
-			return nil unless legacy_path
-			return legacy_path if sqlite_database_file?( path: legacy_path )
-
-			nil
-		end
-
-		def state_path_requires_migration?
-			return true if sqlite_database_file?( path: path )
-			return false if File.exist?( path )
-			!legacy_state_path.nil?
-		end
-
-		def legacy_state_path
-			return nil unless path.end_with?( ".json" )
-			path.sub( /\.json\z/, ".sqlite3" )
-		end
-
-		def sqlite_database_file?( path: )
-			return false unless File.file?( path )
-			File.binread( path, SQLITE_HEADER.bytesize ) == SQLITE_HEADER
-		rescue StandardError
-			false
-		end
-
-		def load_legacy_sqlite_state( path: )
-			begin
-				require "sqlite3"
-			rescue LoadError => exception
-				raise "legacy SQLite ledger found at #{path}, but sqlite3 support is unavailable: #{exception.message}"
-			end
-
-			database = open_legacy_sqlite_database( path: path )
-			deliveries = database.execute( "SELECT * FROM deliveries ORDER BY id ASC" )
-			revisions_by_delivery = database.execute(
-				"SELECT * FROM revisions ORDER BY delivery_id ASC, number ASC, id ASC"
-			).group_by { |row| row.fetch( "delivery_id" ) }
-
-			state = {
-				"deliveries" => {},
-				"recovery_events" => [],
-				"next_sequence" => 1
-			}
-			deliveries.each do |row|
-				key = delivery_key(
-					repo_path: row.fetch( "repo_path" ),
-					branch_name: row.fetch( "branch_name" ),
-					head: row.fetch( "head" )
-				)
-				state[ "deliveries" ][ key ] = {
-					"sequence" => row.fetch( "id" ).to_i,
-					"repo_path" => row.fetch( "repo_path" ),
-					"branch_name" => row.fetch( "branch_name" ),
-					"head" => row.fetch( "head" ),
-					"worktree_path" => row.fetch( "worktree_path" ),
-					"status" => row.fetch( "status" ),
-					"pr_number" => row.fetch( "pr_number" ),
-					"pr_url" => row.fetch( "pr_url" ),
-					"pull_request_state" => nil,
-					"pull_request_draft" => nil,
-					"pull_request_merged_at" => nil,
-					"merge_proof" => nil,
-					"cause" => row.fetch( "cause" ),
-					"summary" => row.fetch( "summary" ),
-					"created_at" => row.fetch( "created_at" ),
-					"updated_at" => row.fetch( "updated_at" ),
-					"integrated_at" => row.fetch( "integrated_at" ),
-					"superseded_at" => row.fetch( "superseded_at" ),
-					"revisions" => Array( revisions_by_delivery[ row.fetch( "id" ) ] ).map do |revision|
-						{
-							"number" => revision.fetch( "number" ).to_i,
-							"cause" => revision.fetch( "cause" ),
-							"provider" => revision.fetch( "provider" ),
-							"status" => revision.fetch( "status" ),
-							"started_at" => revision.fetch( "started_at" ),
-							"finished_at" => revision.fetch( "finished_at" ),
-							"summary" => revision.fetch( "summary" )
-						}
-					end
-				}
-			end
-			normalise_state!( state: state )
-			state
-		ensure
-			database&.close
-		end
-
-		def open_legacy_sqlite_database( path: )
-			database = SQLite3::Database.new( "file:#{path}?immutable=1", readonly: true, uri: true )
-			database.results_as_hash = true
-			database.busy_timeout = 5_000
-			database
-		rescue SQLite3::CantOpenException
-			database&.close
-			database = SQLite3::Database.new( path, readonly: true )
-			database.results_as_hash = true
-			database.busy_timeout = 5_000
-			database
 		end
 
 		def normalise_state!( state: )

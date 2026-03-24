@@ -173,7 +173,7 @@ Environment overrides:
 - `agent.codex` / `agent.claude`: provider-specific options (reserved).
 - `check_wait`: seconds to wait for CI checks before classifying (default: `30`).
 - `merge.method`: `"squash"` only in governed mode.
-- `state_path`: JSON ledger path for active deliveries and revisions. Legacy SQLite ledgers are imported automatically on first read; explicit legacy `.sqlite3` paths keep working after import.
+- `state_path`: JSON ledger path for active deliveries and revisions.
 
 `template` schema:
 

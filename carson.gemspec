@@ -28,7 +28,6 @@ Gem::Specification.new do |spec|
 	spec.bindir = "exe"
 	spec.executables = [ "carson" ]
 	spec.require_paths = [ "lib" ]
-	spec.add_dependency "sqlite3", ">= 1.3", "< 3"
 	spec.files = Dir.glob( "{lib,exe,templates,config}/**/*", File::FNM_DOTMATCH ).select { |path| File.file?( path ) } + [
 		".github/workflows/carson_policy.yml",
 		"README.md",
