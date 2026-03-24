@@ -1,6 +1,6 @@
 # GitHub Repository Settings — Carson Working Agreement
 
-Research compiled 2026-03-23, updated 2026-03-24. Sources: GitHub official documentation (docs.github.com), GitHub Community discussions, live API inspection of `wanghailei/carson` and `wanghailei/ai`.
+Research compiled 2026-03-23, updated 2026-03-24. Sources: GitHub official documentation (docs.github.com), GitHub Community discussions, live API inspection of `wanghailei/carson` and `wanghailei/ai`. All changes implemented and verified (PIW PR #840).
 
 ---
 
@@ -101,31 +101,33 @@ The "Require a pull request before merging" rule has these parameters [6]:
 }
 ```
 
-### Current State Audit
+### Current State (verified 2026-03-24)
+
+Both rulesets updated via API. Confirmed by `gh api repos/{owner}/{repo}/rulesets/{id}`.
 
 **wanghailei/ai** — Ruleset ID `13610710`:
 
-| Rule / Parameter | Current | Target | Status |
-|-----------------|---------|--------|--------|
-| pull_request | ON | ON | ✓ |
-| required_approving_review_count | 0 | 0 | ✓ |
-| required_review_thread_resolution | false | true | ✗ change needed |
-| allowed_merge_methods | merge, squash, rebase | squash | ✗ change needed |
-| required_linear_history | absent | ON | ✗ add |
-| deletion (restrict deletions) | ON (default) | ON | ✓ |
-| non_fast_forward (block force pushes) | ON (default) | ON | ✓ |
+| Rule / Parameter | Value | Status |
+|-----------------|-------|--------|
+| pull_request | ON | ✓ |
+| required_approving_review_count | 0 | ✓ |
+| required_review_thread_resolution | true | ✓ |
+| allowed_merge_methods | squash | ✓ |
+| required_linear_history | ON | ✓ |
+| deletion (restrict deletions) | ON | ✓ |
+| non_fast_forward (block force pushes) | ON | ✓ |
 
 **wanghailei/carson** — Ruleset ID `13610721`:
 
-| Rule / Parameter | Current | Target | Status |
-|-----------------|---------|--------|--------|
-| pull_request | ON | ON | ✓ |
-| required_approving_review_count | 0 | 0 | ✓ |
-| required_review_thread_resolution | false | true | ✗ change needed |
-| allowed_merge_methods | merge, squash, rebase | squash | ✗ change needed |
-| required_linear_history | absent | ON | ✗ add |
-| deletion (restrict deletions) | ON (default) | ON | ✓ |
-| non_fast_forward (block force pushes) | ON (default) | ON | ✓ |
+| Rule / Parameter | Value | Status |
+|-----------------|-------|--------|
+| pull_request | ON | ✓ |
+| required_approving_review_count | 0 | ✓ |
+| required_review_thread_resolution | true | ✓ |
+| allowed_merge_methods | squash | ✓ |
+| required_linear_history | ON | ✓ |
+| deletion (restrict deletions) | ON | ✓ |
+| non_fast_forward (block force pushes) | ON | ✓ |
 
 ---
 
@@ -161,22 +163,26 @@ Even if required checks are added to a *ruleset*, auto-merge may still not work.
 - The issue has persisted since rulesets launched (April 2023) through at least early 2026.
 - **Workaround**: Create a classic branch protection rule with the required status check. Rulesets and classic rules stack — GitHub applies the most restrictive combination.
 
-### Recommendation
+### Resolution (implemented 2026-03-24)
 
-**For repos without CI** (e.g. `wanghailei/ai`):
+Both repos now have meaningful CI checks required via classic branch protection. Auto-merge is functional.
 
-Auto-merge is not practical. There are no checks to wait for. Two options:
+**wanghailei/ai** — TAI CI workflow (`.github/workflows/ci.yml`) with 3 jobs:
+- `Shellcheck hooks` — all 14 enforcement hooks at error severity
+- `Validate configs` — YAML/JSON syntax on lint configs and bundle data
+- `Reference integrity` — cross-file reference checks in core/ and skills/ markdown
 
-1. **Accept explicit merge.** Carson's delivery loop already handles merge via `gh pr merge --squash`. Auto-merge is an optimisation Carson does not need — it polls and merges explicitly. This is the simplest path.
-2. **Add a trivial CI check.** Create a minimal GitHub Actions workflow that always passes on PRs, then require it in a classic branch protection rule. Auto-merge can then be armed. This adds machinery for marginal benefit.
+**wanghailei/carson** — existing CI (`ci.yml`) already had 4 PR jobs:
+- `Carson governance` — audit and review gate
+- `Lint and guards` — Ruby syntax, indentation, naming guards
+- `Unit tests` — full test suite
+- `PR canary smoke` — smoke tests
 
-**Recommended**: option 1. Carson merges explicitly. Auto-merge adds complexity without value when there is nothing to wait for.
+**Classic branch protection** now requires these checks on both repos. Auto-merge waits for CI, then merges automatically. Verified with PIW PR #840 on `wanghailei/ai`: auto-merge armed, 3 checks passed, GitHub merged automatically.
 
-**For repos with CI** (e.g. `wanghailei/carson` if CI is added):
+**Caveat**: old PRs created before CI existed have no check runs. GitHub does not retroactively enforce required status checks when no checks have been reported — those PRs can merge without waiting. Only fresh PRs (where CI triggers) are gated.
 
-1. Add the CI check name as a required status check in a **classic branch protection rule** (not the ruleset, due to the compatibility bug).
-2. Carson's delivery loop can then use `gh pr merge --auto --squash` instead of polling.
-3. Once GitHub fixes the rulesets compatibility issue, migrate the required check to the ruleset and delete the classic rule.
+**Bot reviewers (Copilot, Gemini) cannot trigger auto-merge.** They leave "Comment" reviews, never "Approve" reviews. Bot reviews do not count toward required approvals [3].
 
 ---
 
@@ -200,27 +206,32 @@ However, **auto-merge only works reliably with classic branch protection** [10].
 | Required status checks (for auto-merge) | **Classic branch protection** (until GitHub fixes rulesets compatibility) |
 | Force push block, deletion block | **Ruleset** (defaults) |
 
-### Current State
+### Current State (verified 2026-03-24)
 
-**wanghailei/carson** — has classic branch protection:
+**wanghailei/carson** — classic branch protection:
 
-| Rule | Current | Target | Status |
-|------|---------|--------|--------|
-| Enforce admins | ON | ON | ✓ |
-| Require linear history | ON | Remove (use ruleset) | Migrate |
-| Allow force pushes | OFF | Remove (use ruleset) | Migrate |
-| Allow deletions | OFF | Remove (use ruleset) | Migrate |
-| Required conversation resolution | OFF | Remove (use ruleset) | Migrate |
-| Lock branch | OFF | OFF | ✓ |
-| Required status checks | None | Add if CI exists | Pending |
+| Rule | Value | Status |
+|------|-------|--------|
+| Enforce admins | ON | ✓ |
+| Required status checks | `Carson governance`, `Lint and guards`, `Unit tests`, `PR canary smoke` | ✓ |
+| Require linear history | OFF (migrated to ruleset) | ✓ |
+| Allow force pushes | OFF | ✓ |
+| Allow deletions | OFF | ✓ |
 
-**wanghailei/ai** — no classic branch protection (404 from API).
+**wanghailei/ai** — classic branch protection (created 2026-03-24):
 
-### Migration Plan
+| Rule | Value | Status |
+|------|-------|--------|
+| Enforce admins | ON | ✓ |
+| Required status checks | `Shellcheck hooks`, `Validate configs`, `Reference integrity` | ✓ |
+| Allow force pushes | OFF | ✓ |
+| Allow deletions | OFF | ✓ |
 
-1. Configure rulesets fully (thread resolution, squash-only, linear history) — § 2 above.
-2. On Carson repo: remove redundant classic rules that overlap with the ruleset (linear history, force push, deletions). Keep only `enforce_admins` and `required_status_checks` if CI exists.
-3. On AI repo: no classic rule needed unless CI is added later.
+### Migration Status
+
+Rulesets are the primary protection mechanism. Classic branch protection is kept only for:
+- `enforce_admins` (not available in rulesets)
+- `required_status_checks` (auto-merge requires classic protection, not rulesets — see § 3)
 
 ---
 
@@ -271,56 +282,22 @@ Settings → Actions → General.
 
 ---
 
-## 9. Summary: Changes Needed
+## 9. Implementation Status
 
-### Both repos — repository settings (API: `PATCH /repos/{owner}/{repo}`)
+All changes implemented and verified 2026-03-24.
 
-| Setting | Current | Target |
-|---------|---------|--------|
-| `allow_forking` | `true` | `false` |
+| Change | Scope | Status |
+|--------|-------|--------|
+| Rulesets: thread resolution, squash-only, linear history | Both repos | ✓ Done |
+| Classic branch protection: required status checks | Both repos | ✓ Done |
+| AI repo: TAI CI workflow created | wanghailei/ai | ✓ Done (PR #839) |
+| Auto-merge: functional | Both repos | ✓ Verified (PIW PR #840) |
 
-### Both repos — ruleset update (API: `PUT /repos/{owner}/{repo}/rulesets/{id}`)
+### Remaining
 
-| Change | Current | Target |
-|--------|---------|--------|
-| `required_review_thread_resolution` | `false` | `true` |
-| `allowed_merge_methods` | `["merge","squash","rebase"]` | `["squash"]` |
-| Add `required_linear_history` rule | absent | present |
-
-API payload for ruleset update:
-
-```json
-{
-	"rules": [
-		{
-			"type": "pull_request",
-			"parameters": {
-				"required_approving_review_count": 0,
-				"dismiss_stale_reviews_on_push": false,
-				"require_code_owner_review": false,
-				"require_last_push_approval": false,
-				"required_review_thread_resolution": true,
-				"allowed_merge_methods": ["squash"],
-				"required_reviewers": []
-			}
-		},
-		{ "type": "required_linear_history" },
-		{ "type": "deletion" },
-		{ "type": "non_fast_forward" }
-	]
-}
-```
-
-### Carson repo only — legacy branch protection cleanup
-
-After ruleset is configured:
-- Remove `required_linear_history` from classic rule (now in ruleset)
-- Keep `enforce_admins: true` (not available in rulesets)
-- Keep classic rule shell for future `required_status_checks` if CI is added
-
-### Auto-merge
-
-No action needed. Carson merges explicitly via its delivery loop. Auto-merge is not functional without required status checks, and adding a trivial check solely for auto-merge adds complexity without value. Revisit if CI is added to repos.
+| Change | Scope | Status |
+|--------|-------|--------|
+| `allow_forking` → `false` | Both repos | Pending |
 
 ---
 
