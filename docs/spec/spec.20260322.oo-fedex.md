@@ -182,23 +182,16 @@ warehouse.receive_latest_standard!              # update warehouse's local copy
 
 **Use case — after acceptance:** The bureau accepts and merges the parcel. The registry now has the new content. The courier calls `warehouse.receive_latest_standard!` — local main fast-forwards to match the registry. The next shelf created from main will automatically be based on the latest standard.
 
-### One Shelf Per Parcel
+### One Workbench Per Parcel
 
-A shelf (worktree/branch) is used for one parcel (feature). After the parcel is delivered and accepted, the shelf is swept. To start new work, create a new shelf.
-
-```
-Shelf: oo/phase2         (parcel delivered, accepted)
-  → warehouse sweeps shelf
-  → new shelf: oo/phase3  (fresh, based on latest standard)
-     → new parcel, new delivery
-```
+A workbench is used for one parcel. The agent checks in, works, delivers, then checks out. New work starts on a new workbench from the latest standard.
 
 **Rationale:**
-1. **Traceability** — branch name = scope = PR = delivery. Reusing a shelf muddies the history.
-2. **Isolation** — concurrency rules depend on scope ownership per shelf. Reusing blurs ownership.
-3. **Clean standard** — a new shelf starts from the updated standard. An old shelf starts stale and needs rebasing — extra work for no benefit.
+1. **Traceability** — workbench, parcel, branch, and delivery stay aligned.
+2. **Isolation** — ownership stays clear; old local state does not leak into new work.
+3. **Clean standard** — a new workbench starts from the updated standard instead of inheriting stale local state.
 
-**Use case:** An agent finishes `feature/auth` and it's merged. Instead of continuing work on `feature/auth`, the agent runs `carson worktree create feature/dashboard`. The new shelf is based on the latest standard (which includes the auth work). No rebase needed. Clean scope. Clean PR.
+**Use case:** An agent finishes `feature/auth` and the parcel is accepted. Instead of continuing on the same workbench, the agent checks out. For the next job, the agent checks in again and receives a fresh workbench based on the latest standard.
 
 ## The Bureau and Its Registry
 
