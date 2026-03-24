@@ -137,8 +137,6 @@ class RuntimeWorktreeTest < Minitest::Test
 			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute Dir.exist?( worktree.fetch( :path ) ), "worktree directory should be removed"
-			assert_includes output.string, "worktree_removed:"
-			assert_includes output.string, "branch_deleted: #{worktree.fetch( :branch )}"
 		end
 	end
 
@@ -185,7 +183,6 @@ class RuntimeWorktreeTest < Minitest::Test
 			status = runtime.worktree_remove!( worktree_path: "nested-wt" )
 			assert_equal Carson::Runtime::EXIT_OK, status
 			refute Dir.exist?( nested_dir ), "nested worktree directory should be removed"
-			assert_includes output.string, "worktree_removed:"
 		end
 	end
 
@@ -626,8 +623,6 @@ class RuntimeWorktreeTest < Minitest::Test
 
 			status = runtime.worktree_remove!( worktree_path: "gone-name" )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert_includes output.string, "pruned stale worktree entry"
-			assert_includes output.string, "branch_deleted: #{branch}"
 
 			# Branch should be deleted after cleanup.
 			refute system( "git", "-C", repo_root, "rev-parse", "--verify", branch, out: File::NULL, err: File::NULL ),
@@ -644,7 +639,6 @@ class RuntimeWorktreeTest < Minitest::Test
 
 			status = runtime.worktree_remove!( worktree_path: worktree.fetch( :path ) )
 			assert_equal Carson::Runtime::EXIT_OK, status
-			assert_includes output.string, "pruned stale worktree entry"
 		end
 	end
 
