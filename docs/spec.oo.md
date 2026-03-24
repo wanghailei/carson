@@ -51,7 +51,7 @@ Carson is a delivery service company, like FedEx. It delivers committed changes 
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║                    FedEx  →  Carson                             ║
+║                    FedEx  →  Carson                              ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  FedEx (the company)       →  Carson Co.                         ║
@@ -349,17 +349,17 @@ The Bureau (GitHub) includes its registry. Bureaucrats at the registry check par
   ┌──────────────────────────────────────────────┐
   │                                              │
   │  Registry                                    │
-  │  ┌──────────────────────────────────┐         │
-  │  │                                  │         │
-  │  │  Bureaucrats check parcels here  │         │
-  │  │  ┌──────────┐  ┌─────────────┐  │         │
-  │  │  │ CI check │  │ Review check│  │         │
-  │  │  └──────────┘  └─────────────┘  │         │
-  │  │                                  │         │
-  │  │  All accepted parcels live here  │         │
-  │  │  This is what production sees    │         │
-  │  │  This IS the production standard │         │
-  │  └──────────────────────────────────┘         │
+  │  ┌──────────────────────────────────┐        │
+  │  │                                  │        │
+  │  │  Bureaucrats check parcels here  │        │
+  │  │  ┌──────────┐  ┌─────────────┐   │        │
+  │  │  │ CI check │  │ Review check│   │        │
+  │  │  └──────────┘  └─────────────┘   │        │
+  │  │                                  │        │
+  │  │  All accepted parcels live here  │        │
+  │  │  This is what production sees    │        │
+  │  │  This IS the production standard │        │
+  │  └──────────────────────────────────┘        │
   │                                              │
   └──────────────────────────────────────────────┘
 ```
@@ -393,7 +393,7 @@ The Courier is a robot employee. Assigned to a Warehouse. Delivers parcels to th
 ║  design:                                                  ║
 ║    Waits at the Bureau while bureaucrats check.           ║
 ║    Polls up to MAX_CHECKS_AT_BUREAU times.                ║
-║    Reports definitive answer or "filed" if exhausted.    ║
+║    Reports definitive answer or "filed" if exhausted.     ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 ```
@@ -428,32 +428,40 @@ Every situation is numbered. The number appears as a code comment on the method 
 The Courier ships, files, then waits at the Bureau polling bureaucrats. If checks clear within the poll window, the Courier accepts into the registry and reports. If checks are exhausted, the Courier reports "filed."
 
 ```
-  Agent                               Courier                              Bureau (GitHub)
-    │                                    │                                        │
-    │  "deliver this parcel"             │                                        │
-    ├───────────────────────────────────►│                                        │
-    │                                    │                                        │
-    │                                    │ ask Warehouse:                         │
-    │                                    │   floor clean?                         │
-    │                                    │   compliance ok?                       │
-    │                                    │   based on latest standard?            │
-    │                                    │                                        │
-    │                                    │ ship ─────────────────────────────────►│
-    │                                    │                                        │
-    │                                    │ file Waybill ─────────────────────────►│
-    │                                    │◄──────────────────── tracking #42 ─────│
-    │                                    │                                        │
-    │                                    │ poll loop at Bureau:                  │
-    │                                    │   check status ──────────────────────►│
-    │                                    │   ◄────────────────────────── status ─│
-    │                                    │   pause                               │
-    │                                    │   repeat up to MAX_CHECKS             │
-    │                                    │                                        │
-    │                                    │ accept into registry (if clear) ─────►│
-    │                                    │◄──────────────────────────── merged ───│
-    │                                    │                                        │
-    │◄───────────────────────────────────┤ result: delivered / filed / held       │
-    │                                    │                                        │
+  Agent                                 Courier                                           Bureau (GitHub)
+    │                                      │                                                      │
+    │ "deliver this parcel"                │                                                      │
+    │─────────────────────────────────────►│                                                      │
+    │                                      │                                                      │
+    │                                      │ ask Warehouse                                        │
+    │                                      │ - floor clean?                                       │
+    │                                      │ - compliance ok?                                     │
+    │                                      │ - based on latest standard?                          │
+    │                                      │                                                      │
+    │                                      │ ship                                                 │
+    │                                      │─────────────────────────────────────────────────────►│
+    │                                      │                                                      │
+    │                                      │ file Waybill                                         │
+    │                                      │─────────────────────────────────────────────────────►│
+    │                                      │                                                      │
+    │                                      │ tracking #42                                         │
+    │                                      │◄─────────────────────────────────────────────────────│
+    │                                      │                                                      │
+    │                                      │ poll loop at Bureau                                  │
+    │                                      │ - check status                                       │
+    │                                      │─────────────────────────────────────────────────────►│
+    │                                      │◄─────────────────────────────────────────────────────│
+    │                                      │ - pause                                              │
+    │                                      │ - repeat up to MAX_CHECKS                            │
+    │                                      │                                                      │
+    │                                      │ accept into registry (if clear)                      │
+    │                                      │─────────────────────────────────────────────────────►│
+    │                                      │ merged                                               │
+    │                                      │◄─────────────────────────────────────────────────────│
+    │                                      │                                                      │
+    │ delivered / filed / held             │                                                      │
+    │◄─────────────────────────────────────│                                                      │
+    │                                      │                                                      │
 ```
 
 ### Delivery Status Flow
@@ -472,8 +480,8 @@ The Courier ships, files, then waits at the Bureau polling bureaucrats. If check
 └────┬─────┬─────┘
      │     │
      │     └────────────────────►┌──────────┐
-     │                            │ Rejected │
-     │                            └──────────┘
+     │                           │ Rejected │
+     │                           └──────────┘
      │
      ├───────────────────────────►┌──────────┐
      │                            │   Held   │
