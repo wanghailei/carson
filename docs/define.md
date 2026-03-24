@@ -42,10 +42,10 @@ Two `.github/` directories serve different roles:
 
 | Directory | Purpose | Contents |
 |-----------|---------|----------|
-| `config/.github/` | Distribution payload — what Carson uploads to governed repos on their behalf | `hooks/` (git hooks installed to `~/.carson/hooks/`) |
+| `config/hooks/` | Distribution payload — git hooks Carson installs into governed repos | `pre-commit`, `pre-push`, `command-guard`, etc. (installed to `~/.carson/hooks/`) |
 | `.github/` | Carson serving itself — Carson's own repo configuration | `workflows/`, `linters/` |
 
-`config/.github/` is the single source of truth for everything Carson distributes. `carson refresh` reads from here when installing hooks and managed files into governed repos.
+`config/hooks/` is the source of truth for git hooks Carson distributes. These are local git hooks, not GitHub configuration — they have no relationship to `.github/`. `carson refresh` reads from here when installing hooks into governed repos.
 
 ## Scope
 

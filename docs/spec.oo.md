@@ -689,7 +689,7 @@ Agent modified files on a workbench after `carson deliver` failed ("held"). The 
 
 #### Agent rushes, places code in wrong location (2026-03-23)
 
-Agent put a seal guard (bash code) in `config/.github/hooks/pre-commit` — a GitHub configuration template, not a Carson feature location. The seal is Carson logic; it belongs in Carson's Ruby code (`carson audit`). The agent skipped planning and jumped to code.
+Agent put a seal guard (bash code) in `config/hooks/pre-commit` — a hook distribution template, not a Carson feature location. The seal is Carson logic; it belongs in Carson's Ruby code (`carson audit`). The agent skipped planning and jumped to code.
 
 **Lesson:** Plan before code, even for "obvious" fixes. Especially for shared artefacts that affect every governed repo. The question "where does this belong?" is a design question, not an implementation detail.
 

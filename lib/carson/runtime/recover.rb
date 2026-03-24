@@ -2,7 +2,7 @@
 module Carson
 	class Runtime
 		module Recover
-			GOVERNANCE_SURFACE_PREFIXES = %w[ .github/ config/.github/ ].freeze
+			GOVERNANCE_SURFACE_PREFIXES = %w[ .github/ config/hooks/ ].freeze
 
 			def recover!( check_name:, json_output: false )
 				result = {
@@ -71,7 +71,7 @@ module Carson
 
 				unless relation.fetch( :related )
 					result[ :error ] = "branch does not touch the governance surface for #{check_name}"
-					result[ :recovery ] = "update the branch to repair .github/ or config/.github/, then rerun carson recover --check #{check_name.inspect}"
+					result[ :recovery ] = "update the branch to repair .github/ or config/hooks/, then rerun carson recover --check #{check_name.inspect}"
 					return recover_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 

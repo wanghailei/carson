@@ -66,7 +66,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		runtime, repo_root = build_runtime( verbose: true )
 		init_git_repo( repo_root )
 
-		# tool_root == repo_root which has no config/.github/hooks/command-guard — should silently skip.
+		# tool_root == repo_root which has no config/hooks/command-guard — should silently skip.
 		runtime.send( :install_command_guard! )
 		output = output_string( runtime )
 		refute_includes output, "command_guard:"
@@ -89,7 +89,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
 		)
 
-		hook_path = File.join( tool_root_path, "config", ".github", "hooks", "pre-push" )
+		hook_path = File.join( tool_root_path, "config", "hooks", "pre-push" )
 		ref_input = "refs/heads/feature/guard-test abc123 refs/heads/feature/guard-test 000000\n"
 
 		stdout, stderr, status = Open3.capture3(
@@ -119,7 +119,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
 		)
 
-		hook_path = File.join( tool_root_path, "config", ".github", "hooks", "pre-push" )
+		hook_path = File.join( tool_root_path, "config", "hooks", "pre-push" )
 		ref_input = "refs/heads/feature/carson-push abc123 refs/heads/feature/carson-push 000000\n"
 
 		# CARSON_PUSH=1 should no longer bypass the hook — the hook blocks unconditionally.
@@ -150,7 +150,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ "/some/other/repo" ] } } )
 		)
 
-		hook_path = File.join( tool_root_path, "config", ".github", "hooks", "pre-push" )
+		hook_path = File.join( tool_root_path, "config", "hooks", "pre-push" )
 		ref_input = "refs/heads/feature/non-governed abc123 refs/heads/feature/non-governed 000000\n"
 
 		stdout, stderr, status = Open3.capture3(
@@ -170,7 +170,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
 		init_git_repo( repo_root )
 
-		hook_path = File.join( tool_root_path, "config", ".github", "hooks", "pre-push" )
+		hook_path = File.join( tool_root_path, "config", "hooks", "pre-push" )
 		ref_input = "refs/heads/main abc123 refs/heads/main 000000\n"
 
 		stdout, stderr, status = Open3.capture3(
@@ -200,7 +200,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
 		)
 
-		guard_path = File.join( tool_root_path, "config", ".github", "hooks", "command-guard" )
+		guard_path = File.join( tool_root_path, "config", "hooks", "command-guard" )
 		input = JSON.generate( {
 			tool_name: "Bash",
 			tool_input: { command: "gh pr create --title 'test' --body ''" }
@@ -231,7 +231,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ "/other/repo" ] } } )
 		)
 
-		guard_path = File.join( tool_root_path, "config", ".github", "hooks", "command-guard" )
+		guard_path = File.join( tool_root_path, "config", "hooks", "command-guard" )
 		input = JSON.generate( {
 			tool_name: "Bash",
 			tool_input: { command: "gh pr create --title 'test'" }
@@ -250,7 +250,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 	end
 
 	def test_command_guard_allows_non_bash_tools
-		guard_path = File.join( tool_root_path, "config", ".github", "hooks", "command-guard" )
+		guard_path = File.join( tool_root_path, "config", "hooks", "command-guard" )
 		input = JSON.generate( {
 			tool_name: "Read",
 			tool_input: { file_path: "/some/file" }
@@ -276,7 +276,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
 		)
 
-		guard_path = File.join( tool_root_path, "config", ".github", "hooks", "command-guard" )
+		guard_path = File.join( tool_root_path, "config", "hooks", "command-guard" )
 		input = JSON.generate( {
 			tool_name: "Bash",
 			tool_input: { command: "gh pr view 42 --json state" }
@@ -323,7 +323,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
 		)
 
-		guard_path = File.join( tool_root_path, "config", ".github", "hooks", "command-guard" )
+		guard_path = File.join( tool_root_path, "config", "hooks", "command-guard" )
 		# gh pr create after && is an actual command invocation.
 		input = JSON.generate( {
 			tool_name: "Bash",
@@ -497,7 +497,7 @@ private
 	end
 
 	def run_command_guard( repo_root:, command:, chdir: repo_root )
-		guard_path = File.join( tool_root_path, "config", ".github", "hooks", "command-guard" )
+		guard_path = File.join( tool_root_path, "config", "hooks", "command-guard" )
 		input = JSON.generate( {
 			tool_name: "Bash",
 			tool_input: { command: command }
