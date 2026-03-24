@@ -7,9 +7,28 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.1.0
+
 ### Breaking
 
 - CLI grammar is now two-tier: portfolio commands (`list`, `onboard`, `offboard`, `refresh`, `version`) and repo-scoped commands (`carson <repo> <command>` or `carson <command>` from CWD)
+- Config key `poll_interval_at_registry` renamed to `poll_interval_at_bureau`. Env var `CARSON_POLL_INTERVAL_AT_REGISTRY` renamed to `CARSON_POLL_INTERVAL_AT_BUREAU`.
+- Hold reason codes renamed: `*_at_registry` → `*_at_bureau`, `behind_registry` → `behind_bureau`. Affects JSON output consumers matching on these strings.
+- `Carson.translate_hold` removed. Recovery steps now come from `Carson.recovery_steps_for_hold` (private).
+- `Carson.report` format `:human` renamed to `:text`.
+
+### What changed
+
+- **Waybill is a data object** — `Waybill` no longer calls `gh`. It records findings written onto it by the Warehouse and answers questions about its state. `fetch_ci`, `refresh!`, `accept!`, `file!` removed. Added `record()`, `stamp()`, `ci_diagnostic`.
+- **Warehouse owns bureau interaction** — `check_parcel_at_bureau_with()`, `file_waybill_for!()`, `register_parcel_at_bureau_with!()` added. The Warehouse queries GitHub and writes findings onto the Waybill. Diagnostic context (stderr from `gh pr checks`) is captured and surfaced.
+- **CI diagnostic surfaces in output** (#468) — When CI checks cannot be assessed, the first line of `gh` stderr appears in polling messages and the delivery report. Agents can see WHY checks failed, not just that they failed.
+- **No story language in CLI output** (#458) — `hold_summary` returns client language directly. Polling messages, delivery reports, seal messages, and housekeep output all use technical terms (CI checks, PR, branch, merge). Story language (bureau, bureaucrat, parcel, waybill) is confined to source code.
+- **Consistent naming: bureau, not registry** — GitHub interactions use "bureau" consistently. "Registry" was a subset concept that leaked into method and constant names, creating confusion with "bureau."
+
+### Fixed
+
+- **Repeated opaque CI error polling** (#468) — `fetch_ci` discarded `gh pr checks` stderr. Six retries showed "unable to reach the bureaucrats" with no cause. Now captures the first line of stderr and shows it: "Unable to assess CI checks. — HTTP 404: Not Found (1/6)..."
+- **Story language in polling output** (#458) — Courier polling used `waybill.hold_summary` (story language) instead of client language. Now uses client-language summaries directly.
 
 ## 4.0.3
 
