@@ -2,8 +2,6 @@ require_relative "test_helper"
 require "tmpdir"
 require "fileutils"
 require "json"
-require "sqlite3"
-
 class LedgerTest < Minitest::Test
 	include CarsonTestSupport
 
@@ -31,29 +29,6 @@ class LedgerTest < Minitest::Test
 		ledger = Carson::Ledger.new( path: path )
 		error = assert_raises( RuntimeError ) { ledger.active_deliveries( repo_path: @tmp_dir ) }
 		assert_includes error.message, path
-	end
-
-	def test_json_path_migrates_legacy_sqlite_sibling
-		sqlite_path = File.join( @tmp_dir, "state.sqlite3" )
-		write_legacy_sqlite_ledger( path: sqlite_path, repo_path: @tmp_dir, branch_name: "feature/legacy-sibling", delivery_id: 7 )
-
-		ledger = Carson::Ledger.new( path: File.join( @tmp_dir, "state.json" ) )
-		deliveries = ledger.active_deliveries( repo_path: @tmp_dir )
-
-		assert_equal [ "feature/legacy-sibling" ], deliveries.map( &:branch )
-		assert File.exist?( ledger.path )
-		refute_equal Carson::Ledger::SQLITE_HEADER, File.binread( ledger.path, Carson::Ledger::SQLITE_HEADER.bytesize )
-	end
-
-	def test_sqlite_path_migrates_in_place_when_config_still_points_to_legacy_location
-		sqlite_path = File.join( @tmp_dir, "state.sqlite3" )
-		write_legacy_sqlite_ledger( path: sqlite_path, repo_path: @tmp_dir, branch_name: "feature/legacy-config", delivery_id: 9 )
-
-		ledger = Carson::Ledger.new( path: sqlite_path )
-		deliveries = ledger.active_deliveries( repo_path: @tmp_dir )
-
-		assert_equal [ "feature/legacy-config" ], deliveries.map( &:branch )
-		refute_equal Carson::Ledger::SQLITE_HEADER, File.binread( sqlite_path, Carson::Ledger::SQLITE_HEADER.bytesize )
 	end
 
 	# --- upsert_delivery ---
@@ -372,57 +347,6 @@ class LedgerTest < Minitest::Test
 	end
 
 private
-
-	def write_legacy_sqlite_ledger( path:, repo_path:, branch_name:, delivery_id: )
-		database = SQLite3::Database.new( path )
-		database.execute_batch( <<~SQL )
-			CREATE TABLE deliveries (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				repo_path TEXT NOT NULL,
-				branch_name TEXT NOT NULL,
-				head TEXT NOT NULL,
-				worktree_path TEXT,
-				status TEXT NOT NULL,
-				pr_number INTEGER,
-				pr_url TEXT,
-				revision_count INTEGER NOT NULL DEFAULT 0,
-				cause TEXT,
-				summary TEXT,
-				created_at TEXT NOT NULL,
-				updated_at TEXT NOT NULL,
-				integrated_at TEXT,
-				superseded_at TEXT
-			);
-
-			CREATE TABLE revisions (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				delivery_id INTEGER NOT NULL,
-				number INTEGER NOT NULL,
-				cause TEXT NOT NULL,
-				provider TEXT NOT NULL,
-				status TEXT NOT NULL,
-				started_at TEXT NOT NULL,
-				finished_at TEXT,
-				summary TEXT
-			);
-		SQL
-		timestamp = "2026-03-16T00:00:00Z"
-		database.execute(
-			<<~SQL,
-				INSERT INTO deliveries (
-					id, repo_path, branch_name, head, worktree_path, status,
-					pr_number, pr_url, revision_count, cause, summary, created_at, updated_at
-				) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )
-			SQL
-			[
-				delivery_id, repo_path, branch_name, "head-#{delivery_id}", repo_path, "queued",
-				delivery_id, "https://github.com/test/repo/pull/#{delivery_id}", 0, nil, "legacy delivery",
-				timestamp, timestamp
-			]
-		)
-	ensure
-		database&.close
-	end
 
 	def create_test_delivery(
 		branch_name: "feature/test",

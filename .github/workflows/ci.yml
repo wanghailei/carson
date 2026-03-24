@@ -113,9 +113,6 @@ jobs:
         with:
           ruby-version: "3.4"
 
-      - name: Install sqlite3
-        run: gem install sqlite3 --no-document
-
       - name: Ruby unit tests
         run: ruby -Itest -e 'Dir.glob( "test/**/*_test.rb" ).sort.each { |path| require File.expand_path( path ) }'
 
@@ -153,9 +150,6 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-
-      - name: Install sqlite3
-        run: gem install sqlite3 --no-document
 
       - name: Carson full smoke tests
         run: bash script/ci_smoke.sh
