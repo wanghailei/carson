@@ -262,7 +262,7 @@ module Carson
 
 					next unless current_head == delivery.head
 
-					reason = "integrated delivery recorded in ledger"
+					reason = "merged — delivery recorded"
 					reaped = reap_one_worktree!( worktree: worktree, reason: reason )
 					next unless reaped
 

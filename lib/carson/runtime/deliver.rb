@@ -22,7 +22,7 @@ module Carson
 				courier = Courier.new( warehouse,
 				ledger: ledger,
 				merge_method: config.govern_merge_method,
-				poll_interval_at_registry: config.poll_interval_at_registry,
+				poll_interval_at_bureau: config.poll_interval_at_bureau,
 				output: output
 			)
 
@@ -55,7 +55,7 @@ module Carson
 
 			# Render the OO result — JSON or human via Carson.report.
 			def deliver_oo_finish( result:, json_output: )
-				format = json_output ? :json : :human
+				format = json_output ? :json : :text
 				Carson.report( result, format: format, output: output )
 				result[ :exit ] || Courier::OK
 			end

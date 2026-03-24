@@ -33,7 +33,7 @@ module Carson
 			:govern_repos, :govern_merge_method,
 			:govern_agent_provider, :govern_state_path,
 			:govern_check_wait,
-			:poll_interval_at_registry
+			:poll_interval_at_bureau
 
 		def self.load( repo_root: )
 			base_data = default_data
@@ -83,7 +83,7 @@ module Carson
 					"advisory_check_names" => [ "Scheduled review sweep", "Carson governance", "Tag, release, publish" ]
 				},
 				"deliver" => {
-				"poll_interval_at_registry" => 30
+				"poll_interval_at_bureau" => 30
 			},
 			"govern" => {
 					"repos" => [],
@@ -172,7 +172,7 @@ module Carson
 			advisory_names = env_string_array( key: "CARSON_AUDIT_ADVISORY_CHECK_NAMES" )
 			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
 			deliver = fetch_hash_section( data: copy, key: "deliver" )
-			deliver[ "poll_interval_at_registry" ] = env_integer( key: "CARSON_POLL_INTERVAL_AT_REGISTRY", fallback: deliver.fetch( "poll_interval_at_registry" ) )
+			deliver[ "poll_interval_at_bureau" ] = env_integer( key: "CARSON_POLL_INTERVAL_AT_BUREAU", fallback: deliver.fetch( "poll_interval_at_bureau" ) )
 			govern = fetch_hash_section( data: copy, key: "govern" )
 			govern_repos = env_string_array( key: "CARSON_GOVERN_REPOS" )
 			govern[ "repos" ] = govern_repos unless govern_repos.empty?
@@ -245,7 +245,7 @@ module Carson
 			@audit_advisory_check_names = fetch_optional_string_array( hash: audit_hash, key: "advisory_check_names" )
 
 			deliver_hash = fetch_hash( hash: data, key: "deliver" )
-			@poll_interval_at_registry = fetch_non_negative_integer( hash: deliver_hash, key: "poll_interval_at_registry" )
+			@poll_interval_at_bureau = fetch_non_negative_integer( hash: deliver_hash, key: "poll_interval_at_bureau" )
 
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |path| safe_expand_path( path ) }

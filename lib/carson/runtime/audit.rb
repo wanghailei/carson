@@ -202,7 +202,7 @@ module Carson
 							exit_code: EXIT_BLOCK
 						} )
 					else
-						puts_line "Workbench is sealed — parcel in flight (PR ##{tracking_number})."
+						puts_line "Branch is locked — PR ##{tracking_number} in flight."
 						puts_line "  \u2192 carson worktree create <name>"
 					end
 					EXIT_BLOCK

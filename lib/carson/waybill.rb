@@ -1,35 +1,29 @@
 # The shipping document filed with the bureau (GitHub PR).
 #
-# The courier files a waybill with the bureau when delivering a parcel.
-# The waybill has a tracking number (PR number), knows the bureau's
-# response (cleared/held/accepted/rejected), and can ask the bureau
-# to accept the parcel into the registry.
+# A waybill is a data object — it records findings and answers questions.
+# It does not fetch, file, or accept anything. The warehouse handles all
+# bureau interaction and writes findings onto the waybill.
 #
-# The bureau is a registry where bureaucrats work. They check parcels
-# (CI, review, mergeability) and either accept them into the registry
-# or hold them with a reason.
-#
-# The waybill uses gh CLI internally — that's a tool, not the domain.
-require "json"
-require "open3"
+# The waybill has a tracking number (PR number), a label (branch name),
+# and records the bureau's response (cleared/held/accepted/rejected).
+# ci_diagnostic preserves the first line of stderr when CI checks fail.
 
 module Carson
 	# The shipping document filed with the bureau (GitHub PR). Has a
-	# tracking number, knows the bureaucrats' response (cleared/held/
-	# accepted/rejected), and can ask the bureau to accept the parcel
-	# into the registry. Uses gh CLI internally — that's a tool, not
-	# the domain.
+	# tracking number, records the bureaucrats' response (cleared/held/
+	# accepted/rejected). A data object — state is written onto it by
+	# the warehouse, never fetched by the waybill itself.
 	class Waybill
-		attr_reader :tracking_number, :url, :label
+		attr_reader :tracking_number, :url, :label, :ci_diagnostic
 
-		def initialize( label:, warehouse_path:, tracking_number: nil, url: nil, review_gate: nil )
+		def initialize( label:, tracking_number: nil, url: nil )
 			@label = label
-			@warehouse_path = warehouse_path
 			@tracking_number = tracking_number
 			@url = url
-			@review_gate = review_gate
 			@state = nil
 			@ci = nil
+			@ci_diagnostic = nil
+			@verdict = nil
 		end
 
 		# --- Filing ---
@@ -39,53 +33,46 @@ module Carson
 			!tracking_number.nil?
 		end
 
-		# File the waybill with the bureau. Creates a PR on GitHub.
-		def file!( title: nil, body_file: nil )
-			filing_title = title || default_title
-			arguments = [ "pr", "create", "--title", filing_title, "--head", label ]
-
-			if body_file && File.exist?( body_file )
-				arguments.push( "--body-file", body_file )
-			else
-				arguments.push( "--body", "" )
-			end
-
-			stdout, stderr, success, = gh( *arguments )
-			if success
-				@url = stdout.to_s.strip
-				@tracking_number = @url.split( "/" ).last.to_i
-				@tracking_number = nil if @tracking_number == 0
-			end
-
-			# If create failed or returned no number, try to find existing.
-			find_existing! unless filed?
-			self
-		end
-
-		# Generate a human-readable title from the label.
-		def default_title
+		# Generate a title from the label. Class method so the warehouse
+		# can compute the title before creating the waybill.
+		def self.default_title_for( label )
 			label.tr( "-", " " ).gsub( "/", ": " ).sub( /\A\w/ ) do |character|
 				character.upcase
 			end
 		end
 
-		# --- Bureau's response ---
-
-		# Check with the bureau for the latest on this waybill.
-		def refresh!
-			@state = fetch_state
-			@ci = fetch_ci
-			self
+		# Instance convenience — delegates to the class method.
+		def default_title
+			self.class.default_title_for( label )
 		end
 
+		# --- Recorded state ---
+
+		# Record findings from a bureau check onto the waybill.
+		# Called by the warehouse after querying the bureau.
+		def record( state:, ci:, ci_diagnostic: nil )
+			@state = state
+			@ci = ci
+			@ci_diagnostic = ci_diagnostic
+		end
+
+		# Stamp the waybill with a verdict.
+		# Called by the warehouse after registering the parcel at the bureau.
+		def stamp( verdict )
+			@verdict = verdict
+		end
+
+		# --- Bureau's response queries ---
+
 		# Has the bureau accepted the parcel into the registry?
+		# True when stamped :accepted OR when the recorded state shows MERGED.
 		def accepted?
-			@state&.dig( "state" ) == "MERGED"
+			@verdict == :accepted || @state&.dig( "state" ) == "MERGED"
 		end
 
 		# Has the bureau rejected the waybill (closed without merge)?
 		def rejected?
-			@state&.dig( "state" ) == "CLOSED"
+			@verdict == :rejected || @state&.dig( "state" ) == "CLOSED"
 		end
 
 		# Is the waybill still a draft?
@@ -111,45 +98,37 @@ module Carson
 			filed?
 		end
 
-		# Why is the waybill being held?
+		# Why is the waybill being held? Code string for recovery step lookup.
 		def hold_reason
 			return "draft" if draft?
-			return "pending_at_registry" if @ci == :pending
-			return "failed_at_registry" if @ci == :fail
-			return "error_at_registry" if @ci == :error
+			return "pending_at_bureau" if @ci == :pending
+			return "failed_at_bureau" if @ci == :fail
+			return "error_at_bureau" if @ci == :error
 			return "merge_conflict" if merge_conflicting?
-			return "behind_registry" if merge_behind?
+			return "behind_bureau" if merge_behind?
 			return "policy_block" if merge_policy_blocked?
 			"mergeability_pending"
 		end
 
-		# Human-readable explanation of why the waybill is held.
-		def hold_summary
+		# Client-language summary of why the waybill is held.
+		# Agents read this directly — no translation layer needed.
+		def hold_summary( remote_main: "github/main" )
 			case hold_reason
-			when "draft" then "waybill is still a draft"
-			when "pending_at_registry" then "waiting for bureaucrats to check"
-			when "failed_at_registry" then "bureaucrats rejected the parcel"
-			when "error_at_registry" then "unable to reach the bureaucrats"
-			when "merge_conflict" then "parcel has conflicts with registry"
-			when "behind_registry" then "parcel is behind the registry"
-			when "policy_block" then "blocked by bureau policy"
-			else "waiting for bureau assessment"
+			when "draft" then "PR is still a draft."
+			when "pending_at_bureau" then "Waiting for CI checks."
+			when "failed_at_bureau" then "CI checks failed."
+			when "error_at_bureau" then "Unable to assess CI checks."
+			when "merge_conflict" then "Merge conflict with #{remote_main}."
+			when "behind_bureau" then "Branch is behind #{remote_main}."
+			when "policy_block" then "Blocked by branch protection rules."
+			when "mergeability_pending" then "GitHub is calculating mergeability."
+			else "Waiting for merge readiness."
 			end
 		end
 
 		# Is the hold specifically because mergeability is still pending?
 		def mergeability_pending?
 			hold_reason == "mergeability_pending"
-		end
-
-		# --- Acceptance ---
-
-		# Ask the bureau to accept the parcel into the registry.
-		# Updates own state after the attempt.
-		def accept!( method: )
-			gh( "pr", "merge", tracking_number.to_s, "--#{method}" )
-			refresh!
-			self
 		end
 
 		# --- Observation data for delivery records ---
@@ -163,14 +142,6 @@ module Carson
 				pull_request_draft: @state[ "isDraft" ],
 				pull_request_merged_at: @state[ "mergedAt" ]
 			}
-		end
-
-		# --- Test support ---
-
-		# Stub the bureau's response for testing without gh CLI.
-		def stub_bureau_response( state: nil, ci: nil )
-			@state = state if state
-			@ci = ci if ci
 		end
 
 	private
@@ -187,57 +158,6 @@ module Carson
 
 		def merge_policy_blocked?
 			@state&.dig( "mergeStateStatus" ).to_s.upcase == "BLOCKED"
-		end
-
-		def fetch_state
-			stdout, _, success, = gh(
-				"pr", "view", tracking_number.to_s,
-				"--json", "number,state,isDraft,url,mergeStateStatus,mergeable,mergedAt"
-			)
-			return nil unless success
-
-			JSON.parse( stdout )
-		rescue JSON::ParserError
-			nil
-		end
-
-		def fetch_ci
-			stdout, _, success, = gh(
-				"pr", "checks", tracking_number.to_s,
-				"--json", "name,bucket"
-			)
-			return :error unless success
-
-			checks = JSON.parse( stdout ) rescue []
-			return :none if checks.empty?
-
-			buckets = checks.map do |entry|
-				entry[ "bucket" ].to_s.downcase
-			end
-			return :fail if buckets.include?( "fail" )
-			return :pending if buckets.include?( "pending" )
-
-			:pass
-		end
-
-		def find_existing!
-			stdout, _, success, = gh(
-				"pr", "view", label,
-				"--json", "number,url,state"
-			)
-			if success
-				data = JSON.parse( stdout ) rescue nil
-				if data && data[ "number" ] && data[ "state" ] == "OPEN"
-					@tracking_number = data[ "number" ]
-					@url = data[ "url" ].to_s
-				end
-			end
-		end
-
-		# All gh commands go through this single gateway.
-		def gh( *arguments )
-			stdout, stderr, status = Open3.capture3( "gh", *arguments, chdir: @warehouse_path )
-			[ stdout, stderr, status.success?, status.exitstatus ]
 		end
 	end
 end

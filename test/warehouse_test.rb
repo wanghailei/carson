@@ -412,7 +412,7 @@ class WarehouseTest < Minitest::Test
 		error = assert_raises( RuntimeError ) do
 			warehouse.pack!( message: "should be blocked" )
 		end
-		assert_includes error.message, "sealed"
+		assert_includes error.message, "locked"
 		assert_includes error.message, "PR #99"
 	end
 

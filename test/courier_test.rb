@@ -48,7 +48,7 @@ class CourierTest < Minitest::Test
 		assert_match( /already clean/, result[ :error ] )
 	end
 
-	def test_auto_rebases_when_behind_registry
+	def test_auto_rebases_when_behind_bureau
 		setup_repo_with_remote
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 
@@ -188,7 +188,6 @@ class CourierTest < Minitest::Test
 		# A waybill with known PR data (as if filing succeeded).
 		waybill = Carson::Waybill.new(
 			label: "feature/pr-data",
-			warehouse_path: "/tmp/fake",
 			tracking_number: 99,
 			url: "https://github.com/owner/repo/pull/99"
 		)
@@ -257,17 +256,17 @@ class CourierTest < Minitest::Test
 		# Record local main BEFORE receiving latest standard.
 		local_main_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 
-		# Stub a waybill reporting acceptance. Override refresh! to preserve the stub.
-		waybill = Carson::Waybill.new( label: "feature/sync-proof", warehouse_path: @repo_path )
-		waybill.stub_bureau_response(
+		# Stub the warehouse to report acceptance when checking.
+		waybill = Carson::Waybill.new( label: "feature/sync-proof", tracking_number: 1 )
+		waybill.record(
 			state: { "state" => "MERGED", "mergedAt" => "2026-03-23T00:00:00Z" },
 			ci: :pass
 		)
-		waybill.define_singleton_method( :refresh! ) { self }
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_waybill| }
 
-		# Call wait_and_poll_at_registry — the courier's poll method.
-		result = { command: "deliver", label: "feature/sync-proof" }
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		# Call wait_and_poll_at_bureau — the courier's poll method.
+		result = { command: "deliver", label: "feature/sync-proof", remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		# PROOF: outcome is "delivered" and local main has advanced.
 		assert_equal "delivered", result[ :outcome ]
@@ -299,62 +298,60 @@ class CourierTest < Minitest::Test
 		assert_includes remote_branches, "feature/ship"
 	end
 
-	# --- Wait and poll at registry ---
+	# --- Wait and poll at bureau ---
 
-	def test_delivers_when_registry_clears_on_first_check
+	def test_delivers_when_bureau_clears_on_first_check
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
 
-		waybill = Carson::Waybill.new( label: "feature/clear", warehouse_path: "/tmp/fake", tracking_number: 1 )
-		waybill.stub_bureau_response(
+		waybill = Carson::Waybill.new( label: "feature/clear", tracking_number: 1 )
+		waybill.record(
 			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" },
 			ci: :pass
 		)
-		# Stub refresh! to preserve the stub state, and accept! to simulate merge.
-		waybill.define_singleton_method( :refresh! ) { self }
-		waybill.define_singleton_method( :accept! ) do |method:|
-			stub_bureau_response( state: { "state" => "MERGED" } )
-			self
+
+		# Stub warehouse: check does nothing (waybill pre-populated), register stamps accepted.
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+		warehouse.define_singleton_method( :register_parcel_at_bureau_with! ) do |w, method:|
+			w.stamp( :accepted )
 		end
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		courier = Carson::Courier.new( warehouse )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "delivered", result[ :outcome ]
 	end
 
-	def test_waits_and_delivers_when_registry_clears_after_delay
+	def test_waits_and_delivers_when_bureau_clears_after_delay
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
 		courier = Carson::Courier.new( warehouse )
 		# No real sleeping in tests.
 		courier.define_singleton_method( :pause_between_polls ) {}
 
-		waybill = Carson::Waybill.new( label: "feature/delayed", warehouse_path: "/tmp/fake", tracking_number: 2 )
+		waybill = Carson::Waybill.new( label: "feature/delayed", tracking_number: 2 )
 
 		# First two checks: CI pending. Third check: cleared and accepted.
 		check_count = 0
-		waybill.define_singleton_method( :refresh! ) do
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
 			check_count += 1
 			if check_count < 3
-				stub_bureau_response(
+				w.record(
 					state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 					ci: :pending
 				)
 			else
-				stub_bureau_response(
+				w.record(
 					state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" },
 					ci: :pass
 				)
 			end
-			self
 		end
-		waybill.define_singleton_method( :accept! ) do |method:|
-			stub_bureau_response( state: { "state" => "MERGED" } )
-			self
+		warehouse.define_singleton_method( :register_parcel_at_bureau_with! ) do |w, method:|
+			w.stamp( :accepted )
 		end
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "delivered", result[ :outcome ]
 		assert_equal 3, check_count, "expected 3 checks before delivery"
@@ -363,21 +360,20 @@ class CourierTest < Minitest::Test
 	def test_holds_immediately_on_ci_failure
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
 		courier = Carson::Courier.new( warehouse )
-		# No real sleeping in tests.
 		courier.define_singleton_method( :pause_between_polls ) {}
 
-		waybill = Carson::Waybill.new( label: "feature/ci-fail", warehouse_path: "/tmp/fake", tracking_number: 3 )
-		waybill.stub_bureau_response(
+		waybill = Carson::Waybill.new( label: "feature/ci-fail", tracking_number: 3 )
+		waybill.record(
 			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 			ci: :fail
 		)
-		waybill.define_singleton_method( :refresh! ) { self }
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "held", result[ :outcome ]
-		assert_equal "failed_at_registry", result[ :hold_reason ]
+		assert_equal "failed_at_bureau", result[ :hold_reason ]
 		assert_equal Carson::Courier::BLOCKED, result[ :exit ]
 	end
 
@@ -386,15 +382,15 @@ class CourierTest < Minitest::Test
 		courier = Carson::Courier.new( warehouse )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
-		waybill = Carson::Waybill.new( label: "feature/conflict", warehouse_path: "/tmp/fake", tracking_number: 4 )
-		waybill.stub_bureau_response(
+		waybill = Carson::Waybill.new( label: "feature/conflict", tracking_number: 4 )
+		waybill.record(
 			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "CONFLICTING", "mergeStateStatus" => "DIRTY" },
 			ci: :pass
 		)
-		waybill.define_singleton_method( :refresh! ) { self }
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "held", result[ :outcome ]
 		assert_equal "merge_conflict", result[ :hold_reason ]
@@ -405,40 +401,85 @@ class CourierTest < Minitest::Test
 		courier = Carson::Courier.new( warehouse )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
-		waybill = Carson::Waybill.new( label: "feature/slow-ci", warehouse_path: "/tmp/fake", tracking_number: 5 )
+		waybill = Carson::Waybill.new( label: "feature/slow-ci", tracking_number: 5 )
+
 		# CI pending on every check — never clears.
-		waybill.stub_bureau_response(
-			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
-			ci: :pending
-		)
 		check_count = 0
-		waybill.define_singleton_method( :refresh! ) do
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
 			check_count += 1
-			self
+			w.record(
+				state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+				ci: :pending
+			)
 		end
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "filed", result[ :outcome ]
-		assert_equal Carson::Courier::MAX_CHECKS_AT_REGISTRY, check_count
+		assert_equal Carson::Courier::MAX_CHECKS_AT_BUREAU, check_count
 	end
 
 	def test_delivers_when_already_accepted
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
 		courier = Carson::Courier.new( warehouse )
 
-		waybill = Carson::Waybill.new( label: "feature/merged", warehouse_path: "/tmp/fake", tracking_number: 6 )
-		waybill.stub_bureau_response(
+		waybill = Carson::Waybill.new( label: "feature/merged", tracking_number: 6 )
+		waybill.record(
 			state: { "state" => "MERGED", "mergedAt" => "2026-03-23T00:00:00Z" },
 			ci: :pass
 		)
-		waybill.define_singleton_method( :refresh! ) { self }
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "delivered", result[ :outcome ]
+	end
+
+	# --- Diagnostic in result ---
+
+	def test_filed_result_carries_diagnostic
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
+		courier = Carson::Courier.new( warehouse )
+		courier.define_singleton_method( :pause_between_polls ) {}
+
+		waybill = Carson::Waybill.new( label: "feature/error-ci", tracking_number: 7 )
+
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+			w.record(
+				state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+				ci: :error,
+				ci_diagnostic: "HTTP 404: Not Found"
+			)
+		end
+
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
+
+		assert_equal "filed", result[ :outcome ]
+		assert_equal "error_at_bureau", result[ :hold_reason ]
+		assert_equal "HTTP 404: Not Found", result[ :diagnostic ]
+	end
+
+	def test_held_result_carries_diagnostic
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
+		courier = Carson::Courier.new( warehouse )
+		courier.define_singleton_method( :pause_between_polls ) {}
+
+		waybill = Carson::Waybill.new( label: "feature/ci-fail-diag", tracking_number: 8 )
+		waybill.record(
+			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+			ci: :fail
+		)
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
+
+		assert_equal "held", result[ :outcome ]
+		# CI failure has no diagnostic (stderr only captured for :error).
+		assert_nil result[ :diagnostic ]
 	end
 
 	# --- Ledger records PR identity from waybill ---
@@ -460,11 +501,11 @@ class CourierTest < Minitest::Test
 		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
 		parcel = Carson::Parcel.new( label: "feature/pr-identity", head: warehouse.current_head )
 
-		# Deliver — waybill filing will fail (no gh in test), so only the
-		# preparing record is written. To test the final record path, we
-		# call record directly with a waybill that has PR data.
-		waybill = Carson::Waybill.new( label: "feature/pr-identity", warehouse_path: @repo_path, tracking_number: 99 )
-		waybill.instance_variable_set( :@url, "https://github.com/test/repo/pull/99" )
+		waybill = Carson::Waybill.new(
+			label: "feature/pr-identity",
+			tracking_number: 99,
+			url: "https://github.com/test/repo/pull/99"
+		)
 
 		courier.send( :record, parcel, status: "filed", summary: "bureau undecided", waybill: waybill )
 
@@ -508,58 +549,85 @@ class CourierTest < Minitest::Test
 		assert_equal "github/main", result[ :remote_main ]
 	end
 
-	# --- Progress output ---
+	# --- Progress output uses client language ---
 
-	def test_courier_prints_progress_during_poll
+	def test_courier_prints_client_language_during_poll
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
 		output = StringIO.new
 		courier = Carson::Courier.new( warehouse, output: output )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
-		waybill = Carson::Waybill.new( label: "feature/progress", warehouse_path: "/tmp/fake", tracking_number: 10 )
+		waybill = Carson::Waybill.new( label: "feature/progress", tracking_number: 10 )
+
 		check_count = 0
-		waybill.define_singleton_method( :refresh! ) do
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
 			check_count += 1
 			if check_count < 3
-				stub_bureau_response(
+				w.record(
 					state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 					ci: :pending
 				)
 			else
-				stub_bureau_response(
+				w.record(
 					state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "MERGEABLE", "mergeStateStatus" => "CLEAN" },
 					ci: :pass
 				)
 			end
-			self
 		end
-		waybill.define_singleton_method( :accept! ) do |method:|
-			stub_bureau_response( state: { "state" => "MERGED" } )
-			self
+		warehouse.define_singleton_method( :register_parcel_at_bureau_with! ) do |w, method:|
+			w.stamp( :accepted )
 		end
 
-		result = {}
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
 		assert_equal "delivered", result[ :outcome ]
+		# Client language — not story language.
+		assert_includes output.string, "Waiting for CI checks."
 		assert_includes output.string, "(1/6)"
 		assert_includes output.string, "(2/6)"
+		# No story language should appear.
+		refute_includes output.string, "bureaucrat"
+		refute_includes output.string, "parcel"
+	end
+
+	def test_polling_shows_diagnostic_for_error_at_bureau
+		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
+		output = StringIO.new
+		courier = Carson::Courier.new( warehouse, output: output )
+		courier.define_singleton_method( :pause_between_polls ) {}
+
+		waybill = Carson::Waybill.new( label: "feature/error-diag", tracking_number: 12 )
+
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+			w.record(
+				state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
+				ci: :error,
+				ci_diagnostic: "HTTP 404: Not Found"
+			)
+		end
+
+		result = { remote_main: "origin/main" }
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
+
+		assert_includes output.string, "Unable to assess CI checks."
+		assert_includes output.string, "HTTP 404: Not Found"
 	end
 
 	def test_courier_silent_without_output
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
 		courier = Carson::Courier.new( warehouse, output: nil )
 
-		waybill = Carson::Waybill.new( label: "feature/silent", warehouse_path: "/tmp/fake", tracking_number: 11 )
-		waybill.stub_bureau_response(
+		waybill = Carson::Waybill.new( label: "feature/silent", tracking_number: 11 )
+		waybill.record(
 			state: { "state" => "MERGED" },
 			ci: :pass
 		)
-		waybill.define_singleton_method( :refresh! ) { self }
+		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
 
-		result = {}
+		result = { remote_main: "origin/main" }
 		# Should not raise — nil output is safe.
-		courier.send( :wait_and_poll_at_registry, waybill, result )
+		courier.send( :wait_and_poll_at_bureau, waybill, result )
 		assert_equal "delivered", result[ :outcome ]
 	end
 
