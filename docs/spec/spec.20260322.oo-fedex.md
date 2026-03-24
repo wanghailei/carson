@@ -378,20 +378,22 @@ For an agent working with Carson daily, the public surface is:
 
 These are the public agent verbs. Worktrees, branches, and stash entries remain real, but they are warehouse machinery behind the surface.
 
-## Every Concept Is an Object
+## Domain Boundary
 
-| Object | What it IS | What it knows | What it does |
+| Object | What it is | What it knows | What it does |
 |---|---|---|---|
-| **Carson** | The company | Portfolio of warehouses | Routes commands, notifies clients, dispatches couriers |
-| **Courier** | Delivery robot | Its warehouse, merge method | Delivers, returns, salvages parcels |
-| **Warehouse** | Intelligent repo | Path, config, shelves, labels, cleanliness | Packs, ships, sweeps, checks compliance, manages standard |
-| **Parcel** | Committed changes | Label, head, shelf | The thing being delivered |
-| **Waybill** | Shipping document | Tracking number, bureau response | Filed with bureau, tracks approval |
-| **Delivery** | Tracking record | Status, cause, proof | Records the parcel's journey |
-| **Shelf** | A worktree | Path, label, occupant | Holds parcels, can be removed |
-| **Label** | A branch name | Name, absorbed status | Identifies a shelf |
-| **Bureau** | GitHub | Bureaucrats, registry | Checks parcels, accepts/rejects into registry |
-| **Registry** | Remote main | All accepted parcels | The production standard |
+| **Carson** | The company and public surface for agents | command routing, rendering, coordination, delivery-state monitoring | routes commands, monitors delivery states, and assigns work |
+| **Warehouse** | Local repository authority | workbenches, labels, stash, cleanliness, occupancy, standard | prepares workbenches, packs parcels, checks compliance, repairs and sweeps local state |
+| **Workbench** | A passive place in the warehouse | path, branch, prunable reason | shows state only |
+| **Parcel** | Committed changes | branch, head, workbench | the thing being delivered |
+| **Waybill** | Shipping document | PR identity and bureau findings | passive data object |
+| **Delivery** | Tracking record | status, cause, proof | passive ledger record |
+| **Courier** | Delivery worker | warehouse, merge method, poll interval | ships parcels and waits at the Bureau |
+| **Bureau** | GitHub, including its registry | review state, CI state, registry state | checks parcels and accepts them into the registry |
+
+**Boundary rule:** anything inside the repository is managed by the Warehouse. Anything about committed parcel delivery is managed by Carson Co. and conducted by Couriers.
+
+The **Registry** is not a peer object in this boundary table. It is the Bureau’s registry: remote main, where accepted parcels live and where the production standard is defined.
 
 ## Destination Modes (Future)
 
