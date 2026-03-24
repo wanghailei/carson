@@ -504,14 +504,15 @@ All 531 tests pass. New classes work alongside existing code.
 
 ### Phase 4 — Open items
 
-27. Workbench seal enforcement gap: Carson governs git (pre-commit hook → `carson audit`). It cannot govern file edits — that's Claude Code's domain (PreToolUse hooks). The seal blocks commits but not Write/Edit. See § Enforcement Layers.
-28. Rename "shelf" → "workbench" — a workbench is where the agent works, a shelf just stores things. Affects spec, code comments, method names.
-29. `monitor` command — Carson Co. watches bureau feedback, notifies clients, dispatches couriers for unattended deliveries.
-30. `warehouse.sweep!` (absorb housekeep)
-31. `settle!` (local-centred backup push)
-32. Courier: `return` and `salvage` commands
-33. Rename commands: govern→monitor, housekeep→sweep, abandon→return, recover→salvage, status→track
-34. Remove Runtime — absorbed by domain objects
+27. Workbench seal enforcement gap: Carson governs git (pre-commit hook → `carson audit`). It cannot govern file edits — that is Claude Code’s domain (PreToolUse hooks). The seal blocks commits but not Write/Edit. See § Enforcement Layers.
+28. Introduce `carson checkin` as the public agent verb for asking the Warehouse to prepare a fresh workbench.
+29. Introduce `carson checkout` as the public agent verb for asking the Warehouse to release a workbench and local custody when safe.
+30. Make the Workbench object fully passive and move all lifecycle management into the Warehouse.
+31. Move branch, worktree, and stash lifecycle under Warehouse ownership as one coherent repo-local domain.
+32. Carson Co. monitor: connect with the Bureau, check filed deliveries, and update parcel delivery states as internal company work.
+33. `warehouse.sweep!` (absorb housekeep).
+34. `settle!` (local-centred backup push).
+35. Remove Runtime — absorbed by Carson, Warehouse, Courier, Waybill, and Delivery.
 
 ## Coding Conventions
 
