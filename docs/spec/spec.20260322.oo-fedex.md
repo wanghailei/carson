@@ -79,9 +79,9 @@ Carson is no longer designed as a thin wrapper around Git nouns.
 
 For an agent, the meaningful daily actions are:
 
-- **checkin** — ask Carson to prepare a place to work
-- **deliver** — send committed work onward
-- **checkout** — leave the workbench and release local custody
+- **`carson checkin`** — ask Carson to prepare a place to work
+- **`carson deliver`** — send committed work onward
+- **`carson checkout`** — leave the workbench and release local custody
 
 This changes the centre of the model.
 
@@ -396,6 +396,50 @@ The courier ships, files, then waits at the registry polling bureaucrats. If che
     │  filed/held            │                        │
     │◄───────────────────────┤                        │
     │                        │                        │
+```
+
+## Delivery Status Flow
+
+```
+┌──────────┐
+│  Packed  │
+└────┬─────┘
+     ▼
+┌──────────┐
+│ Shipped  │
+└────┬─────┘
+     ▼
+┌────────────────┐
+│ Filed at Bureau│
+└────┬─────┬─────┘
+     │     │
+     │     └────────────────────►┌──────────┐
+     │                            │ Rejected │
+     │                            └──────────┘
+     │
+     ├───────────────────────────►┌──────────┐
+     │                            │   Held   │
+     │                            └──────────┘
+     │
+     ▼
+┌──────────┐
+│ Cleared  │
+└────┬─────┘
+     ▼
+┌────────────────────┐
+│ Accepted into the  │
+│ Registry           │
+└────┬───────────────┘
+     │
+     ├───────────────────────────►┌──────────────┐
+     │                            │ Bounced back │
+     │                            └──────────────┘
+     │
+     ▼
+┌────────────────┐
+│ Checked out /  │
+│ done           │
+└────────────────┘
 ```
 
 ## Agent Surface — Working with Carson Daily
