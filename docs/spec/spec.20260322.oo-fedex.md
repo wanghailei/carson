@@ -1,4 +1,4 @@
-# Carson OO — in FedEx Metaphor
+# Carson OO — A FedEx Metaphor
 
 Spec date: 2026-03-22
 Updated: 2026-03-24
@@ -433,34 +433,26 @@ The Courier ships, files, then waits at the Bureau polling bureaucrats. If check
     │  "deliver this parcel"             │                                        │
     ├───────────────────────────────────►│                                        │
     │                                    │                                        │
-    │                                    │── ask Warehouse:                       │
+    │                                    │ ask Warehouse:                         │
     │                                    │   floor clean?                         │
     │                                    │   compliance ok?                       │
     │                                    │   based on latest standard?            │
     │                                    │                                        │
-    │                                    │── ship ───────────────────────────────►│
+    │                                    │ ship ─────────────────────────────────►│
     │                                    │                                        │
-    │                                    │── file Waybill ───────────────────────►│
-    │                                    │                     ┌──────────────────┤
-    │                                    │                     │ tracking #42     │
-    │                                    │◄────────────────────┘                  │
+    │                                    │ file Waybill ─────────────────────────►│
+    │                                    │◄──────────────────── tracking #42 ─────│
     │                                    │                                        │
-    │                                    │── wait at Bureau                       │
-    │                                    │   ┌────────────────────────────────┐   │
-    │                                    │   │ poll loop:                     │   │
-    │                                    │   │  check status ───────────────►├──►│
-    │                                    │   │  ◄─────────────── status ─────┤◄──┤
-    │                                    │   │  pause                        │   │
-    │                                    │   │  repeat up to MAX_CHECKS      │   │
-    │                                    │   └────────────────────────────────┘   │
+    │                                    │ poll loop at Bureau:                  │
+    │                                    │   check status ──────────────────────►│
+    │                                    │   ◄────────────────────────── status ─│
+    │                                    │   pause                               │
+    │                                    │   repeat up to MAX_CHECKS             │
     │                                    │                                        │
-    │                                    │── accept into registry (if clear) ───►│
-    │                                    │                     ┌──────────────────┤
-    │                                    │                     │ merged           │
-    │                                    │◄────────────────────┘                  │
+    │                                    │ accept into registry (if clear) ─────►│
+    │                                    │◄──────────────────────────── merged ───│
     │                                    │                                        │
-    │  result: delivered / filed / held  │                                        │
-    │◄───────────────────────────────────┤                                        │
+    │◄───────────────────────────────────┤ result: delivered / filed / held       │
     │                                    │                                        │
 ```
 
