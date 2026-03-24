@@ -73,6 +73,38 @@ Carson speaks two languages. Mixing them is a defect.
 
 **Use case:** A Claude agent runs `carson deliver` and gets back `"branch is behind origin/main"`. It knows exactly what to do — `git rebase origin/main`. If it got "parcel is behind the production standard", it would need to decode the metaphor before acting. The metaphor serves the developer reading source code; the output serves the agent executing commands.
 
+## The Product Surface
+
+Carson is no longer designed as a thin wrapper around Git nouns.
+
+For an agent, the meaningful daily actions are:
+
+- **checkin** — ask Carson to prepare a place to work
+- **deliver** — send committed work onward
+- **checkout** — leave the workbench and release local custody
+
+This changes the centre of the model.
+
+A repository is treated as a **Warehouse**. Inside that Warehouse live local Git artefacts: worktrees, branches, stash entries, and other local state. These are not product concepts for the agent. They are warehouse machinery.
+
+So the design splits into two domains:
+
+### Warehouse domain
+
+The **Warehouse** owns all repo-local custody and safety.
+
+It prepares workbenches, tracks their presence, inspects their state, repairs stale registrations, sweeps abandoned state, and tears workbenches down when safe. Anything that exists inside the repository space belongs here: worktrees, branches, stash, occupancy, cleanliness, pruning, repair.
+
+A **Workbench** is a passive object in this domain. It is not an actor. It is a labelled place in the Warehouse that shows state and is managed by the Warehouse.
+
+### Delivery domain
+
+Committed changes are treated as **parcels**.
+
+Parcels are handled by **Carson Co.** and moved by **Couriers**. Delivery concerns are separate from warehouse concerns: push, PR, merge, receive, delivery tracking. Couriers move parcels; they do not manage warehouse machinery directly. If a delivery workflow needs local cleanup or safety checks, it asks the Warehouse.
+
+**Design rule:** anything inside the repository is managed by the Warehouse. Anything about committed parcel delivery is managed by Carson Co. and conducted by Couriers.
+
 ## Architecture — Three Roles
 
 The previous design had four roles (Courier, Cleaner, Dispatcher). Refined to three:
