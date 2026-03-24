@@ -25,15 +25,16 @@ Carson is a worktree-first branch delivery governor for coding agents: it starts
 - Not a substitute for GitHub CI, review, or branch protection.
 - Not successful just because it prints decisive-looking output.
 
-## Three-layer command model
+## Two-audience command model
 
-| Layer | Scope | Trigger | Examples |
-|---|---|---|---|
-| 1. Repo | Single repo | Explicit command or CWD | `deliver`, `audit`, `sync`, `status`, `housekeep`, `prune`, `receive` |
-| 2. Portfolio | All governed repos | Portfolio command | `list`, `refresh`, `onboard`, `offboard` |
-| 3. Scripted batch | All governed repos | Shell over `carson list --json` | Loop repo commands across portfolio |
+| Audience | Scope | Commands |
+|---|---|---|
+| **Agent** | Single repo (CWD or explicit) | `worktree create`, `worktree list`, `deliver`, `status`, `audit`, `recover` |
+| **Human** | Portfolio-wide | `list`, `onboard`, `offboard`, `refresh`, `version` |
 
-Layer 1 is the foundation. Layer 2 provides portfolio-level operations. Layer 3 composes repo commands across the portfolio via shell scripting.
+Agents work with Carson at the per-repo level only. They create a workspace, deliver work, and check status — nothing else. All other repo operations (sync, prune, housekeep, abandon, review, receive, setup, template) are internal to Carson and run automatically via strategies.
+
+Portfolio commands are for the human operator managing which repositories Carson governs. Agents never call portfolio commands.
 
 ## Directory model
 
@@ -48,7 +49,7 @@ Two `.github/` directories serve different roles:
 
 ## Scope
 
-**In scope:** Repo and portfolio commands, delivery triage (`receive`), review governance (`review gate`, `review sweep`), managed `.github/*` templates, strict exit status contract.
+**In scope:** Agent repo commands (`worktree create/list`, `deliver`, `status`, `audit`, `recover`), human portfolio commands (`list`, `onboard`, `offboard`, `refresh`, `version`), internal strategies (sync, prune, housekeep, review, receive, template), managed `.github/*` templates, strict exit status contract.
 
 **Out of scope:** Non-squash integration policies, business-domain policy for host repos, force merges or check bypasses, Carson configuration inside host repos.
 
@@ -90,11 +91,16 @@ Two `.github/` directories serve different roles:
 3. Every answer leads to a next step.
 4. TTY guard: skip prompt and apply default when stdin is not a TTY.
 
-## User journey
+## User journeys
 
+**Agent journey:**
+1. **Start work** — `carson worktree create feature-x`. Isolated workspace, synced main, fresh branch.
+2. **Code** — commit normally. Silence means safety. Blocks are actionable and exact.
+3. **Deliver** — `carson deliver`. Carson handles push, PR, merge, and cleanup.
+4. **Check** — `carson status` or `carson audit` when needed.
+
+**Human journey:**
 1. **Install** — `gem install carson`. No configuration wizard.
 2. **Onboard** — `carson onboard <repo>`. Asks only what it cannot detect. One-time.
-3. **Daily flow** — commit normally. Silence means safety. Blocks are actionable and exact.
-4. **Review + merge** — `carson review gate` verifies every comment is handled. `carson deliver` lands the branch.
-5. **Portfolio** — `carson list` shows all repos. `carson refresh` maintains all. `carson <repo> receive` triages one.
-6. **Offboard** — `carson offboard <repo>` removes everything cleanly. No residue.
+3. **Portfolio** — `carson list` shows all repos. `carson refresh` maintains all.
+4. **Offboard** — `carson offboard <repo>` removes everything cleanly. No residue.
