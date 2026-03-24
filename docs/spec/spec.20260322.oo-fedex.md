@@ -495,6 +495,16 @@ All 531 tests pass. New classes work alongside existing code.
 25. ~~`deliver.poll_interval_at_registry` config with env override~~ (done)
 26. ~~`error_at_registry` treated as transient, not definitive~~ (done)
 
+### Phase 3b — Bureau interaction and output language (done, 4.1.0)
+
+27. ~~Waybill → data object: removed fetch_ci, refresh!, accept!, file!, all gh calls~~ (done)
+28. ~~Warehouse gains bureau interaction: check_parcel_at_bureau_with, file_waybill_for!, register_parcel_at_bureau_with!~~ (done)
+29. ~~CI diagnostic captured: fetch_ci_state_for preserves first line of stderr~~ (done, #468)
+30. ~~hold_summary returns client language directly — translate_hold removed~~ (done, #458)
+31. ~~Consistent naming: bureau not registry. Hold reasons, constants, config keys renamed~~ (done)
+32. ~~Output format :human → :text. report_human → report_text~~ (done)
+33. ~~Story language purged from all output surfaces~~ (done, #458)
+
 ### Phase 4 — Open items
 
 27. Workbench seal enforcement gap: Carson governs git (pre-commit hook → `carson audit`). It cannot govern file edits — that's Claude Code's domain (PreToolUse hooks). The seal blocks commits but not Write/Edit. See § Enforcement Layers.
