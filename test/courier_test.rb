@@ -1,5 +1,6 @@
 # Tests for Carson::Courier — the delivery person.
 require "minitest/autorun"
+require "stringio"
 require "tmpdir"
 require "fileutils"
 require "open3"
@@ -101,7 +102,7 @@ class CourierTest < Minitest::Test
 		system( "git", "-C", second, "commit", "--no-verify", "-m", "conflicting main", out: File::NULL, err: File::NULL )
 		system( "git", "-C", second, "push", "origin", "main", out: File::NULL, err: File::NULL )
 
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		parcel = Carson::Parcel.new( label: "feature/conflict", head: warehouse.current_head )
 
 		result = courier.deliver( parcel )
@@ -137,7 +138,7 @@ class CourierTest < Minitest::Test
 		File.write( File.join( @repo_path, "dirty.txt" ), "uncommitted" )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		parcel = Carson::Parcel.new( label: "feature/pack", head: warehouse.current_head )
 
 		courier.deliver( parcel, commit_message: "pack this parcel" )
@@ -163,7 +164,7 @@ class CourierTest < Minitest::Test
 		end
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		courier = Carson::Courier.new( warehouse, ledger: fake_ledger )
+		courier = Carson::Courier.new( warehouse, ledger: fake_ledger, output: StringIO.new )
 		parcel = Carson::Parcel.new( label: "feature/ledger", head: warehouse.current_head )
 
 		courier.deliver( parcel )
@@ -239,7 +240,7 @@ class CourierTest < Minitest::Test
 		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "sync proof commit", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		parcel = Carson::Parcel.new( label: "feature/sync-proof", head: warehouse.current_head )
 
 		# Ship the parcel (real git push).
@@ -287,7 +288,7 @@ class CourierTest < Minitest::Test
 		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "to ship", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		parcel = Carson::Parcel.new( label: "feature/ship", head: warehouse.current_head )
 
 		# Courier ships but waybill filing will fail (no gh in test) — that's OK for this test.
@@ -315,7 +316,7 @@ class CourierTest < Minitest::Test
 			w.stamp( :accepted )
 		end
 
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		result = { remote_main: "origin/main" }
 		courier.send( :wait_and_poll_at_bureau, waybill, result )
 
@@ -324,7 +325,7 @@ class CourierTest < Minitest::Test
 
 	def test_waits_and_delivers_when_bureau_clears_after_delay
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		# No real sleeping in tests.
 		courier.define_singleton_method( :pause_between_polls ) {}
 
@@ -359,7 +360,7 @@ class CourierTest < Minitest::Test
 
 	def test_holds_immediately_on_ci_failure
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
 		waybill = Carson::Waybill.new( label: "feature/ci-fail", tracking_number: 3 )
@@ -379,7 +380,7 @@ class CourierTest < Minitest::Test
 
 	def test_holds_immediately_on_merge_conflict
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
 		waybill = Carson::Waybill.new( label: "feature/conflict", tracking_number: 4 )
@@ -398,7 +399,7 @@ class CourierTest < Minitest::Test
 
 	def test_reports_filed_when_checks_exhausted
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
 		waybill = Carson::Waybill.new( label: "feature/slow-ci", tracking_number: 5 )
@@ -422,7 +423,7 @@ class CourierTest < Minitest::Test
 
 	def test_delivers_when_already_accepted
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 
 		waybill = Carson::Waybill.new( label: "feature/merged", tracking_number: 6 )
 		waybill.record(
@@ -441,7 +442,7 @@ class CourierTest < Minitest::Test
 
 	def test_filed_result_carries_diagnostic
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
 		waybill = Carson::Waybill.new( label: "feature/error-ci", tracking_number: 7 )
@@ -464,7 +465,7 @@ class CourierTest < Minitest::Test
 
 	def test_held_result_carries_diagnostic
 		warehouse = Carson::Warehouse.new( path: "/tmp/fake" )
-		courier = Carson::Courier.new( warehouse )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		courier.define_singleton_method( :pause_between_polls ) {}
 
 		waybill = Carson::Waybill.new( label: "feature/ci-fail-diag", tracking_number: 8 )
