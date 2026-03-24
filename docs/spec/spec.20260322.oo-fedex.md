@@ -1,4 +1,4 @@
-# Carson OO Domain Model — The FedEx Metaphor
+# Carson OO — in FedEx Metaphor
 
 Spec date: 2026-03-22
 Updated: 2026-03-24
@@ -425,45 +425,43 @@ Every situation is numbered. The number appears as a code comment on the method 
 
 ### The Delivery Flow
 
-The Courier ships, files, then waits at the registry polling bureaucrats. If checks clear within the poll window, the Courier accepts into the registry and reports. If checks are exhausted, the Courier reports "filed."
+The Courier ships, files, then waits at the Bureau polling bureaucrats. If checks clear within the poll window, the Courier accepts into the registry and reports. If checks are exhausted, the Courier reports "filed."
 
 ```
-  Agent                    Courier                  Bureau (GitHub)
-    │                        │                        │
-    │  "deliver this parcel" │                        │
-    ├───────────────────────►│                        │
-    │                        │                        │
-    │                        │── ask warehouse:       │
-    │                        │   floor clean?         │
-    │                        │   compliance ok?       │
-    │                        │   based on latest?     │
-    │                        │                        │
-    │                        │── ship ───────────────►│
-    │                        │                        │
-    │                        │── file Waybill ───────►│
-    │                        │         ┌──────────────┤
-    │                        │         │ tracking #42 │
-    │                        │◄────────┘              │
-    │                        │                        │
-    │                        │── wait at registry ──  │
-    │                        │   ┌────────────────┐   │
-    │                        │   │ poll loop:     │   │
-    │                        │   │  check status ►├──►│
-    │                        │   │  ◄─── status ──┤◄──┤
-    │                        │   │  pause         │   │
-    │                        │   │  (repeat up to │   │
-    │                        │   │   MAX_CHECKS)  │   │
-    │                        │   └────────────────┘   │
-    │                        │                        │
-    │                        │── accept (if clear) ──►│
-    │                        │         ┌──────────────┤
-    │                        │         │ merged       │
-    │                        │◄────────┘              │
-    │                        │                        │
-    │  result: delivered/    │                        │
-    │  filed/held            │                        │
-    │◄───────────────────────┤                        │
-    │                        │                        │
+  Agent                               Courier                              Bureau (GitHub)
+    │                                    │                                        │
+    │  "deliver this parcel"             │                                        │
+    ├───────────────────────────────────►│                                        │
+    │                                    │                                        │
+    │                                    │── ask Warehouse:                       │
+    │                                    │   floor clean?                         │
+    │                                    │   compliance ok?                       │
+    │                                    │   based on latest standard?            │
+    │                                    │                                        │
+    │                                    │── ship ───────────────────────────────►│
+    │                                    │                                        │
+    │                                    │── file Waybill ───────────────────────►│
+    │                                    │                     ┌──────────────────┤
+    │                                    │                     │ tracking #42     │
+    │                                    │◄────────────────────┘                  │
+    │                                    │                                        │
+    │                                    │── wait at Bureau                       │
+    │                                    │   ┌────────────────────────────────┐   │
+    │                                    │   │ poll loop:                     │   │
+    │                                    │   │  check status ───────────────►├──►│
+    │                                    │   │  ◄─────────────── status ─────┤◄──┤
+    │                                    │   │  pause                        │   │
+    │                                    │   │  repeat up to MAX_CHECKS      │   │
+    │                                    │   └────────────────────────────────┘   │
+    │                                    │                                        │
+    │                                    │── accept into registry (if clear) ───►│
+    │                                    │                     ┌──────────────────┤
+    │                                    │                     │ merged           │
+    │                                    │◄────────────────────┘                  │
+    │                                    │                                        │
+    │  result: delivered / filed / held  │                                        │
+    │◄───────────────────────────────────┤                                        │
+    │                                    │                                        │
 ```
 
 ### Delivery Status Flow
