@@ -142,18 +142,10 @@ module Carson
 				parser.separator ""
 				parser.separator "Repository commands (from CWD or with explicit repo):"
 				parser.separator "    status       Show repository delivery state"
-				parser.separator "    setup        Initialise Carson configuration"
 				parser.separator "    audit        Run pre-commit health checks"
-				parser.separator "    abandon      Close and clean up abandoned delivery work"
-				parser.separator "    sync         Sync local main with remote"
 				parser.separator "    deliver      Start autonomous branch delivery"
 				parser.separator "    recover      Merge the repair PR for one baseline-red governance check"
-				parser.separator "    prune        Remove stale local branches"
 				parser.separator "    worktree     Manage isolated coding worktrees"
-				parser.separator "    housekeep    Sync, reap worktrees, and prune branches"
-				parser.separator "    review       Manage PR review workflow"
-				parser.separator "    template     Manage canonical template files"
-				parser.separator "    receive      Triage and advance deliveries for one repo"
 				parser.separator ""
 				parser.separator "Run `carson <command> --help` for details on a specific command."
 			end
@@ -478,16 +470,14 @@ module Carson
 		def self.parse_worktree_subcommand( arguments:, error: )
 			options = { json: false, force: false }
 			worktree_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson worktree <create|list|remove> <name> [options]"
+				parser.banner = "Usage: carson worktree <create|list> <name> [options]"
 				parser.separator ""
 				parser.separator "Manage isolated worktrees for coding agents."
-				parser.separator "Create auto-syncs main before branching. Remove guards against"
-				parser.separator "unpushed commits and CWD-inside-worktree by default."
+				parser.separator "Create auto-syncs main before branching."
 				parser.separator ""
 				parser.separator "Subcommands:"
-				parser.separator "    create <name>              Create a new worktree with a fresh branch"
-				parser.separator "    list                       List registered worktrees with cleanup status"
-				parser.separator "    remove <name> [--force]    Remove a worktree (--force skips safety checks)"
+				parser.separator "    create <name>    Create a new worktree with a fresh branch"
+				parser.separator "    list             List registered worktrees with cleanup status"
 				parser.separator ""
 				parser.separator "Options:"
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
@@ -496,7 +486,6 @@ module Carson
 				parser.separator "Examples:"
 				parser.separator "    carson worktree create feature-x    Create an isolated worktree"
 				parser.separator "    carson worktree list                Show registered worktrees"
-				parser.separator "    carson worktree remove feature-x    Remove after work is pushed"
 			end
 			worktree_parser.parse!( arguments )
 
