@@ -33,7 +33,8 @@ module Carson
 			:govern_repos, :govern_merge_method,
 			:govern_agent_provider, :govern_state_path,
 			:govern_check_wait,
-			:poll_interval_at_bureau
+			:poll_interval_at_bureau,
+			:workstyle
 
 		def self.load( repo_root: )
 			base_data = default_data
@@ -85,6 +86,7 @@ module Carson
 				"deliver" => {
 				"poll_interval_at_bureau" => 30
 			},
+			"workstyle" => "local",
 			"govern" => {
 					"repos" => [],
 					"merge" => {
@@ -246,6 +248,9 @@ module Carson
 
 			deliver_hash = fetch_hash( hash: data, key: "deliver" )
 			@poll_interval_at_bureau = fetch_non_negative_integer( hash: deliver_hash, key: "poll_interval_at_bureau" )
+
+			workstyle_raw = data.fetch( "workstyle", "local" ).to_s.downcase
+			@workstyle = [ "local", "remote" ].include?( workstyle_raw ) ? workstyle_raw.to_sym : :local
 
 			govern_hash = fetch_hash( hash: data, key: "govern" )
 			@govern_repos = fetch_optional_string_array( hash: govern_hash, key: "repos" ).map { |path| safe_expand_path( path ) }

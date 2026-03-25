@@ -6,6 +6,7 @@ require "fileutils"
 require "open3"
 
 require_relative "warehouse/workbench"
+require_relative "warehouse/vault"
 require_relative "warehouse/seal"
 require_relative "warehouse/bureau"
 
@@ -16,6 +17,7 @@ module Carson
 	# managing workbenches, and sweeping up.
 	class Warehouse
 		include Workbench
+		include Vault
 		include Seal
 		include Bureau
 
@@ -138,6 +140,49 @@ module Carson
 				)
 				refspec_status.success?
 			end
+		end
+
+		# --- Delivery prep ---
+
+		# Prepare a parcel for delivery.
+		# Orchestrates the prep phase: pack, fetch, standard check, auto-rebase.
+		# Returns { status: "ok" } or { status: "block"/"error", error:, recovery: }.
+		def prepare!( parcel, message: nil )
+			registry = "#{bureau_address}/#{main_label}"
+
+			# Pack if the agent provided a commit message.
+			if message
+				unless pack!( message: message )
+					return { status: "error", error: "Nothing to commit.", recovery: "Stage changes first." }
+				end
+				# Update the parcel's head after packing.
+				parcel = Parcel.new( label: parcel.label, head: current_head )
+			end
+
+			# Fetch the latest standard.
+			unless fetch_latest
+				return {
+					status: "block",
+					error: "Cannot fetch latest standard.",
+					recovery: "Check network and remote config, then deliver again."
+				}
+			end
+
+			# Check if the parcel is based on the latest standard.
+			unless based_on_latest_standard?( parcel, registry: registry )
+				# Auto-rebase onto the latest standard.
+				unless rebase_on_latest_standard!( registry: registry )
+					return {
+						status: "block",
+						error: "#{parcel.label} conflicts with #{@main_label}.",
+						recovery: "Rebase onto #{@main_label}, resolve conflicts, deliver again."
+					}
+				end
+				# Update the parcel's head after rebase.
+				parcel = Parcel.new( label: parcel.label, head: current_head )
+			end
+
+			{ status: "ok", parcel: parcel }
 		end
 
 		# --- Inventory ---

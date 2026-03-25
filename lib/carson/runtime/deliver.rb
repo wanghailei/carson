@@ -20,6 +20,7 @@ module Carson
 					head: current_head
 				)
 				courier = Courier.new( warehouse,
+				workstyle: :remote,
 				ledger: ledger,
 				merge_method: config.govern_merge_method,
 				poll_interval_at_bureau: config.poll_interval_at_bureau,

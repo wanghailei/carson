@@ -1023,12 +1023,16 @@ module Carson
 			when "template:apply"
 				runtime.template_apply!( push_prep: parsed.fetch( :push_prep, false ) )
 			when "deliver"
-				runtime.deliver!(
-					title: parsed.fetch( :title, nil ),
-					body_file: parsed.fetch( :body_file, nil ),
-					commit_message: parsed.fetch( :commit_message, nil ),
-					json_output: parsed.fetch( :json, false )
-				)
+				if runtime.config.workstyle == :local
+					dispatch_deliver_locally( parsed: parsed, runtime: runtime )
+				else
+					runtime.deliver!(
+						title: parsed.fetch( :title, nil ),
+						body_file: parsed.fetch( :body_file, nil ),
+						commit_message: parsed.fetch( :commit_message, nil ),
+						json_output: parsed.fetch( :json, false )
+					)
+				end
 			when "recover"
 				runtime.recover!(
 					check_name: parsed.fetch( :check_name ),
@@ -1079,6 +1083,75 @@ module Carson
 
 			result = warehouse.checkout!( workbench, force: parsed.fetch( :force, false ) )
 			report_workbench( result: result, json: parsed.fetch( :json, false ), output: runtime.output )
+		end
+
+		# --- Local-centred delivery ---
+		# CLI orchestrates: prepare → accept → courier.deliver.
+		# No Runtime — follows the checkin/checkout pattern.
+
+		def self.dispatch_deliver_locally( parsed:, runtime: )
+			warehouse = build_warehouse( runtime: runtime )
+			parcel = Parcel.new( label: warehouse.current_label, head: warehouse.current_head )
+			message = parsed.fetch( :commit_message, nil )
+			json = parsed.fetch( :json, false )
+			output = runtime.output
+
+			# Step 1: Prepare.
+			prep = warehouse.prepare!( parcel, message: message )
+			unless prep[ :status ] == "ok"
+				prep[ :command ] = "deliver"
+				return report_deliver( result: prep, json: json, output: output )
+			end
+
+			# Update parcel if prepare rebased or packed.
+			parcel = prep[ :parcel ] || parcel
+
+			# Step 2: Accept into vault.
+			accept = warehouse.accept!( parcel )
+			accept[ :command ] = "deliver"
+			unless accept[ :status ] == "ok"
+				return report_deliver( result: accept, json: json, output: output )
+			end
+
+			# Step 3: Courier delivers backup.
+			courier = Courier.new( warehouse, workstyle: :local, output: output )
+			backup = courier.deliver( parcel )
+
+			# Combine results.
+			result = accept.merge( backup.slice( :outcome, :synced, :backup_error ) )
+			result[ :command ] = "deliver"
+			result[ :outcome ] ||= "delivered"
+			report_deliver( result: result, json: json, output: output )
+		end
+
+		# Render a local delivery result.
+		def self.report_deliver( result:, json:, output: )
+			status = result[ :status ]
+			exit_code = case status
+				when "ok" then Runtime::EXIT_OK
+				when "block" then Runtime::EXIT_BLOCK
+				else Runtime::EXIT_ERROR
+			end
+
+			if json
+				output.puts JSON.pretty_generate( result )
+			else
+				case status
+				when "ok"
+					output.puts "#{BADGE} #{result[ :branch ]} merged into main."
+					if result[ :synced ]
+						output.puts "#{BADGE} Pushed to #{result.fetch( :remote_main, "remote" )}."
+					elsif result[ :backup_error ]
+						output.puts "#{BADGE} Backup failed."
+						output.puts "  \u2192 git push"
+					end
+				when "block", "error"
+					output.puts "#{BADGE} #{result[ :error ]}"
+					output.puts "  \u2192 #{result[ :recovery ]}" if result[ :recovery ]
+				end
+			end
+
+			exit_code
 		end
 
 		# Build a Warehouse rooted at the main worktree.

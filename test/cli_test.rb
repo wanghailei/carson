@@ -2,12 +2,22 @@
 require_relative "test_helper"
 
 class CLITest < Minitest::Test
+	FakeConfig = Struct.new( :workstyle, keyword_init: true ) do
+		def self.remote
+			new( workstyle: :remote )
+		end
+	end
+
 	class FakeRuntime
 		attr_reader :calls, :messages
 
 		def initialize
 			@calls = []
 			@messages = []
+		end
+
+		def config
+			FakeConfig.remote
 		end
 
 		def setup!( cli_choices: {} )

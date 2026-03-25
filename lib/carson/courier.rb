@@ -1,6 +1,8 @@
 # Carson Co.
+require "open3"
+
 module Carson
-	# The delivery person — picks up parcels and delivers them to the bureau.
+	# The delivery worker — waits at the gate, picks up parcels, delivers them.
 	#
 	# The courier is a Carson employee assigned to a warehouse. They pick up
 	# a parcel, ask the warehouse to ship it, file a waybill, and wait at
@@ -59,11 +61,14 @@ module Carson
 	# answer, the courier reports "filed" — the parcel is still at the bureau
 	# and the shelf stays sealed.
 	#
-	# == Future: destination modes
+	# == Workstyle
 	#
-	# Currently remote-centred (ship → waybill → bureau → acceptance).
-	# A future local-centred mode merges locally; remote is a synced backup.
-	# The destination mode should be injectable, not baked in.
+	# The courier's gesture depends on the workstyle:
+	# - :local — push main to backup vault (simple, no PR, no waiting)
+	# - :remote — ship → waybill → bureau → acceptance (complex Bureau trip)
+	#
+	# The courier doesn't know whether it's doing "backup" or "primary" —
+	# it just delivers to wherever the workstyle dictates.
 	class Courier
 		# Exit codes — shared contract between Carson employees and the CLI.
 		OK = 0
@@ -75,17 +80,21 @@ module Carson
 		# The courier checks the bureau up to 6 times before leaving.
 		MAX_CHECKS_AT_BUREAU = 6
 
-		def initialize( warehouse, ledger: nil, merge_method: "rebase", poll_interval_at_bureau: 30, output: $stdout )
+		def initialize( warehouse, workstyle: :local, ledger: nil, merge_method: "rebase", poll_interval_at_bureau: 30, output: $stdout )
 			@warehouse = warehouse
+			@workstyle = workstyle
 			@ledger = ledger
 			@merge_method = merge_method
 			@poll_interval_at_bureau = poll_interval_at_bureau
 			@output = output
 		end
 
-		# Deliver a parcel to the registry.
-		# Ships it, files a waybill, seals the shelf, waits at the bureau.
+		# Deliver a parcel.
+		# Local gesture: push main to backup vault.
+		# Remote gesture: ship to Bureau, file waybill, poll, register.
 		def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
+			return deliver_locally( parcel ) if @workstyle == :local
+
 			result = {
 				command: "deliver",
 				label: parcel.label,
@@ -244,6 +253,38 @@ module Carson
 			result[ :hold_reason ] = waybill.hold_reason
 			result[ :hold_summary ] = waybill.hold_summary( remote_main: result[ :remote_main ] )
 			result[ :diagnostic ] = waybill.ci_diagnostic
+		end
+
+		# Local gesture: push main to the backup vault.
+		# The parcel is already in the vault (accepted by the Warehouse).
+		# The courier's job is to push the vault state to the remote backup.
+		def deliver_locally( parcel )
+			result = {
+				command: "deliver",
+				label: parcel.label,
+				remote_main: "#{@warehouse.bureau_address}/#{@warehouse.main_label}"
+			}
+
+			remote = @warehouse.bureau_address
+			main = @warehouse.main_label
+			root = @warehouse.main_worktree_root
+
+			_, stderr, status = Open3.capture3(
+				"git", "-C", root, "push", remote, main
+			)
+
+			if status.success?
+				result[ :exit ] = OK
+				result[ :outcome ] = "delivered"
+				result[ :synced ] = true
+			else
+				result[ :exit ] = OK
+				result[ :outcome ] = "delivered"
+				result[ :synced ] = false
+				result[ :backup_error ] = stderr.strip
+			end
+
+			result
 		end
 
 		# Is the waybill blocked by something that won't resolve by waiting?
