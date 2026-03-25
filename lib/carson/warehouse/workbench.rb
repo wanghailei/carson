@@ -1,5 +1,5 @@
 # The warehouse's workbench concern.
-# Builds, tears down, sweeps, and inventories workbenches.
+# Builds, removes, sweeps, and inventories workbenches.
 # Workbenches are passive objects — the warehouse acts on them.
 require "fileutils"
 require "open3"
@@ -159,16 +159,44 @@ module Carson
 					path: workbench_path, branch: name }
 			end
 
-			# Tear down a workbench — directory, registration, label.
+			# Agent checks in — prepare a fresh workbench from the latest standard.
+			def checkin!( name: )
+				receive_latest_standard!
+				result = build_workbench!( name: name )
+				result[ :command ] = "checkin"
+				result
+			end
+
+			# Agent checks out — release the workbench when safe.
+			# A sealed workbench has a parcel in flight at the Bureau.
+			def checkout!( workbench, force: false )
+				unless force
+					seal_check = Warehouse.new( path: workbench.path )
+					if seal_check.sealed?
+						tracking = seal_check.sealed_tracking_number || "unknown"
+						return { command: "checkout", status: "block",
+							name: File.basename( workbench.path ), branch: workbench.branch,
+							error: "workbench is sealed — PR ##{tracking} is still in flight",
+							recovery: "wait for CI checks to complete, or run carson deliver to check status" }
+					end
+				end
+
+				result = remove_workbench!( workbench, force: force )
+				result[ :command ] = "checkout"
+				result
+			end
+
+			# Remove a workbench — directory, registration, local branch.
 			# The warehouse checks safety before acting.
-			def tear_down_workbench!( workbench, force: false, skip_unpushed: false )
+			# Remote branch cleanup is GitHub's concern, not the warehouse's.
+			def remove_workbench!( workbench, force: false, skip_unpushed: false )
 				# If the directory is already gone, repair the stale registration.
 				unless workbench.exists?
 					return repair_missing_workbench!( workbench )
 				end
 
 				# Safety assessment.
-				assessment = assess_teardown( workbench, force: force, skip_unpushed: skip_unpushed )
+				assessment = assess_removal( workbench, force: force, skip_unpushed: skip_unpushed )
 				unless assessment[ :status ] == :ok
 					return { command: "worktree remove", status: assessment[ :result_status ] || "error",
 						name: File.basename( workbench.path ), branch: workbench.branch,
@@ -201,22 +229,14 @@ module Carson
 					branch_deleted = del_ok.success?
 				end
 
-				# Step 3: delete the remote branch (best-effort).
-				remote_deleted = false
-				if branch
-					_, _, rd_ok = git( "push", @bureau_address, "--delete", branch )
-					remote_deleted = rd_ok.success?
-				end
-
 				{ command: "worktree remove", status: "ok",
 					name: File.basename( workbench.path ),
-					branch: branch, branch_deleted: branch_deleted,
-					remote_deleted: remote_deleted }
+					branch: branch, branch_deleted: branch_deleted }
 			end
 
-			# Full safety assessment before tear-down.
+			# Full safety assessment before removal.
 			# Returns { status: :ok } or { status: :block/:error, error:, recovery: }.
-			def assess_teardown( workbench, force: false, skip_unpushed: false )
+			def assess_removal( workbench, force: false, skip_unpushed: false )
 				unless workbench.exists?
 					return { status: :ok, missing: true }
 				end
@@ -370,16 +390,9 @@ module Carson
 					branch_deleted = del_ok.success?
 				end
 
-				remote_deleted = false
-				if branch
-					_, _, rd_ok = git( "push", @bureau_address, "--delete", branch )
-					remote_deleted = rd_ok.success?
-				end
-
 				{ command: "worktree remove", status: "ok",
 					name: File.basename( workbench.path ),
-					branch: branch, branch_deleted: branch_deleted,
-					remote_deleted: remote_deleted }
+					branch: branch, branch_deleted: branch_deleted }
 			end
 
 			# --- Build helpers ---

@@ -5,7 +5,7 @@ require "optparse"
 module Carson
 	class CLI
 		PORTFOLIO_COMMANDS = %w[onboard offboard list refresh version].freeze
-		REPO_COMMANDS = %w[deliver receive sync status audit prune housekeep worktree abandon recover review template setup].freeze
+		REPO_COMMANDS = %w[deliver receive sync status audit prune housekeep worktree abandon recover review template setup checkin checkout].freeze
 		ALL_COMMANDS = ( PORTFOLIO_COMMANDS + REPO_COMMANDS ).freeze
 
 		def self.start( arguments:, repo_root:, tool_root:, output:, error: )
@@ -229,6 +229,10 @@ module Carson
 				parse_housekeep_command( arguments: arguments, error: error )
 			when "worktree"
 				parse_worktree_subcommand( arguments: arguments, error: error )
+			when "checkin"
+				parse_checkin_command( arguments: arguments, error: error )
+			when "checkout"
+				parse_checkout_command( arguments: arguments, error: error )
 			when "abandon"
 				parse_abandon_command( arguments: arguments, error: error )
 			when "recover"
@@ -520,6 +524,71 @@ module Carson
 		rescue OptionParser::ParseError => exception
 			error.puts "#{BADGE} #{exception.message}"
 			error.puts worktree_parser
+			{ command: :invalid }
+		end
+
+		# --- checkin ---
+
+		def self.parse_checkin_command( arguments:, error: )
+			options = { json: false }
+			checkin_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson checkin <name> [--json]"
+				parser.separator ""
+				parser.separator "Prepare a fresh workbench from the latest standard."
+				parser.separator "The agent names the workbench — it becomes the branch."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson checkin feature-auth"
+				parser.separator "    carson checkin oo/refactor-courier"
+			end
+			checkin_parser.parse!( arguments )
+			name = arguments.shift.to_s.strip
+			if name.empty?
+				error.puts "#{BADGE} Missing name. Use: carson checkin <name>"
+				error.puts checkin_parser
+				return { command: :invalid }
+			end
+
+			{ command: "checkin", workbench_name: name, json: options.fetch( :json ) }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts checkin_parser
+			{ command: :invalid }
+		end
+
+		# --- checkout ---
+
+		def self.parse_checkout_command( arguments:, error: )
+			options = { json: false, force: false }
+			checkout_parser = OptionParser.new do |parser|
+				parser.banner = "Usage: carson checkout <name> [--json] [--force]"
+				parser.separator ""
+				parser.separator "Release a workbench when safe."
+				parser.separator "Removes the directory and local branch."
+				parser.separator ""
+				parser.separator "Options:"
+				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
+				parser.on( "--force", "Skip safety checks" ) { options[ :force ] = true }
+				parser.separator ""
+				parser.separator "Examples:"
+				parser.separator "    carson checkout feature-auth"
+				parser.separator "    carson checkout oo/refactor-courier --force"
+			end
+			checkout_parser.parse!( arguments )
+			name = arguments.shift.to_s.strip
+			if name.empty?
+				error.puts "#{BADGE} Missing name. Use: carson checkout <name>"
+				error.puts checkout_parser
+				return { command: :invalid }
+			end
+
+			{ command: "checkout", workbench_name: name, force: options.fetch( :force ), json: options.fetch( :json ) }
+		rescue OptionParser::ParseError => exception
+			error.puts "#{BADGE} #{exception.message}"
+			error.puts checkout_parser
 			{ command: :invalid }
 		end
 
@@ -937,6 +1006,10 @@ module Carson
 				runtime.worktree_list!( json_output: parsed.fetch( :json, false ) )
 			when "worktree:remove"
 				runtime.worktree_remove!( worktree_path: parsed.fetch( :worktree_path ), force: parsed.fetch( :force, false ), json_output: parsed.fetch( :json, false ) )
+			when "checkin"
+				dispatch_checkin( parsed: parsed, runtime: runtime )
+			when "checkout"
+				dispatch_checkout( parsed: parsed, runtime: runtime )
 			when "onboard"
 				runtime.onboard!
 			when "refresh:all"
@@ -977,6 +1050,78 @@ module Carson
 				runtime.send( :puts_line, "Unknown command: #{command}" )
 				Runtime::EXIT_ERROR
 			end
+		end
+
+		# --- Direct Warehouse dispatch for checkin/checkout ---
+		# No Runtime — CLI builds the Warehouse and calls domain methods directly.
+		# This is the target architecture; other commands migrate here as Runtime dissolves.
+
+		def self.dispatch_checkin( parsed:, runtime: )
+			warehouse = build_warehouse( runtime: runtime )
+			result = warehouse.checkin!( name: parsed.fetch( :workbench_name ) )
+			report_workbench( result: result, json: parsed.fetch( :json, false ), output: runtime.output )
+		end
+
+		def self.dispatch_checkout( parsed:, runtime: )
+			warehouse = build_warehouse( runtime: runtime )
+			workbench = warehouse.workbench_named( parsed.fetch( :workbench_name ) )
+
+			unless workbench
+				name = parsed.fetch( :workbench_name )
+				result = { command: "checkout", status: "error",
+					name: name,
+					error: "#{name} is not a registered workbench",
+					recovery: "carson worktree list" }
+				return report_workbench( result: result, json: parsed.fetch( :json, false ), output: runtime.output )
+			end
+
+			result = warehouse.checkout!( workbench, force: parsed.fetch( :force, false ) )
+			report_workbench( result: result, json: parsed.fetch( :json, false ), output: runtime.output )
+		end
+
+		# Build a Warehouse rooted at the main worktree.
+		# Uses runtime's resolved root and config for remote/branch names.
+		def self.build_warehouse( runtime: )
+			Warehouse.new(
+				path: runtime.send( :main_worktree_root ),
+				main_label: runtime.config.main_branch,
+				bureau_address: runtime.config.git_remote
+			)
+		end
+
+		# Render a workbench result as JSON or human text.
+		# Returns the appropriate exit code.
+		def self.report_workbench( result:, json:, output: )
+			status = result[ :status ]
+			exit_code = case status
+				when "ok" then Runtime::EXIT_OK
+				when "block" then Runtime::EXIT_BLOCK
+				else Runtime::EXIT_ERROR
+			end
+
+			if json
+				output.puts JSON.pretty_generate( result )
+			else
+				case status
+				when "ok"
+					case result[ :command ]
+					when "checkin"
+						output.puts "#{BADGE} Workbench ready: #{result[ :name ]}"
+						output.puts "  path: #{result[ :path ]}"
+						output.puts "  branch: #{result[ :branch ]}"
+					when "checkout"
+						output.puts "#{BADGE} Workbench released: #{result[ :name ]}"
+					end
+				when "error"
+					output.puts "#{BADGE} #{result[ :error ]}"
+					output.puts "  \u2192 #{result[ :recovery ]}" if result[ :recovery ]
+				when "block"
+					output.puts "#{BADGE} #{result[ :error ]}"
+					output.puts "  \u2192 #{result[ :recovery ]}" if result[ :recovery ]
+				end
+			end
+
+			exit_code
 		end
 	end
 end

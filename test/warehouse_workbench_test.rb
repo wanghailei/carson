@@ -138,13 +138,13 @@ class WarehouseWorkbenchTest < Minitest::Test
 		assert_includes result[ :error ], "already exists"
 	end
 
-	# --- Lifecycle: tear_down_workbench! ---
+	# --- Lifecycle: remove_workbench! ---
 
-	def test_tear_down_removes_directory_and_branch
+	def test_remove_removes_directory_and_branch
 		result = @warehouse.build_workbench!( name: "tear-me" )
 		workbench = @warehouse.workbench_named( "tear-me" )
 
-		tear_result = @warehouse.tear_down_workbench!( workbench )
+		tear_result = @warehouse.remove_workbench!( workbench )
 
 		assert_equal "ok", tear_result[ :status ]
 		refute Dir.exist?( result[ :path ] ), "directory should be removed"
@@ -155,43 +155,43 @@ class WarehouseWorkbenchTest < Minitest::Test
 		refute branch_ok.success?, "branch should be deleted"
 	end
 
-	def test_tear_down_blocked_when_dirty_without_force
+	def test_remove_blocked_when_dirty_without_force
 		@warehouse.build_workbench!( name: "dirty-bench" )
 		workbench = @warehouse.workbench_named( "dirty-bench" )
 		File.write( File.join( workbench.path, "dirty.txt" ), "dirty" )
 
-		result = @warehouse.tear_down_workbench!( workbench )
+		result = @warehouse.remove_workbench!( workbench )
 
 		assert_equal "error", result[ :status ]
 		assert_includes result[ :error ].to_s.downcase, "uncommitted"
 	end
 
-	def test_tear_down_forced_when_dirty
+	def test_remove_forced_when_dirty
 		@warehouse.build_workbench!( name: "force-bench" )
 		workbench = @warehouse.workbench_named( "force-bench" )
 		File.write( File.join( workbench.path, "dirty.txt" ), "dirty" )
 
-		result = @warehouse.tear_down_workbench!( workbench, force: true )
+		result = @warehouse.remove_workbench!( workbench, force: true )
 
 		assert_equal "ok", result[ :status ]
 	end
 
-	# --- Safety: assess_teardown ---
+	# --- Safety: assess_removal ---
 
-	def test_assess_teardown_ok_for_clean_workbench
+	def test_assess_removal_ok_for_clean_workbench
 		@warehouse.build_workbench!( name: "safe-bench" )
 		workbench = @warehouse.workbench_named( "safe-bench" )
 
-		assessment = @warehouse.assess_teardown( workbench )
+		assessment = @warehouse.assess_removal( workbench )
 		assert_equal :ok, assessment[ :status ]
 	end
 
-	def test_assess_teardown_blocked_when_dirty
+	def test_assess_removal_blocked_when_dirty
 		@warehouse.build_workbench!( name: "dirty-assess" )
 		workbench = @warehouse.workbench_named( "dirty-assess" )
 		File.write( File.join( workbench.path, "dirty.txt" ), "dirty" )
 
-		assessment = @warehouse.assess_teardown( workbench )
+		assessment = @warehouse.assess_removal( workbench )
 		refute_equal :ok, assessment[ :status ]
 		assert assessment[ :error ]
 	end
@@ -207,14 +207,14 @@ class WarehouseWorkbenchTest < Minitest::Test
 
 	# --- Repair: missing workbench ---
 
-	def test_tear_down_repairs_missing_workbench
+	def test_remove_repairs_missing_workbench
 		@warehouse.build_workbench!( name: "will-vanish" )
 		workbench = @warehouse.workbench_named( "will-vanish" )
 
 		# Destroy the directory externally.
 		FileUtils.rm_rf( workbench.path )
 
-		result = @warehouse.tear_down_workbench!( workbench )
+		result = @warehouse.remove_workbench!( workbench )
 		assert_equal "ok", result[ :status ]
 
 		# Branch should be cleaned up.
