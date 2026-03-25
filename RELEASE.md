@@ -7,6 +7,16 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.2.1
+
+### Fixed
+
+- **`label_absorbed?` detects rebase-merged branches** — previously only detected merge commits, missing branches integrated via rebase merge.
+
+### UX
+
+- **`carson --help` promotes the agent workflow** — `checkin` and `deliver` now appear in a dedicated "Agent workflow" section at the top of repository commands. `recover` and `worktree` removed from help — agents reach these through Carson's block messages, not by browsing.
+
 ## 4.2.0
 
 ### New
