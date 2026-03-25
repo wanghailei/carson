@@ -7,6 +7,19 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.3.1
+
+### Changed
+
+- **Bureau is an enhancement, not a mode.** Config simplified from `workstyle: local/remote` to `bureau: true/false` (default: false). Local delivery is always the foundation. Bureau adds PR + CI on top.
+- **Pre-push hook simplified to no-op.** Pushes to main are always legitimate — local delivery is the base. The hook no longer needs workstyle detection or push guards.
+- **Parcel-on-main guard added.** `carson deliver` blocks when run from main itself — agents must work on a workbench.
+- **Output: "Synced to remote"** replaces "Pushed to remote". Sync is objective.
+
+### Why
+
+The key insight: remote-centred is not a different path — it's local delivery with Bureau enhancement bolted on. One path, optional layer. `workstyle` dissolved into a single `bureau` toggle. 72 insertions, 166 deletions.
+
 ## 4.3.0
 
 ### New
