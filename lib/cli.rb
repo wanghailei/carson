@@ -1090,7 +1090,13 @@ module Carson
 		# No Runtime — follows the checkin/checkout pattern.
 
 		def self.dispatch_deliver_locally( parsed:, runtime: )
-			warehouse = build_warehouse( runtime: runtime )
+			# The warehouse must be at the current worktree (where the agent works),
+			# not the main worktree root. The agent's branch and head live here.
+			warehouse = Warehouse.new(
+				path: runtime.send( :work_dir ),
+				main_label: runtime.config.main_branch,
+				bureau_address: runtime.config.git_remote
+			)
 			parcel = Parcel.new( label: warehouse.current_label, head: warehouse.current_head )
 			message = parsed.fetch( :commit_message, nil )
 			json = parsed.fetch( :json, false )
