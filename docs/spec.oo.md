@@ -1,7 +1,7 @@
 # Carson OO — A FedEx Metaphor
 
 Spec date: 2026-03-22
-Updated: 2026-03-24
+Updated: 2026-03-25
 
 ## 1. Origin
 
@@ -22,11 +22,11 @@ For an agent working with Carson daily, the public surface is:
 
 | Command | Who handles | Meaning |
 |---|---|---|
-| `carson checkin` | Carson Co. → Warehouse | Ask the Warehouse to prepare a fresh workbench from the latest standard |
-| `carson deliver` | Carson Co. → Courier | Send the current parcel to the Bureau |
-| `carson checkout` | Carson Co. → Warehouse | Ask the Warehouse to release the workbench and local custody when safe |
+| `carson checkin` | Warehouse | Prepare a fresh workbench from the latest standard |
+| `carson deliver` | Warehouse → Courier | Accept parcel into vault, then courier pushes backup (local) — or courier ships to Bureau (remote) |
+| `carson checkout` | Warehouse | Release the workbench when safe |
 
-These are the public agent verbs. Worktrees, branches, and stash entries remain real, but they are warehouse machinery behind the surface.
+These are the public agent verbs. Worktrees, branches, and stash entries remain real, but they are warehouse machinery behind the surface. The workstyle (local or remote) determines how `deliver` behaves.
 
 ### Why Runtime Was Wrong
 
@@ -47,39 +47,40 @@ Runtime disappears when those responsibilities are absorbed by the objects they 
 
 ## 3. The FedEx Metaphor
 
-Carson is a delivery service company, like FedEx. It delivers committed changes from branches to the remote main registry. Every public class name, method name, and command name uses story language. Git and GitHub terms are hidden inside method bodies and private variables.
+Carson is a delivery service company, like FedEx. It manages warehouses for clients (repository owners), accepts parcels into the vault, and delivers copies to backup. Every public class name, method name, and command name uses story language. Git and GitHub terms are hidden inside method bodies and private variables.
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
 ║                    FedEx  →  Carson                              ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
-║  FedEx (the company)       →  Carson Co.                         ║
-║  Courier (robot employee)  →  Carson::Courier                    ║
+║  FedEx (the company HQ)   →  Carson Co.                          ║
+║  Courier (delivery worker) →  Carson::Courier                    ║
 ║                                                                  ║
 ║  Warehouse (intelligent)   →  Carson::Warehouse                  ║
+║  Vault (main storage)      →  local main branch                  ║
+║  Backup vault              →  remote main branch                 ║
 ║  Workbench                 →  passive worktree object            ║
 ║  Workbench label           →  branch name                        ║
 ║  Parcel (package)          →  Carson::Parcel                     ║
-║  Waybill (shipping doc)    →  Carson::Waybill                    ║
-║  Tracking record           →  Carson::Delivery                   ║
+║  Waybill (remote only)     →  Carson::Waybill (PR)               ║
+║  Tracking record (remote)  →  Carson::Delivery                   ║
 ║  Sender / Client           →  The agent (AI or human)            ║
 ║                                                                  ║
-║  Bureau (registry office)  →  GitHub, including its registry     ║
+║  Bureau (remote only)      →  GitHub with CI/review              ║
 ║  Bureaucrat (CI)           →  CI system                          ║
 ║  Bureaucrat (review)       →  Code reviewer                      ║
-║  Registry                  →  Remote main branch                 ║
-║  Production standard       →  Registry state (what rebase checks)║
+║  Production standard       →  Vault state (what rebase checks)   ║
 ║                                                                  ║
 ║  Pack                      →  git add + git commit               ║
-║  Submit compliance         →  Template sync                      ║
-║  Ship                      →  git push (hidden inside)           ║
-║  File waybill              →  gh pr create (hidden inside)       ║
-║  Bureau check              →  CI checks + code review            ║
-║  Accept into registry      →  gh pr merge (hidden inside)        ║
-║  Proof of delivery         →  Merge proof                        ║
+║  Prepare                   →  pack + fetch + standard check      ║
+║  Accept (into vault)       →  git merge --ff-only                ║
+║  Deliver (local gesture)   →  git push main (backup)             ║
+║  Deliver (remote gesture)  →  push + PR + poll + merge           ║
 ║  Sweep                     →  Workbench/branch/stash cleanup     ║
-║  Settle                    →  Push to remote backup (local mode) ║
+║                                                                  ║
+║  Workstyle: local          →  vault is source of truth           ║
+║  Workstyle: remote         →  bureau is source of truth          ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
@@ -110,42 +111,49 @@ Carson speaks two languages. Mixing them is a defect.
 
 1. **Everything is an object.** Warehouses, workbenches, parcels, waybills, deliveries, the Bureau, and Couriers all have identity, state, and behaviour.
 2. **Two languages, never mixed.** Story language in source code and architecture; technical language in output and recovery guidance.
-3. **Carson Co. co-ordinates and monitors.** The company routes commands, monitors filed deliveries, and informs clients when delivery state changes.
-4. **The Warehouse owns repo-local custody.** Workbench, branch, stash, cleanliness, occupancy, pruning, and repair all belong there.
-5. **The Courier is a robot.** It does one errand, reports back, and waits at the Bureau while the Bureau checks the parcel.
+3. **Carson Co. manages client relationships.** The company onboards/offboards warehouses, manages portfolio-level concerns. All daily operations are the Warehouse's job.
+4. **The Warehouse owns repo-local custody.** Workbench, vault, branch, stash, cleanliness, occupancy, pruning, and repair all belong there. The Warehouse is intelligent because Carson Co. serves it — the code is the staff.
+5. **The Courier waits at the gate.** It knows nothing about inside work. It receives a ready parcel and delivers it — different gestures per workstyle, same verb: `deliver`.
 6. **Objects hold their own state.** No data extraction between objects.
-7. **Production standard matters.** Parcels must be based on the latest standard before shipping. Query it, fix against it, and receive it after acceptance.
-8. **One workbench per parcel.** Workbenches are disposable; the registry is permanent. New work starts on a fresh workbench from the updated standard.
-9. **Destination mode is injectable.** Remote-centred now, local-centred later.
+7. **Production standard matters.** Parcels must be based on the latest standard before acceptance. Query it, fix against it, and receive it after acceptance.
+8. **One workbench per parcel.** Workbenches are disposable; the vault is permanent. New work starts on a fresh workbench from the updated standard.
+9. **Workstyle is injectable.** Local-centred (default) or remote-centred. The workstyle determines how the entire workflow behaves, not just delivery.
 10. **Runtime dissolves.** Its responsibilities are absorbed by the objects they belong to.
 11. **Numbered situations.** Every courier situation has a code number in the comments.
+12. **A warehouse does not deliver.** The Warehouse prepares and accepts. The Courier delivers. The CLI orchestrates: `prepare!` → `accept!` → `courier.deliver`.
+13. **Method names are pure verbs.** Single word first. The object carries the noun, the parameter carries the detail. `warehouse.accept!( parcel )` not `warehouse.accept_into_vault!( parcel )`.
 
 ## 5. The Core Boundary
 
 Carson is organised around three roles:
 
-1. **Carson Co.** — the company and public surface for agents. It routes commands, renders output, monitors parcel delivery states, and co-ordinates work between the Warehouse and the Courier.
-2. **Courier** — the delivery worker. It ships parcels to the Bureau, waits while the Bureau checks them, and reports the delivery outcome.
-3. **Warehouse** — the local repository authority. It owns workbenches and all other repo-local state, prepares workbenches, packs parcels, checks compliance, and manages cleanup.
+1. **Carson Co.** — the company HQ. Manages client relationships: onboard, offboard, list, refresh, version. Portfolio-level concerns only.
+2. **Warehouse** — the intelligent local authority. Owns all repo-local state: workbenches, vault, branches, stash. Prepares parcels, accepts them into the vault, sweeps up. Each warehouse belongs to a client. The warehouse becomes intelligent when Carson Co. serves it.
+3. **Courier** — the delivery worker. Waits at the gate. Receives a ready parcel and delivers it — different gestures per workstyle. Knows nothing about inside work.
 
 | Object | What it is | What it knows | What it does |
 |---|---|---|---|
-| **Carson Co.** | The company and public surface for agents | command routing, rendering, co-ordination, delivery-state monitoring | routes commands, monitors delivery states, and assigns work |
-| **Warehouse** | Local repository authority | workbenches, branches, stash, cleanliness, occupancy, standard | prepares workbenches, packs parcels, checks compliance, repairs and sweeps local state |
+| **Carson Co.** | The company HQ | client relationships, portfolio | onboards/offboards warehouses, renders output |
+| **Warehouse** | Intelligent local authority | workbenches, vault, branches, stash, standard, workstyle | prepares parcels, accepts into vault, sweeps, dispatches courier |
+| **Vault** | The Warehouse's acceptance area | main branch ref, main worktree path | accepts parcels (ff-only merge), tracks what's absorbed |
 | **Workbench** | A passive place in the Warehouse | path, branch, prunable reason | shows state only |
-| **Parcel** | Committed changes | branch, head, workbench | the thing being delivered |
-| **Waybill** | Shipping document | PR identity and bureau findings | passive data object |
-| **Delivery** | Tracking record | status, cause, proof | passive ledger record |
-| **Courier** | Delivery worker | warehouse, merge method, poll interval | ships parcels and waits at the Bureau |
-| **Bureau** | GitHub, including its registry | review state, CI state, registry state | checks parcels and accepts them into the registry |
+| **Parcel** | Committed changes | branch, head | the thing being delivered |
+| **Waybill** | Shipping document (remote only) | PR identity and bureau findings | passive data object |
+| **Delivery** | Tracking record (remote only) | status, cause, proof | passive ledger record |
+| **Courier** | Delivery worker | workstyle, remote address | delivers parcels — push (local) or Bureau trip (remote) |
+| **Bureau** | GitHub (remote only) | review state, CI state | checks parcels and registers them |
 
-**Boundary rule:** anything inside the repository is managed by the Warehouse. Anything about committed parcel delivery is managed by Carson Co. and conducted by Couriers.
+**Boundary rule:** anything inside the repository is managed by the Warehouse. Anything that leaves the warehouse is a Courier errand.
 
-The **Registry** is not a peer object in this boundary table. It is the Bureau's registry: remote main, where accepted parcels live and where the production standard is defined.
+In **local-centred** workstyle, the Vault (local main) is the source of truth. Remote main is the backup vault — the Courier pushes there.
+
+In **remote-centred** workstyle, the Bureau's registry (remote main) is the source of truth. Local main is the backup — it receives the standard after Bureau acceptance.
 
 ## 6. Carson Co.
 
-Carson Co. is both the company and the public surface for agents. It is responsible for routing commands, rendering output, monitoring filed deliveries, and informing clients when delivery state changes. It can serve many warehouses at once.
+Carson Co. is the company HQ. It manages client relationships — onboarding and offboarding warehouses, portfolio-level commands (list, refresh, version), and output rendering. It can serve many warehouses at once.
+
+All daily operations happen inside the Warehouse. Carson Co. does not pack, accept, deliver, or sweep. The Warehouse is intelligent because Carson Co. serves it — the code is the staff. Carson Co. dispatches no work; the Warehouse dispatches its own Courier.
 
 ### Bureau Feedback Model
 
@@ -231,31 +239,50 @@ Messages use the configured git remote and main branch so the client sees exact 
 
 ### The Warehouse — Intelligent and Autonomous
 
-The Warehouse manages itself. It packs parcels, checks its own compliance, knows its own cleanliness, and sweeps up. Repo-local state lives here.
+The Warehouse manages itself. It prepares parcels, accepts them into the vault, and keeps the floor clean. Repo-local state lives here. Each warehouse belongs to a client (a repository owner). The warehouse becomes intelligent when Carson Co. serves it — the code is the staff.
+
+The Warehouse has internal sub-domains, each owning a distinct responsibility:
 
 ```
-╔═══════════════════════════════════════════════════╗
-║          Carson::Warehouse                        ║
-║      (intelligent, self-managing)                 ║
-║                                                   ║
-║  knows:                                           ║
-║    path, current_label, current_head              ║
-║    main_label, bureau_address                     ║
-║    workbenches, branches, stash                   ║
-║                                                   ║
-║  can:                                             ║
-║    clean?                      — floor clean?     ║
-║    pack!( message: )           — prepare a parcel ║
-║    submit_compliance!          — templates ok?    ║
-║    sweep!                      — clean local state║
-║    fetch_latest                — get registry     ║
-║    based_on_latest_standard?   — production check ║
-║    rebase_on_latest_standard!  — rebase workbench ║
-║    receive_latest_standard!    — update local std ║
-║    settle!                     — push to backup   ║
-║    label_absorbed?( name )     — merged into main?║
-║                                                   ║
-╚═══════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════════╗
+║                    Carson::Warehouse                               ║
+║                (intelligent, self-managing)                        ║
+║                                                                    ║
+║  knows:                                                            ║
+║    path, current_label, current_head                               ║
+║    main_label, bureau_address, workstyle                           ║
+║    workbenches, branches, stash                                    ║
+║                                                                    ║
+║  ┌─────────────────────────┐  ┌──────────────────────────────┐     ║
+║  │  Workbench concern      │  │  Vault concern               │     ║
+║  │                         │  │                              │     ║
+║  │  checkin!( name: )      │  │  accept!( parcel )           │     ║
+║  │  checkout!( wb, force: )│  │    merge branch into main    │     ║
+║  │  build_workbench!       │  │    (ff-only from main tree)  │     ║
+║  │  remove_workbench!      │  │                              │     ║
+║  │  sweep!                 │  │  absorbed?( label )          │     ║
+║  │                         │  │    branch merged into main?  │     ║
+║  └─────────────────────────┘  └──────────────────────────────┘     ║
+║                                                                    ║
+║  ┌─────────────────────────┐  ┌──────────────────────────────┐     ║
+║  │  Seal concern           │  │  Bureau concern              │     ║
+║  │                         │  │  (remote-centred only)       │     ║
+║  │  seal!( tracking: )     │  │                              │     ║
+║  │  unseal!                │  │  file_waybill_for!           │     ║
+║  │  sealed?                │  │  check_parcel_with( waybill )│     ║
+║  │                         │  │  register_with!( waybill )   │     ║
+║  └─────────────────────────┘  └──────────────────────────────┘     ║
+║                                                                    ║
+║  shared operations:                                                ║
+║    clean?                        — floor clean?                    ║
+║    pack!( message: )             — prepare a parcel on workbench   ║
+║    prepare!( parcel, message: )  — prep phase for delivery         ║
+║    fetch_latest                  — get latest standard             ║
+║    based_on_latest?( parcel )    — production check                ║
+║    rebase!( standard: )          — rebase workbench                ║
+║    receive_latest!               — update local standard           ║
+║                                                                    ║
+╚════════════════════════════════════════════════════════════════════╝
 ```
 
 ### Warehouse Cleanliness
@@ -364,36 +391,36 @@ The Bureau (GitHub) includes its registry. Bureaucrats at the registry check par
   └──────────────────────────────────────────────┘
 ```
 
-### Waybill and Delivery
+### Waybill and Delivery (remote-centred only)
 
-A **Waybill** is the shipping document filed with the Bureau. It has a tracking number, a URL, and the Bureau's findings written onto it. It is a passive data object — it does not fetch, file, or accept anything itself.
+A **Waybill** is the shipping document filed with the Bureau. It has a tracking number, a URL, and the Bureau's findings written onto it. It is a passive data object — it does not fetch, file, or accept anything itself. In local-centred workstyle, there is no waybill — there is no PR.
 
-A **Delivery** is Carson's internal receipt. It records the parcel's journey and persists itself through the ledger. It is a passive ledger record.
+A **Delivery** is Carson's internal receipt. It records the parcel's journey and persists itself through the ledger. It is a passive ledger record. In local-centred workstyle, there is no Delivery record — git history is the delivery record.
 
-### The Courier — A Robot
+### The Courier — Waits at the Gate
 
-The Courier is a robot employee. Assigned to a Warehouse. Delivers parcels to the Bureau. Does one errand, reports back. Waits at the registry while bureaucrats check the parcel.
+The Courier is a delivery worker. It waits at the gate of the Warehouse, receives a ready parcel, and delivers it. It knows nothing about inside work — packing, compliance, standard checks are the Warehouse's job. The Courier has one public verb: `deliver`. The workstyle determines the gesture.
 
 ```
 ╔═══════════════════════════════════════════════════════════╗
 ║             Carson::Courier                               ║
-║           (the delivery robot)                            ║
+║           (the delivery worker)                           ║
 ║                                                           ║
-║  assigned to: a warehouse                                 ║
-║  injected:    merge_method, ledger,                       ║
-║               MAX_CHECKS_AT_BUREAU = 6,                   ║
-║               poll_interval_at_bureau                     ║
+║  injected:    workstyle, remote_address                   ║
+║               merge_method, ledger (remote only)          ║
+║               MAX_CHECKS_AT_BUREAU (remote only)          ║
+║               poll_interval_at_bureau (remote only)       ║
 ║                                                           ║
 ║  can:                                                     ║
-║    deliver( parcel )            — ship parcel to Bureau   ║
-║    wait_and_poll_at_bureau      — poll bureaucrats        ║
-║    pause_between_polls          — sleep between checks    ║
-║    definitively_blocked?        — hard failure?           ║
+║    deliver( parcel )  — one verb, two gestures            ║
 ║                                                           ║
-║  design:                                                  ║
-║    Waits at the Bureau while bureaucrats check.           ║
-║    Polls up to MAX_CHECKS_AT_BUREAU times.                ║
-║    Reports definitive answer or "filed" if exhausted.     ║
+║  local gesture:                                           ║
+║    Push main to backup vault (git push).                  ║
+║    Report success or failure. That's it.                  ║
+║                                                           ║
+║  remote gesture:                                          ║
+║    Ship to Bureau, file waybill, poll bureaucrats,        ║
+║    register if cleared. Report outcome or "filed."        ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 ```
@@ -423,20 +450,42 @@ Every situation is numbered. The number appears as a code comment on the method 
 18. Waybill closed           — cancelled externally
 ```
 
-### The Delivery Flow
+### The Delivery Flow — Local-Centred (default)
 
-The Courier ships, files, then waits at the Bureau polling bureaucrats. If checks clear within the poll window, the Courier accepts into the registry and reports. If checks are exhausted, the Courier reports "filed."
+The Warehouse prepares, the vault accepts, the Courier pushes backup. No waiting, no ceremony.
+
+```
+  Agent                  Warehouse                        Courier            Backup vault
+    │                        │                                │                    │
+    │ "carson deliver"       │                                │                    │
+    │───────────────────────►│                                │                    │
+    │                        │                                │                    │
+    │                        │ prepare:                       │                    │
+    │                        │ - pack (if --commit)           │                    │
+    │                        │ - fetch latest standard        │                    │
+    │                        │ - based on latest?             │                    │
+    │                        │ - rebase if behind             │                    │
+    │                        │                                │                    │
+    │                        │ vault.accept!( parcel )        │                    │
+    │                        │ git merge --ff-only            │                    │
+    │                        │                                │                    │
+    │                        │ hand to Courier ──────────────►│                    │
+    │                        │                                │ git push main     │
+    │                        │                                │───────────────────►│
+    │                        │                                │                    │
+    │ result                 │                                │                    │
+    │◄───────────────────────│                                │                    │
+```
+
+### The Delivery Flow — Remote-Centred
+
+The Courier ships to the Bureau, waits for bureaucrats, and reports. (Current implementation — the Courier still does prep work inside, which is architecturally wrong but functional.)
 
 ```
   Agent                                 Courier                                           Bureau (GitHub)
     │                                      │                                                      │
     │ "deliver this parcel"                │                                                      │
     │─────────────────────────────────────►│                                                      │
-    │                                      │                                                      │
-    │                                      │ ask Warehouse                                        │
-    │                                      │ - floor clean?                                       │
-    │                                      │ - compliance ok?                                     │
-    │                                      │ - based on latest standard?                          │
     │                                      │                                                      │
     │                                      │ ship                                                 │
     │                                      │─────────────────────────────────────────────────────►│
@@ -448,11 +497,8 @@ The Courier ships, files, then waits at the Bureau polling bureaucrats. If check
     │                                      │◄─────────────────────────────────────────────────────│
     │                                      │                                                      │
     │                                      │ poll loop at Bureau                                  │
-    │                                      │ - check status                                       │
     │                                      │─────────────────────────────────────────────────────►│
     │                                      │◄─────────────────────────────────────────────────────│
-    │                                      │ - pause                                              │
-    │                                      │ - repeat up to MAX_CHECKS                            │
     │                                      │                                                      │
     │                                      │ accept into registry (if clear)                      │
     │                                      │─────────────────────────────────────────────────────►│
@@ -461,7 +507,6 @@ The Courier ships, files, then waits at the Bureau polling bureaucrats. If check
     │                                      │                                                      │
     │ delivered / filed / held             │                                                      │
     │◄─────────────────────────────────────│                                                      │
-    │                                      │                                                      │
 ```
 
 ### Delivery Status Flow
@@ -508,21 +553,36 @@ The Courier ships, files, then waits at the Bureau polling bureaucrats. If check
 └────────────────┘
 ```
 
-### Destination Modes (Future)
+### Workstyle
 
-Currently Carson operates in **remote-centred** mode: parcels are shipped to the Bureau, checked by bureaucrats, and accepted into the registry (remote main). The local standard is received from the registry after acceptance.
+Carson supports two workstyles. The workstyle determines how the entire workflow behaves — where the source of truth lives, how parcels are accepted, and what the Courier's errand looks like.
 
-A future **local-centred** mode merges parcels locally — the remote is a synced backup for future settlement, like a client storing parcels in Carson's warehouse for futures trading.
+**Local-centred** (default) — the Warehouse's vault (local main) is the source of truth. Remote main is a backup vault. The Warehouse accepts parcels directly into its vault via fast-forward merge. The Courier's errand is simple: push main to the backup vault. No PR, no waybill, no seal, no polling, no Ledger. Git history is the delivery record.
+
+**Remote-centred** — the Bureau's registry (remote main) is the source of truth. Local main is the backup, receiving the standard from the registry after acceptance. The Courier's errand is complex: ship to Bureau, file waybill (PR), wait for bureaucrats (CI/review), register (merge). Waybill, seal, Ledger, and polling are all active.
+
+| | Local-centred (default) | Remote-centred |
+|---|---|---|
+| Source of truth | Warehouse vault (local main) | Bureau registry (remote main) |
+| Local main is | The vault | The backup |
+| Remote main is | The backup vault | The registry |
+| Acceptance | Warehouse merges directly (ff-only) | Bureau checks, then registers |
+| Courier's errand | Push main to backup vault | Ship → waybill → poll → register |
+| Waybill | Not needed | PR |
+| Seal | Not needed (instant merge) | Active (parcel in flight) |
+| Ledger | Not needed (synchronous) | Active (async tracking) |
+
+Both workstyles are valid. The choice depends on the user's workflow. A solo developer with agents benefits from local-centred: no waiting, no ceremony, instant feedback. A team with review requirements benefits from remote-centred: Bureau oversight, CI gates, review approval.
 
 ```
-Remote-centred (current):
-  ship → waybill → registry → acceptance
+Local-centred (default):
+  prepare → accept into vault (ff-only) → courier pushes backup
 
-Local-centred (future):
-  merge locally → settle! (push to remote backup for settlement)
+Remote-centred:
+  prepare → courier ships → waybill → poll bureau → register
 ```
 
-The Warehouse and Courier must be designed so the destination mode is injectable, not baked in.
+Config: `.carson.yml` → `workstyle: local` (default) or `workstyle: remote`.
 
 ## 9. Implementation Surface, Coding Conventions, and Scars
 
@@ -619,14 +679,24 @@ All 531 tests pass. New classes work alongside existing code.
 38. ~~`tear_down_workbench!` renamed to `remove_workbench!`. Remote branch deletion removed from workbench removal (GitHub's concern).~~ (done, #509)
 39. ~~checkin/checkout wired in CLI directly to Warehouse — no Runtime. This is the template for Runtime dissolution.~~ (done, #509)
 
-#### Phase 4b — Open items
+#### Phase 5 — Local-centred workstyle (in progress)
 
-40. Make the Workbench object fully passive and move all lifecycle management into the Warehouse.
-41. Move branch, worktree, and stash lifecycle under Warehouse ownership as one coherent repo-local domain.
-42. Carson Co. monitor: connect with the Bureau, check filed deliveries, and update parcel delivery states as internal company work.
-43. `warehouse.sweep!` (absorb housekeep).
-44. `settle!` (local-centred backup push).
-45. Remove Runtime — dissolve 25 files, ~20 commands. Each command migrated from Runtime to CLI → domain object → Carson.report, following the pattern established by checkin/checkout (#510 tracks the instruction update; Runtime dissolution is a separate body of work).
+40. `Warehouse::Vault` concern: `accept!( parcel )` — merge branch into main via ff-only from main worktree.
+41. `warehouse.prepare!( parcel, message: )` — prep phase: pack, fetch, standard check, auto-rebase. No compliance in local workstyle.
+42. Courier workstyle-aware `deliver( parcel )` — local gesture: push main to backup vault. Remote gesture: existing Bureau trip.
+43. CLI orchestration: `prepare!` → `accept!` → `courier.deliver`. Follow checkin/checkout pattern.
+44. Config: `workstyle: local` (default) / `workstyle: remote`.
+45. Naming: `rebase!( standard: )`, `based_on_latest?`, `receive_latest!`, `absorbed?( label )`.
+
+#### Phase 5b — Open items
+
+46. Make the Workbench object fully passive and move all lifecycle management into the Warehouse.
+47. Move branch, worktree, and stash lifecycle under Warehouse ownership as one coherent repo-local domain.
+48. Carson Co. monitor: connect with the Bureau, check filed deliveries, and update parcel delivery states as internal company work (remote-centred only).
+49. `warehouse.sweep!` (absorb housekeep).
+50. Move Bureau interaction from Warehouse to Courier (the Courier should own its own delivery tools, not borrow the Warehouse's).
+51. Move prep work out of Courier in remote-centred mode (Courier currently does inside work — acknowledged as wrong).
+52. Remove Runtime — dissolve 25 files, ~20 commands. Each command migrated from Runtime to CLI → domain object → Carson.report, following the pattern established by checkin/checkout (#510 tracks the instruction update; Runtime dissolution is a separate body of work).
 
 ### Coding Conventions
 
