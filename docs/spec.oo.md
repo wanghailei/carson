@@ -531,10 +531,13 @@ The Warehouse and Courier must be designed so the destination mode is injectable
 The current implementation is still transitional. The final object model is ahead of the file tree.
 
 ```
-lib/carson.rb                         ← company entry point / reporting surface
-lib/carson/cli.rb                    ← command parsing / CLI surface
+lib/cli.rb                            ← the interface (agent ↔ Carson Co.)
+lib/carson.rb                         ← Carson Co. — company entry point, reporting
 lib/carson/courier.rb                ← delivery worker
 lib/carson/warehouse.rb              ← local repository authority
+lib/carson/warehouse/workbench.rb    ← workbench lifecycle (checkin, checkout, build, remove)
+lib/carson/warehouse/seal.rb         ← workbench seal (parcel in flight)
+lib/carson/warehouse/bureau.rb       ← bureau interaction (GitHub)
 lib/carson/worktree.rb               ← transition name for the workbench object
 lib/carson/branch.rb                 ← branch state under Warehouse ownership
 lib/carson/parcel.rb                 ← committed changes
@@ -584,7 +587,7 @@ All 531 tests pass. New classes work alongside existing code.
 17. ~~Rename commands: govern→monitor, housekeep→sweep, abandon→return, recover→salvage, status→track~~ (superseded by the `carson checkin / deliver / checkout` model)
 18. Remove Runtime — absorbed by domain objects
 
-566 tests pass (21 skipped — RuntimeDeliverTest pending OO adaptation).
+646 tests pass (25 skipped — RuntimeDeliverTest pending OO adaptation).
 
 #### Phase 3 — Workbench seal and delivery progress (done, 4.0.1)
 
@@ -607,17 +610,23 @@ All 531 tests pass. New classes work alongside existing code.
 32. ~~Output format `:human` → `:text`. `report_human` → `report_text`~~ (done)
 33. ~~Story language purged from all output surfaces~~ (done, #458)
 
-#### Phase 4 — Open items
+#### Phase 4a — Agent surface and CLI architecture (done, #509)
 
 34. Workbench seal enforcement gap: Carson governs git (pre-commit hook → `carson audit`). It cannot govern file edits — that is Claude Code's domain (PreToolUse hooks). The seal blocks commits but not Write/Edit. See Warehouse Domain § Enforcement Layers.
-35. Introduce `carson checkin` as the public agent verb for asking the Warehouse to prepare a fresh workbench.
-36. Introduce `carson checkout` as the public agent verb for asking the Warehouse to release a workbench and local custody when safe.
-37. Make the Workbench object fully passive and move all lifecycle management into the Warehouse.
-38. Move branch, worktree, and stash lifecycle under Warehouse ownership as one coherent repo-local domain.
-39. Carson Co. monitor: connect with the Bureau, check filed deliveries, and update parcel delivery states as internal company work.
-40. `warehouse.sweep!` (absorb housekeep).
-41. `settle!` (local-centred backup push).
-42. Remove Runtime — absorbed by Carson Co., Warehouse, Courier, Waybill, and Delivery.
+35. ~~`carson checkin` — the public agent verb for asking the Warehouse to prepare a fresh workbench. Receives the latest standard before building.~~ (done, #509)
+36. ~~`carson checkout` — the public agent verb for asking the Warehouse to release a workbench when safe. Checks the seal before removing.~~ (done, #509)
+37. ~~CLI moved outside the story world: `lib/carson/cli.rb` → `lib/cli.rb`. `lib/carson/` is domain objects only.~~ (done, #509)
+38. ~~`tear_down_workbench!` renamed to `remove_workbench!`. Remote branch deletion removed from workbench removal (GitHub's concern).~~ (done, #509)
+39. ~~checkin/checkout wired in CLI directly to Warehouse — no Runtime. This is the template for Runtime dissolution.~~ (done, #509)
+
+#### Phase 4b — Open items
+
+40. Make the Workbench object fully passive and move all lifecycle management into the Warehouse.
+41. Move branch, worktree, and stash lifecycle under Warehouse ownership as one coherent repo-local domain.
+42. Carson Co. monitor: connect with the Bureau, check filed deliveries, and update parcel delivery states as internal company work.
+43. `warehouse.sweep!` (absorb housekeep).
+44. `settle!` (local-centred backup push).
+45. Remove Runtime — dissolve 25 files, ~20 commands. Each command migrated from Runtime to CLI → domain object → Carson.report, following the pattern established by checkin/checkout (#510 tracks the instruction update; Runtime dissolution is a separate body of work).
 
 ### Coding Conventions
 
