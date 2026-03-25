@@ -53,11 +53,58 @@ class CheckinTest < Minitest::Test
 		assert_equal "checkin", result[ :command ]
 	end
 
-	def test_checkin_error_when_name_exists
-		@warehouse.checkin!( name: "duplicate" )
-		result = @warehouse.checkin!( name: "duplicate" )
+	def test_checkin_error_when_active_workbench_has_same_name
+		# Create a workbench with unique work — not absorbed into main.
+		@warehouse.build_workbench!( name: "active-work" )
+		wb = @warehouse.workbench_named( "active-work" )
+		File.write( File.join( wb.path, "work.txt" ), "in progress" )
+		system( "git", "-C", wb.path, "add", ".", out: File::NULL, err: File::NULL )
+		system( "git", "-C", wb.path, "commit", "-m", "wip", out: File::NULL, err: File::NULL )
+
+		# Checkin with the same name — should error because the workbench has active work.
+		result = @warehouse.checkin!( name: "active-work" )
 
 		assert_equal "error", result[ :status ]
 		assert_includes result[ :error ], "already exists"
+	end
+
+	# --- sweep on checkin ---
+
+	def test_checkin_sweeps_delivered_workbenches
+		# Build a workbench and simulate a delivered parcel:
+		# merge its branch into main so label_absorbed? returns true.
+		@warehouse.build_workbench!( name: "old-task" )
+		old_wb = @warehouse.workbench_named( "old-task" )
+		old_path = old_wb.path
+
+		# Simulate delivery: merge the branch into main.
+		system( "git", "-C", @repo_path, "merge", "old-task", out: File::NULL, err: File::NULL )
+
+		# Now checkin for the next task.
+		result = @warehouse.checkin!( name: "new-task" )
+
+		assert_equal "ok", result[ :status ]
+		refute Dir.exist?( old_path ), "delivered workbench should be swept"
+	end
+
+	def test_checkin_does_not_sweep_sealed_workbenches
+		# Build and seal a workbench — parcel still in flight.
+		@warehouse.build_workbench!( name: "in-flight" )
+		wb = @warehouse.workbench_named( "in-flight" )
+
+		seal_wh = Carson::Warehouse.new( path: wb.path )
+		seal_wh.seal_workbench!( tracking_number: 77 )
+		@seal_markers_to_clean = [ seal_wh.send( :delivering_marker_path ) ]
+
+		# Merge the branch into main (would normally be absorbed).
+		system( "git", "-C", @repo_path, "merge", "in-flight", out: File::NULL, err: File::NULL )
+
+		# Checkin — sealed workbench should NOT be swept.
+		@warehouse.checkin!( name: "next-task" )
+
+		assert Dir.exist?( wb.path ), "sealed workbench should not be swept"
+
+		# Clean up seal.
+		@seal_markers_to_clean.each { |m| File.delete( m ) if File.exist?( m ) }
 	end
 end
