@@ -160,8 +160,10 @@ module Carson
 			end
 
 			# Agent checks in — prepare a fresh workbench from the latest standard.
+			# Sweeps delivered workbenches first — the Warehouse cleans behind the agent.
 			def checkin!( name: )
 				receive_latest_standard!
+				sweep_delivered_workbenches!
 				result = build_workbench!( name: name )
 				result[ :command ] = "checkin"
 				result
@@ -303,6 +305,38 @@ module Carson
 			end
 
 		private
+
+			# --- Sweep ---
+
+			# Sweep delivered workbenches — branches absorbed into main, not sealed,
+			# not CWD-blocked. Called by checkin! so the Warehouse cleans behind the agent.
+			def sweep_delivered_workbenches!
+				root = main_worktree_root
+
+				agent_prefixes = AGENT_DIRS.map do |dir|
+					full = File.join( root, dir, "worktrees" )
+					File.join( realpath_safe( full ), "" ) if Dir.exist?( full )
+				end.compact
+				return if agent_prefixes.empty?
+
+				workbenches.each do |workbench|
+					next unless workbench.branch
+					next unless agent_prefixes.any? { |prefix| workbench.path.start_with?( prefix ) }
+					next unless workbench.exists?
+					next unless label_absorbed?( workbench.branch )
+					next if agent_at_workbench?( workbench )
+					next if workbench_held_by_process?( workbench )
+
+					# Do not sweep sealed workbenches — parcel still in flight.
+					seal_check = Warehouse.new( path: workbench.path )
+					next if seal_check.sealed?
+
+					_, _, rm_ok = git( "worktree", "remove", workbench.path )
+					next unless rm_ok.success?
+
+					git( "branch", "-D", workbench.branch ) if workbench.branch
+				end
+			end
 
 			# --- Safety checks ---
 
