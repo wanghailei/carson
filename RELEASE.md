@@ -7,6 +7,25 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.2.0
+
+### New
+
+- **`carson checkin <name>`** — the agent's verb for getting a fresh workbench. Receives the latest production standard before building. Sweeps delivered workbenches automatically — the Warehouse cleans behind the agent, so explicit checkout is rarely needed.
+- **`carson checkout <name>`** — the agent's verb for releasing a workbench when done. Checks the seal (parcel in flight blocks checkout), CWD, process holds, dirty state, and unpushed work. Use at end of session; the common case is handled by the next checkin.
+
+### Changed
+
+- **CLI moved outside the story world** — `lib/carson/cli.rb` → `lib/cli.rb`. `lib/carson/` is domain objects only. checkin and checkout wire CLI directly to Warehouse with no Runtime. This is the template for Runtime dissolution.
+- **`tear_down_workbench!` renamed to `remove_workbench!`** — simpler verb, matches the domain.
+- **Remote branch deletion removed from workbench removal** — GitHub handles remote branch cleanup on PR merge. The Warehouse now only removes the directory and local branch.
+
+### UX
+
+- `carson checkin` output: `⧓ Workbench ready: <name>` with path and branch.
+- `carson checkout` output: `⧓ Workbench released: <name>`.
+- Agent lifecycle simplified: `checkin → work → deliver → checkin` (repeat). No explicit checkout between tasks.
+
 ## 4.1.2
 
 ### Fixed
