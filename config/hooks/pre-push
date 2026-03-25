@@ -29,24 +29,12 @@ if [[ -f "$config_file" ]]; then
 	fi
 fi
 
-# --- Local workstyle: allow everything, skip to template sync ---
+# --- Local workstyle: allow everything ---
+# Agents lint and test before delivering. The push is backup. Nothing to enforce.
 
 if [[ "$workstyle" = "local" ]]; then
-	remote_name="${1:-unknown}"
-	remote_url="${2:-unknown}"
-	has_commit_push=false
-	while read -r local_ref local_sha remote_ref remote_sha; do
-		[[ "$local_sha" != "0000000000000000000000000000000000000000" ]] && has_commit_push=true
-	done
-
-	# Template sync on push.
-	if $has_commit_push; then
-		if [[ -n "${CARSON_BIN:-}" ]]; then
-			ruby "$CARSON_BIN" template apply --push-prep || exit 1
-		else
-			carson template apply --push-prep 2>/dev/null || true
-		fi
-	fi
+	# Consume stdin (git sends ref data that must be read).
+	cat > /dev/null
 	exit 0
 fi
 
