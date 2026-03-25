@@ -7,6 +7,29 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.3.0
+
+### New
+
+- **Local-centred workstyle** — Carson now supports two workstyles. Local-centred (the new default) merges parcels directly into the local vault (main) and pushes to the remote as backup. No PR, no CI gate, no waiting. Remote-centred remains available for projects that need Bureau oversight. Set `workstyle: remote` in `.carson.yml` to use the old behaviour.
+- **`Warehouse::Vault` concern** — the vault is local main, where accepted parcels live. `warehouse.accept!( parcel )` merges a branch into main via fast-forward. If the branch has diverged, the agent must rebase first.
+- **`warehouse.prepare!( parcel, message: )`** — the delivery prep phase: pack, fetch latest standard, check freshness, auto-rebase if behind. No compliance gate in local workstyle — agents handle linting and testing themselves.
+
+### Changed
+
+- **Courier is workstyle-aware** — `courier.deliver( parcel )` uses different gestures per workstyle. Local: push main to backup vault. Remote: the existing Bureau trip (unchanged). One verb, two gestures. The Courier doesn't know if it's doing "backup" or "primary" — it just delivers.
+- **CLI orchestrates local delivery** — `carson deliver` in local workstyle follows the checkin/checkout pattern: CLI builds Warehouse + Courier, orchestrates `prepare!` → `accept!` → `courier.deliver`. No Runtime in the local path.
+
+### UX
+
+- `carson deliver` output (local workstyle): `⧓ <branch> merged into main.` / `⧓ Pushed to remote.`
+- On failure: clear recovery instructions (`Rebase onto main and deliver again.`)
+- On backup failure: `⧓ Backup failed.` with recovery.
+
+### Why
+
+The 2026-03-24 retrospective clarified that for a solo developer with agents, the remote-centred machinery (PR → CI → Bureau polling → merge) added latency, cost, and complexity without serving a need. The vault (local main) is the source of truth. GitHub is the backup vault. The Courier's job is simpler and faster.
+
 ## 4.2.1
 
 ### Fixed
