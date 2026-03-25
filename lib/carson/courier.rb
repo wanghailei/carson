@@ -255,9 +255,9 @@ module Carson
 			result[ :diagnostic ] = waybill.ci_diagnostic
 		end
 
-		# Local gesture: push main to the backup vault.
+		# Local gesture: sync the vault to the remote.
 		# The parcel is already in the vault (accepted by the Warehouse).
-		# The courier's job is to push the vault state to the remote backup.
+		# The courier's job is to push the vault state to the remote.
 		def deliver_locally( parcel )
 			result = {
 				command: "deliver",
@@ -282,7 +282,7 @@ module Carson
 				result[ :exit ] = OK
 				result[ :outcome ] = "delivered"
 				result[ :synced ] = false
-				result[ :backup_error ] = stderr.strip
+				result[ :sync_error ] = stderr.strip
 			end
 
 			result

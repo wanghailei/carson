@@ -131,25 +131,19 @@ module Carson
 			OptionParser.new do |parser|
 				parser.banner = "Usage: carson <command> [options]\n       carson <repo> <command> [options]"
 				parser.separator ""
-				parser.separator "Repository governance and workflow automation for coding agents."
-				parser.separator ""
-				parser.separator "Portfolio commands:"
-				parser.separator "    list         List governed repositories"
-				parser.separator "    onboard      Register a repository for governance (requires repo path)"
-				parser.separator "    offboard     Remove a repository from governance (requires repo path)"
-				parser.separator "    refresh      Re-install hooks and configuration (all governed repos)"
-				parser.separator "    version      Show Carson version"
+				parser.separator "Keep agents from breaking main. Keep agents from breaking each other."
 				parser.separator ""
 				parser.separator "Agent workflow:"
-				parser.separator "    checkin      Prepare a fresh workbench from the latest standard"
-				parser.separator "    deliver      Ship committed work — push, PR, merge, cleanup"
+				parser.separator "    checkin      Get a fresh workbench"
+				parser.separator "    deliver      Accept into main and back up to remote"
 				parser.separator ""
-				parser.separator "Repository commands (from CWD or with explicit repo):"
-				parser.separator "    checkout     Release a workbench when done"
-				parser.separator "    status       Show repository delivery state"
-				parser.separator "    audit        Run pre-commit health checks"
+				parser.separator "Portfolio:"
+				parser.separator "    onboard      Start governing a repository"
+				parser.separator "    offboard     Stop governing a repository"
+				parser.separator "    list         Show governed repositories"
+				parser.separator "    version      Show Carson version"
 				parser.separator ""
-				parser.separator "Run `carson <command> --help` for details on a specific command."
+				parser.separator "Run `carson <command> --help` for details."
 			end
 		end
 
@@ -813,20 +807,20 @@ module Carson
 
 			options = { json: false, title: nil, body_file: nil, commit_message: nil }
 			deliver_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson deliver [--json] [--title TITLE] [--body-file PATH] [--commit MESSAGE]"
+				parser.banner = "Usage: carson deliver [--json] [--commit MESSAGE]"
 				parser.separator ""
-				parser.separator "Push the current branch, create or refresh the pull request, and hand the branch to Carson."
-				parser.separator "Use --commit to create one all-dirty delivery commit before Carson pushes and opens the PR."
+				parser.separator "Accept committed work into main and sync to remote."
+				parser.separator "Use --commit to stage and commit all changes before delivery."
 				parser.separator ""
 				parser.separator "Options:"
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
-				parser.on( "--title TITLE", "PR title (defaults to branch name)" ) { |value| options[ :title ] = value }
-				parser.on( "--body-file PATH", "File containing PR body text" ) { |value| options[ :body_file ] = value }
-				parser.on( "--commit MESSAGE", "Commit all dirty user changes before delivery" ) { |value| options[ :commit_message ] = value }
+				parser.on( "--title TITLE", "PR title (remote workstyle only)" ) { |value| options[ :title ] = value }
+				parser.on( "--body-file PATH", "PR body file (remote workstyle only)" ) { |value| options[ :body_file ] = value }
+				parser.on( "--commit MESSAGE", "Commit all changes before delivery" ) { |value| options[ :commit_message ] = value }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson deliver                               Deliver existing commits"
-				parser.separator "    carson deliver --commit \"fix: harden flow\"   Commit dirty changes, then deliver"
+				parser.separator "    carson deliver --commit \"fix: harden flow\"   Commit then deliver"
 			end
 			deliver_parser.parse!( arguments )
 			if options.fetch( :commit_message, nil ).to_s.strip.empty? && !options.fetch( :commit_message, nil ).nil?
@@ -1119,12 +1113,12 @@ module Carson
 				return report_deliver( result: accept, json: json, output: output )
 			end
 
-			# Step 3: Courier delivers backup.
+			# Step 3: Courier syncs to remote.
 			courier = Courier.new( warehouse, workstyle: :local, output: output )
-			backup = courier.deliver( parcel )
+			sync = courier.deliver( parcel )
 
 			# Combine results.
-			result = accept.merge( backup.slice( :outcome, :synced, :backup_error ) )
+			result = accept.merge( sync.slice( :outcome, :synced, :sync_error ) )
 			result[ :command ] = "deliver"
 			result[ :outcome ] ||= "delivered"
 			report_deliver( result: result, json: json, output: output )
@@ -1146,9 +1140,9 @@ module Carson
 				when "ok"
 					output.puts "#{BADGE} #{result[ :branch ]} merged into main."
 					if result[ :synced ]
-						output.puts "#{BADGE} Pushed to #{result.fetch( :remote_main, "remote" )}."
-					elsif result[ :backup_error ]
-						output.puts "#{BADGE} Backup failed."
+						output.puts "#{BADGE} Synced to remote."
+					elsif result[ :sync_error ]
+						output.puts "#{BADGE} Sync failed."
 						output.puts "  \u2192 git push"
 					end
 				when "block", "error"
