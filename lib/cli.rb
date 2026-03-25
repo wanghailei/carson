@@ -148,8 +148,6 @@ module Carson
 				parser.separator "    checkout     Release a workbench when done"
 				parser.separator "    status       Show repository delivery state"
 				parser.separator "    audit        Run pre-commit health checks"
-				parser.separator "    recover      Merge the repair PR for one baseline-red governance check"
-				parser.separator "    worktree     Manage isolated coding worktrees"
 				parser.separator ""
 				parser.separator "Run `carson <command> --help` for details on a specific command."
 			end
