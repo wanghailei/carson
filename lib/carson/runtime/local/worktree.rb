@@ -26,7 +26,7 @@ module Carson
 							recovery: "git worktree list" },
 						json_output: json_output )
 				end
-				result = wh.tear_down_workbench!( workbench, force: force, skip_unpushed: skip_unpushed )
+				result = wh.remove_workbench!( workbench, force: force, skip_unpushed: skip_unpushed )
 				finish_worktree( result: result, json_output: json_output )
 			end
 

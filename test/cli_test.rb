@@ -602,6 +602,52 @@ class CLITest < Minitest::Test
 		assert_equal true, parsed.fetch( :json )
 	end
 
+	# --- checkin CLI tests ---
+
+	def test_parse_args_checkin
+		parsed = parse_args_from( [ "checkin", "feature-auth" ] )
+		assert_equal "checkin", parsed.fetch( :command )
+		assert_equal "feature-auth", parsed.fetch( :workbench_name )
+		assert_equal false, parsed.fetch( :json )
+	end
+
+	def test_parse_args_checkin_with_json
+		parsed = parse_args_from( [ "checkin", "feature-auth", "--json" ] )
+		assert_equal "checkin", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_checkin_missing_name
+		parsed, error = parse_args_with_error( [ "checkin" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Missing name"
+	end
+
+	# --- checkout CLI tests ---
+
+	def test_parse_args_checkout
+		parsed = parse_args_from( [ "checkout", "feature-auth" ] )
+		assert_equal "checkout", parsed.fetch( :command )
+		assert_equal "feature-auth", parsed.fetch( :workbench_name )
+		assert_equal false, parsed.fetch( :json )
+		assert_equal false, parsed.fetch( :force )
+	end
+
+	def test_parse_args_checkout_with_force
+		parsed = parse_args_from( [ "checkout", "feature-auth", "--force", "--json" ] )
+		assert_equal "checkout", parsed.fetch( :command )
+		assert_equal true, parsed.fetch( :force )
+		assert_equal true, parsed.fetch( :json )
+	end
+
+	def test_parse_args_checkout_missing_name
+		parsed, error = parse_args_with_error( [ "checkout" ] )
+		assert_equal :invalid, parsed.fetch( :command )
+		assert_includes error, "Missing name"
+	end
+
+	# --- worktree CLI tests ---
+
 	def test_dispatch_routes_worktree_create
 		runtime = FakeRuntime.new
 		result = Carson::CLI.dispatch( parsed: { command: "worktree:create", worktree_name: "feat" }, runtime: runtime )

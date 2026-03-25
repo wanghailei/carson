@@ -140,7 +140,7 @@ module Carson
 				end
 
 				if worktree
-					check = worktree_warehouse.assess_teardown( worktree, force: false, skip_unpushed: true )
+					check = worktree_warehouse.assess_removal( worktree, force: false, skip_unpushed: true )
 					return nil if check.fetch( :status ) == :ok
 
 					recovery = check[ :recovery ]
