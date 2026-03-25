@@ -148,10 +148,15 @@ module Carson
 			output.lines.map { it.strip }.reject { it.empty? }
 		end
 
-		# Has this label been merged into main?
+		# Has this label's content been absorbed into main?
+		# Content-aware: compares tree content, not SHA ancestry.
+		# Catches rebase-merged and squash-merged branches that
+		# `git branch --merged` misses (replayed SHAs differ).
 		def label_absorbed?( name )
-			merged_output, = git( "branch", "--merged", main_label, "--format", "%(refname:short)" )
-			merged_output.lines.map { it.strip }.include?( name )
+			_, _, status = Open3.capture3(
+				"git", "diff", "--quiet", @main_label, name,
+				chdir: path )
+			status.success?
 		end
 
 		# All worktree paths (transitional — use workbenches for Worktree instances).

@@ -345,6 +345,24 @@ class WarehouseTest < Minitest::Test
 		assert warehouse.label_absorbed?( "feature/merged" )
 	end
 
+	def test_label_absorbed_true_when_rebase_merged
+		# Simulate a rebase merge: replay the branch commit as a new SHA on main.
+		# The original branch tip is NOT reachable from main — this is the bug
+		# that `git branch --merged` missed.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/rebased", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "rebased.txt" ), "rebased" )
+		system( "git", "-C", @repo_path, "add", "rebased.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "on rebased branch", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
+
+		# Cherry-pick replays the content with a new SHA — same effect as rebase merge.
+		system( "git", "-C", @repo_path, "cherry-pick", "feature/rebased", out: File::NULL, err: File::NULL )
+
+		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
+		assert warehouse.label_absorbed?( "feature/rebased" ),
+			"label_absorbed? should return true for rebase-merged branches"
+	end
+
 	def test_label_absorbed_false_when_not_merged
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/unmerged", out: File::NULL, err: File::NULL )
 		File.write( File.join( @repo_path, "unmerged.txt" ), "unmerged" )
