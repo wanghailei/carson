@@ -26,7 +26,7 @@ For an agent working with Carson daily, the public surface is:
 | `carson deliver` | Warehouse → Courier | Accept parcel into vault, then courier pushes backup (local) — or courier ships to Bureau (remote) |
 | `carson checkout` | Warehouse | Release the workbench when safe |
 
-These are the public agent verbs. Worktrees, branches, and stash entries remain real, but they are warehouse machinery behind the surface. The workstyle (local or remote) determines how `deliver` behaves.
+These are the public agent verbs. Worktrees, branches, and stash entries remain real, but they are warehouse machinery behind the surface. When `bureau: true`, deliver also files a PR and waits for Bureau checks.
 
 ### Why Runtime Was Wrong
 
@@ -79,8 +79,8 @@ Carson is a delivery service company, like FedEx. It manages warehouses for clie
 ║  Deliver (remote gesture)  →  push + PR + poll + merge           ║
 ║  Sweep                     →  Workbench/branch/stash cleanup     ║
 ║                                                                  ║
-║  Workstyle: local          →  vault is source of truth           ║
-║  Workstyle: remote         →  bureau is source of truth          ║
+║  Bureau: off (default)     →  local delivery only                ║
+║  Bureau: on                →  local delivery + PR + CI           ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
@@ -113,11 +113,11 @@ Carson speaks two languages. Mixing them is a defect.
 2. **Two languages, never mixed.** Story language in source code and architecture; technical language in output and recovery guidance.
 3. **Carson Co. manages client relationships.** The company onboards/offboards warehouses, manages portfolio-level concerns. All daily operations are the Warehouse's job.
 4. **The Warehouse owns repo-local custody.** Workbench, vault, branch, stash, cleanliness, occupancy, pruning, and repair all belong there. The Warehouse is intelligent because Carson Co. serves it — the code is the staff.
-5. **The Courier waits at the gate.** It knows nothing about inside work. It receives a ready parcel and delivers it — different gestures per workstyle, same verb: `deliver`.
+5. **The Courier waits at the gate.** It knows nothing about inside work. It receives a ready parcel and delivers it. Default: sync vault to remote. Bureau enhancement: also file PR and wait.
 6. **Objects hold their own state.** No data extraction between objects.
 7. **Production standard matters.** Parcels must be based on the latest standard before acceptance. Query it, fix against it, and receive it after acceptance.
 8. **One workbench per parcel.** Workbenches are disposable; the vault is permanent. New work starts on a fresh workbench from the updated standard.
-9. **Workstyle is injectable.** Local-centred (default) or remote-centred. The workstyle determines how the entire workflow behaves, not just delivery.
+9. **Bureau is an enhancement, not a mode.** Local delivery is always the foundation: prepare → accept → sync. When `bureau: true`, the Courier also files a PR and waits for Bureau checks. One path, optional layer.
 10. **Runtime dissolves.** Its responsibilities are absorbed by the objects they belong to.
 11. **Numbered situations.** Every courier situation has a code number in the comments.
 12. **A warehouse does not deliver.** The Warehouse prepares and accepts. The Courier delivers. The CLI orchestrates: `prepare!` → `accept!` → `courier.deliver`.
@@ -129,25 +129,23 @@ Carson is organised around three roles:
 
 1. **Carson Co.** — the company HQ. Manages client relationships: onboard, offboard, list, refresh, version. Portfolio-level concerns only.
 2. **Warehouse** — the intelligent local authority. Owns all repo-local state: workbenches, vault, branches, stash. Prepares parcels, accepts them into the vault, sweeps up. Each warehouse belongs to a client. The warehouse becomes intelligent when Carson Co. serves it.
-3. **Courier** — the delivery worker. Waits at the gate. Receives a ready parcel and delivers it — different gestures per workstyle. Knows nothing about inside work.
+3. **Courier** — the delivery worker. Waits at the gate. Receives a ready parcel and delivers it — default syncs to remote, bureau enhancement adds PR. Knows nothing about inside work.
 
 | Object | What it is | What it knows | What it does |
 |---|---|---|---|
 | **Carson Co.** | The company HQ | client relationships, portfolio | onboards/offboards warehouses, renders output |
-| **Warehouse** | Intelligent local authority | workbenches, vault, branches, stash, standard, workstyle | prepares parcels, accepts into vault, sweeps, dispatches courier |
+| **Warehouse** | Intelligent local authority | workbenches, vault, branches, stash, standard | prepares parcels, accepts into vault, sweeps, dispatches courier |
 | **Vault** | The Warehouse's acceptance area | main branch ref, main worktree path | accepts parcels (ff-only merge), tracks what's absorbed |
 | **Workbench** | A passive place in the Warehouse | path, branch, prunable reason | shows state only |
 | **Parcel** | Committed changes | branch, head | the thing being delivered |
 | **Waybill** | Shipping document (remote only) | PR identity and bureau findings | passive data object |
 | **Delivery** | Tracking record (remote only) | status, cause, proof | passive ledger record |
-| **Courier** | Delivery worker | workstyle, remote address | delivers parcels — push (local) or Bureau trip (remote) |
+| **Courier** | Delivery worker | remote address, bureau flag | syncs vault to remote; files PR when bureau enhanced |
 | **Bureau** | GitHub (remote only) | review state, CI state | checks parcels and registers them |
 
 **Boundary rule:** anything inside the repository is managed by the Warehouse. Anything that leaves the warehouse is a Courier errand.
 
-In **local-centred** workstyle, the Vault (local main) is the source of truth. Remote main is the backup vault — the Courier pushes there.
-
-In **remote-centred** workstyle, the Bureau's registry (remote main) is the source of truth. Local main is the backup — it receives the standard after Bureau acceptance.
+The vault (local main) is always the source of truth. The Courier syncs it to the remote. When `bureau: true`, the Courier also files a PR and waits for Bureau checks — an enhancement on top of the base delivery.
 
 ## 6. Carson Co.
 
@@ -250,7 +248,7 @@ The Warehouse has internal sub-domains, each owning a distinct responsibility:
 ║                                                                    ║
 ║  knows:                                                            ║
 ║    path, current_label, current_head                               ║
-║    main_label, bureau_address, workstyle                           ║
+║    main_label, bureau_address                                      ║
 ║    workbenches, branches, stash                                    ║
 ║                                                                    ║
 ║  ┌─────────────────────────┐  ┌──────────────────────────────┐     ║
@@ -391,22 +389,22 @@ The Bureau (GitHub) includes its registry. Bureaucrats at the registry check par
   └──────────────────────────────────────────────┘
 ```
 
-### Waybill and Delivery (remote-centred only)
+### Waybill and Delivery (bureau enhancement only)
 
-A **Waybill** is the shipping document filed with the Bureau. It has a tracking number, a URL, and the Bureau's findings written onto it. It is a passive data object — it does not fetch, file, or accept anything itself. In local-centred workstyle, there is no waybill — there is no PR.
+A **Waybill** is the shipping document filed with the Bureau. It has a tracking number, a URL, and the Bureau's findings written onto it. It is a passive data object. Only active when `bureau: true` — without the Bureau, there is no PR, so no waybill.
 
-A **Delivery** is Carson's internal receipt. It records the parcel's journey and persists itself through the ledger. It is a passive ledger record. In local-centred workstyle, there is no Delivery record — git history is the delivery record.
+A **Delivery** is Carson's internal receipt. It records the parcel's journey and persists itself through the ledger. It is a passive ledger record. Only active when `bureau: true` — without the Bureau, git history is the delivery record.
 
 ### The Courier — Waits at the Gate
 
-The Courier is a delivery worker. It waits at the gate of the Warehouse, receives a ready parcel, and delivers it. It knows nothing about inside work — packing, compliance, standard checks are the Warehouse's job. The Courier has one public verb: `deliver`. The workstyle determines the gesture.
+The Courier is a delivery worker. It waits at the gate of the Warehouse, receives a ready parcel, and delivers it. It knows nothing about inside work — packing, standard checks are the Warehouse's job. The Courier has one public verb: `deliver`. Default: sync vault to remote. Bureau enhancement: also file PR and wait.
 
 ```
 ╔═══════════════════════════════════════════════════════════╗
 ║             Carson::Courier                               ║
 ║           (the delivery worker)                           ║
 ║                                                           ║
-║  injected:    workstyle, remote_address                   ║
+║  injected:    remote_address, bureau (default: false)     ║
 ║               merge_method, ledger (remote only)          ║
 ║               MAX_CHECKS_AT_BUREAU (remote only)          ║
 ║               poll_interval_at_bureau (remote only)       ║
@@ -414,12 +412,12 @@ The Courier is a delivery worker. It waits at the gate of the Warehouse, receive
 ║  can:                                                     ║
 ║    deliver( parcel )  — one verb, two gestures            ║
 ║                                                           ║
-║  local gesture:                                           ║
-║    Push main to backup vault (git push).                  ║
+║  default:                                                 ║
+║    Sync vault to remote (git push).                       ║
 ║    Report success or failure. That's it.                  ║
 ║                                                           ║
-║  remote gesture:                                          ║
-║    Ship to Bureau, file waybill, poll bureaucrats,        ║
+║  bureau enhanced (bureau: true):                          ║
+║    Sync + file waybill (PR), poll bureaucrats,            ║
 ║    register if cleared. Report outcome or "filed."        ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
@@ -553,36 +551,33 @@ The Courier ships to the Bureau, waits for bureaucrats, and reports. (Current im
 └────────────────┘
 ```
 
-### Workstyle
+### Bureau Enhancement
 
-Carson supports two workstyles. The workstyle determines how the entire workflow behaves — where the source of truth lives, how parcels are accepted, and what the Courier's errand looks like.
+Local delivery is always the foundation. The Bureau is an optional enhancement.
 
-**Local-centred** (default) — the Warehouse's vault (local main) is the source of truth. Remote main is a backup vault. The Warehouse accepts parcels directly into its vault via fast-forward merge. The Courier's errand is simple: push main to the backup vault. No PR, no waybill, no seal, no polling, no Ledger. Git history is the delivery record.
+**The base flow** (always):
+```
+prepare → accept into vault (ff-only) → courier syncs to remote
+```
 
-**Remote-centred** — the Bureau's registry (remote main) is the source of truth. Local main is the backup, receiving the standard from the registry after acceptance. The Courier's errand is complex: ship to Bureau, file waybill (PR), wait for bureaucrats (CI/review), register (merge). Waybill, seal, Ledger, and polling are all active.
+The vault (local main) is the source of truth. Remote main receives the sync. The Warehouse accepts parcels directly via fast-forward merge. The Courier syncs the vault to the remote. No PR, no waybill, no seal, no polling, no Ledger. Git history is the delivery record.
 
-| | Local-centred (default) | Remote-centred |
+**Bureau enhancement** (`bureau: true`):
+```
+prepare → accept into vault → courier syncs to remote → + file PR → + wait for Bureau
+```
+
+Same base flow, plus: the Courier files a waybill (PR) and waits for Bureau checks (CI, review). Waybill, seal, Ledger, and polling activate. The Bureau is a layer on top of the local delivery — not a different path.
+
+| | Base (default) | Bureau enhancement |
 |---|---|---|
-| Source of truth | Warehouse vault (local main) | Bureau registry (remote main) |
-| Local main is | The vault | The backup |
-| Remote main is | The backup vault | The registry |
-| Acceptance | Warehouse merges directly (ff-only) | Bureau checks, then registers |
-| Courier's errand | Push main to backup vault | Ship → waybill → poll → register |
-| Waybill | Not needed | PR |
-| Seal | Not needed (instant merge) | Active (parcel in flight) |
-| Ledger | Not needed (synchronous) | Active (async tracking) |
+| Vault acceptance | Always | Always |
+| Sync to remote | Always | Always |
+| PR filed | No | Yes |
+| Bureau checks (CI/review) | No | Yes |
+| Waybill, Seal, Ledger | Inactive | Active |
 
-Both workstyles are valid. The choice depends on the user's workflow. A solo developer with agents benefits from local-centred: no waiting, no ceremony, instant feedback. A team with review requirements benefits from remote-centred: Bureau oversight, CI gates, review approval.
-
-```
-Local-centred (default):
-  prepare → accept into vault (ff-only) → courier pushes backup
-
-Remote-centred:
-  prepare → courier ships → waybill → poll bureau → register
-```
-
-Config: `.carson.yml` → `workstyle: local` (default) or `workstyle: remote`.
+Config: `.carson.yml` → `bureau: false` (default) or `bureau: true`.
 
 ## 9. Implementation Surface, Coding Conventions, and Scars
 
