@@ -269,11 +269,9 @@ module Carson
 			main = @warehouse.main_label
 			root = @warehouse.main_worktree_root
 
-			# --no-verify bypasses the pre-push hook that blocks direct pushes
-			# to main in governed repos. This IS Carson's delivery — the vault
-			# accepted the parcel, now the courier backs it up.
+			# The pre-push hook understands local workstyle — no bypass needed.
 			_, stderr, status = Open3.capture3(
-				"git", "-C", root, "push", "--no-verify", remote, main
+				"git", "-C", root, "push", remote, main
 			)
 
 			if status.success?

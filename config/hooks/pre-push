@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Carson pre-push hook — enforces push policy in governed repositories.
 #
-# Guards:
+# Workstyle-aware:
+#   local  — allows pushes to main and tags. This IS the delivery path.
+#   remote — blocks direct pushes to main. Agents must use `carson deliver`.
+#
+# Guards (remote workstyle only):
 #   1. Blocks direct push to main/master refs.
-#   2. Blocks raw git push in governed repos — agents must use `carson deliver`.
-#      Carson bypasses via --no-verify internally. No env-var signal to spoof.
+#   2. Blocks raw git push in governed repos.
 #
 # Bypass: git push --no-verify
 set -euo pipefail
@@ -13,8 +16,43 @@ hooks_dir="$(cd "$(dirname "$0")" && pwd)"
 style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "branch")"
 [ "$style" = "trunk" ] && exit 0
 
-# --- Guard 1: block pushes to main/master refs ---
+# --- Resolve workstyle from Carson config ---
+# Local-centred workstyle: direct push to main is legitimate delivery.
+# Remote-centred workstyle (default): pushes go through PRs.
 
+workstyle="remote"
+config_file="${HOME}/.carson/config.json"
+if [[ -f "$config_file" ]]; then
+	# Read workstyle from config. Simple grep — no jq dependency.
+	if grep -q '"workstyle"[[:space:]]*:[[:space:]]*"local"' "$config_file" 2>/dev/null; then
+		workstyle="local"
+	fi
+fi
+
+# --- Local workstyle: allow everything, skip to template sync ---
+
+if [[ "$workstyle" = "local" ]]; then
+	remote_name="${1:-unknown}"
+	remote_url="${2:-unknown}"
+	has_commit_push=false
+	while read -r local_ref local_sha remote_ref remote_sha; do
+		[[ "$local_sha" != "0000000000000000000000000000000000000000" ]] && has_commit_push=true
+	done
+
+	# Template sync on push.
+	if $has_commit_push; then
+		if [[ -n "${CARSON_BIN:-}" ]]; then
+			ruby "$CARSON_BIN" template apply --push-prep || exit 1
+		else
+			carson template apply --push-prep 2>/dev/null || true
+		fi
+	fi
+	exit 0
+fi
+
+# --- Remote workstyle: enforce guards ---
+
+# Guard 1: block pushes to main/master refs.
 remote_name="${1:-unknown}"
 remote_url="${2:-unknown}"
 has_commit_push=false
@@ -30,12 +68,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 	[[ "$local_sha" != "0000000000000000000000000000000000000000" ]] && has_commit_push=true
 done
 
-# --- Guard 2: block raw git push in governed repos ---
-# All pushes in governed repos are blocked unconditionally.
-# Carson bypasses this hook via --no-verify when pushing internally.
-# No env-var bypass — cannot be spoofed.
-
-config_file="${HOME}/.carson/config.json"
+# Guard 2: block raw git push in governed repos.
 if [[ -f "$config_file" ]]; then
 	repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
 	if [[ -n "$repo_root" ]]; then
