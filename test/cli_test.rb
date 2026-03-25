@@ -2,9 +2,9 @@
 require_relative "test_helper"
 
 class CLITest < Minitest::Test
-	FakeConfig = Struct.new( :workstyle, keyword_init: true ) do
-		def self.remote
-			new( workstyle: :remote )
+	FakeConfig = Struct.new( :bureau, keyword_init: true ) do
+		def self.with_bureau
+			new( bureau: true )
 		end
 	end
 
@@ -17,7 +17,7 @@ class CLITest < Minitest::Test
 		end
 
 		def config
-			FakeConfig.remote
+			FakeConfig.with_bureau
 		end
 
 		def setup!( cli_choices: {} )

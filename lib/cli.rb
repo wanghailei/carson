@@ -1017,15 +1017,15 @@ module Carson
 			when "template:apply"
 				runtime.template_apply!( push_prep: parsed.fetch( :push_prep, false ) )
 			when "deliver"
-				if runtime.config.workstyle == :local
-					dispatch_deliver_locally( parsed: parsed, runtime: runtime )
-				else
+				if runtime.config.bureau
 					runtime.deliver!(
 						title: parsed.fetch( :title, nil ),
 						body_file: parsed.fetch( :body_file, nil ),
 						commit_message: parsed.fetch( :commit_message, nil ),
 						json_output: parsed.fetch( :json, false )
 					)
+				else
+					dispatch_deliver_locally( parsed: parsed, runtime: runtime )
 				end
 			when "recover"
 				runtime.recover!(
@@ -1096,6 +1096,14 @@ module Carson
 			json = parsed.fetch( :json, false )
 			output = runtime.output
 
+			# Guard: cannot deliver from main itself.
+			if parcel.on_main?( runtime.config.main_branch )
+				result = { command: "deliver", status: "block",
+					error: "Cannot deliver from #{runtime.config.main_branch}.",
+					recovery: "carson checkin <name>" }
+				return report_deliver( result: result, json: json, output: output )
+			end
+
 			# Step 1: Prepare.
 			prep = warehouse.prepare!( parcel, message: message )
 			unless prep[ :status ] == "ok"
@@ -1114,7 +1122,7 @@ module Carson
 			end
 
 			# Step 3: Courier syncs to remote.
-			courier = Courier.new( warehouse, workstyle: :local, output: output )
+			courier = Courier.new( warehouse, output: output )
 			sync = courier.deliver( parcel )
 
 			# Combine results.

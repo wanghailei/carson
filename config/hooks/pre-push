@@ -1,81 +1,14 @@
 #!/usr/bin/env bash
-# Carson pre-push hook — enforces push policy in governed repositories.
+# Carson pre-push hook.
 #
-# Workstyle-aware:
-#   local  — allows pushes to main and tags. This IS the delivery path.
-#   remote — blocks direct pushes to main. Agents must use `carson deliver`.
+# Local delivery is always the base — pushes to main are legitimate.
+# When bureau enhancement is enabled, the Bureau path runs through
+# Runtime.deliver!, not through raw git push. So the hook has nothing
+# to enforce in either case.
 #
-# Guards (remote workstyle only):
-#   1. Blocks direct push to main/master refs.
-#   2. Blocks raw git push in governed repos.
-#
-# Bypass: git push --no-verify
+# The hook remains installed for future use (e.g. bureau-specific guards).
+# For now: consume stdin and exit.
 set -euo pipefail
 
-hooks_dir="$(cd "$(dirname "$0")" && pwd)"
-style="$(cat "$hooks_dir/workflow_style" 2>/dev/null || echo "branch")"
-[ "$style" = "trunk" ] && exit 0
-
-# --- Resolve workstyle from Carson config ---
-# Local-centred workstyle: direct push to main is legitimate delivery.
-# Remote-centred workstyle (default): pushes go through PRs.
-
-workstyle="remote"
-config_file="${HOME}/.carson/config.json"
-if [[ -f "$config_file" ]]; then
-	# Read workstyle from config. Simple grep — no jq dependency.
-	if grep -q '"workstyle"[[:space:]]*:[[:space:]]*"local"' "$config_file" 2>/dev/null; then
-		workstyle="local"
-	fi
-fi
-
-# --- Local workstyle: allow everything ---
-# Agents lint and test before delivering. The push is backup. Nothing to enforce.
-
-if [[ "$workstyle" = "local" ]]; then
-	# Consume stdin (git sends ref data that must be read).
-	cat > /dev/null
-	exit 0
-fi
-
-# --- Remote workstyle: enforce guards ---
-
-# Guard 1: block pushes to main/master refs.
-remote_name="${1:-unknown}"
-remote_url="${2:-unknown}"
-has_commit_push=false
-while read -r local_ref local_sha remote_ref remote_sha; do
-	case "$remote_ref" in
-		refs/heads/main|refs/heads/master)
-			echo "Pushes to ${remote_ref#refs/heads/} go through PRs, not direct push." >&2
-			echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
-			echo "Bypass: git push --no-verify" >&2
-			exit 1
-			;;
-	esac
-	[[ "$local_sha" != "0000000000000000000000000000000000000000" ]] && has_commit_push=true
-done
-
-# Guard 2: block raw git push in governed repos.
-if [[ -f "$config_file" ]]; then
-	repo_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
-	if [[ -n "$repo_root" ]]; then
-		normalised="$(cd "$repo_root" && pwd -P)"
-		if grep -qF "\"$normalised\"" "$config_file" 2>/dev/null; then
-			echo "This repo is Carson-governed — use \`carson deliver\` instead of raw \`git push\`." >&2
-			echo "Use \`carson deliver\` instead — it handles push, PR, and merge with safety guards." >&2
-			echo "Bypass: git push --no-verify" >&2
-			exit 1
-		fi
-	fi
-fi
-
-# --- Template sync on push ---
-
-if $has_commit_push; then
-	if [[ -n "${CARSON_BIN:-}" ]]; then
-		ruby "$CARSON_BIN" template apply --push-prep || exit 1
-	else
-		carson template apply --push-prep || exit 1
-	fi
-fi
+cat > /dev/null
+exit 0

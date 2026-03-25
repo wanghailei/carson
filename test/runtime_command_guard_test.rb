@@ -75,12 +75,12 @@ class RuntimeCommandGuardTest < Minitest::Test
 
 	# --- pre-push hook governed repo detection ---
 
-	def test_pre_push_hook_blocks_in_governed_repo
+	def test_pre_push_hook_allows_governed_repo
+		# Local delivery is always the base — pushes are legitimate.
 		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
 		init_git_repo( repo_root )
 		create_feature_branch( repo_root, "feature/guard-test" )
 
-		# Set up config directly — matching the pattern of other passing tests.
 		normalised = File.realpath( repo_root )
 		carson_dir = File.join( repo_root, ".carson" )
 		FileUtils.mkdir_p( carson_dir )
@@ -99,40 +99,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			chdir: repo_root
 		)
 
-		refute status.success?, "pre-push should block raw push in governed repo"
-		assert_includes stderr, "Carson-governed"
-		assert_includes stderr, "carson deliver"
-	ensure
-		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
-	end
-
-	def test_pre_push_hook_blocks_even_with_carson_push_env
-		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
-		init_git_repo( repo_root )
-		create_feature_branch( repo_root, "feature/carson-push" )
-
-		normalised = File.realpath( repo_root )
-		carson_dir = File.join( repo_root, ".carson" )
-		FileUtils.mkdir_p( carson_dir )
-		File.write(
-			File.join( carson_dir, "config.json" ),
-			JSON.generate( { "govern" => { "repos" => [ normalised ] } } )
-		)
-
-		hook_path = File.join( tool_root_path, "config", "hooks", "pre-push" )
-		ref_input = "refs/heads/feature/carson-push abc123 refs/heads/feature/carson-push 000000\n"
-
-		# CARSON_PUSH=1 should no longer bypass the hook — the hook blocks unconditionally.
-		# Carson uses --no-verify to skip the hook entirely, not an env var.
-		stdout, stderr, status = Open3.capture3(
-			{ "HOME" => repo_root, "CARSON_PUSH" => "1" },
-			"bash", hook_path, "origin", "git@github.com:mock/repo.git",
-			stdin_data: ref_input,
-			chdir: repo_root
-		)
-
-		refute status.success?, "pre-push should block even with CARSON_PUSH=1 — no env-var bypass"
-		assert_includes stderr, "Carson-governed"
+		assert status.success?, "pre-push should allow push — local delivery is the base"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
@@ -166,7 +133,8 @@ class RuntimeCommandGuardTest < Minitest::Test
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end
 
-	def test_pre_push_hook_blocks_push_to_main
+	def test_pre_push_hook_allows_push_to_main
+		# Local delivery pushes main — this is the delivery path.
 		repo_root = Dir.mktmpdir( "carson-guard-test", carson_tmp_root )
 		init_git_repo( repo_root )
 
@@ -180,8 +148,7 @@ class RuntimeCommandGuardTest < Minitest::Test
 			chdir: repo_root
 		)
 
-		refute status.success?, "pre-push should block push to main"
-		assert_includes stderr, "Pushes to"
+		assert status.success?, "pre-push should allow push to main — local delivery is the base"
 	ensure
 		FileUtils.remove_entry( repo_root ) if repo_root && File.directory?( repo_root )
 	end

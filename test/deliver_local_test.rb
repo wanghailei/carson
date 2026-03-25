@@ -94,7 +94,7 @@ class DeliverLocalTest < Minitest::Test
 		assert_equal "ok", vault_result[ :status ]
 
 		# Courier delivers (local gesture = push backup).
-		courier = Carson::Courier.new( warehouse, workstyle: :local, output: StringIO.new )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		result = courier.deliver( parcel )
 
 		assert_equal "delivered", result[ :outcome ]
@@ -125,7 +125,7 @@ class DeliverLocalTest < Minitest::Test
 		assert_equal "ok", accept[ :status ]
 
 		# Step 3: Courier delivers backup.
-		courier = Carson::Courier.new( warehouse, workstyle: :local, output: StringIO.new )
+		courier = Carson::Courier.new( warehouse, output: StringIO.new )
 		deliver = courier.deliver( parcel )
 		assert_equal "delivered", deliver[ :outcome ]
 

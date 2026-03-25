@@ -64,11 +64,10 @@ module Carson
 	# == Workstyle
 	#
 	# The courier's gesture depends on the workstyle:
-	# - :local — push main to backup vault (simple, no PR, no waiting)
-	# - :remote — ship → waybill → bureau → acceptance (complex Bureau trip)
-	#
-	# The courier doesn't know whether it's doing "backup" or "primary" —
-	# it just delivers to wherever the workstyle dictates.
+	# The courier delivers parcels. The default gesture is local: sync the
+	# vault to the remote. When bureau enhancement is enabled, the courier
+	# also files a PR and waits for Bureau checks — but that path runs
+	# through Runtime.deliver!, not through this default gesture.
 	class Courier
 		# Exit codes — shared contract between Carson employees and the CLI.
 		OK = 0
@@ -80,9 +79,9 @@ module Carson
 		# The courier checks the bureau up to 6 times before leaving.
 		MAX_CHECKS_AT_BUREAU = 6
 
-		def initialize( warehouse, workstyle: :local, ledger: nil, merge_method: "rebase", poll_interval_at_bureau: 30, output: $stdout )
+		def initialize( warehouse, bureau: false, ledger: nil, merge_method: "rebase", poll_interval_at_bureau: 30, output: $stdout )
 			@warehouse = warehouse
-			@workstyle = workstyle
+			@bureau = bureau
 			@ledger = ledger
 			@merge_method = merge_method
 			@poll_interval_at_bureau = poll_interval_at_bureau
@@ -90,10 +89,10 @@ module Carson
 		end
 
 		# Deliver a parcel.
-		# Local gesture: push main to backup vault.
-		# Remote gesture: ship to Bureau, file waybill, poll, register.
+		# Default: sync the vault to the remote.
+		# Bureau enhancement: also file waybill, poll, register.
 		def deliver( parcel, title: nil, body_file: nil, commit_message: nil )
-			return deliver_locally( parcel ) if @workstyle == :local
+			return deliver_locally( parcel ) unless @bureau
 
 			result = {
 				command: "deliver",
