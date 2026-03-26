@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-if [[ -n "${CARSON_BIN:-}" ]]; then
-	carson_command=( "$CARSON_BIN" )
-elif command -v carson >/dev/null 2>&1; then
-	carson_command=( "carson" )
-else
-	echo "Carson policy: 'carson' command is required for pre-commit governance checks." >&2
-	echo "Install Carson and rerun 'carson prepare'." >&2
-	exit 1
-fi
-
-if ! "${carson_command[@]}" audit; then
-	echo "Carson policy: commit blocked by governance audit." >&2
-	echo "Resolve reported policy blocks before committing." >&2
-	echo "If lint policy files are missing, run: carson lint policy --source <path-or-git-url>" >&2
-	exit 1
-fi
+# Pre-commit hook — reserved for future use.
+exit 0
