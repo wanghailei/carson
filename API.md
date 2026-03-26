@@ -21,7 +21,7 @@ Repo-scoped commands: `carson <repo> <command>` or `carson <command>` when CWD i
 |---|---|
 | `carson setup` | Interactive quiz to configure remote, main branch, workflow, and canonical lint-policy path. Writes `~/.carson/config.json`. |
 | `carson onboard <repo_path>` | Apply one-command baseline setup for a target git repository. Auto-triggers `setup` on first run. Installs or refreshes Carson-managed global hooks. |
-| `carson refresh` | Re-apply hooks, templates, and audit across all governed repos after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). Skips repos with active worktrees or uncommitted changes. |
+| `carson refresh` | Re-apply hooks and templates across all governed repos after upgrading Carson. Auto-propagates template updates to the remote via worktree (branch workflow: PR on `carson/template-sync`; trunk workflow: push to main). Skips repos with active worktrees or uncommitted changes. |
 | `carson offboard <repo_path>` | Remove Carson-managed host artefacts, detach Carson hooks path, and deregister from `govern.repos`. |
 | `carson list [--json]` | List all governed repositories. |
 
@@ -29,9 +29,8 @@ Repo-scoped commands: `carson <repo> <command>` or `carson <command>` when CWD i
 
 | Command | Purpose |
 |---|---|
-| `carson audit` | Evaluate governance status and generate report output. |
 | `carson deliver [--commit MESSAGE]` | Run Carson-owned branch delivery for the current checkout. Plain `deliver` transports existing commits only; `--commit` creates one all-dirty delivery commit first. Before push, Carson verifies the branch is fresh against the configured remote `main`; behind or unknown freshness blocks delivery without creating or refreshing a PR. If freshness is good, Carson pushes, creates or refreshes the PR, watches the delivery for a bounded settle window, merges when clear, syncs local `main`, and reports merge proof for the delivered branch. Non-integrated exits report `Merge deferred` or `Merge blocked` with explicit handoff commands. |
-| `carson recover --check NAME [--json]` | Run the exceptional governed recovery path when one governance-owned required check is already red on the default branch. Carson proves the named baseline failure, keeps every other gate intact, merges through the recovery path, and records a machine-readable audit event. |
+| `carson recover --check NAME [--json]` | Run the exceptional governed recovery path when one governance-owned required check is already red on the default branch. Carson proves the named baseline failure, keeps every other gate intact, and merges through the recovery path. |
 | `carson sync` | Fast-forward local `main` from configured remote when tree is clean. |
 | `carson prune` | Remove stale local branches whose upstream refs no longer exist. |
 | `carson housekeep [--json] [--dry-run]` | Attempt to sync the current repo, then reap worktrees with strong abandonment evidence, reconcile integrated delivery worktree records from the ledger, and prune stale branches. Safe cleanup still runs when sync is blocked. |

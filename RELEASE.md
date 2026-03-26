@@ -7,6 +7,14 @@ Release-note scope rule:
 
 ## Unreleased
 
+### Removed
+
+- **`carson audit` dissolved.** The audit command and its pre-commit gate have been removed entirely. Three of its seven checks were already enforced by the commands that need them (sealed workbench by `pack!`, working tree by Courier, main sync by `sync!`). The remaining four (PR status, CI baseline, hooks health, outsider fingerprints) were either unproven at commit time or already called by individual commands. Bare `carson` now defaults to `status` instead of `audit`. The pre-commit hook is now a no-op reserved for future use.
+
+### Why
+
+Audit was a remote-centred pre-commit gate — it blocked commits based on delivery-time concerns (PR checks, CI baseline) that don't belong at commit time. In local-centred mode it was purely dead weight. Rather than relocate it to bureau, we verified that none of its unique checks had proven value at any gate, and dissolved the whole thing. Scars, not speculation.
+
 ## 4.3.1
 
 ### Changed

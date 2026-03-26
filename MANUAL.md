@@ -40,7 +40,7 @@ On first run (no `~/.carson/config.json` exists), `onboard` launches `carson set
 - Repository `core.hooksPath` alignment to Carson global hooks.
 - Commit-time governance gate via managed `pre-commit` hook.
 - Canonical `.github/*` template synchronisation (when `lint.canonical` is configured).
-- Initial governance audit.
+- Initial governance status check.
 
 ### Reconfigure later
 
@@ -78,7 +78,7 @@ jobs:
 Notes:
 - When upgrading Carson, update both `carson_ref` and `carson_version` together.
 - `CARSON_READ_TOKEN` must have read access to your policy source repository.
-- The reusable workflow installs a pinned RuboCop gem before `carson audit`; mirror the same pin in host governance workflows for deterministic checks.
+- The reusable workflow installs a pinned RuboCop gem before lint checks; mirror the same pin in host governance workflows for deterministic checks.
 
 ### Canonical Templates
 
@@ -112,7 +112,7 @@ Carson discovers files in this directory and syncs them to governed repos. Root 
 
 ## Operating Strategies
 
-These strategies are the audit lens for Carson. If behaviour departs from them, either the product model or the implementation needs attention.
+These strategies are the design lens for Carson. If behaviour departs from them, either the product model or the implementation needs attention.
 
 ### Git Strategist
 
@@ -181,7 +181,7 @@ When a governance-owned required check is already red on the default branch, the
 carson recover --check "Carson governance"
 ```
 
-Recovery is narrow. Carson proves that the named check is red on the default branch, verifies that the current branch is repairing the governance surface, requires every other required check and the review gate to pass, then records a machine-readable audit event before reporting success.
+Recovery is narrow. Carson proves that the named check is red on the default branch, verifies that the current branch is repairing the governance surface, requires every other required check and the review gate to pass, then records a recovery event before reporting success.
 
 If Carson refuses recovery, the message explains the exact missing proof or remaining gate and tells you what to do next.
 
@@ -255,13 +255,13 @@ The two tools serve different layers. EnterWorktree owns the session (CWD switch
 
 ```bash
 carson sync                                          # fast-forward local main
-carson audit                                         # full governance check
+carson status                                        # check repository state
 ```
 
 **Before push or PR update:**
 
 ```bash
-carson audit
+carson status
 carson template check
 ```
 
@@ -287,7 +287,7 @@ carson list --json      # machine-readable output
 **Portfolio maintenance:**
 
 ```bash
-carson refresh                 # re-apply hooks, templates, audit across all repos
+carson refresh                 # re-apply hooks and templates across all repos
 carson list                    # list all governed repositories
 ```
 
@@ -411,7 +411,7 @@ Change: `CARSON_REVIEW_DISPOSITION`.
 
 How much Carson prints.
 
-- Default: **concise**. A healthy audit prints one line. Problems print actionable summaries with cause and fix.
+- Default: **concise**. A healthy run prints one line. Problems print actionable summaries with cause and fix.
 - `--verbose` restores full diagnostic key-value output for debugging.
 
 ## Configuration
