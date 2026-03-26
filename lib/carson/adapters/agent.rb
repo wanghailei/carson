@@ -3,7 +3,7 @@ module Carson
 	module Adapters
 		module Agent
 			WorkOrder = Struct.new( :repo, :branch, :pr_number, :objective, :context, :acceptance_checks, keyword_init: true )
-			# objective: "fix_ci" | "address_review" | "fix_audit"
+			# objective: "fix_ci" | "address_review"
 			# context: String (legacy — PR title) or Hash with structured evidence:
 			#   fix_ci:         { title:, ci_logs:, ci_run_url:, prior_attempt: { summary:, dispatched_at: } }
 			#   address_review: { title:, review_findings: [{ kind:, url:, body: }], prior_attempt: ... }

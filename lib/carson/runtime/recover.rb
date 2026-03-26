@@ -84,14 +84,14 @@ module Carson
 				}
 				if baseline.fetch( :status ) == "skipped"
 					result[ :error ] = "unable to verify the default-branch baseline: #{baseline.fetch( :skip_reason )}"
-					result[ :recovery ] = "run carson audit after fixing GitHub access"
+					result[ :recovery ] = "run carson status after fixing GitHub access"
 					return recover_finish( result: result, exit_code: EXIT_ERROR, json_output: json_output )
 				end
 
 				baseline_entry = recovery_baseline_entry( baseline: baseline, check_name: check_name )
 				if baseline_entry.nil?
 					result[ :error ] = "#{check_name} is not red on #{baseline.fetch( :default_branch, config.main_branch )}"
-					result[ :recovery ] = "run carson audit to confirm the baseline check state"
+					result[ :recovery ] = "run carson status to confirm the baseline check state"
 					return recover_finish( result: result, exit_code: EXIT_BLOCK, json_output: json_output )
 				end
 
@@ -408,7 +408,7 @@ module Carson
 				elsif result[ :synced ]
 					puts_line "Synced local #{result.fetch( :main_branch )}."
 				end
-				puts_line "Recorded recovery audit for #{result.fetch( :check )}."
+				puts_line "Recorded recovery for #{result.fetch( :check )}."
 				puts_line "Check back with #{result.fetch( :next_step )}" if result[ :next_step ]
 			end
 		end

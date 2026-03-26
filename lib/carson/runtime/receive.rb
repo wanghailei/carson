@@ -365,7 +365,7 @@ module Carson
 				case cause
 				when "ci" then "fix_ci"
 				when "review" then "address_review"
-				else "fix_audit"
+				else "fix_ci"
 				end
 			end
 

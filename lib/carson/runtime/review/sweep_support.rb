@@ -163,7 +163,7 @@ module Carson
 					}
 				end
 
-				# When sweep is clear, close prior tracking issue and add one clear audit comment.
+				# When sweep is clear, close prior tracking issue and add a clear comment.
 				def close_review_sweep_issue_if_open( repo_slug:, issue: )
 					return { action: "none", issue: nil } if issue.nil?
 					return { action: "none", issue: issue } unless issue.fetch( :state ) == "OPEN"
