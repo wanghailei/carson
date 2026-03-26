@@ -92,7 +92,7 @@ init_repo="$tmp_root/init-work"
 mock_bin="$tmp_root/mock-bin"
 
 # Write smoke config after work_repo is defined so it can be registered
-# as a governed repo. CWD repo commands (status, deliver, audit) require
+# as a governed repo. CWD repo commands (status, deliver) require
 # the repo to appear in govern.repos.
 smoke_config_path="$tmp_root/carson-config.json"
 cat > "$smoke_config_path" <<EOF
@@ -298,7 +298,7 @@ git switch main >/dev/null
 # Clean up feature branch, remote branch, and delivery seal.
 # The deliver test leaves a sealed workbench (parcel in flight) because the
 # mock gh cannot complete the merge lifecycle. Without cleanup, every
-# subsequent audit test hits the seal guard and exits 2 before reaching
+# subsequent command test hits the seal guard and exits 2 before reaching
 # the logic under test. The remote branch must also be removed so later
 # tests can reuse the branch name.
 git branch -D feature/deliver-smoke >/dev/null
@@ -365,9 +365,6 @@ expect_exit 1 "unsupported run command is rejected" run_carson run "$init_repo"
 # Validate core setup flows (sync/hook/template).
 cd "$work_repo"
 expect_exit 0 "refresh syncs main and installs required hooks" run_carson refresh
-expect_exit 0 "audit reports attention (not block) when default-branch baseline has failing check-runs" run_carson_with_mock_gh_scenario baseline_block_failing audit
-expect_exit 0 "audit reports attention (not block) when default-branch baseline has pending check-runs" run_carson_with_mock_gh_scenario baseline_block_pending audit
-expect_exit 0 "audit reports attention (not block) when default-branch workflows have no check-run evidence" run_carson_with_mock_gh_scenario baseline_block_no_evidence audit
 for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 	if [[ ! -x "$tmp_root/global-hooks/$expected_carson_version/$required_hook" ]]; then
 		echo "FAIL: required hook missing or non-executable: $required_hook" >&2
@@ -376,42 +373,6 @@ for required_hook in pre-commit prepare-commit-msg pre-merge-commit pre-push; do
 done
 echo "PASS: required hooks include pre-commit and are executable"
 
-# Scope-policy smoke must run in disposable worktrees. Audit correctly blocks
-# dirty main-worktree state, so staged-change scenarios belong outside the root.
-scope_advisory_worktree="$tmp_root/scope-policy-advisory"
-git worktree add -b feature/scope-policy-advisory "$scope_advisory_worktree" main >/dev/null
-(
-	cd "$scope_advisory_worktree"
-	mkdir -p app/models lib
-	printf "scope enforcement smoke\n" > app/models/scope_policy_smoke.rb
-	printf "scope enforcement mixed module smoke\n" > lib/scope_policy_tool_smoke.rb
-	git add app/models/scope_policy_smoke.rb lib/scope_policy_tool_smoke.rb
-	expect_exit 0 "audit reports mixed module groups as advisory (not blocking)" run_carson audit
-	git reset --hard HEAD >/dev/null
-)
-git -C "$work_repo" worktree remove "$scope_advisory_worktree" >/dev/null
-
-scope_staged_worktree="$tmp_root/staged-scope-only"
-git worktree add -b feature/staged-scope-only "$scope_staged_worktree" main >/dev/null
-(
-	cd "$scope_staged_worktree"
-	mkdir -p app/models lib
-	printf "staged scope pass\n" > lib/staged_scope_ok.rb
-	printf "unstaged mismatch should not block\n" > app/models/unstaged_scope_violation.rb
-	git add lib/staged_scope_ok.rb
-	expect_exit 0 "audit enforces scope using staged paths when index changes exist" run_carson audit
-	set +e
-	git commit -m "staged scope only commit should pass pre-commit" >/dev/null 2>&1
-	commit_status="$?"
-	set -e
-	if [[ "$commit_status" -ne 0 ]]; then
-		echo "FAIL: pre-commit hook should ignore unstaged scope mismatches when staged scope is valid" >&2
-		exit 1
-	fi
-	echo "PASS: pre-commit ignores unstaged scope mismatches when staged scope is valid"
-	git reset --hard HEAD >/dev/null
-	git clean -fd >/dev/null
-)
 git -C "$work_repo" worktree remove "$scope_staged_worktree" >/dev/null
 
 template_canonical_dir="$tmp_root/template-canonical"
@@ -437,34 +398,10 @@ expect_exit 0 "template check passes after apply" run_carson_with_config "$templ
 # safe-delete (git branch -d requires the tip to be reachable from HEAD).
 git add .github >/dev/null
 git -c core.hooksPath=.git/hooks commit -m "chore: commit managed files for smoke-test baseline" >/dev/null
-# Push to origin so local main stays in sync; avoids "main ahead" audit blocks later.
+# Push to origin so local main stays in sync.
 git -c core.hooksPath=.git/hooks push origin main >/dev/null
 expect_exit 1 "unknown command returns runtime/configuration error" run_carson template lint
 
-
-# Validate report directory fallback precedence for invalid HOME.
-tmpdir_report_root="$tmp_root/custom-tmpdir"
-mkdir -p "$tmpdir_report_root"
-# || true: these tests only verify the report path in verbose output; the audit
-# exit code reflects live GitHub CI state which may be pending during CI runs.
-tmpdir_report_output="$(run_carson_with_report_env "relative-home" "$tmpdir_report_root" audit --verbose)" || true
-expected_tmpdir_report_path="$tmpdir_report_root/carson/pr_report_latest.md"
-if [[ "$tmpdir_report_output" != *"report_markdown: $expected_tmpdir_report_path"* ]]; then
-	echo "FAIL: audit did not use TMPDIR fallback when HOME is invalid" >&2
-	echo "expected output to include: report_markdown: $expected_tmpdir_report_path" >&2
-	echo "actual output: $tmpdir_report_output" >&2
-	exit 1
-fi
-echo "PASS: report path falls back to TMPDIR/carson when HOME is invalid"
-
-tmp_fallback_output="$(run_carson_with_report_env "relative-home" "relative-tmpdir" audit --verbose)" || true
-if [[ "$tmp_fallback_output" != *"report_markdown: /tmp/carson/pr_report_latest.md"* ]]; then
-	echo "FAIL: audit did not use /tmp fallback when HOME and TMPDIR are invalid" >&2
-	echo "expected output to include: report_markdown: /tmp/carson/pr_report_latest.md" >&2
-	echo "actual output: $tmp_fallback_output" >&2
-	exit 1
-fi
-echo "PASS: report path falls back to /tmp/carson when HOME and TMPDIR are invalid"
 
 # Stale-branch prune behaviour: safe removal without force evidence.
 git switch -c tool/stale-prune >/dev/null
@@ -523,23 +460,23 @@ if ! git show-ref --verify --quiet refs/heads/tool/stale-prune-no-evidence; then
 fi
 echo "PASS: no-evidence branch retained when merged PR evidence does not match branch tip"
 
-# Outsider boundary audit blocks forbidden host-repo artefacts.
-expect_exit 0 "audit completes without a local hard block" run_carson audit
+# Outsider boundary blocks forbidden host-repo artefacts.
+expect_exit 0 "status completes without a local hard block" run_carson status
 
 printf 'review: {}\n' > .carson.yml
-expect_exit 2 "outsider boundary blocks host repo .carson.yml" run_carson audit
+expect_exit 2 "outsider boundary blocks host repo .carson.yml" run_carson status
 rm -f .carson.yml
 
 mkdir -p bin
 printf '#!/usr/bin/env bash\n' > bin/carson
 chmod +x bin/carson
-expect_exit 2 "outsider boundary blocks host repo bin/carson" run_carson audit
+expect_exit 2 "outsider boundary blocks host repo bin/carson" run_carson status
 rm -f bin/carson
 rmdir bin
 
 mkdir -p .tools/carson
 printf 'runtime\n' > .tools/carson/README
-expect_exit 2 "outsider boundary blocks host repo .tools/carson" run_carson audit
+expect_exit 2 "outsider boundary blocks host repo .tools/carson" run_carson status
 rm -rf .tools
 
 # Receive smoke tests.
