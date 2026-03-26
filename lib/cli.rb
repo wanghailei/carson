@@ -5,7 +5,7 @@ require "optparse"
 module Carson
 	class CLI
 		PORTFOLIO_COMMANDS = %w[onboard offboard list refresh version].freeze
-		REPO_COMMANDS = %w[deliver receive sync status audit prune housekeep worktree abandon recover review template setup checkin checkout].freeze
+		REPO_COMMANDS = %w[deliver receive sync status prune housekeep worktree abandon recover review template setup checkin checkout].freeze
 		ALL_COMMANDS = ( PORTFOLIO_COMMANDS + REPO_COMMANDS ).freeze
 
 		def self.start( arguments:, repo_root:, tool_root:, output:, error: )
@@ -154,7 +154,7 @@ module Carson
 				return { command: :help }
 			end
 			return { command: "version" } if [ "--version", "-v" ].include?( first )
-			return { command: "audit" } if arguments.empty?
+			return { command: "status" } if arguments.empty?
 
 			nil
 		end
@@ -217,8 +217,6 @@ module Carson
 				parse_sync_command( arguments: arguments, error: error )
 			when "status"
 				parse_status_command( arguments: arguments, error: error )
-			when "audit"
-				parse_audit_command( arguments: arguments, error: error )
 			when "prune"
 				parse_prune_command( arguments: arguments, error: error )
 			when "housekeep"
@@ -284,7 +282,7 @@ module Carson
 				parser.banner = "Usage: carson onboard <REPO_PATH>"
 				parser.separator ""
 				parser.separator "Register a repository for Carson governance."
-				parser.separator "Detects the remote, installs hooks, applies templates, and runs initial audit."
+				parser.separator "Detects the remote, installs hooks, and applies templates."
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson onboard ~/Dev/app   Onboard a specific repository"
@@ -677,36 +675,6 @@ module Carson
 			{ command: :invalid }
 		end
 
-		# --- audit ---
-
-		def self.parse_audit_command( arguments:, error: )
-			options = { json: false }
-			audit_parser = OptionParser.new do |parser|
-				parser.banner = "Usage: carson audit [--json]"
-				parser.separator ""
-				parser.separator "Run pre-commit health checks on the repository."
-				parser.separator "Validates hooks, main-branch sync, PR status, and CI baseline."
-				parser.separator "Exits with a non-zero status when policy violations are found."
-				parser.separator ""
-				parser.separator "Options:"
-				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
-				parser.separator ""
-				parser.separator "Examples:"
-				parser.separator "    carson audit           Check repository health (also the default command)"
-				parser.separator "    carson audit --json    Structured output for agent consumption"
-			end
-			audit_parser.parse!( arguments )
-			unless arguments.empty?
-				error.puts "#{BADGE} Unexpected arguments for audit: #{arguments.join( ' ' )}"
-				return { command: :invalid }
-			end
-			{ command: "audit", json: options[ :json ] }
-		rescue OptionParser::ParseError => exception
-			error.puts "#{BADGE} #{exception.message}"
-			error.puts audit_parser
-			{ command: :invalid }
-		end
-
 		# --- abandon ---
 
 		def self.parse_abandon_command( arguments:, error: )
@@ -854,7 +822,7 @@ module Carson
 				parser.banner = "Usage: carson recover --check NAME [--json]"
 				parser.separator ""
 				parser.separator "Merge the current repair PR when one governance-owned required check is already red on the default branch."
-				parser.separator "Recovery is narrow: Carson verifies the baseline failure, keeps every other gate intact, and records an audit event."
+				parser.separator "Recovery is narrow: Carson verifies the baseline failure, keeps every other gate intact, and records a recovery event."
 				parser.separator ""
 				parser.separator "Options:"
 				parser.on( "--check NAME", "Name of the governance-owned required check to recover" ) { |value| options[ :check_name ] = value }
@@ -988,8 +956,6 @@ module Carson
 				runtime.status!( json_output: parsed.fetch( :json, false ) )
 			when "setup"
 				runtime.setup!( cli_choices: parsed.fetch( :cli_choices, {} ) )
-			when "audit"
-				runtime.audit!( json_output: parsed.fetch( :json, false ) )
 			when "abandon"
 				runtime.abandon!( target: parsed.fetch( :target ), json_output: parsed.fetch( :json, false ) )
 			when "sync"

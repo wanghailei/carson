@@ -25,11 +25,6 @@ class CLITest < Minitest::Test
 			Carson::Runtime::EXIT_OK
 		end
 
-		def audit!( json_output: false )
-			@calls << [ :audit, { json_output: json_output } ]
-			Carson::Runtime::EXIT_OK
-		end
-
 		def refresh_all!
 			@calls << :refresh_all
 			Carson::Runtime::EXIT_OK
@@ -159,9 +154,9 @@ class CLITest < Minitest::Test
 
 	# --- bare carson / defaults ---
 
-	def test_parse_args_defaults_to_audit_with_no_arguments
+	def test_parse_args_defaults_to_status_with_no_arguments
 		parsed = parse_args_from( [] )
-		assert_equal "audit", parsed.fetch( :command )
+		assert_equal "status", parsed.fetch( :command )
 	end
 
 	def test_parse_args_help_returns_help_command_and_prints_usage
@@ -185,25 +180,25 @@ class CLITest < Minitest::Test
 	# --- verbose flag ---
 
 	def test_parse_args_verbose_flag_defaults_to_false
-		parsed = parse_args_from( [ "audit" ] )
+		parsed = parse_args_from( [ "status" ] )
 		assert_equal false, parsed.fetch( :verbose )
 	end
 
 	def test_parse_args_verbose_flag_with_command
-		parsed = parse_args_from( [ "--verbose", "audit" ] )
-		assert_equal "audit", parsed.fetch( :command )
+		parsed = parse_args_from( [ "--verbose", "status" ] )
+		assert_equal "status", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
 
 	def test_parse_args_verbose_flag_after_command
-		parsed = parse_args_from( [ "audit", "--verbose" ] )
-		assert_equal "audit", parsed.fetch( :command )
+		parsed = parse_args_from( [ "status", "--verbose" ] )
+		assert_equal "status", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
 
-	def test_parse_args_verbose_flag_with_no_args_defaults_to_audit
+	def test_parse_args_verbose_flag_with_no_args_defaults_to_status
 		parsed = parse_args_from( [ "--verbose" ] )
-		assert_equal "audit", parsed.fetch( :command )
+		assert_equal "status", parsed.fetch( :command )
 		assert_equal true, parsed.fetch( :verbose )
 	end
 
@@ -333,61 +328,11 @@ class CLITest < Minitest::Test
 		assert_equal [ [ :status, { json_output: true } ] ], runtime.calls
 	end
 
-	# --- repo from CWD: audit ---
-
-	def test_audit_from_cwd
-		calls = parse_with_dispatch( [ "audit" ] )
-		assert_equal [ [ :audit, { json_output: false } ] ], calls
-	end
-
-	def test_parse_args_audit_defaults
-		parsed = parse_args_from( [ "audit" ] )
-		assert_equal "audit", parsed.fetch( :command )
-		assert_equal false, parsed.fetch( :json )
-	end
-
-	def test_parse_args_audit_with_json_flag
-		parsed = parse_args_from( [ "audit", "--json" ] )
-		assert_equal "audit", parsed.fetch( :command )
-		assert_equal true, parsed.fetch( :json )
-	end
-
-	def test_parse_args_audit_rejects_unexpected_arguments
-		parsed, error = parse_args_with_error( [ "audit", "extra" ] )
-		assert_equal :invalid, parsed.fetch( :command )
-		assert_includes error, "Unexpected arguments for audit"
-	end
-
-	def test_dispatch_routes_audit_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "audit", json: false }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :audit, { json_output: false } ] ], runtime.calls
-	end
-
-	def test_dispatch_routes_audit_with_json_to_runtime
-		runtime = FakeRuntime.new
-		result = Carson::CLI.dispatch( parsed: { command: "audit", json: true }, runtime: runtime )
-		assert_equal Carson::Runtime::EXIT_OK, result
-		assert_equal [ [ :audit, { json_output: true } ] ], runtime.calls
-	end
-
-	def test_parse_args_no_args_defaults_to_audit_with_json_false
-		parsed = parse_args_from( [] )
-		assert_equal "audit", parsed.fetch( :command )
-	end
-
 	# --- explicit repo subject ---
 
 	def test_explicit_repo_status
 		parsed = parse_args_from( [ "nexus", "status" ] )
 		assert_equal "status", parsed.fetch( :command )
-		assert_equal "nexus", parsed.fetch( :repo_subject )
-	end
-
-	def test_explicit_repo_audit
-		parsed = parse_args_from( [ "nexus", "audit" ] )
-		assert_equal "audit", parsed.fetch( :command )
 		assert_equal "nexus", parsed.fetch( :repo_subject )
 	end
 
@@ -1050,7 +995,7 @@ class CLITest < Minitest::Test
 			output = StringIO.new
 			error = StringIO.new
 			exit_code = Carson::CLI.start(
-				arguments: [ "audit" ],
+				arguments: [ "status" ],
 				repo_root: tmp_dir,
 				tool_root: tmp_dir,
 				output: output,

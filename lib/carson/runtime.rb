@@ -43,7 +43,7 @@ module Carson
 		attr_reader :template_sync_result
 
 		# Lazy ledger: only constructed when a command actually needs delivery state.
-		# Read-only commands (worktree list, audit, prune, sync) never touch the
+		# Read-only commands (worktree list, prune, sync) never touch the
 		# govern state lock file.
 		def ledger
 			@ledger ||= Ledger.new( path: @config.govern_state_path )
@@ -115,7 +115,7 @@ module Carson
 			success
 		end
 
-		# Human-readable plural suffix helper for audit messaging.
+		# Human-readable plural suffix helper.
 		def plural_suffix( count: )
 			count.to_i == 1 ? "" : "s"
 		end
@@ -366,7 +366,6 @@ module Carson
 end
 
 require_relative "runtime/local"
-require_relative "runtime/audit"
 require_relative "runtime/loop_runner"
 require_relative "runtime/housekeep"
 require_relative "runtime/list"
