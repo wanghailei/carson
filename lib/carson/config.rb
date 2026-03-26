@@ -28,7 +28,6 @@ module Carson
 			:review_wait_seconds, :review_poll_seconds, :review_max_polls, :review_sweep_window_days,
 			:review_sweep_states, :review_disposition, :review_risk_keywords,
 			:review_tracking_issue_title, :review_tracking_issue_label, :review_bot_usernames,
-			:audit_advisory_check_names,
 			:workflow_style,
 			:govern_repos, :govern_merge_method,
 			:govern_agent_provider, :govern_state_path,
@@ -79,9 +78,6 @@ module Carson
 						"title" => "Carson review sweep findings",
 						"label" => "carson-review-sweep"
 					}
-				},
-				"audit" => {
-					"advisory_check_names" => [ "Scheduled review sweep", "Carson governance", "Tag, release, publish" ]
 				},
 				"deliver" => {
 				"poll_interval_at_bureau" => 30
@@ -170,9 +166,6 @@ module Carson
 			sweep[ "states" ] = states unless states.empty?
 			bot_usernames = env_string_array( key: "CARSON_REVIEW_BOT_USERNAMES" )
 			review[ "bot_usernames" ] = bot_usernames unless bot_usernames.empty?
-			audit = fetch_hash_section( data: copy, key: "audit" )
-			advisory_names = env_string_array( key: "CARSON_AUDIT_ADVISORY_CHECK_NAMES" )
-			audit[ "advisory_check_names" ] = advisory_names unless advisory_names.empty?
 			deliver = fetch_hash_section( data: copy, key: "deliver" )
 			deliver[ "poll_interval_at_bureau" ] = env_integer( key: "CARSON_POLL_INTERVAL_AT_BUREAU", fallback: deliver.fetch( "poll_interval_at_bureau" ) )
 			govern = fetch_hash_section( data: copy, key: "govern" )
@@ -243,9 +236,6 @@ module Carson
 			@review_tracking_issue_title = fetch_string( hash: tracking_issue_hash, key: "title" )
 			@review_tracking_issue_label = fetch_string( hash: tracking_issue_hash, key: "label" )
 			@review_bot_usernames = fetch_optional_string_array( hash: review_hash, key: "bot_usernames" )
-			audit_hash = fetch_hash( hash: data, key: "audit" )
-			@audit_advisory_check_names = fetch_optional_string_array( hash: audit_hash, key: "advisory_check_names" )
-
 			deliver_hash = fetch_hash( hash: data, key: "deliver" )
 			@poll_interval_at_bureau = fetch_non_negative_integer( hash: deliver_hash, key: "poll_interval_at_bureau" )
 
