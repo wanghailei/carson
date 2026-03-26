@@ -15,6 +15,16 @@ Release-note scope rule:
 
 Audit was a remote-centred pre-commit gate — it blocked commits based on delivery-time concerns (PR checks, CI baseline) that don't belong at commit time. In local-centred mode it was purely dead weight. Rather than relocate it to bureau, we verified that none of its unique checks had proven value at any gate, and dissolved the whole thing. Scars, not speculation.
 
+## 4.3.2
+
+### Fixed
+
+- **Vault gives correct recovery when main worktree is dirty.** `vault_blocked` now inspects stderr from `git merge --ff-only` to distinguish dirty-tree conflicts from diverged-history blocks. Previously, both cases got the generic "rebase" advice — misleading when the branch was already a valid fast-forward descendant and the real problem was uncommitted files in the main worktree.
+
+### Why
+
+An agent rebased three times on an already-correct branch because Carson misdiagnosed a dirty-tree block as divergence. The fix: read stderr, give the right advice. Scars, not speculation.
+
 ## 4.3.1
 
 ### Changed
