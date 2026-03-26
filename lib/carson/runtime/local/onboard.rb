@@ -1,12 +1,12 @@
 # Repository onboarding and refresh lifecycle.
-# Onboard: detect remote, install hooks, apply templates, run initial audit.
+# Onboard: detect remote, install hooks, apply templates.
 # Refresh: re-apply hooks and templates after Carson upgrade.
 # Refresh all: batch refresh across governed portfolio with safety checks.
 module Carson
 	class Runtime
 		module Local
 			# One-command onboarding for new repositories: detect remote, install hooks,
-			# apply templates, and run initial audit.
+			# and apply templates.
 			def onboard!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -32,7 +32,7 @@ module Carson
 				onboard_apply!
 			end
 
-			# Re-applies hooks, templates, and audit after upgrading Carson.
+			# Re-applies hooks and templates after upgrading Carson.
 			def refresh!
 				fingerprint_status = block_if_outsider_fingerprints!
 				return fingerprint_status unless fingerprint_status.nil?
@@ -55,13 +55,8 @@ module Carson
 
 					@template_sync_result = template_propagate!( drift_count: drift_count + stale_count )
 
-					audit_status = audit!
-					if audit_status == EXIT_OK
-						puts_line "OK: Carson refresh completed for #{repo_root}."
-					elsif audit_status == EXIT_BLOCK
-						puts_line "Refresh complete — some checks need attention. Run carson audit for details."
-					end
-					return audit_status
+					puts_line "OK: Carson refresh completed for #{repo_root}."
+					return EXIT_OK
 				end
 
 				puts_line "Refresh"
@@ -82,12 +77,11 @@ module Carson
 
 				@template_sync_result = template_propagate!( drift_count: total_drift )
 
-				audit_status = audit!
 				puts_line "Refresh complete."
-				audit_status
+				EXIT_OK
 			end
 
-			# Re-applies hooks, templates, and audit across all governed repositories.
+			# Re-applies hooks and templates across all governed repositories.
 			# Checks each repo for safety (active worktrees, uncommitted changes) and
 			# marks unsafe repos as pending to avoid disrupting active work.
 			def refresh_all!
@@ -202,7 +196,7 @@ module Carson
 
 		private
 
-			# Concise onboard orchestration: hooks, templates, remote, audit, guidance.
+			# Concise onboard orchestration: hooks, templates, remote, guidance.
 			def onboard_apply!
 				hook_status = with_captured_output { prepare! }
 				return hook_status unless hook_status == EXIT_OK
@@ -218,7 +212,6 @@ module Carson
 				end
 
 				onboard_report_remote!
-				audit_status = onboard_run_audit!
 
 				puts_line ""
 				puts_line "Carson at your service."
@@ -235,7 +228,7 @@ module Carson
 				puts_line ""
 				puts_line "To adjust any setting: carson setup"
 
-				audit_status
+				EXIT_OK
 			end
 
 			# Friendly remote status for onboard output.
@@ -245,33 +238,6 @@ module Carson
 				else
 					puts_line "Remote not configured yet — carson setup will walk you through it."
 				end
-			end
-
-			# Runs audit with captured output; reports summary instead of full detail.
-			def onboard_run_audit!
-				audit_error = nil
-				audit_status = with_captured_output { audit! }
-			rescue StandardError => exception
-				audit_error = exception
-				audit_status = EXIT_OK
-			ensure
-				return onboard_print_audit_result( status: audit_status, error: audit_error )
-			end
-
-			def onboard_print_audit_result( status:, error: )
-				if error
-					if error.message.to_s.match?( /HEAD|rev-parse/ )
-						puts_line "No commits yet — run carson audit after your first commit."
-					else
-						puts_line "Audit skipped — run carson audit for details."
-					end
-					return EXIT_OK
-				end
-
-				if status == EXIT_BLOCK
-					puts_line "Some checks need attention — run carson audit for details."
-				end
-				status
 			end
 
 			# Verifies configured remote exists and logs status without mutating remotes.
