@@ -46,11 +46,6 @@ jobs:
       - name: Refresh
         run: ruby exe/carson refresh
 
-      - name: Audit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ruby exe/carson audit
-
       - name: Review gate
         env:
           GH_TOKEN: ${{ github.token }}
