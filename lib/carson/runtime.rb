@@ -14,8 +14,6 @@ module Carson
 		EXIT_ERROR = 1
 		EXIT_BLOCK = 2
 
-		REPORT_MD = "pr_report_latest.md".freeze
-		REPORT_JSON = "pr_report_latest.json".freeze
 		REVIEW_GATE_REPORT_MD = "review_gate_latest.md".freeze
 		REVIEW_GATE_REPORT_JSON = "review_gate_latest.json".freeze
 		REVIEW_SWEEP_REPORT_MD = "review_sweep_latest.md".freeze
