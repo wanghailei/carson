@@ -63,12 +63,22 @@ module Carson
 			end
 
 			# Build the blocked/error result when vault acceptance fails.
+			# Distinguishes dirty-tree conflicts from diverged-history blocks
+			# so the agent gets the correct recovery advice.
 			def vault_blocked( parcel, stderr )
-				{
-					status: "block",
-					error: "#{parcel.label} cannot be fast-forwarded into #{@main_label}.",
-					recovery: "Rebase onto #{@main_label} and deliver again."
-				}
+				if stderr.to_s.include?( "would be overwritten" )
+					{
+						status: "block",
+						error: "Main worktree has uncommitted changes that conflict with #{parcel.label}.",
+						recovery: "Commit or discard the dirty files in the main worktree, then deliver again."
+					}
+				else
+					{
+						status: "block",
+						error: "#{parcel.label} cannot be fast-forwarded into #{@main_label}.",
+						recovery: "Rebase onto #{@main_label} and deliver again."
+					}
+				end
 			end
 
 		end

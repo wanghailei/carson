@@ -69,6 +69,27 @@ class VaultTest < Minitest::Test
 		assert_includes result[ :recovery ], "Rebase"
 	end
 
+	def test_accept_blocks_with_dirty_tree_diagnosis_when_main_has_conflicting_changes
+		# Create a branch that modifies README.md.
+		worktree_path = create_worktree( "dirty-conflict" )
+		File.write( File.join( worktree_path, "README.md" ), "# Changed by branch" )
+		system( "git", "-C", worktree_path, "add", "README.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", worktree_path, "commit", "-m", "change readme", out: File::NULL, err: File::NULL )
+
+		# Dirty the same file in the main worktree (uncommitted).
+		File.write( File.join( @repo_path, "README.md" ), "# Dirty local edit" )
+
+		warehouse = Carson::Warehouse.new( path: worktree_path, bureau_address: "origin" )
+		parcel = Carson::Parcel.new( label: "dirty-conflict", head: warehouse.current_head )
+		result = warehouse.accept!( parcel )
+
+		assert_equal "block", result[ :status ]
+		assert_includes result[ :error ], "uncommitted changes"
+		assert_includes result[ :recovery ], "dirty files"
+		# Must NOT say "cannot be fast-forwarded" — the branch IS a valid ff descendant.
+		refute_includes result[ :error ], "cannot be fast-forwarded"
+	end
+
 	def test_accept_returns_new_head_after_merge
 		worktree_path = create_worktree( "headcheck" )
 		File.write( File.join( worktree_path, "check.txt" ), "head check" )
