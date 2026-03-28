@@ -15,6 +15,16 @@ Release-note scope rule:
 
 Audit was a remote-centred pre-commit gate — it blocked commits based on delivery-time concerns (PR checks, CI baseline) that don't belong at commit time. In local-centred mode it was purely dead weight. Rather than relocate it to bureau, we verified that none of its unique checks had proven value at any gate, and dissolved the whole thing. Scars, not speculation.
 
+## 4.3.3
+
+### Fixed
+
+- **`carson checkin` is 13× faster.** Removed two redundant `git fetch` calls that hit GitHub on every checkin. `checkin` now branches from local main — zero network, 0.7s instead of 9.4s. Local main is the standard; GitHub is a backup, not a gating dependency.
+
+### Why
+
+Local-centred mode means local main is the source of truth. Fetching from GitHub on every checkin was a remote-centred assumption baked into the command. The two sequential network round-trips accounted for 90% of the wall time.
+
 ## 4.3.2
 
 ### Fixed

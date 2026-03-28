@@ -104,8 +104,8 @@ module Carson
 
 			# --- Lifecycle ---
 
-			# Build a new workbench from the latest production standard.
-			# Creates the directory, branches from the latest standard,
+			# Build a new workbench from local main.
+			# Creates the directory, branches from the local standard,
 			# ensures .claude/ is excluded from git status.
 			def build_workbench!( name: )
 				root = main_worktree_root
@@ -119,23 +119,12 @@ module Carson
 						recovery: "carson worktree remove #{name}, then retry" }
 				end
 
-				# Determine the base branch.
-				base = @main_label
-
-				# Fetch to update remote tracking ref without mutating the main worktree.
-				_, _, fetch_ok = git( "fetch", @bureau_address, base )
-				if fetch_ok.success?
-					remote_ref = "#{@bureau_address}/#{base}"
-					_, _, ref_ok = git( "rev-parse", "--verify", remote_ref )
-					base = remote_ref if ref_ok.success?
-				end
-
 				# Ensure .claude/ is excluded from git status.
 				ensure_claude_dir_excluded!
 
 				# Create the worktree with a new branch.
 				FileUtils.mkdir_p( File.dirname( workbench_path ) )
-				wt_stdout, wt_stderr, wt_status = git( "worktree", "add", workbench_path, "-b", name, base )
+				wt_stdout, wt_stderr, wt_status = git( "worktree", "add", workbench_path, "-b", name, @main_label )
 				unless wt_status.success?
 					error_text = wt_stderr.to_s.strip
 					error_text = "unable to create worktree" if error_text.empty?
@@ -159,9 +148,10 @@ module Carson
 					path: workbench_path, branch: name }
 			end
 
-			# Agent checks in — prepare a fresh workbench from the latest standard.
+			# Agent checks in — prepare a fresh workbench from local main.
+			# Sweeps delivered workbenches first — the Warehouse cleans behind the agent.
 			def checkin!( name: )
-				receive_latest!
+				sweep_delivered_workbenches!
 				result = build_workbench!( name: name )
 				result[ :command ] = "checkin"
 				result

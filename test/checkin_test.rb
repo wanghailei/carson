@@ -86,7 +86,20 @@ class CheckinTest < Minitest::Test
 		refute Dir.exist?( old_path ), "delivered workbench should be swept"
 	end
 
-	def test_sweep_does_not_remove_sealed_workbenches
+	def test_checkin_branches_from_local_main_not_remote
+		# Local main is ahead of origin — workbench must include the local-only commit.
+		File.write( File.join( @repo_path, "local.txt" ), "local work" )
+		system( "git", "-C", @repo_path, "add", "local.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "local only", out: File::NULL, err: File::NULL )
+
+		result = @warehouse.checkin!( name: "local-based" )
+
+		assert_equal "ok", result[ :status ]
+		assert File.exist?( File.join( result[ :path ], "local.txt" ) ),
+			"workbench should be based on local main, not origin/main"
+	end
+
+	def test_checkin_does_not_sweep_sealed_workbenches
 		# Build and seal a workbench — parcel still in flight.
 		@warehouse.build_workbench!( name: "in-flight" )
 		wb = @warehouse.workbench_named( "in-flight" )
