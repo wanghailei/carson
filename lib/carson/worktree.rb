@@ -279,7 +279,7 @@ module Carson
 					resolved_path: resolved_path,
 					branch: branch,
 					error: "current working directory is inside this worktree",
-					recovery: "cd #{safe_root} && carson worktree remove #{File.basename( resolved_path )}"
+					recovery: "cd #{safe_root} && carson checkout #{File.basename( resolved_path )}"
 				}
 			end
 

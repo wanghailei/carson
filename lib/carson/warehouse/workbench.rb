@@ -246,7 +246,7 @@ module Carson
 				if agent_at_workbench?( workbench )
 					return { status: :block, result_status: "block",
 						error: "current working directory is inside this worktree",
-						recovery: "cd #{main_worktree_root} && carson worktree remove #{File.basename( workbench.path )}" }
+						recovery: "cd #{main_worktree_root} && carson checkout #{File.basename( workbench.path )}" }
 				end
 
 				if workbench_held_by_process?( workbench )
