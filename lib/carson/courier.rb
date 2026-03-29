@@ -137,15 +137,15 @@ module Carson
 
 			# 02. Parcel behind standard — not based on client's latest standard.
 			#     The courier rebases automatically. Only blocks on conflict.
-			unless @warehouse.fetch_latest( registry: @warehouse.main_label )
+			unless @warehouse.receive_latest!
 				return blocked( result,
 					"cannot verify freshness — fetch failed",
 					recovery: "carson sync, then carson deliver" )
 			end
-			unless @warehouse.based_on_latest_standard?( parcel )
+			unless @warehouse.based_on_latest?( parcel )
 				remote_main = "#{@warehouse.bureau_address}/#{@warehouse.main_label}"
 				say "Branch is behind #{remote_main} — rebasing..."
-				unless @warehouse.rebase_on_latest_standard!
+				unless @warehouse.rebase!
 					return blocked( result,
 						"rebase conflict onto #{remote_main}",
 						recovery: "resolve conflicts, then carson deliver" )
@@ -175,8 +175,8 @@ module Carson
 			result[ :tracking_number ] = waybill.tracking_number
 			result[ :url ] = waybill.url
 
-			# Seal the shelf — no more packing until the outcome is confirmed.
-			@warehouse.seal_shelf!( tracking_number: waybill.tracking_number )
+			# Seal the workbench — no more packing until the outcome is confirmed.
+			@warehouse.seal!( tracking: waybill.tracking_number )
 
 			# Wait at the bureau while the bureaucrats check the parcel.
 			wait_and_poll_at_bureau( waybill, result )
@@ -185,7 +185,7 @@ module Carson
 			# delivered/held/rejected → unseal (shelf done or parcel returned)
 			# filed → stay sealed (parcel still in flight)
 			outcome = result[ :outcome ]
-			@warehouse.unseal_shelf! if outcome == "delivered" || outcome == "held" || outcome == "rejected"
+			@warehouse.unseal! if outcome == "delivered" || outcome == "held" || outcome == "rejected"
 
 			# Update the ledger with the final outcome and PR identity.
 			record( parcel, status: outcome || "filed", summary: result[ :hold_reason ], waybill: waybill )
@@ -201,12 +201,12 @@ module Carson
 		# checks are exhausted.
 		def wait_and_poll_at_bureau( waybill, result )
 			MAX_CHECKS_AT_BUREAU.times do |check|
-				@warehouse.check_parcel_at_bureau_with( waybill )
+				@warehouse.check_parcel_with( waybill )
 
 				# 14/17. Already accepted — parcel is in the registry.
 				if waybill.accepted?
 					result[ :outcome ] = "delivered"
-					result[ :synced ] = @warehouse.receive_latest_standard!
+					result[ :synced ] = @warehouse.receive_latest!
 					return
 				end
 
@@ -219,11 +219,11 @@ module Carson
 
 				# Cleared or mergeability pending — ask the warehouse to register.
 				if waybill.cleared? || waybill.mergeability_pending?
-					@warehouse.register_parcel_at_bureau_with!( waybill, method: @merge_method )
+					@warehouse.register_with!( waybill, method: @merge_method )
 
 					if waybill.accepted?
 						result[ :outcome ] = "delivered"
-						result[ :synced ] = @warehouse.receive_latest_standard!
+						result[ :synced ] = @warehouse.receive_latest!
 						return
 					end
 				end

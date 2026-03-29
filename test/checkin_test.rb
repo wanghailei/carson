@@ -68,11 +68,11 @@ class CheckinTest < Minitest::Test
 		assert_includes result[ :error ], "already exists"
 	end
 
-	# --- sweep on checkin ---
+	# --- sweep is the warehouse's autonomous housekeeping ---
 
-	def test_checkin_sweeps_delivered_workbenches
+	def test_sweep_removes_delivered_workbenches
 		# Build a workbench and simulate a delivered parcel:
-		# merge its branch into main so label_absorbed? returns true.
+		# merge its branch into main so absorbed? returns true.
 		@warehouse.build_workbench!( name: "old-task" )
 		old_wb = @warehouse.workbench_named( "old-task" )
 		old_path = old_wb.path
@@ -80,27 +80,26 @@ class CheckinTest < Minitest::Test
 		# Simulate delivery: merge the branch into main.
 		system( "git", "-C", @repo_path, "merge", "old-task", out: File::NULL, err: File::NULL )
 
-		# Now checkin for the next task.
-		result = @warehouse.checkin!( name: "new-task" )
+		# Sweep is autonomous — not tied to checkin.
+		@warehouse.sweep!
 
-		assert_equal "ok", result[ :status ]
 		refute Dir.exist?( old_path ), "delivered workbench should be swept"
 	end
 
-	def test_checkin_does_not_sweep_sealed_workbenches
+	def test_sweep_does_not_remove_sealed_workbenches
 		# Build and seal a workbench — parcel still in flight.
 		@warehouse.build_workbench!( name: "in-flight" )
 		wb = @warehouse.workbench_named( "in-flight" )
 
 		seal_wh = Carson::Warehouse.new( path: wb.path )
-		seal_wh.seal_workbench!( tracking_number: 77 )
+		seal_wh.seal!( tracking: 77 )
 		@seal_markers_to_clean = [ seal_wh.send( :delivering_marker_path ) ]
 
 		# Merge the branch into main (would normally be absorbed).
 		system( "git", "-C", @repo_path, "merge", "in-flight", out: File::NULL, err: File::NULL )
 
-		# Checkin — sealed workbench should NOT be swept.
-		@warehouse.checkin!( name: "next-task" )
+		# Sweep should NOT remove sealed workbenches.
+		@warehouse.sweep!
 
 		assert Dir.exist?( wb.path ), "sealed workbench should not be swept"
 

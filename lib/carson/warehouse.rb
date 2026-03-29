@@ -1,7 +1,10 @@
-# A governed repository. In the FedEx metaphor, the warehouse is where
-# parcels are built on workbenches (worktrees) with labels (branches).
-# Git and gh commands are hidden inside — callers never see git or
-# GitHub terms.
+# A governed repository — the intelligent, self-managing building
+# where parcels are built on workbenches. Each warehouse belongs
+# to a client. The warehouse is the local authority — everything
+# inside the repository is its domain.
+#
+# At the heart of the warehouse is the vault — where the production
+# standard lives. The vault is the source of truth.
 require "fileutils"
 require "open3"
 
@@ -11,13 +14,8 @@ require_relative "warehouse/seal"
 require_relative "warehouse/bureau"
 
 module Carson
-	# A governed repository — the warehouse where parcels are built on
-	# workbenches (worktrees) with labels (branches). An intelligent
-	# warehouse that manages itself: packing parcels, checking compliance,
-	# managing workbenches, and sweeping up.
 	class Warehouse
 		include Workbench
-		include Vault
 		include Seal
 		include Bureau
 
@@ -30,29 +28,46 @@ module Carson
 			@compliance_checker = compliance_checker
 		end
 
+		# --- The vault ---
+
+		# The vault — where the production standard lives.
+		def vault
+			@vault ||= Vault.new( path: main_worktree_root, main_label: @main_label )
+		end
+
+		# Accept a parcel into the vault.
+		def accept!( parcel )
+			vault.accept!( parcel )
+		end
+
+		# Has this label been absorbed into the vault?
+		def absorbed?( label )
+			vault.absorbed?( label )
+		end
+
 		# --- What the warehouse knows ---
 
-		# The label on the current workbench (branch name).
+		# The label on the current workbench.
 		def current_label
 			git( "rev-parse", "--abbrev-ref", "HEAD" ).first.strip
 		end
 
-		# The tip of the parcel on the current workbench (commit SHA).
+		# The tip of the parcel on the current workbench.
 		def current_head
 			git( "rev-parse", "HEAD" ).first.strip
 		end
 
-		# The destination label (from config).
+		# What the production standard is called.
 		def main_label
 			@main_label
 		end
 
-		# The bureau's address (remote name).
+		# The bureau's address — where to send things.
 		def bureau_address
 			@bureau_address
 		end
 
-		# Is the warehouse floor clean? No uncommitted changes on the current workbench.
+		# Is the floor clean? No loose material lying around.
 		def clean?
 			output, _, status = git( "status", "--porcelain" )
 			status.success? && output.strip.empty?
@@ -60,47 +75,36 @@ module Carson
 
 		# --- Warehouse operations ---
 
-		# Ship a parcel to the bureau.
-		# The warehouse sends the parcel's label to the remote.
+		# Ship a parcel to the backup so the courier can work with it.
 		def ship( parcel, remote: bureau_address )
 			_, _, status = git( "push", "-u", remote, parcel.label )
 			status.success?
 		end
 
-		# Get latest registry state from the bureau (git fetch).
-		# Returns true on success, false on failure.
-		def fetch_latest( remote: bureau_address, registry: nil )
-			arguments = [ "fetch", remote ]
-			arguments << registry if registry
-			_, _, status = git( *arguments )
+		# Is this parcel based on the latest standard?
+		# The standard is vault state — is the parcel built on top of it?
+		def based_on_latest?( parcel )
+			standard = "#{bureau_address}/#{main_label}"
+			_, _, status = git( "merge-base", "--is-ancestor", standard, parcel.head )
 			status.success?
 		end
 
-		# Is the parcel based on the client's latest production standard?
-		# Checks whether the registry tip is an ancestor of the parcel's head.
-		def based_on_latest_standard?( parcel, registry: "#{bureau_address}/#{main_label}" )
-			_, _, status = git( "merge-base", "--is-ancestor", registry, parcel.head )
-			status.success?
-		end
-
-		# Ensure the warehouse complies with company standards (template sync).
-		# Delegates to the injected compliance checker. If no checker is set,
-		# the warehouse assumes compliance — no templates to enforce.
+		# Submit compliance — ensure the warehouse meets company standards.
 		def submit_compliance!
 			return { compliant: true, committed: false } unless @compliance_checker
 
 			@compliance_checker.call( self )
 		end
 
-		# Update the warehouse's production standard — rebase onto latest registry state.
-		# Called after the bureau refuses a parcel for being behind standard.
-		def rebase_on_latest_standard!( registry: "#{bureau_address}/#{main_label}" )
-			_, _, status = git( "rebase", registry )
+		# Rebase a workbench onto the latest standard.
+		# When a parcel falls behind the standard, the warehouse fixes it.
+		def rebase!( standard: "#{bureau_address}/#{main_label}" )
+			_, _, status = git( "rebase", standard )
 			status.success?
 		end
 
-		# Pack a parcel — stage all changes and commit.
-		# Refuses if the workbench is sealed (parcel already in flight).
+		# Pack a parcel — stage all loose material and seal it.
+		# Refuses if the workbench is sealed — a parcel is already in flight.
 		def pack!( message: )
 			if sealed?
 				raise "Branch is locked — PR ##{sealed_tracking_number} in flight. " \
@@ -111,14 +115,14 @@ module Carson
 			status.success?
 		end
 
-		# Receive the latest standard from the registry after a parcel is accepted.
-		# Fast-forwards local main without switching branches.
+		# Receive the latest standard.
+		# After a parcel is accepted, the standard has changed. The warehouse
+		# updates its vault without disturbing the current workbench.
 		#
-		# Two paths depending on the main worktree's checkout state:
+		# Two paths depending on the vault's checkout state:
 		# - Main checked out → merge --ff-only (updates ref + working tree).
-		# - Main not checked out → fetch refspec (updates ref only, safe when
-		#   no worktree has the branch).
-		def receive_latest_standard!( remote: bureau_address )
+		# - Main not checked out → fetch refspec (updates ref only).
+		def receive_latest!( remote: bureau_address )
 			root = main_worktree_root
 
 			_, _, fetch_status = Open3.capture3( "git", "-C", root, "fetch", remote )
@@ -145,40 +149,34 @@ module Carson
 		# --- Delivery prep ---
 
 		# Prepare a parcel for delivery.
-		# Orchestrates the prep phase: pack, fetch, standard check, auto-rebase.
-		# Returns { status: "ok" } or { status: "block"/"error", error:, recovery: }.
+		# Packs if the agent provided a message, checks if the parcel is based
+		# on the latest standard, rebases automatically if it's behind.
 		def prepare!( parcel, message: nil )
-			registry = "#{bureau_address}/#{main_label}"
+			standard = "#{bureau_address}/#{main_label}"
 
-			# Pack if the agent provided a commit message.
 			if message
 				unless pack!( message: message )
 					return { status: "error", error: "Nothing to commit.", recovery: "Stage changes first." }
 				end
-				# Update the parcel's head after packing.
 				parcel = Parcel.new( label: parcel.label, head: current_head )
 			end
 
-			# Fetch the latest standard.
-			unless fetch_latest
+			unless receive_latest!
 				return {
 					status: "block",
-					error: "Cannot fetch latest standard.",
+					error: "Cannot receive latest standard.",
 					recovery: "Check network and remote config, then deliver again."
 				}
 			end
 
-			# Check if the parcel is based on the latest standard.
-			unless based_on_latest_standard?( parcel, registry: registry )
-				# Auto-rebase onto the latest standard.
-				unless rebase_on_latest_standard!( registry: registry )
+			unless based_on_latest?( parcel )
+				unless rebase!( standard: standard )
 					return {
 						status: "block",
 						error: "#{parcel.label} conflicts with #{@main_label}.",
 						recovery: "Rebase onto #{@main_label}, resolve conflicts, deliver again."
 					}
 				end
-				# Update the parcel's head after rebase.
 				parcel = Parcel.new( label: parcel.label, head: current_head )
 			end
 
@@ -187,29 +185,10 @@ module Carson
 
 		# --- Inventory ---
 
-		# All labels (branch names).
+		# All labels in the warehouse.
 		def labels
 			output, = git( "branch", "--format", "%(refname:short)" )
 			output.lines.map { it.strip }.reject { it.empty? }
-		end
-
-		# Has this label's content been absorbed into main?
-		# Content-aware: compares tree content, not SHA ancestry.
-		# Catches rebase-merged and squash-merged branches that
-		# `git branch --merged` misses (replayed SHAs differ).
-		def label_absorbed?( name )
-			_, _, status = Open3.capture3(
-				"git", "diff", "--quiet", @main_label, name,
-				chdir: path )
-			status.success?
-		end
-
-		# All worktree paths (transitional — use workbenches for Worktree instances).
-		def shelves
-			output, = git( "worktree", "list", "--porcelain" )
-			output.lines
-				.select { it.start_with?( "worktree " ) }
-				.map { it.sub( "worktree ", "" ).strip }
 		end
 
 		# The main warehouse location — resolves correctly even from a workbench.

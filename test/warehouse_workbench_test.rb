@@ -196,13 +196,13 @@ class WarehouseWorkbenchTest < Minitest::Test
 		assert assessment[ :error ]
 	end
 
-	# --- Safety: agent_at_workbench? ---
+	# --- Safety: workbench knows if CWD is inside ---
 
-	def test_agent_not_at_workbench_when_cwd_elsewhere
+	def test_workbench_not_occupied_when_cwd_elsewhere
 		@warehouse.build_workbench!( name: "not-here" )
 		workbench = @warehouse.workbench_named( "not-here" )
 
-		refute @warehouse.send( :agent_at_workbench?, workbench )
+		refute workbench.holds_cwd?
 	end
 
 	# --- Repair: missing workbench ---

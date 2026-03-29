@@ -87,7 +87,7 @@ module Carson
 				# Unseal worktrees that were filed — receive now owns the delivery lifecycle.
 				unless dry_run
 					filed_worktree_paths.each do |worktree_path|
-						Warehouse.new( path: worktree_path ).unseal_shelf!
+						Warehouse.new( path: worktree_path ).unseal!
 					end
 				end
 

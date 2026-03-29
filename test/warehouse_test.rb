@@ -1,4 +1,5 @@
-# Tests for Carson::Warehouse — the repository with story-language methods.
+# Tests for Carson::Warehouse — the intelligent, self-managing building.
+# Vault, seal, and bureau tested via Warehouse interface.
 # Tests real git operations against temporary repositories. No mocking.
 require_relative "test_helper"
 require_relative "../lib/carson/parcel"
@@ -168,42 +169,13 @@ class WarehouseTest < Minitest::Test
 		assert_includes remote_branches, "feature/custom-remote"
 	end
 
-	def test_fetch_latest_updates_remote_refs
-		# Push main to remote first (already done in setup).
-		# Clone a second copy, make a commit there, push it.
-		second_clone = File.join( @tmpdir, "second-clone" )
-		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
-		system( "git", "-C", second_clone, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
-		system( "git", "-C", second_clone, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
-		File.write( File.join( second_clone, "from_second.txt" ), "hello" )
-		system( "git", "-C", second_clone, "add", "from_second.txt", out: File::NULL, err: File::NULL )
-		system( "git", "-C", second_clone, "commit", "-m", "from second clone", out: File::NULL, err: File::NULL )
-		system( "git", "-C", second_clone, "push", "origin", "main", out: File::NULL, err: File::NULL )
-
-		# Before fetch, our repo doesn't know about the new commit.
-		before_sha, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "origin/main" )
-
-		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		result = warehouse.fetch_latest
-		assert result
-
-		after_sha, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "origin/main" )
-		refute_equal before_sha.strip, after_sha.strip
-	end
-
-	def test_fetch_latest_uses_custom_remote
-		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		result = warehouse.fetch_latest( remote: "origin" )
-		assert result
-	end
-
-	def test_based_on_latest_standard_when_up_to_date
+	def test_based_on_latest_when_up_to_date
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		parcel = Carson::Parcel.new( label: "main", head: warehouse.current_head )
-		assert warehouse.based_on_latest_standard?( parcel )
+		assert warehouse.based_on_latest?( parcel )
 	end
 
-	def test_based_on_latest_standard_false_when_behind
+	def test_based_on_latest_false_when_behind
 		# Make a second clone, push a new commit.
 		second_clone = File.join( @tmpdir, "second-clone-ancestor" )
 		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
@@ -219,15 +191,15 @@ class WarehouseTest < Minitest::Test
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
 		# Fetch so we know about the new remote commit.
-		warehouse.fetch_latest
+		warehouse.receive_latest!
 
 		parcel = Carson::Parcel.new( label: "feature/behind", head: warehouse.current_head )
-		refute warehouse.based_on_latest_standard?( parcel )
+		refute warehouse.based_on_latest?( parcel )
 	end
 
 	# --- Production standard ---
 
-	def test_update_standard_rebases_onto_registry
+	def test_rebase_onto_latest_standard
 		# Advance main on the remote via a second clone.
 		second_clone = File.join( @tmpdir, "second-clone-rebase" )
 		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
@@ -245,22 +217,22 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "commit", "-m", "feature commit", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		warehouse.fetch_latest
+		warehouse.receive_latest!
 
 		# Confirm behind before updating.
 		parcel = Carson::Parcel.new( label: "feature/needs-rebase", head: warehouse.current_head )
-		refute warehouse.based_on_latest_standard?( parcel )
+		refute warehouse.based_on_latest?( parcel )
 
 		# Update standard — rebase onto registry.
-		result = warehouse.rebase_on_latest_standard!
+		result = warehouse.rebase!
 		assert result
 
 		# After rebase, the parcel should be based on the latest standard.
 		rebased_parcel = Carson::Parcel.new( label: "feature/needs-rebase", head: warehouse.current_head )
-		assert warehouse.based_on_latest_standard?( rebased_parcel )
+		assert warehouse.based_on_latest?( rebased_parcel )
 	end
 
-	def test_update_standard_returns_false_on_conflict
+	def test_rebase_returns_false_on_conflict
 		# Advance main on remote with a conflicting file.
 		second_clone = File.join( @tmpdir, "second-clone-conflict" )
 		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
@@ -278,9 +250,9 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "commit", "-m", "local conflict", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		warehouse.fetch_latest
+		warehouse.receive_latest!
 
-		result = warehouse.rebase_on_latest_standard!
+		result = warehouse.rebase!
 		refute result
 
 		# Clean up the failed rebase so teardown can remove the directory.
@@ -289,7 +261,7 @@ class WarehouseTest < Minitest::Test
 
 	# --- Receive latest standard ---
 
-	def test_receive_latest_standard_fast_forwards_local_main
+	def test_receive_latest_fast_forwards_local_main
 		# Advance remote main via a second clone.
 		second_clone = File.join( @tmpdir, "second-clone-sync" )
 		system( "git", "clone", @remote_path, second_clone, out: File::NULL, err: File::NULL )
@@ -309,7 +281,7 @@ class WarehouseTest < Minitest::Test
 		local_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 		remote_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "origin/main" )
 
-		result = warehouse.receive_latest_standard!
+		result = warehouse.receive_latest!
 		assert result
 
 		# After sync, local main should match the remote.
@@ -332,7 +304,7 @@ class WarehouseTest < Minitest::Test
 		assert_includes labels, "feature/beta"
 	end
 
-	def test_label_absorbed_true_when_merged
+	def test_absorbed_true_when_merged
 		# Create and merge a branch.
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/merged", out: File::NULL, err: File::NULL )
 		File.write( File.join( @repo_path, "merged.txt" ), "merged" )
@@ -342,10 +314,10 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "merge", "feature/merged", "--no-ff", "-m", "merge merged", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		assert warehouse.label_absorbed?( "feature/merged" )
+		assert warehouse.absorbed?( "feature/merged" )
 	end
 
-	def test_label_absorbed_true_when_rebase_merged
+	def test_absorbed_true_when_rebase_merged
 		# Simulate a rebase merge: replay the branch commit as a new SHA on main.
 		# The original branch tip is NOT reachable from main — this is the bug
 		# that `git branch --merged` missed.
@@ -359,26 +331,18 @@ class WarehouseTest < Minitest::Test
 		system( "git", "-C", @repo_path, "cherry-pick", "feature/rebased", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		assert warehouse.label_absorbed?( "feature/rebased" ),
-			"label_absorbed? should return true for rebase-merged branches"
+		assert warehouse.absorbed?( "feature/rebased" ),
+			"absorbed? should return true for rebase-merged branches"
 	end
 
-	def test_label_absorbed_false_when_not_merged
+	def test_absorbed_false_when_not_merged
 		system( "git", "-C", @repo_path, "checkout", "-b", "feature/unmerged", out: File::NULL, err: File::NULL )
 		File.write( File.join( @repo_path, "unmerged.txt" ), "unmerged" )
 		system( "git", "-C", @repo_path, "add", "unmerged.txt", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "commit", "-m", "on unmerged branch", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		refute warehouse.label_absorbed?( "feature/unmerged" )
-	end
-
-	def test_shelves_returns_worktree_paths
-		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		shelves = warehouse.shelves
-
-		# At minimum, the main worktree should be present.
-		assert shelves.any? { |shelf| shelf.include?( @repo_path ) }
+		refute warehouse.absorbed?( "feature/unmerged" )
 	end
 
 	# --- Error handling ---
@@ -408,14 +372,14 @@ class WarehouseTest < Minitest::Test
 		refute warehouse.sealed?
 	end
 
-	def test_seal_and_unseal_shelf
+	def test_seal_and_unseal_workbench
 		warehouse = Carson::Warehouse.new( path: @repo_path )
-		warehouse.seal_shelf!( tracking_number: 42 )
+		warehouse.seal!( tracking: 42 )
 
 		assert warehouse.sealed?
 		assert_equal "42", warehouse.sealed_tracking_number
 
-		warehouse.unseal_shelf!
+		warehouse.unseal!
 		refute warehouse.sealed?
 		assert_nil warehouse.sealed_tracking_number
 	end
@@ -425,7 +389,7 @@ class WarehouseTest < Minitest::Test
 		File.write( File.join( @repo_path, "sealed.txt" ), "sealed" )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path )
-		warehouse.seal_shelf!( tracking_number: 99 )
+		warehouse.seal!( tracking: 99 )
 
 		error = assert_raises( RuntimeError ) do
 			warehouse.pack!( message: "should be blocked" )
@@ -439,8 +403,8 @@ class WarehouseTest < Minitest::Test
 		File.write( File.join( @repo_path, "unsealed.txt" ), "unsealed" )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path )
-		warehouse.seal_shelf!( tracking_number: 100 )
-		warehouse.unseal_shelf!
+		warehouse.seal!( tracking: 100 )
+		warehouse.unseal!
 
 		assert warehouse.pack!( message: "should work after unseal" )
 	end
@@ -448,22 +412,22 @@ class WarehouseTest < Minitest::Test
 	def test_unseal_is_safe_when_not_sealed
 		warehouse = Carson::Warehouse.new( path: @repo_path )
 		# Should not raise.
-		warehouse.unseal_shelf!
+		warehouse.unseal!
 		refute warehouse.sealed?
 	end
 
 	def test_seal_does_not_dirty_worktree
 		warehouse = Carson::Warehouse.new( path: @repo_path )
-		warehouse.seal_shelf!( tracking_number: 42 )
+		warehouse.seal!( tracking: 42 )
 
 		assert warehouse.clean?, "seal marker should not appear in git status"
 
-		warehouse.unseal_shelf!
+		warehouse.unseal!
 	end
 
 	# --- Receive latest standard from worktree ---
 
-	def test_receive_latest_standard_from_worktree
+	def test_receive_latest_from_worktree
 		# Create a worktree — main stays checked out in the main tree.
 		worktree_path = File.join( @tmpdir, "worktree" )
 		system( "git", "-C", @repo_path, "worktree", "add", "-b", "feature/wt-sync",
@@ -484,12 +448,12 @@ class WarehouseTest < Minitest::Test
 
 		local_before, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 
-		result = warehouse.receive_latest_standard!
-		assert result, "receive_latest_standard! should succeed from worktree"
+		result = warehouse.receive_latest!
+		assert result, "receive_latest! should succeed from worktree"
 
 		local_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 		refute_equal local_before.strip, local_after.strip,
-			"local main should advance after receive_latest_standard! from worktree"
+			"local main should advance after receive_latest! from worktree"
 
 		# Cleanup worktree.
 		system( "git", "-C", @repo_path, "worktree", "remove", worktree_path,

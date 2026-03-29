@@ -1,15 +1,14 @@
-# The warehouse's bureau-facing concern.
-# The warehouse owns the connection to the bureau (GitHub).
-# It queries, files, and registers on behalf of the courier.
+# The warehouse's bureau concern — backup and optional PR/CI.
+# The bureau is just a backup. These methods exist for when
+# the courier needs the warehouse to interact with it.
 require "json"
 
 module Carson
 	class Warehouse
 		module Bureau
 
-			# Check the parcel's status at the bureau using the waybill.
-			# Calls gh pr view + gh pr checks. Records findings onto the waybill.
-			def check_parcel_at_bureau_with( waybill )
+			# Check a parcel's status using the waybill.
+			def check_parcel_with( waybill )
 				state = fetch_pr_state_for( waybill.tracking_number )
 				ci, ci_diagnostic = fetch_ci_state_for( waybill.tracking_number )
 				waybill.record( state: state, ci: ci, ci_diagnostic: ci_diagnostic )
@@ -47,15 +46,13 @@ module Carson
 				Waybill.new( label: parcel.label, tracking_number: tracking_number, url: url )
 			end
 
-			# Register the parcel at the bureau using the waybill.
-			# Calls gh pr merge. Stamps the waybill on success.
-			def register_parcel_at_bureau_with!( waybill, method: )
+			# Register a parcel using the waybill.
+			def register_with!( waybill, method: )
 				_, _, status = gh( "pr", "merge", waybill.tracking_number.to_s, "--#{method}" )
 				if status.success?
 					waybill.stamp( :accepted )
 				else
-					# Re-check the state — the merge may have revealed a new blocker.
-					check_parcel_at_bureau_with( waybill )
+					check_parcel_with( waybill )
 				end
 			end
 

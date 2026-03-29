@@ -79,7 +79,7 @@ class CheckoutTest < Minitest::Test
 
 		# Seal the workbench — parcel is in flight.
 		seal_warehouse = Carson::Warehouse.new( path: workbench.path )
-		seal_warehouse.seal_workbench!( tracking_number: 42 )
+		seal_warehouse.seal!( tracking: 42 )
 		track_seal_marker( seal_warehouse )
 
 		result = @warehouse.checkout!( workbench )
@@ -94,7 +94,7 @@ class CheckoutTest < Minitest::Test
 		workbench = @warehouse.workbench_named( "force-seal" )
 
 		seal_warehouse = Carson::Warehouse.new( path: workbench.path )
-		seal_warehouse.seal_workbench!( tracking_number: 99 )
+		seal_warehouse.seal!( tracking: 99 )
 		track_seal_marker( seal_warehouse )
 
 		result = @warehouse.checkout!( workbench, force: true )

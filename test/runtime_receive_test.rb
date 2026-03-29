@@ -733,7 +733,7 @@ class RuntimeReceiveTest < Minitest::Test
 		)
 		# Seal the worktree as the courier would have.
 		warehouse = Carson::Warehouse.new( path: repo_root )
-		warehouse.seal_shelf!( tracking_number: 42 )
+		warehouse.seal!( tracking: 42 )
 		assert warehouse.sealed?, "precondition: worktree should be sealed"
 
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
@@ -783,13 +783,13 @@ class RuntimeReceiveTest < Minitest::Test
 			summary: "bureau hasn't responded yet"
 		)
 		warehouse = Carson::Warehouse.new( path: repo_root )
-		warehouse.seal_shelf!( tracking_number: 42 )
+		warehouse.seal!( tracking: 42 )
 
 		runtime.define_singleton_method( :pull_request_state ) { |number:| { "state" => "MERGED" } }
 
 		runtime.receive!( dry_run: true )
 		assert warehouse.sealed?, "dry run should not unseal the worktree"
-		warehouse.unseal_shelf!
+		warehouse.unseal!
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

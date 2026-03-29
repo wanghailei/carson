@@ -135,7 +135,7 @@ Carson is organised around three roles:
 |---|---|---|---|
 | **Carson Co.** | The company HQ | client relationships, portfolio | onboards/offboards warehouses, renders output |
 | **Warehouse** | Intelligent local authority | workbenches, vault, branches, stash, standard | prepares parcels, accepts into vault, sweeps, dispatches courier |
-| **Vault** | The Warehouse's acceptance area | main branch ref, main worktree path | accepts parcels (ff-only merge), tracks what's absorbed |
+| **Vault** | Class owned by Warehouse — the production standard | path, main_label | accepts parcels (ff-only merge), tracks what's absorbed |
 | **Workbench** | A passive place in the Warehouse | path, branch, prunable reason | shows state only |
 | **Parcel** | Committed changes | branch, head | the thing being delivered |
 | **Waybill** | Shipping document (remote only) | PR identity and bureau findings | passive data object |
@@ -239,7 +239,7 @@ Messages use the configured git remote and main branch so the client sees exact 
 
 The Warehouse manages itself. It prepares parcels, accepts them into the vault, and keeps the floor clean. Repo-local state lives here. Each warehouse belongs to a client (a repository owner). The warehouse becomes intelligent when Carson Co. serves it — the code is the staff.
 
-The Warehouse has internal sub-domains, each owning a distinct responsibility:
+The Warehouse owns sub-objects and includes modules for organised concerns:
 
 ```
 ╔════════════════════════════════════════════════════════════════════╗
@@ -249,36 +249,35 @@ The Warehouse has internal sub-domains, each owning a distinct responsibility:
 ║  knows:                                                            ║
 ║    path, current_label, current_head                               ║
 ║    main_label, bureau_address                                      ║
-║    workbenches, branches, stash                                    ║
+║    clean?                                                          ║
+║                                                                    ║
+║  ┌─────────────────────────┐  ╔══════════════════════════════╗     ║
+║  │  Workbench (module)     │  ║  Vault (class)               ║     ║
+║  │                         │  ║  Warehouse owns @vault       ║     ║
+║  │  checkin!( name: )      │  ║                              ║     ║
+║  │  checkout!( wb, force: )│  ║  accept!( parcel )           ║     ║
+║  │  build_workbench!       │  ║  absorbed?( label )          ║     ║
+║  │  remove_workbench!      │  ║                              ║     ║
+║  │  sweep!                 │  ║  state: path, main_label     ║     ║
+║  │                         │  ╚══════════════════════════════╝     ║
+║  └─────────────────────────┘                                       ║
 ║                                                                    ║
 ║  ┌─────────────────────────┐  ┌──────────────────────────────┐     ║
-║  │  Workbench concern      │  │  Vault concern               │     ║
+║  │  Seal (module)          │  │  Bureau (module)             │     ║
+║  │  (bureau only)          │  │  (backup / PR)               │     ║
 ║  │                         │  │                              │     ║
-║  │  checkin!( name: )      │  │  accept!( parcel )           │     ║
-║  │  checkout!( wb, force: )│  │    merge branch into main    │     ║
-║  │  build_workbench!       │  │    (ff-only from main tree)  │     ║
-║  │  remove_workbench!      │  │                              │     ║
-║  │  sweep!                 │  │  absorbed?( label )          │     ║
-║  │                         │  │    branch merged into main?  │     ║
+║  │  seal!( tracking: )     │  │  file_waybill_for!           │     ║
+║  │  unseal!                │  │  check_parcel_with( waybill )│     ║
+║  │  sealed?                │  │  register_with!( waybill )   │     ║
 ║  └─────────────────────────┘  └──────────────────────────────┘     ║
 ║                                                                    ║
-║  ┌─────────────────────────┐  ┌──────────────────────────────┐     ║
-║  │  Seal concern           │  │  Bureau concern              │     ║
-║  │                         │  │  (remote-centred only)       │     ║
-║  │  seal!( tracking: )     │  │                              │     ║
-║  │  unseal!                │  │  file_waybill_for!           │     ║
-║  │  sealed?                │  │  check_parcel_with( waybill )│     ║
-║  │                         │  │  register_with!( waybill )   │     ║
-║  └─────────────────────────┘  └──────────────────────────────┘     ║
-║                                                                    ║
-║  shared operations:                                                ║
-║    clean?                        — floor clean?                    ║
-║    pack!( message: )             — prepare a parcel on workbench   ║
+║  warehouse operations:                                             ║
+║    ship( parcel )                — send to backup                  ║
+║    based_on_latest?( parcel )    — is parcel built on standard?    ║
+║    rebase!( standard: )          — fix workbench when behind       ║
+║    receive_latest!               — update the vault                ║
+║    pack!( message: )             — stage and commit                ║
 ║    prepare!( parcel, message: )  — prep phase for delivery         ║
-║    fetch_latest                  — get latest standard             ║
-║    based_on_latest?( parcel )    — production check                ║
-║    rebase!( standard: )          — rebase workbench                ║
-║    receive_latest!               — update local standard           ║
 ║                                                                    ║
 ╚════════════════════════════════════════════════════════════════════╝
 ```
@@ -297,22 +296,23 @@ warehouse.clean?  # no uncommitted changes?
 
 ### Production Standard
 
-A parcel's content is produced against the **production standard** (the registry state). The standard is what the client (registry) requires. Three operations maintain it:
+A parcel's content is produced against the **production standard** — vault state. The standard is what every parcel must be built against. Three operations maintain it:
 
 ```ruby
-warehouse.based_on_latest_standard?( parcel )  # is this workbench current?
-warehouse.rebase_on_latest_standard!            # rebase workbench onto latest
-warehouse.receive_latest_standard!              # update warehouse's local copy
+warehouse.receive_latest!              # update the vault
+warehouse.based_on_latest?( parcel )   # is this parcel built on top of the standard?
+warehouse.rebase!( standard: )         # fix the workbench when behind
 ```
 
-**The standard trio:**
-- `based_on_latest_standard?` — **query.** Is this parcel produced against the latest standard? Checked before every delivery.
-- `rebase_on_latest_standard!` — **fix for workbenches.** When a workbench falls behind the standard, rebase it. Used when the Courier blocks a delivery for being behind.
-- `receive_latest_standard!` — **fix for the Warehouse.** After the Bureau accepts a parcel, the registry has new content. The Warehouse's local copy of the standard (local main) is now stale. This method fast-forwards it without switching branches. Uses a dual-path approach: `merge --ff-only` when main is checked out in the main worktree (the normal production case), fetch refspec when main is not checked out.
+- `receive_latest!` — **the single way the warehouse keeps its standard current.** Fetches from the remote and fast-forwards the vault without disturbing the current workbench. Dual path: `merge --ff-only` when main is checked out, fetch refspec when not. Called by `checkin!`, by `prepare!`, and by the Courier after acceptance.
+- `based_on_latest?` — **query.** Is this parcel built on top of the current standard? Checked before every delivery.
+- `rebase!` — **fix for workbenches.** When a parcel falls behind the standard, replay the work on top.
 
-**Use case — before shipping:** An agent committed changes on `feature/login` yesterday. Overnight, another PR was merged into main. This morning, the agent runs `carson deliver`. The Courier fetches the latest standard, checks `based_on_latest_standard?` — returns false. The Courier blocks: "branch is behind origin/main." The agent rebases and delivers again.
+There is no separate `fetch_latest` — `receive_latest!` is the single entry point. DRY: one way to keep the standard current, not two.
 
-**Use case — after acceptance:** The Bureau accepts and merges the parcel. The registry now has the new content. The Courier calls `warehouse.receive_latest_standard!` — local main fast-forwards to match the registry. The next workbench prepared from main will automatically be based on the latest standard.
+**Use case — before delivery:** An agent committed changes on `feature/login` yesterday. Overnight, another PR was merged into main. This morning, the agent runs `carson deliver`. The Warehouse receives the latest standard, checks `based_on_latest?` — returns false. The Warehouse rebases automatically. If conflicts, the Courier blocks: "branch is behind origin/main."
+
+**Use case — after acceptance:** The parcel is accepted. The standard has changed. The Courier calls `warehouse.receive_latest!` — the vault fast-forwards. The next workbench prepared from main will automatically be based on the latest standard.
 
 ### Workbench
 
@@ -590,10 +590,11 @@ lib/cli.rb                            ← the interface (agent ↔ Carson Co.)
 lib/carson.rb                         ← Carson Co. — company entry point, reporting
 lib/carson/courier.rb                ← delivery worker
 lib/carson/warehouse.rb              ← local repository authority
-lib/carson/warehouse/workbench.rb    ← workbench lifecycle (checkin, checkout, build, remove)
-lib/carson/warehouse/seal.rb         ← workbench seal (parcel in flight)
-lib/carson/warehouse/bureau.rb       ← bureau interaction (GitHub)
-lib/carson/worktree.rb               ← transition name for the workbench object
+lib/carson/warehouse/vault.rb        ← Vault class — the production standard
+lib/carson/warehouse/workbench.rb    ← Workbench module — lifecycle (checkin, checkout, build, remove, sweep)
+lib/carson/warehouse/seal.rb         ← Seal module — bureau enhancement only
+lib/carson/warehouse/bureau.rb       ← Bureau module — backup and optional PR/CI
+lib/carson/worktree.rb               ← passive workbench object (transition name)
 lib/carson/branch.rb                 ← branch state under Warehouse ownership
 lib/carson/parcel.rb                 ← committed changes
 lib/carson/waybill.rb                ← shipping document
@@ -623,19 +624,19 @@ All 531 tests pass. New classes work alongside existing code.
 
 #### Phase 2 — Make it live (in progress)
 
-1. ~~Rename `includes_latest?` → `based_on_latest_standard?`~~ (done)
-2. ~~Add `rebase_on_latest_standard!` (rebase workbench onto latest)~~ (done)
+1. ~~Rename `includes_latest?` → `based_on_latest?`~~ (done — normalised from `based_on_latest_standard?`)
+2. ~~Add `rebase!( standard: )` (rebase workbench onto latest)~~ (done — normalised from `rebase_on_latest_standard!`)
 3. ~~Rename `prepare!` → `pack!`~~ (done)
 4. ~~Add `warehouse.submit_compliance!` (injected checker, DI)~~ (done)
 5. ~~Add `warehouse.clean?` (dirty tree is warehouse knowledge)~~ (done)
-6. ~~Add `warehouse.receive_latest_standard!` (update local standard after acceptance)~~ (done)
+6. ~~Add `warehouse.receive_latest!` (the single way to keep the standard current)~~ (done — `fetch_latest` removed, DRY)
 7. ~~Add `commit_message:` to Courier (pack before ship)~~ (done)
 8. ~~Add `Carson.report` (JSON + text rendering, technical language)~~ (done)
 9. ~~Wire `deliver!` to delegate to Courier~~ (done — live in production)
 10. ~~Courier waits and polls at the Bureau — configurable MAX_CHECKS and interval~~ (done)
 11. ~~Inject merge method from config~~ (done)
 12. ~~Inject ledger into Courier~~ (done)
-13. Add `warehouse.sweep!` (absorb housekeep)
+13. ~~Add `warehouse.sweep!` (absorb housekeep)~~ (done — autonomous, independent of checkin)
 14. Add `settle!` (local-centred backup push)
 15. Carson Co. absorbs internal monitor work (Bureau feedback → client notification)
 16. ~~Courier: `return` and `salvage` commands~~ (superseded by the `carson checkout` model)
@@ -650,7 +651,7 @@ All 531 tests pass. New classes work alongside existing code.
 20. ~~Hold reasons renamed: `inspector_*` → `*_at_bureau`~~ (done)
 21. ~~Actionable delivery output~~ (done)
 22. ~~Delivery progress: Courier reports opening line + per-check status~~ (done)
-23. ~~Workbench seal: `seal_shelf!`, `unseal_shelf!`, `sealed?`, `pack!` guard~~ (done)
+23. ~~Workbench seal: `seal!( tracking: )`, `unseal!`, `sealed?`, `pack!` guard~~ (done — normalised from `seal_shelf!`/`unseal_shelf!`)
 24. ~~Seal guard in `carson audit` — blocks `git commit` on sealed workbench~~ (done)
 25. ~~`deliver.poll_interval_at_bureau` config with env override~~ (done)
 26. ~~`error_at_bureau` treated as transient, not definitive~~ (done)
@@ -658,7 +659,7 @@ All 531 tests pass. New classes work alongside existing code.
 #### Phase 3b — Bureau interaction and output language (done, 4.1.0)
 
 27. ~~Waybill → data object: removed `fetch_ci`, `refresh!`, `accept!`, `file!`, all `gh` calls~~ (done)
-28. ~~Warehouse gains bureau interaction: `check_parcel_at_bureau_with`, `file_waybill_for!`, `register_parcel_at_bureau_with!`~~ (done)
+28. ~~Warehouse gains bureau interaction: `check_parcel_with`, `file_waybill_for!`, `register_with!`~~ (done — normalised from `check_parcel_at_bureau_with`/`register_parcel_at_bureau_with!`)
 29. ~~CI diagnostic captured: `fetch_ci_state_for` preserves first line of stderr~~ (done, #468)
 30. ~~`hold_summary` returns client language directly — `translate_hold` removed~~ (done, #458)
 31. ~~Consistent naming: Bureau not registry. Hold reasons, constants, config keys renamed~~ (done)
@@ -676,19 +677,19 @@ All 531 tests pass. New classes work alongside existing code.
 
 #### Phase 5 — Local-centred workstyle (in progress)
 
-40. `Warehouse::Vault` concern: `accept!( parcel )` — merge branch into main via ff-only from main worktree.
-41. `warehouse.prepare!( parcel, message: )` — prep phase: pack, fetch, standard check, auto-rebase. No compliance in local workstyle.
+40. ~~`Warehouse::Vault` class: `accept!( parcel )`, `absorbed?( label )` — Warehouse owns @vault instance~~ (done — extracted from module to class)
+41. ~~`warehouse.prepare!( parcel, message: )` — prep phase: receive latest, standard check, auto-rebase~~ (done — `fetch_latest` removed, uses `receive_latest!`)
 42. Courier workstyle-aware `deliver( parcel )` — local gesture: push main to backup vault. Remote gesture: existing Bureau trip.
 43. CLI orchestration: `prepare!` → `accept!` → `courier.deliver`. Follow checkin/checkout pattern.
 44. Config: `workstyle: local` (default) / `workstyle: remote`.
-45. Naming: `rebase!( standard: )`, `based_on_latest?`, `receive_latest!`, `absorbed?( label )`.
+45. ~~Naming: `rebase!( standard: )`, `based_on_latest?`, `receive_latest!`, `absorbed?( label )`~~ (done — all normalised)
 
 #### Phase 5b — Open items
 
-46. Make the Workbench object fully passive and move all lifecycle management into the Warehouse.
+46. ~~Make the Workbench object fully passive and move all lifecycle management into the Warehouse.~~ (done — Warehouse asks workbench about its own state via `holds_cwd?`, `held_by_other_process?`, `clean?`; duplicate safety checks removed from Workbench module)
 47. Move branch, worktree, and stash lifecycle under Warehouse ownership as one coherent repo-local domain.
 48. Carson Co. monitor: connect with the Bureau, check filed deliveries, and update parcel delivery states as internal company work (remote-centred only).
-49. `warehouse.sweep!` (absorb housekeep).
+49. ~~`warehouse.sweep!` (absorb housekeep)~~ (done — autonomous warehouse housekeeping, independent of checkin).
 50. Move Bureau interaction from Warehouse to Courier (the Courier should own its own delivery tools, not borrow the Warehouse's).
 51. Move prep work out of Courier in remote-centred mode (Courier currently does inside work — acknowledged as wrong).
 52. Remove Runtime — dissolve 25 files, ~20 commands. Each command migrated from Runtime to CLI → domain object → Carson.report, following the pattern established by checkin/checkout (#510 tracks the instruction update; Runtime dissolution is a separate body of work).
@@ -728,7 +729,7 @@ Every situation a class can encounter is numbered in its class documentation. Th
 
 ```ruby
 # 02. Parcel behind standard — not based on the client's latest standard.
-unless @warehouse.based_on_latest_standard?( parcel )
+unless @warehouse.based_on_latest?( parcel )
 	return blocked( result, "branch is behind ..." )
 end
 ```
@@ -739,9 +740,9 @@ This makes the code auditable — you can verify every documented situation has 
 
 #### Unsync'd local main cascade (2026-03-23)
 
-Not receiving the latest standard (`warehouse.receive_latest_standard!`) after a merge caused a cascade: merge conflicts, extra PRs, lost commits, multiple rebase attempts. The exact situation `based_on_latest_standard?` is designed to prevent.
+Not receiving the latest standard (`warehouse.receive_latest!`) after a merge caused a cascade: merge conflicts, extra PRs, lost commits, multiple rebase attempts. The exact situation `based_on_latest?` is designed to prevent.
 
-**Lesson:** Always receive the latest standard immediately after any parcel reaches the registry. This is `warehouse.receive_latest_standard!` — not optional, not deferrable. The cost of skipping it compounds with every subsequent operation. Now automated: the Courier calls it after every acceptance.
+**Lesson:** Always receive the latest standard immediately after any parcel reaches the vault. This is `warehouse.receive_latest!` — not optional, not deferrable. The cost of skipping it compounds with every subsequent operation. Now automated: the Courier calls it after every acceptance.
 
 #### Sub-agents and OO (2026-03-23)
 
@@ -759,7 +760,7 @@ The user said "Go!" expecting overnight marathon implementation. The agent invok
 
 Agent modified files on a workbench after `carson deliver` failed ("held"). The workbench had unstaged changes when the next rebase was attempted: "cannot rebase: You have unstaged changes." The agent blamed a Carson bug. It was a system design gap — no mechanical enforcement prevented the agent from working on the workbench while its parcel was in flight.
 
-**Lesson:** Convention is not enforcement. If the system allows the mistake, the system has the defect — not the agent. The workbench seal (`seal_shelf!`, `sealed?`, `pack!` guard, `carson audit` check) was built as a response. But the seal only governs git commits. File-level enforcement requires Claude Code's PreToolUse hooks — a separate enforcement layer Carson does not control. Full enforcement requires both layers.
+**Lesson:** Convention is not enforcement. If the system allows the mistake, the system has the defect — not the agent. The workbench seal (`seal!`, `sealed?`, `pack!` guard, `carson audit` check) was built as a response. But the seal only governs git commits. File-level enforcement requires Claude Code's PreToolUse hooks — a separate enforcement layer Carson does not control. Full enforcement requires both layers.
 
 #### Agent rushes, places code in wrong location (2026-03-23)
 

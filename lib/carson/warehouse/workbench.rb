@@ -160,10 +160,8 @@ module Carson
 			end
 
 			# Agent checks in — prepare a fresh workbench from the latest standard.
-			# Sweeps delivered workbenches first — the Warehouse cleans behind the agent.
 			def checkin!( name: )
-				receive_latest_standard!
-				sweep_delivered_workbenches!
+				receive_latest!
 				result = build_workbench!( name: name )
 				result[ :command ] = "checkin"
 				result
@@ -237,19 +235,20 @@ module Carson
 			end
 
 			# Full safety assessment before removal.
+			# Asks the workbench about its own state — no duplicate checks.
 			# Returns { status: :ok } or { status: :block/:error, error:, recovery: }.
 			def assess_removal( workbench, force: false, skip_unpushed: false )
 				unless workbench.exists?
 					return { status: :ok, missing: true }
 				end
 
-				if agent_at_workbench?( workbench )
+				if workbench.holds_cwd?
 					return { status: :block, result_status: "block",
 						error: "current working directory is inside this worktree",
 						recovery: "cd #{main_worktree_root} && carson checkout #{File.basename( workbench.path )}" }
 				end
 
-				if workbench_held_by_process?( workbench )
+				if workbench.held_by_other_process?
 					return { status: :block, result_status: "block",
 						error: "another process has its working directory inside this worktree",
 						recovery: "wait for the other session to finish, then retry" }
@@ -269,9 +268,12 @@ module Carson
 				{ status: :ok, missing: false }
 			end
 
-			# Sweep stale workbenches. Walk all agent-owned workbenches,
-			# check state, tear down those safe to reap. Repair missing ones.
-			def sweep_workbenches!
+			# The warehouse sweeps — autonomous housekeeping.
+			# Walks all agent-owned workbenches. Asks each one about its state.
+			# If the label has been absorbed into the vault, and the workbench
+			# isn't sealed or occupied — safe to remove, tears it down.
+			# Repairs missing ones.
+			def sweep!
 				root = main_worktree_root
 
 				agent_prefixes = AGENT_DIRS.map do |dir|
@@ -283,49 +285,18 @@ module Carson
 				workbenches.each do |workbench|
 					next unless workbench.branch
 					next unless agent_prefixes.any? { |prefix| workbench.path.start_with?( prefix ) }
-
-					# Use the existing classifier if available (transitional).
-					if respond_to?( :classify_worktree_cleanup, true )
-						classification = classify_worktree_cleanup( worktree: workbench )
-						next unless classification.fetch( :action ) == :reap
-					end
 
 					unless workbench.exists?
 						repair_missing_workbench!( workbench )
 						next
 					end
 
-					_, _, rm_ok = git( "worktree", "remove", workbench.path )
-					next unless rm_ok.success?
+					# Only sweep workbenches whose content has been absorbed into the vault.
+					next unless absorbed?( workbench.branch )
 
-					if workbench.branch
-						git( "branch", "-D", workbench.branch )
-					end
-				end
-			end
-
-		private
-
-			# --- Sweep ---
-
-			# Sweep delivered workbenches — branches absorbed into main, not sealed,
-			# not CWD-blocked. Called by checkin! so the Warehouse cleans behind the agent.
-			def sweep_delivered_workbenches!
-				root = main_worktree_root
-
-				agent_prefixes = AGENT_DIRS.map do |dir|
-					full = File.join( root, dir, "worktrees" )
-					File.join( realpath_safe( full ), "" ) if Dir.exist?( full )
-				end.compact
-				return if agent_prefixes.empty?
-
-				workbenches.each do |workbench|
-					next unless workbench.branch
-					next unless agent_prefixes.any? { |prefix| workbench.path.start_with?( prefix ) }
-					next unless workbench.exists?
-					next unless label_absorbed?( workbench.branch )
-					next if agent_at_workbench?( workbench )
-					next if workbench_held_by_process?( workbench )
+					# Ask the workbench about its own state — not occupied, not held.
+					next if workbench.holds_cwd?
+					next if workbench.held_by_other_process?
 
 					# Do not sweep sealed workbenches — parcel still in flight.
 					seal_check = Warehouse.new( path: workbench.path )
@@ -338,41 +309,7 @@ module Carson
 				end
 			end
 
-			# --- Safety checks ---
-
-			# Is the agent's working directory inside this workbench?
-			def agent_at_workbench?( workbench )
-				cwd = realpath_safe( Dir.pwd )
-				workbench_path = realpath_safe( workbench.path )
-				normalised = File.join( workbench_path, "" )
-				cwd == workbench_path || cwd.start_with?( normalised )
-			rescue StandardError
-				false
-			end
-
-			# Is another process occupying this workbench?
-			def workbench_held_by_process?( workbench )
-				canonical = realpath_safe( workbench.path )
-				return false if canonical.nil? || canonical.empty?
-				return false unless Dir.exist?( canonical )
-
-				stdout, = Open3.capture3( "lsof", "-d", "cwd" )
-				return false if stdout.nil? || stdout.empty?
-
-				normalised = File.join( canonical, "" )
-				my_pid = Process.pid
-				stdout.lines.drop( 1 ).any? do |line|
-					fields = line.strip.split( /\s+/ )
-					next false unless fields.length >= 9
-					next false if fields[ 1 ].to_i == my_pid
-					name = fields[ 8.. ].join( " " )
-					name == canonical || name.start_with?( normalised )
-				end
-			rescue Errno::ENOENT
-				false
-			rescue StandardError
-				false
-			end
+		private
 
 			# Would tearing down lose unpushed work?
 			# Content-aware: compares tree content vs main, not SHAs.

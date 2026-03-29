@@ -1,4 +1,5 @@
-# Tests for Warehouse::Vault — vault acceptance (local-centred delivery).
+# Tests for Carson::Warehouse::Vault — the production standard.
+# The vault is local main. It accepts parcels and tracks absorption.
 # Tests real git operations against temporary repositories. No mocking.
 require_relative "test_helper"
 require_relative "../lib/carson/parcel"
@@ -9,112 +10,145 @@ class VaultTest < Minitest::Test
 
 	def setup
 		@tmpdir = Dir.mktmpdir( "carson-vault-test", carson_tmp_root )
-		@remote_path = File.join( @tmpdir, "remote.git" )
 		@repo_path = File.join( @tmpdir, "repo" )
 
-		# Create a bare remote and clone it.
-		system( "git", "init", "--bare", "-b", "main", @remote_path, out: File::NULL, err: File::NULL )
-		system( "git", "clone", @remote_path, @repo_path, out: File::NULL, err: File::NULL )
+		system( "git", "init", "-b", "main", @repo_path, out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
 		system( "git", "-C", @repo_path, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
 		File.write( File.join( @repo_path, "README.md" ), "# Test" )
 		system( "git", "-C", @repo_path, "add", "README.md", out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_path, "commit", "-m", "init", out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_path, "push", "-u", "origin", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "initial commit", out: File::NULL, err: File::NULL )
 	end
 
 	def teardown
 		FileUtils.rm_rf( @tmpdir )
 	end
 
-	# --- Vault acceptance: fast-forward merge ---
+	# --- Accept ---
 
-	def test_accept_merges_branch_into_main
-		# Create a branch with a commit, then switch back to main.
-		worktree_path = create_worktree( "feature" )
-		File.write( File.join( worktree_path, "feature.txt" ), "new feature" )
-		system( "git", "-C", worktree_path, "add", "feature.txt", out: File::NULL, err: File::NULL )
-		system( "git", "-C", worktree_path, "commit", "-m", "add feature", out: File::NULL, err: File::NULL )
+	def test_accept_fast_forwards_the_standard
+		# Create a branch ahead of main, then switch back.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/login", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "login.txt" ), "login" )
+		system( "git", "-C", @repo_path, "add", "login.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "add login", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
 
-		warehouse = Carson::Warehouse.new( path: worktree_path, bureau_address: "origin" )
-		parcel = Carson::Parcel.new( label: "feature", head: warehouse.current_head )
-		result = warehouse.accept!( parcel )
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		parcel = Carson::Parcel.new( label: "feature/login", head: "ignored" )
 
+		result = vault.accept!( parcel )
 		assert_equal "ok", result[ :status ]
-		assert_equal "feature", result[ :branch ]
+		assert_equal "feature/login", result[ :branch ]
 
 		# Verify the file is now on main.
 		main_files, = Open3.capture3( "git", "-C", @repo_path, "ls-tree", "--name-only", "main" )
-		assert_includes main_files, "feature.txt"
+		assert_includes main_files, "login.txt"
 	end
 
-	def test_accept_blocks_when_branch_has_diverged
-		# Create a branch with a commit.
-		worktree_path = create_worktree( "diverged" )
-		File.write( File.join( worktree_path, "diverged.txt" ), "diverged work" )
-		system( "git", "-C", worktree_path, "add", "diverged.txt", out: File::NULL, err: File::NULL )
-		system( "git", "-C", worktree_path, "commit", "-m", "diverged work", out: File::NULL, err: File::NULL )
+	def test_accept_returns_new_head
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/head", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "head.txt" ), "head check" )
+		system( "git", "-C", @repo_path, "add", "head.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "head check", out: File::NULL, err: File::NULL )
+		branch_head, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "HEAD" )
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
 
-		# Create a different commit on main (making the branch non-ff).
-		File.write( File.join( @repo_path, "main-change.txt" ), "main changed" )
-		system( "git", "-C", @repo_path, "add", "main-change.txt", out: File::NULL, err: File::NULL )
-		system( "git", "-C", @repo_path, "commit", "-m", "main moves forward", out: File::NULL, err: File::NULL )
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		parcel = Carson::Parcel.new( label: "feature/head", head: branch_head.strip )
 
-		warehouse = Carson::Warehouse.new( path: worktree_path, bureau_address: "origin" )
-		parcel = Carson::Parcel.new( label: "diverged", head: warehouse.current_head )
-		result = warehouse.accept!( parcel )
+		result = vault.accept!( parcel )
+		assert_equal "ok", result[ :status ]
+		assert_equal branch_head.strip, result[ :head ]
+	end
 
+	def test_accept_blocks_when_not_fast_forward
+		# Create diverged branches.
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/diverged", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "diverged.txt" ), "diverged" )
+		system( "git", "-C", @repo_path, "add", "diverged.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "diverged branch", out: File::NULL, err: File::NULL )
+
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "main-only.txt" ), "main" )
+		system( "git", "-C", @repo_path, "add", "main-only.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "main diverged", out: File::NULL, err: File::NULL )
+
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		parcel = Carson::Parcel.new( label: "feature/diverged", head: "ignored" )
+
+		result = vault.accept!( parcel )
 		assert_equal "block", result[ :status ]
 		assert_includes result[ :error ], "cannot be fast-forwarded"
 		assert_includes result[ :recovery ], "Rebase"
 	end
 
-	def test_accept_blocks_with_dirty_tree_diagnosis_when_main_has_conflicting_changes
+	def test_accept_blocks_with_dirty_tree_diagnosis
 		# Create a branch that modifies README.md.
-		worktree_path = create_worktree( "dirty-conflict" )
-		File.write( File.join( worktree_path, "README.md" ), "# Changed by branch" )
-		system( "git", "-C", worktree_path, "add", "README.md", out: File::NULL, err: File::NULL )
-		system( "git", "-C", worktree_path, "commit", "-m", "change readme", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/dirty", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "README.md" ), "# Changed by branch" )
+		system( "git", "-C", @repo_path, "add", "README.md", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "change readme", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
 
 		# Dirty the same file in the main worktree (uncommitted).
 		File.write( File.join( @repo_path, "README.md" ), "# Dirty local edit" )
 
-		warehouse = Carson::Warehouse.new( path: worktree_path, bureau_address: "origin" )
-		parcel = Carson::Parcel.new( label: "dirty-conflict", head: warehouse.current_head )
-		result = warehouse.accept!( parcel )
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		parcel = Carson::Parcel.new( label: "feature/dirty", head: "ignored" )
 
+		result = vault.accept!( parcel )
 		assert_equal "block", result[ :status ]
 		assert_includes result[ :error ], "uncommitted changes"
 		assert_includes result[ :recovery ], "dirty files"
-		# Must NOT say "cannot be fast-forwarded" — the branch IS a valid ff descendant.
 		refute_includes result[ :error ], "cannot be fast-forwarded"
 	end
 
-	def test_accept_returns_new_head_after_merge
-		worktree_path = create_worktree( "headcheck" )
-		File.write( File.join( worktree_path, "check.txt" ), "head check" )
-		system( "git", "-C", worktree_path, "add", "check.txt", out: File::NULL, err: File::NULL )
-		system( "git", "-C", worktree_path, "commit", "-m", "head check", out: File::NULL, err: File::NULL )
+	def test_accept_errors_when_main_not_checked_out
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/other", out: File::NULL, err: File::NULL )
 
-		branch_head, = Open3.capture3( "git", "-C", worktree_path, "rev-parse", "HEAD" )
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		parcel = Carson::Parcel.new( label: "feature/other", head: "ignored" )
 
-		warehouse = Carson::Warehouse.new( path: worktree_path, bureau_address: "origin" )
-		parcel = Carson::Parcel.new( label: "headcheck", head: branch_head.strip )
-		result = warehouse.accept!( parcel )
-
-		assert_equal "ok", result[ :status ]
-		# After ff-only merge, main's HEAD should match the branch's HEAD.
-		assert_equal branch_head.strip, result[ :head ]
+		result = vault.accept!( parcel )
+		assert_equal "error", result[ :status ]
+		assert_includes result[ :error ], "not checked out"
 	end
 
-private
+	# --- Absorbed ---
 
-	# Create a worktree branch from main and return its path.
-	def create_worktree( name )
-		worktree_path = File.join( @tmpdir, name )
-		system( "git", "-C", @repo_path, "worktree", "add", "-b", name, worktree_path, out: File::NULL, err: File::NULL )
-		system( "git", "-C", worktree_path, "config", "user.email", "test@test.com", out: File::NULL, err: File::NULL )
-		system( "git", "-C", worktree_path, "config", "user.name", "Test", out: File::NULL, err: File::NULL )
-		worktree_path
+	def test_absorbed_true_when_merged
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/merged", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "merged.txt" ), "merged" )
+		system( "git", "-C", @repo_path, "add", "merged.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "on merged branch", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "merge", "feature/merged", "--no-ff", "-m", "merge", out: File::NULL, err: File::NULL )
+
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		assert vault.absorbed?( "feature/merged" )
+	end
+
+	def test_absorbed_true_when_rebase_merged
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/rebased", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "rebased.txt" ), "rebased" )
+		system( "git", "-C", @repo_path, "add", "rebased.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "on rebased branch", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "checkout", "main", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "cherry-pick", "feature/rebased", out: File::NULL, err: File::NULL )
+
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		assert vault.absorbed?( "feature/rebased" ),
+			"absorbed? should detect rebase-merged branches by content, not ancestry"
+	end
+
+	def test_absorbed_false_when_not_merged
+		system( "git", "-C", @repo_path, "checkout", "-b", "feature/unmerged", out: File::NULL, err: File::NULL )
+		File.write( File.join( @repo_path, "unmerged.txt" ), "unmerged" )
+		system( "git", "-C", @repo_path, "add", "unmerged.txt", out: File::NULL, err: File::NULL )
+		system( "git", "-C", @repo_path, "commit", "-m", "on unmerged branch", out: File::NULL, err: File::NULL )
+
+		vault = Carson::Warehouse::Vault.new( path: @repo_path, main_label: "main" )
+		refute vault.absorbed?( "feature/unmerged" )
 	end
 end

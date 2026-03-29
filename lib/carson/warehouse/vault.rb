@@ -1,60 +1,66 @@
-# The warehouse's vault concern.
-# The vault is local main — where accepted parcels live.
-# In local-centred workstyle, the vault is the source of truth.
-# In remote-centred workstyle, the vault is the backup (receives
-# the standard from the bureau's registry after acceptance).
+# The vault — where the production standard lives.
+# The vault is local main. It is the source of truth.
+# Accepted parcels live here permanently.
 require "open3"
 
 module Carson
 	class Warehouse
-		module Vault
+		class Vault
+			attr_reader :main_label
+
+			def initialize( path:, main_label: )
+				@path = path
+				@main_label = main_label
+			end
 
 			# Accept a parcel into the vault.
-			# Fast-forwards local main to include the parcel's branch.
-			# Runs from the main worktree root where main is checked out.
+			# Fast-forwards the standard to include the parcel's branch.
 			#
 			# Precondition: the parcel's branch must be a fast-forward of main.
 			# If not, the agent must rebase first.
-			#
-			# Returns a result hash:
-			#   { status: "ok", branch: ..., head: ... }
-			#   { status: "block", error: ..., recovery: ... }
-			#   { status: "error", error: ..., recovery: ... }
 			def accept!( parcel )
-				root = main_worktree_root
-
-				# Verify main is checked out in the main worktree.
-				unless main_checked_out_at?( root )
+				unless main_checked_out?
 					return {
 						status: "error",
 						error: "#{@main_label} is not checked out in the main worktree.",
-						recovery: "Check the main worktree state at #{root}."
+						recovery: "Check the main worktree state at #{@path}."
 					}
 				end
 
-				# Fast-forward main to include the parcel's branch.
 				_, stderr, status = Open3.capture3(
-					"git", "-C", root, "merge", "--ff-only", parcel.label
+					"git", "-C", @path, "merge", "--ff-only", parcel.label
 				)
 
-				return vault_accepted( parcel, root ) if status.success?
+				return accepted( parcel ) if status.success?
 
-				vault_blocked( parcel, stderr )
+				blocked( parcel, stderr )
+			end
+
+			# Has this label's content been absorbed into the vault?
+			# Content-aware — compares tree content, not SHA ancestry.
+			# Catches rebase-merged and squash-merged branches that
+			# ancestry-based checks miss (replayed SHAs differ).
+			def absorbed?( label )
+				_, _, status = Open3.capture3(
+					"git", "diff", "--quiet", @main_label, label,
+					chdir: @path
+				)
+				status.success?
 			end
 
 		private
 
-			# Check whether main is the checked-out branch at a given path.
-			def main_checked_out_at?( root )
+			# Is main checked out in the vault's worktree?
+			def main_checked_out?
 				head_ref, _, status = Open3.capture3(
-					"git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"
+					"git", "-C", @path, "rev-parse", "--abbrev-ref", "HEAD"
 				)
 				status.success? && head_ref.strip == @main_label
 			end
 
-			# Build the success result after vault acceptance.
-			def vault_accepted( parcel, root )
-				new_head, = Open3.capture3( "git", "-C", root, "rev-parse", "HEAD" )
+			# Build the success result after acceptance.
+			def accepted( parcel )
+				new_head, = Open3.capture3( "git", "-C", @path, "rev-parse", "HEAD" )
 				{
 					status: "ok",
 					branch: parcel.label,
@@ -62,10 +68,10 @@ module Carson
 				}
 			end
 
-			# Build the blocked/error result when vault acceptance fails.
+			# Build the blocked result when acceptance fails.
 			# Distinguishes dirty-tree conflicts from diverged-history blocks
 			# so the agent gets the correct recovery advice.
-			def vault_blocked( parcel, stderr )
+			def blocked( parcel, stderr )
 				if stderr.to_s.include?( "would be overwritten" )
 					{
 						status: "block",
@@ -80,7 +86,6 @@ module Carson
 					}
 				end
 			end
-
 		end
 	end
 end

@@ -1,0 +1,159 @@
+---
+title: Carson — Class Diagram
+---
+classDiagram
+	direction TB
+
+	class Branch {
+		+repository
+		+name
+		+purpose
+		+head
+		+worktree
+		+delivery
+		+reload()
+	}
+
+	class ConfigError {
+	}
+
+	class Config {
+		+git_remote
+		+main_branch
+		+protected_branches
+		+hooks_path
+		+managed_hooks
+		+load()$
+		+default_data()$
+		+load_global_config_data()$
+		+global_config_path()$
+		+deep_merge()$
+	}
+
+	class Courier {
+		+deliver( parcel, title, body_file, commit_message )
+	}
+
+	class Delivery {
+		<<record>>
+		+repo_path
+		+repository
+		+branch
+		+head
+		+worktree_path
+		+status
+		+key()
+		+revision_count()
+		+active?()
+		+blocked?()
+		+ready?()
+		+filed?()
+		+integrated?()
+		+failed?()
+		+superseded?()
+		+terminal?()
+	}
+
+	class Ledger {
+		+path
+		+upsert_delivery()
+	}
+
+	class Parcel {
+		<<value>>
+		+label
+		+head
+		+shelf
+		+on_main?( main_label )
+	}
+
+	class Repository {
+		+path
+		+name()
+		+branch( name )
+		+branches()
+		+status()
+	}
+
+	class Revision {
+		<<value>>
+		+number
+		+cause
+		+provider
+		+status
+		+started_at
+		+finished_at
+		+summary
+		+open?()
+		+completed?()
+		+failed?()
+	}
+
+	class Warehouse {
+		+path
+		+vault()
+		+accept!( parcel )
+		+absorbed?( label )
+		+current_label()
+		+current_head()
+		+main_label()
+		+bureau_address()
+		+clean?()
+		+ship( parcel, remote )
+		+based_on_latest?( parcel )
+		+submit_compliance!()
+		+rebase!( standard )
+		+pack!( message )
+		+check_parcel_with( waybill )
+		+file_waybill_for!( parcel, title, body_file )
+		+seal!( tracking )
+		+unseal!()
+		+sealed?()
+		+sealed_tracking_number()
+		+workbenches()
+	}
+
+	class Waybill {
+		<<value>>
+		+tracking_number
+		+url
+		+label
+		+ci_diagnostic
+		+default_title_for()$
+		+filed?()
+	}
+
+	class Worktree {
+		<<passive>>
+		+path
+		+branch
+		+prunable_reason
+		+list()$
+	}
+
+	class Vault {
+		+main_label
+		+accept!( parcel )
+	}
+
+	class CLI {
+		<<company>>
+		+start()$
+	}
+
+	%% === Relationships ===
+
+	Warehouse ..|> Workbench : includes
+	Warehouse ..|> Seal : includes
+	Warehouse ..|> Bureau : includes
+	Warehouse *-- Vault : owns
+	Warehouse --> Worktree : manages
+	Warehouse --> Parcel : packs
+	Courier --> Warehouse : uses
+	Courier --> Parcel : delivers
+	Courier --> Waybill : reads
+	Courier --> Ledger : records to
+	CLI --> Warehouse : builds
+	CLI --> Courier : dispatches
+	Vault --> Parcel : accepts
+

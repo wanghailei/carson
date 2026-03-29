@@ -1,4 +1,7 @@
-# Tests for Carson::Courier — the delivery person.
+# Tests for Carson::Courier — the delivery worker.
+# Updated method names: based_on_latest?, rebase!, receive_latest!,
+# seal!( tracking: ), unseal!, check_parcel_with, register_with!
+# All warehouse calls use normalised names. fetch_latest removed — receive_latest! is the single way.
 require "minitest/autorun"
 require "stringio"
 require "tmpdir"
@@ -118,8 +121,8 @@ class CourierTest < Minitest::Test
 		system( "git", "-C", @repo_path, "commit", "--no-verify", "-m", "change", out: File::NULL, err: File::NULL )
 
 		warehouse = Carson::Warehouse.new( path: @repo_path, bureau_address: "origin" )
-		# Stub fetch_latest to simulate network failure.
-		warehouse.define_singleton_method( :fetch_latest ) { |**| false }
+		# Stub receive_latest! to simulate failure keeping the standard current.
+		warehouse.define_singleton_method( :receive_latest! ) { |**| false }
 
 		courier = Carson::Courier.new( warehouse, bureau: true )
 		parcel = Carson::Parcel.new( label: "feature/fetch-fail", head: warehouse.current_head )
@@ -263,7 +266,7 @@ class CourierTest < Minitest::Test
 			state: { "state" => "MERGED", "mergedAt" => "2026-03-23T00:00:00Z" },
 			ci: :pass
 		)
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_waybill| }
+		warehouse.define_singleton_method( :check_parcel_with ) { |_waybill| }
 
 		# Call wait_and_poll_at_bureau — the courier's poll method.
 		result = { command: "deliver", label: "feature/sync-proof", remote_main: "origin/main" }
@@ -271,7 +274,7 @@ class CourierTest < Minitest::Test
 
 		# PROOF: outcome is "delivered" and local main has advanced.
 		assert_equal "delivered", result[ :outcome ]
-		assert result[ :synced ], "expected receive_latest_standard! to succeed"
+		assert result[ :synced ], "expected receive_latest! to succeed"
 
 		local_main_after, = Open3.capture3( "git", "-C", @repo_path, "rev-parse", "main" )
 		refute_equal local_main_before.strip, local_main_after.strip,
@@ -311,8 +314,8 @@ class CourierTest < Minitest::Test
 		)
 
 		# Stub warehouse: check does nothing (waybill pre-populated), register stamps accepted.
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
-		warehouse.define_singleton_method( :register_parcel_at_bureau_with! ) do |w, method:|
+		warehouse.define_singleton_method( :check_parcel_with ) { |_w| }
+		warehouse.define_singleton_method( :register_with! ) do |w, method:|
 			w.stamp( :accepted )
 		end
 
@@ -333,7 +336,7 @@ class CourierTest < Minitest::Test
 
 		# First two checks: CI pending. Third check: cleared and accepted.
 		check_count = 0
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+		warehouse.define_singleton_method( :check_parcel_with ) do |w|
 			check_count += 1
 			if check_count < 3
 				w.record(
@@ -347,7 +350,7 @@ class CourierTest < Minitest::Test
 				)
 			end
 		end
-		warehouse.define_singleton_method( :register_parcel_at_bureau_with! ) do |w, method:|
+		warehouse.define_singleton_method( :register_with! ) do |w, method:|
 			w.stamp( :accepted )
 		end
 
@@ -368,7 +371,7 @@ class CourierTest < Minitest::Test
 			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 			ci: :fail
 		)
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+		warehouse.define_singleton_method( :check_parcel_with ) { |_w| }
 
 		result = { remote_main: "origin/main" }
 		courier.send( :wait_and_poll_at_bureau, waybill, result )
@@ -388,7 +391,7 @@ class CourierTest < Minitest::Test
 			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "CONFLICTING", "mergeStateStatus" => "DIRTY" },
 			ci: :pass
 		)
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+		warehouse.define_singleton_method( :check_parcel_with ) { |_w| }
 
 		result = { remote_main: "origin/main" }
 		courier.send( :wait_and_poll_at_bureau, waybill, result )
@@ -406,7 +409,7 @@ class CourierTest < Minitest::Test
 
 		# CI pending on every check — never clears.
 		check_count = 0
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+		warehouse.define_singleton_method( :check_parcel_with ) do |w|
 			check_count += 1
 			w.record(
 				state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
@@ -430,7 +433,7 @@ class CourierTest < Minitest::Test
 			state: { "state" => "MERGED", "mergedAt" => "2026-03-23T00:00:00Z" },
 			ci: :pass
 		)
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+		warehouse.define_singleton_method( :check_parcel_with ) { |_w| }
 
 		result = { remote_main: "origin/main" }
 		courier.send( :wait_and_poll_at_bureau, waybill, result )
@@ -447,7 +450,7 @@ class CourierTest < Minitest::Test
 
 		waybill = Carson::Waybill.new( label: "feature/error-ci", tracking_number: 7 )
 
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+		warehouse.define_singleton_method( :check_parcel_with ) do |w|
 			w.record(
 				state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 				ci: :error,
@@ -473,7 +476,7 @@ class CourierTest < Minitest::Test
 			state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 			ci: :fail
 		)
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+		warehouse.define_singleton_method( :check_parcel_with ) { |_w| }
 
 		result = { remote_main: "origin/main" }
 		courier.send( :wait_and_poll_at_bureau, waybill, result )
@@ -561,7 +564,7 @@ class CourierTest < Minitest::Test
 		waybill = Carson::Waybill.new( label: "feature/progress", tracking_number: 10 )
 
 		check_count = 0
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+		warehouse.define_singleton_method( :check_parcel_with ) do |w|
 			check_count += 1
 			if check_count < 3
 				w.record(
@@ -575,7 +578,7 @@ class CourierTest < Minitest::Test
 				)
 			end
 		end
-		warehouse.define_singleton_method( :register_parcel_at_bureau_with! ) do |w, method:|
+		warehouse.define_singleton_method( :register_with! ) do |w, method:|
 			w.stamp( :accepted )
 		end
 
@@ -600,7 +603,7 @@ class CourierTest < Minitest::Test
 
 		waybill = Carson::Waybill.new( label: "feature/error-diag", tracking_number: 12 )
 
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) do |w|
+		warehouse.define_singleton_method( :check_parcel_with ) do |w|
 			w.record(
 				state: { "state" => "OPEN", "isDraft" => false, "mergeable" => "UNKNOWN", "mergeStateStatus" => "UNKNOWN" },
 				ci: :error,
@@ -624,7 +627,7 @@ class CourierTest < Minitest::Test
 			state: { "state" => "MERGED" },
 			ci: :pass
 		)
-		warehouse.define_singleton_method( :check_parcel_at_bureau_with ) { |_w| }
+		warehouse.define_singleton_method( :check_parcel_with ) { |_w| }
 
 		result = { remote_main: "origin/main" }
 		# Should not raise — nil output is safe.

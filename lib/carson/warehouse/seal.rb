@@ -1,8 +1,16 @@
-# The warehouse's workbench seal concern.
-# Once a parcel ships and the waybill is filed, the warehouse seals the
-# workbench. No more packing until the delivery outcome is confirmed.
-# The seal marker lives outside the worktree (~/.carson/seals/) so it
-# does not pollute git status.
+# The warehouse's seal concern — bureau enhancement only.
+#
+# The seal is inactive in the base (local-centred) model.
+# There is no "in flight" period — the parcel goes directly
+# into the vault.
+#
+# The seal only activates with bureau enhancement, where there's
+# a waiting period between shipping and bureau acceptance. During
+# that period, the workbench is sealed — no more packing until
+# the delivery outcome is confirmed.
+#
+# The seal marker lives outside the worktree (~/.carson/seals/)
+# so it does not pollute git status.
 require "digest"
 require "fileutils"
 
@@ -10,17 +18,15 @@ module Carson
 	class Warehouse
 		module Seal
 
-			# Seal the workbench — no more packing until delivery outcome is confirmed.
-			# The courier seals the workbench after shipping and filing the waybill.
-			def seal_workbench!( tracking_number: )
+			# Seal the workbench — no more packing until the bureau answers.
+			def seal!( tracking: )
 				marker = delivering_marker_path
 				FileUtils.mkdir_p( File.dirname( marker ) )
-				File.write( marker, "#{tracking_number}\n#{@path}" )
+				File.write( marker, "#{tracking}\n#{@path}" )
 			end
 
 			# Unseal the workbench — the courier brought back the parcel.
-			# Called when the delivery outcome is held or rejected.
-			def unseal_workbench!
+			def unseal!
 				File.delete( delivering_marker_path ) if File.exist?( delivering_marker_path )
 			end
 
@@ -34,11 +40,6 @@ module Carson
 				return nil unless sealed?
 				File.read( delivering_marker_path ).lines.first.strip
 			end
-
-			# --- Transitional aliases ---
-			# Keep old names working until all callers are updated.
-			alias seal_shelf! seal_workbench!
-			alias unseal_shelf! unseal_workbench!
 
 		private
 
