@@ -180,6 +180,18 @@ module Carson
 				parcel = Parcel.new( label: parcel.label, head: current_head )
 			end
 
+			# Stamp the parcel with its origin so it knows whether it carries anything.
+			origin, = git( "merge-base", main_label, parcel.label )
+			parcel = Parcel.new( label: parcel.label, head: parcel.head, shelf: parcel.shelf, origin: origin.strip )
+
+			if parcel.empty?
+				return {
+					status: "block",
+					error: "Nothing to deliver — no commits ahead of #{main_label}.",
+					recovery: "Commit changes, then carson deliver."
+				}
+			end
+
 			{ status: "ok", parcel: parcel }
 		end
 

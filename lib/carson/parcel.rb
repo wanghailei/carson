@@ -11,18 +11,27 @@ module Carson
 	# head (commit SHA), and shelf (worktree). The protagonist of every
 	# delivery — without a parcel, there is nothing to deliver.
 	class Parcel
-		attr_reader :label, :head, :shelf
+		attr_reader :label, :head, :shelf, :origin
 
-		def initialize( label:, head:, shelf: nil )
+		def initialize( label:, head:, shelf: nil, origin: nil )
 			@label = label
 			@head = head
 			@shelf = shelf
+			@origin = origin
 		end
 
 		# Is this parcel sitting on the main shelf?
 		# The main shelf is the destination — you cannot deliver FROM the destination.
 		def on_main?( main_label )
 			label == main_label
+		end
+
+		# Does this parcel carry anything?
+		# A parcel with no commits ahead of its origin is empty —
+		# nothing was packed, nothing to deliver.
+		def empty?
+			return false unless origin
+			head == origin
 		end
 	end
 end
