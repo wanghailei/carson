@@ -151,7 +151,7 @@ module Carson
 			# Agent checks in — prepare a fresh workbench from local main.
 			# Sweeps delivered workbenches first — the Warehouse cleans behind the agent.
 			def checkin!( name: )
-				sweep_delivered_workbenches!
+				sweep!
 				result = build_workbench!( name: name )
 				result[ :command ] = "checkin"
 				result
