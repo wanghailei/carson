@@ -15,7 +15,7 @@ Release-note scope rule:
 
 Audit was a remote-centred pre-commit gate — it blocked commits based on delivery-time concerns (PR checks, CI baseline) that don't belong at commit time. In local-centred mode it was purely dead weight. Rather than relocate it to bureau, we verified that none of its unique checks had proven value at any gate, and dissolved the whole thing. Scars, not speculation.
 
-## 4.3.3
+## 4.3.4
 
 ### Fixed
 
@@ -24,6 +24,16 @@ Audit was a remote-centred pre-commit gate — it blocked commits based on deliv
 ### Why
 
 Local-centred mode means local main is the source of truth. Fetching from GitHub on every checkin was a remote-centred assumption baked into the command. The two sequential network round-trips accounted for 90% of the wall time.
+
+## 4.3.3
+
+### New
+
+- **Empty parcel guard.** `carson deliver` refuses to deliver a branch with zero commits ahead of main. Previously, delivering an empty branch was a silent no-op — `git merge --ff-only` succeeded, Carson reported "merged into main", the courier synced to remote, and the workbench was destroyed. All edits that existed only in the working directory were lost. Now `Warehouse#prepare!` stamps each parcel with its origin (via `git merge-base`) and `Parcel#empty?` compares head to origin. An empty parcel blocks with: "Nothing to deliver — no commits ahead of main."
+
+### Why
+
+An agent edited four files in a worktree, ran `carson deliver` without committing, and lost all work. Carson merged a branch with zero commits ahead of main — a valid fast-forward, technically a no-op. The edits existed only in the working directory and were destroyed on workbench cleanup. The agent then wrote a confident delivery summary describing changes that did not exist on main.
 
 ## 4.3.2
 
