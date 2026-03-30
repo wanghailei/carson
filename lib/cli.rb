@@ -134,7 +134,7 @@ module Carson
 				parser.separator "Keep agents from breaking main. Keep agents from breaking each other."
 				parser.separator ""
 				parser.separator "Agent workflow:"
-				parser.separator "    checkin      Get a fresh workbench"
+				parser.separator "    checkin      Get a fresh worktree"
 				parser.separator "    deliver      Accept into main and back up to remote"
 				parser.separator ""
 				parser.separator "Portfolio:"
@@ -528,15 +528,15 @@ module Carson
 			checkin_parser = OptionParser.new do |parser|
 				parser.banner = "Usage: carson checkin <name> [--json]"
 				parser.separator ""
-				parser.separator "Prepare a fresh workbench from the latest standard."
-				parser.separator "The agent names the workbench — it becomes the branch."
+				parser.separator "Prepare a fresh worktree from the latest main."
+				parser.separator "The name becomes the branch."
 				parser.separator ""
 				parser.separator "Options:"
 				parser.on( "--json", "Machine-readable JSON output" ) { options[ :json ] = true }
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson checkin feature-auth"
-				parser.separator "    carson checkin oo/refactor-courier"
+				parser.separator "    carson checkin oo/refactor-auth"
 			end
 			checkin_parser.parse!( arguments )
 			name = arguments.shift.to_s.strip
@@ -560,7 +560,7 @@ module Carson
 			checkout_parser = OptionParser.new do |parser|
 				parser.banner = "Usage: carson checkout <name> [--json] [--force]"
 				parser.separator ""
-				parser.separator "Release a workbench when safe."
+				parser.separator "Release a worktree when safe."
 				parser.separator "Removes the directory and local branch."
 				parser.separator ""
 				parser.separator "Options:"
@@ -569,7 +569,7 @@ module Carson
 				parser.separator ""
 				parser.separator "Examples:"
 				parser.separator "    carson checkout feature-auth"
-				parser.separator "    carson checkout oo/refactor-courier --force"
+				parser.separator "    carson checkout oo/refactor-auth --force"
 			end
 			checkout_parser.parse!( arguments )
 			name = arguments.shift.to_s.strip
@@ -1036,7 +1036,7 @@ module Carson
 				name = parsed.fetch( :workbench_name )
 				result = { command: "checkout", status: "error",
 					name: name,
-					error: "#{name} is not a registered workbench",
+					error: "#{name} is not a registered worktree",
 					recovery: "carson worktree list" }
 				return report_workbench( result: result, json: parsed.fetch( :json, false ), output: runtime.output )
 			end
@@ -1155,11 +1155,11 @@ module Carson
 				when "ok"
 					case result[ :command ]
 					when "checkin"
-						output.puts "#{BADGE} Workbench ready: #{result[ :name ]}"
+						output.puts "#{BADGE} Worktree ready: #{result[ :name ]}"
 						output.puts "  path: #{result[ :path ]}"
 						output.puts "  branch: #{result[ :branch ]}"
 					when "checkout"
-						output.puts "#{BADGE} Workbench released: #{result[ :name ]}"
+						output.puts "#{BADGE} Worktree released: #{result[ :name ]}"
 					end
 				when "error"
 					output.puts "#{BADGE} #{result[ :error ]}"

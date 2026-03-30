@@ -166,7 +166,7 @@ module Carson
 						tracking = seal_check.sealed_tracking_number || "unknown"
 						return { command: "checkout", status: "block",
 							name: File.basename( workbench.path ), branch: workbench.branch,
-							error: "workbench is sealed — PR ##{tracking} is still in flight",
+							error: "worktree is sealed — PR ##{tracking} is still in flight",
 							recovery: "wait for CI checks to complete, or run carson deliver to check status" }
 					end
 				end
