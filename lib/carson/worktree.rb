@@ -378,11 +378,12 @@ module Carson
 			return false if stdout.nil? || stdout.empty?
 
 			normalised = File.join( canonical, "" )
-			my_pid = Process.pid
+			# Exclude this process and its parent (the user's shell that launched Carson).
+			excluded_pids = [ Process.pid, Process.ppid ].to_set
 			stdout.lines.drop( 1 ).any? do |line|
 				fields = line.strip.split( /\s+/ )
 				next false unless fields.length >= 9
-				next false if fields[ 1 ].to_i == my_pid
+				next false if excluded_pids.include?( fields[ 1 ].to_i )
 				name = fields[ 8.. ].join( " " )
 				name == canonical || name.start_with?( normalised )
 			end

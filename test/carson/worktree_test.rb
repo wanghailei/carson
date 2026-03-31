@@ -27,6 +27,26 @@ class WorktreeAutoChangeDirTest < Minitest::Test
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 
+	# held_by_other_process? excludes the parent shell that launched Carson.
+	def test_held_by_other_process_excludes_parent_pid
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "parent-shell" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "parent-shell" )
+		worktree = Carson::Worktree.find( path: wt_path, runtime: runtime )
+
+		# Our parent process (the shell/test runner) has CWD somewhere else,
+		# but the key invariant: the parent PID is excluded from the lsof scan
+		# so a user running `carson checkout` from inside the worktree is not
+		# blocked by their own shell.
+		refute worktree.held_by_other_process?,
+			"parent process should be excluded from held_by_other_process? check"
+
+		cleanup_worktree( repo_root, wt_path )
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
 	# Legacy Worktree.remove_check path — direct class method.
 	def test_remove_check_auto_chdirs_when_cwd_inside
 		runtime, repo_root = build_runtime( verbose: false )
