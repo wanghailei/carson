@@ -7,6 +7,17 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.4.0
+
+### New
+
+- **Auto-chdir on checkout from inside worktree.** `carson checkout` no longer blocks when the current working directory is inside the worktree being removed. Carson `Dir.chdir`s to the main worktree root and completes the removal automatically. Both the warehouse (`assess_removal`) and legacy (`remove_check`) paths are fixed.
+- **Parent shell excluded from held-by-other-process check.** `held_by_other_process?` now excludes `Process.ppid` (the user's shell that launched Carson) in addition to `Process.pid`. Prevents false blocks when the user runs `carson checkout` from inside the worktree.
+
+### Why
+
+Running `carson checkout` from inside the target worktree is the most natural invocation — agents and users are already there. Blocking and printing a recovery command added friction for no safety benefit, since Carson can move its own process out.
+
 ## 4.3.5
 
 ### Fixed
