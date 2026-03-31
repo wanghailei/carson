@@ -7,13 +7,23 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.3.5
+
+### Fixed
+
+- **Story language purged from CLI output.** `checkin`/`checkout` (#509) shipped after the story-language purge (#458) and used "workbench" in every user-facing string — help text, status messages, error messages. All 9 output strings now use technical language ("worktree"). Source-code names unchanged.
+
+### New
+
+- **Story-language guard test.** `test/story_language_guard_test.rb` scans all output-producing lines in `lib/` for forbidden story-language terms (workbench, warehouse, parcel, courier, bureau, waybill, vault). Strips `#{}` interpolation before checking. Catches future leaks mechanically — the purge is now a permanent rule, not a one-time pass.
+
 ### Removed
 
 - **`carson audit` dissolved.** The audit command and its pre-commit gate have been removed entirely. Three of its seven checks were already enforced by the commands that need them (sealed workbench by `pack!`, working tree by Courier, main sync by `sync!`). The remaining four (PR status, CI baseline, hooks health, outsider fingerprints) were either unproven at commit time or already called by individual commands. Bare `carson` now defaults to `status` instead of `audit`. The pre-commit hook is now a no-op reserved for future use.
 
 ### Why
 
-Audit was a remote-centred pre-commit gate — it blocked commits based on delivery-time concerns (PR checks, CI baseline) that don't belong at commit time. In local-centred mode it was purely dead weight. Rather than relocate it to bureau, we verified that none of its unique checks had proven value at any gate, and dissolved the whole thing. Scars, not speculation.
+Story language in output has no mechanical enforcement — conventions fail on new code. The guard test closes that gap. Audit dissolution: audit was a remote-centred pre-commit gate; in local-centred mode it was dead weight.
 
 ## 4.3.4
 
