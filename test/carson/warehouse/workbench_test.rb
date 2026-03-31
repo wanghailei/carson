@@ -1,12 +1,11 @@
-# Recovery message regression — the CWD-inside-workbench guard must suggest
-# `carson checkout`, not the internal `carson worktree remove`.
+# CWD-inside-workbench: assess_removal auto-chdirs and returns ok.
 require_relative "../../test_helper"
 
-class WorkbenchRecoveryMessageTest < Minitest::Test
+class WorkbenchAutoChangeDirTest < Minitest::Test
 	include CarsonTestSupport
 
 	def setup
-		@tmpdir = Dir.mktmpdir( "carson-workbench-recovery-test", carson_tmp_root )
+		@tmpdir = Dir.mktmpdir( "carson-workbench-auto-cd-test", carson_tmp_root )
 		@remote_path = File.join( @tmpdir, "remote.git" )
 		@repo_path = File.join( @tmpdir, "repo" )
 
@@ -26,7 +25,7 @@ class WorkbenchRecoveryMessageTest < Minitest::Test
 		FileUtils.rm_rf( @tmpdir ) if @tmpdir && Dir.exist?( @tmpdir )
 	end
 
-	def test_assess_removal_recovery_suggests_checkout
+	def test_assess_removal_auto_chdirs_when_cwd_inside
 		@warehouse.build_workbench!( name: "cwd-inside" )
 		workbench = @warehouse.workbench_named( "cwd-inside" )
 
@@ -35,8 +34,7 @@ class WorkbenchRecoveryMessageTest < Minitest::Test
 		assessment = @warehouse.assess_removal( workbench )
 		Dir.chdir( original_dir )
 
-		assert_equal :block, assessment[ :status ]
-		assert_includes assessment[ :recovery ], "carson checkout",
-			"recovery must say 'carson checkout', not 'carson worktree remove'"
+		assert_equal :ok, assessment[ :status ],
+			"assess_removal should auto-chdir and return ok, not block"
 	end
 end

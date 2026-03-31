@@ -422,7 +422,7 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 
 	# --- CWD safety ---
 
-	def test_worktree_remove_blocks_when_cwd_inside_worktree
+	def test_worktree_remove_auto_chdirs_when_cwd_inside
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
 		runtime.worktree_create!( name: "cwd-trap" )
@@ -437,15 +437,11 @@ class RuntimeWorktreeLifecycleTest < Minitest::Test
 		Dir.chdir( original_dir )
 
 		json = JSON.parse( output_string( runtime ).strip )
-		assert_equal "block", json[ "status" ]
-		assert_includes json[ "error" ], "current working directory"
-		assert json[ "recovery" ], "should include recovery command"
-		assert_equal Carson::Runtime::EXIT_BLOCK, result
+		assert_equal "ok", json[ "status" ],
+			"removal should succeed after auto-chdir, not block"
+		assert_equal Carson::Runtime::EXIT_OK, result
+		refute Dir.exist?( wt_path ), "worktree should be removed"
 
-		# Worktree should still exist — removal was blocked.
-		assert Dir.exist?( wt_path ), "Worktree should NOT be removed"
-
-		cleanup_worktree( repo_root, wt_path )
 		destroy_runtime_repo( repo_root: repo_root )
 	end
 

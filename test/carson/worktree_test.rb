@@ -1,27 +1,47 @@
-# Recovery message regression — the CWD-inside-worktree guard must suggest
-# `carson checkout`, not the internal `carson worktree remove`.
+# CWD-inside-worktree: Carson auto-chdirs to main root and completes removal.
 require_relative "../test_helper"
 
-class WorktreeRecoveryMessageTest < Minitest::Test
+class WorktreeAutoChangeDirTest < Minitest::Test
 	include CarsonTestSupport
 
-	def test_cwd_inside_worktree_recovery_suggests_checkout
+	# Warehouse path (runtime delegates to warehouse).
+	def test_remove_auto_chdirs_when_cwd_inside_worktree
 		runtime, repo_root = build_runtime( verbose: false )
 		init_git_repo( repo_root )
-		runtime.worktree_create!( name: "recovery-msg" )
+		runtime.worktree_create!( name: "auto-cd" )
 
-		wt_path = File.join( repo_root, ".claude", "worktrees", "recovery-msg" )
+		wt_path = File.join( repo_root, ".claude", "worktrees", "auto-cd" )
 
 		reset_output( runtime )
 		original_dir = Dir.pwd
 		Dir.chdir( wt_path )
-		runtime.worktree_remove!( worktree_path: "recovery-msg", json_output: true )
+		result = runtime.worktree_remove!( worktree_path: "auto-cd", json_output: true )
 		Dir.chdir( original_dir )
 
 		json = JSON.parse( output_string( runtime ).strip )
-		assert_equal "block", json[ "status" ]
-		assert_includes json[ "recovery" ], "carson checkout",
-			"recovery should say 'carson checkout', not 'carson worktree remove'"
+		assert_equal "ok", json[ "status" ],
+			"removal should succeed after auto-chdir, not block"
+		assert_equal Carson::Runtime::EXIT_OK, result
+		refute Dir.exist?( wt_path ), "worktree should be removed"
+
+		destroy_runtime_repo( repo_root: repo_root )
+	end
+
+	# Legacy Worktree.remove_check path — direct class method.
+	def test_remove_check_auto_chdirs_when_cwd_inside
+		runtime, repo_root = build_runtime( verbose: false )
+		init_git_repo( repo_root )
+		runtime.worktree_create!( name: "legacy-cd" )
+
+		wt_path = File.join( repo_root, ".claude", "worktrees", "legacy-cd" )
+
+		original_dir = Dir.pwd
+		Dir.chdir( wt_path )
+		check = Carson::Worktree.remove_check( path: "legacy-cd", runtime: runtime )
+		Dir.chdir( original_dir )
+
+		assert_equal :ok, check[ :status ],
+			"remove_check should auto-chdir and return ok, not block"
 
 		cleanup_worktree( repo_root, wt_path )
 		destroy_runtime_repo( repo_root: repo_root )

@@ -205,6 +205,34 @@ class WarehouseWorkbenchTest < Minitest::Test
 		refute workbench.holds_cwd?
 	end
 
+	def test_assess_removal_auto_chdirs_when_cwd_inside
+		@warehouse.build_workbench!( name: "cwd-inside" )
+		workbench = @warehouse.workbench_named( "cwd-inside" )
+
+		original_dir = Dir.pwd
+		Dir.chdir( workbench.path )
+		assessment = @warehouse.assess_removal( workbench )
+		Dir.chdir( original_dir )
+
+		assert_equal :ok, assessment[ :status ],
+			"assess_removal should auto-chdir and return ok, not block"
+	end
+
+	def test_checkout_succeeds_when_cwd_inside_workbench
+		@warehouse.build_workbench!( name: "cwd-checkout" )
+		workbench = @warehouse.workbench_named( "cwd-checkout" )
+		wt_path = workbench.path
+
+		original_dir = Dir.pwd
+		Dir.chdir( wt_path )
+		result = @warehouse.checkout!( workbench )
+		Dir.chdir( original_dir )
+
+		assert_equal "ok", result[ :status ],
+			"checkout should succeed after auto-chdir"
+		refute Dir.exist?( wt_path ), "workbench should be removed"
+	end
+
 	# --- Repair: missing workbench ---
 
 	def test_remove_repairs_missing_workbench

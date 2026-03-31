@@ -232,11 +232,8 @@ module Carson
 					return { status: :ok, missing: true }
 				end
 
-				if workbench.holds_cwd?
-					return { status: :block, result_status: "block",
-						error: "current working directory is inside this worktree",
-						recovery: "cd #{main_worktree_root} && carson checkout #{File.basename( workbench.path )}" }
-				end
+				# Auto-chdir out so removal can proceed.
+				Dir.chdir( main_worktree_root ) if workbench.holds_cwd?
 
 				if workbench.held_by_other_process?
 					return { status: :block, result_status: "block",

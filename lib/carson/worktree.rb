@@ -270,18 +270,8 @@ module Carson
 			entry = find( path: resolved_path, runtime: runtime )
 			branch = entry&.branch
 
-			if entry&.holds_cwd?
-				safe_root = runtime.main_worktree_root
-				return {
-					status: :block,
-					result_status: "block",
-					exit_code: Runtime::EXIT_BLOCK,
-					resolved_path: resolved_path,
-					branch: branch,
-					error: "current working directory is inside this worktree",
-					recovery: "cd #{safe_root} && carson checkout #{File.basename( resolved_path )}"
-				}
-			end
+			# Auto-chdir out so removal can proceed.
+			Dir.chdir( runtime.main_worktree_root ) if entry&.holds_cwd?
 
 			if entry&.held_by_other_process?
 				return {
