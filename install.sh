@@ -16,14 +16,14 @@ require_command() {
 }
 
 ruby_supported() {
-	ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (major > 4 || ( major == 4 && minor >= 0 )) ? 0 : 1 )'
+	ruby -e 'major, minor, = RUBY_VERSION.split( "." ).map( &:to_i ); exit( (major > 3 || ( major == 3 && minor >= 4 )) ? 0 : 1 )'
 }
 
 require_command git
 require_command ruby
 
 if ! ruby_supported; then
-	fail "Carson install error: Ruby >= 4.0 is required (current: $(ruby -e 'print RUBY_VERSION'))."
+	fail "Carson install error: Ruby >= 3.4 is required (current: $(ruby -e 'print RUBY_VERSION'))."
 fi
 
 require_command gem
