@@ -8,7 +8,8 @@ module Carson
 
 			# --- Delegates to Warehouse::Workbench ---
 
-			# Creates a new worktree under .claude/worktrees/<name>.
+			# Creates a new workbench under the calling harness's agent
+			# directory (<agent_dir>/worktrees/<name>, e.g. .pi from a Pi session).
 			def worktree_create!( name:, json_output: false )
 				result = worktree_warehouse.build_workbench!( name: name )
 				finish_worktree( result: result, json_output: json_output )

@@ -474,6 +474,32 @@ class RuntimeWorktreeTest < Minitest::Test
 		end
 	end
 
+	def test_reap_dead_worktrees_scans_pi_directory
+		with_worktree_repo do |runtime, repo_root, _bare_root, _output|
+			# Create a worktree under .pi/worktrees/ manually.
+			pi_dir = File.join( repo_root, ".pi", "worktrees" )
+			worktree_path = File.join( pi_dir, "pi-task" )
+			FileUtils.mkdir_p( pi_dir )
+			system( "git", "-C", repo_root, "worktree", "add", "-b", "pi-task", worktree_path, out: File::NULL, err: File::NULL )
+			File.write( File.join( worktree_path, "pi-file.txt" ), "pi work\n" )
+			system( "git", "-C", worktree_path, "add", ".", out: File::NULL, err: File::NULL )
+			system( "git", "-C", worktree_path, "commit", "-m", "pi work", out: File::NULL, err: File::NULL )
+			tip_sha = `git -C #{worktree_path} rev-parse HEAD`.strip
+
+			mock_script = mock_gh_for_worktree_reap(
+				closed_prs_by_branch: {
+					"pi-task" => [ { number: 42, sha: tip_sha, merged_at: nil, closed_at: "2026-09-23T10:00:00Z" } ]
+				}
+			)
+
+			with_mock_gh( repo_root: repo_root, script: mock_script ) do
+				runtime.reap_dead_worktrees!
+			end
+
+			refute Dir.exist?( worktree_path ), "abandoned .pi worktree with closed PR should be reaped"
+		end
+	end
+
 	def test_reap_dead_worktrees_reaps_abandoned_worktree_with_closed_pr
 		with_worktree_repo do |runtime, repo_root, _bare_root, output|
 			worktree = create_worktree( repo_root: repo_root, worktree_name: "abandoned-pr" )

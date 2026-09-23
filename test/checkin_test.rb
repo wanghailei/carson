@@ -119,4 +119,59 @@ class CheckinTest < Minitest::Test
 		# Clean up seal.
 		@seal_markers_to_clean.each { |m| File.delete( m ) if File.exist?( m ) }
 	end
+
+	# --- Agent directory: the calling harness's workbench location ---
+
+	def test_checkin_defaults_to_claude_worktrees
+		result = @warehouse.checkin!( name: "default-dir" )
+
+		assert result[ :path ].end_with?( File.join( ".claude", "worktrees", "default-dir" ) ),
+			"absent harness markers, the workbench belongs under .claude/worktrees — got #{result[ :path ]}"
+		assert Dir.exist?( result[ :path ] )
+	end
+
+	def test_checkin_uses_pi_worktrees_when_pi_env_present
+		with_env( "PI_CODING_AGENT" => "1" ) do
+			result = @warehouse.checkin!( name: "pi-dir" )
+
+			assert result[ :path ].end_with?( File.join( ".pi", "worktrees", "pi-dir" ) ),
+				"a Pi session's workbench belongs under .pi/worktrees — got #{result[ :path ]}"
+			assert Dir.exist?( result[ :path ] )
+		end
+	end
+
+	def test_checkin_agent_dir_override_wins_over_detection
+		with_env( "PI_CODING_AGENT" => "1", "CARSON_AGENT_DIR" => ".custom" ) do
+			result = @warehouse.checkin!( name: "custom-dir" )
+
+			assert result[ :path ].end_with?( File.join( ".custom", "worktrees", "custom-dir" ) ),
+				"CARSON_AGENT_DIR overrides detection — got #{result[ :path ]}"
+			assert Dir.exist?( result[ :path ] )
+		end
+	end
+
+	def test_checkin_excludes_the_agent_dir_from_git_status
+		with_env( "PI_CODING_AGENT" => "1" ) do
+			@warehouse.checkin!( name: "pi-exclude" )
+		end
+
+		exclude = File.read( File.join( @repo_path, ".git", "info", "exclude" ) )
+		assert_includes exclude.lines.map( &:strip ), ".pi/"
+	end
+
+	def test_workbench_named_resolves_pi_workbench_by_bare_name
+		with_env( "PI_CODING_AGENT" => "1" ) do
+			@warehouse.build_workbench!( name: "pi-named" )
+		end
+		expected = File.join( ".pi", "worktrees", "pi-named" )
+
+		# Resolves from the same harness…
+		with_env( "PI_CODING_AGENT" => "1" ) do
+			assert @warehouse.workbench_named( "pi-named" )&.path&.end_with?( expected ),
+				"workbench_named should find the current harness's workbench by bare name"
+		end
+		# …and from another harness via the basename fallback.
+		assert @warehouse.workbench_named( "pi-named" )&.path&.end_with?( expected ),
+			"workbench_named should find another harness's workbench by bare name"
+	end
 end

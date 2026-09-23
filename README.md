@@ -51,6 +51,10 @@ carson onboard your/repo/path
 carson worktree create your-worktree
 cd your/repo/path/.claude/worktrees/your-worktree
 
+# Carson places the worktree under the calling harness's agent directory:
+# .claude/worktrees/ from Claude Code, .pi/worktrees/ from Pi
+# (detected via PI_CODING_AGENT). Set CARSON_AGENT_DIR to override.
+
 # work and test, then commit and hand the branch to Carson
 git add -A
 git commit -m "fix: describe this delivery"

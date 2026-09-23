@@ -6,6 +6,11 @@ require "tmpdir"
 
 require_relative "../lib/carson"
 
+# Harness markers are scrubbed so the suite is deterministic under any calling
+# harness — a Pi session exports PI_CODING_AGENT, which would otherwise steer
+# workbench creation. Detection tests opt in via with_env.
+%w[ PI_CODING_AGENT CARSON_AGENT_DIR ].each { |key| ENV.delete( key ) }
+
 module CarsonTestSupport
 	def carson_tmp_root
 		candidate = ENV.fetch( "CARSON_TEST_TMPDIR", File.join( Dir.tmpdir, "carson-test" ) )

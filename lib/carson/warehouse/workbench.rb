@@ -10,7 +10,9 @@ module Carson
 		module Workbench
 
 			# Agent directory names whose workbenches the warehouse may sweep.
-			AGENT_DIRS = %w[ .claude .codex ].freeze
+			# Carson::Worktree::AGENT_DIRS (legacy) carries the same list — keep
+			# both in lockstep until reap moves here.
+			AGENT_DIRS = %w[ .claude .codex .pi ].freeze
 
 			# --- Inventory ---
 
@@ -64,8 +66,9 @@ module Carson
 			end
 
 			# Resolve a bare name and find the workbench.
-			# Tries .claude/worktrees/<name> first, then searches all registered
-			# workbenches by directory name.
+			# Tries the calling harness's agent directory first (scoped, then
+			# flat), then the other agent directories, then searches all
+			# registered workbenches by directory name.
 			def workbench_named( name )
 				if Pathname.new( name ).absolute?
 					return workbench_at( path: name )
@@ -76,18 +79,20 @@ module Carson
 				found = workbench_at( path: relative_candidate )
 				return found if found
 
-				# Try scoped path (e.g. "claude/foo" → .claude/worktrees/claude/foo).
+				# Try scoped path (e.g. "claude/foo" → .claude/worktrees/claude/foo),
+				# the calling harness's directory first.
 				if name.include?( "/" )
-					scoped_candidate = realpath_safe( File.join( main_worktree_root, ".claude", "worktrees", name ) )
-					found = workbench_at( path: scoped_candidate )
-					return found if found
+					ordered_agent_dirs.each do |dir|
+						found = workbench_at( path: realpath_safe( File.join( main_worktree_root, dir, "worktrees", name ) ) )
+						return found if found
+					end
 				end
 
-				# Try flat layout: .claude/worktrees/<name>.
-				root = main_worktree_root
-				candidate = realpath_safe( File.join( root, ".claude", "worktrees", name ) )
-				found = workbench_at( path: candidate )
-				return found if found
+				# Try flat layout: <agent_dir>/worktrees/<name>, calling harness first.
+				ordered_agent_dirs.each do |dir|
+					found = workbench_at( path: realpath_safe( File.join( main_worktree_root, dir, "worktrees", name ) ) )
+					return found if found
+				end
 
 				# Search all registered workbenches by dirname.
 				matches = workbenches.select { |wb| File.basename( wb.path ) == name }
@@ -105,11 +110,12 @@ module Carson
 			# --- Lifecycle ---
 
 			# Build a new workbench from local main.
-			# Creates the directory, branches from the local standard,
-			# ensures .claude/ is excluded from git status.
+			# Creates the directory under the calling harness's agent directory,
+			# branches from the local standard, and excludes the agent directory
+			# from git status.
 			def build_workbench!( name: )
 				root = main_worktree_root
-				worktrees_dir = File.join( root, ".claude", "worktrees" )
+				worktrees_dir = File.join( root, agent_dir, "worktrees" )
 				workbench_path = File.join( worktrees_dir, name )
 
 				if Dir.exist?( workbench_path )
@@ -119,8 +125,8 @@ module Carson
 						recovery: "carson worktree remove #{name}, then retry" }
 				end
 
-				# Ensure .claude/ is excluded from git status.
-				ensure_claude_dir_excluded!
+				# Ensure the agent directory is excluded from git status.
+				ensure_agent_dir_excluded!
 
 				# Create the worktree with a new branch.
 				FileUtils.mkdir_p( File.dirname( workbench_path ) )
@@ -380,7 +386,7 @@ module Carson
 				wt_list, = git( "worktree", "list", "--porcelain" )
 				branch_list, = git( "branch", "--list", name )
 				git_version, = Open3.capture3( "git", "--version" )
-				workbench_path = File.join( root, ".claude", "worktrees", name )
+				workbench_path = File.join( root, agent_dir, "worktrees", name )
 				entry = workbench_at( path: workbench_path )
 				{
 					git_stdout: git_stdout.to_s.strip,
@@ -395,8 +401,25 @@ module Carson
 				}
 			end
 
-			# Ensure .claude/ is in .git/info/exclude.
-			def ensure_claude_dir_excluded!
+			# The calling harness's workbench directory name.
+			# CARSON_AGENT_DIR wins over detection; absent detection, .claude is the
+			# historical default so Claude Code and Codex sessions behave as before.
+			# Pi sessions export PI_CODING_AGENT.
+			def agent_dir
+				override = ENV.fetch( "CARSON_AGENT_DIR", "" ).to_s.strip
+				return override unless override.empty?
+				return ".pi" if ENV.key?( "PI_CODING_AGENT" )
+
+				".claude"
+			end
+
+			# Agent directories in resolution order: the calling harness's first.
+			def ordered_agent_dirs
+				( [ agent_dir ] + AGENT_DIRS ).uniq
+			end
+
+			# Ensure the calling harness's agent directory is in .git/info/exclude.
+			def ensure_agent_dir_excluded!
 				git_dir = File.join( main_worktree_root, ".git" )
 				return unless File.directory?( git_dir )
 
@@ -405,9 +428,10 @@ module Carson
 
 				FileUtils.mkdir_p( info_dir )
 				existing = File.exist?( exclude_path ) ? File.read( exclude_path ) : ""
-				return if existing.lines.any? { |line| line.strip == ".claude/" }
+				entry = "#{agent_dir}/"
+				return if existing.lines.any? { |line| line.strip == entry }
 
-				File.open( exclude_path, "a" ) { |file| file.puts ".claude/" }
+				File.open( exclude_path, "a" ) { |file| file.puts entry }
 			rescue StandardError
 				# Best-effort — do not block workbench creation.
 			end

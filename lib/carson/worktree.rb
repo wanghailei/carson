@@ -12,7 +12,9 @@ require "pathname"
 module Carson
 	class Worktree
 		# Agent directory names whose worktrees Carson may sweep.
-		AGENT_DIRS = %w[ .claude .codex ].freeze
+		# Warehouse::Workbench::AGENT_DIRS carries the same list — keep both in
+		# lockstep until reap/sweep move to the warehouse.
+		AGENT_DIRS = %w[ .claude .codex .pi ].freeze
 
 		attr_reader :path, :branch, :prunable_reason
 

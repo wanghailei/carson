@@ -153,6 +153,8 @@ carson worktree create my-feature
 cd /path/to/.claude/worktrees/my-feature
 ```
 
+The worktree lives under the calling harness's agent directory — `.claude/worktrees/` from Claude Code, `.pi/worktrees/` from Pi (detected via `PI_CODING_AGENT`). Set `CARSON_AGENT_DIR` to override. Commands that take a worktree name resolve it across all agent directories, so worktrees created by another harness remain reachable.
+
 On the governed main working tree, Carson blocks raw `git add` / `git commit` and blocks raw `git worktree add/remove`, raw `git pull --rebase`, and raw `gh pr create/merge`. Use `carson worktree create`, `carson sync`, and `carson deliver` instead.
 
 **2. Work** — make changes, test them, and either commit normally or let Carson create the delivery commit.
