@@ -7,6 +7,21 @@ Release-note scope rule:
 
 ## Unreleased
 
+## 4.5.0
+
+### New
+
+- **Harness-aware worktree directories.** `carson checkin` / `carson worktree create` place the worktree under the calling harness's agent directory — `.pi/worktrees/` from a Pi session (detected via `PI_CODING_AGENT`), `.claude/worktrees/` otherwise, exactly as before. Set `CARSON_AGENT_DIR` to override. Bare-name resolution, `.git/info/exclude` bookkeeping, and diagnostics follow the chosen directory, and commands that take a worktree name resolve across all agent directories, so worktrees created by another harness remain reachable.
+- **Sweep and reap cover `.pi/worktrees/`.** Both agent-directory lists gained `.pi`.
+
+### Why
+
+The worktree directory was hardcoded to `.claude/worktrees/`, so Pi sessions produced Claude-flavoured paths. Each harness's worktrees now live under their own directory.
+
+### Migration
+
+None. Existing `.claude/worktrees/` worktrees resolve by name as before.
+
 ## 4.4.0
 
 ### New
