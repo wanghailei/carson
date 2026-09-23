@@ -8,7 +8,7 @@ Usage:
 
 Options:
   --version <semver>   Carson gem version to install (default: VERSION file)
-  --source <url>       Gem source URL (default: https://rubygems.pkg.github.com/wanghailei)
+  --source <url>       Gem source URL (default: https://rubygems.org)
   --help               Show this message
 USAGE
 }
@@ -22,7 +22,7 @@ require_command() {
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 version="$(cat "$repo_root/VERSION")"
-source_url="https://rubygems.pkg.github.com/wanghailei"
+source_url="https://rubygems.org"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
