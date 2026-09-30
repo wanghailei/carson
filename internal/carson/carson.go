@@ -11,7 +11,7 @@ import (
 )
 
 // Version is Carson's version. The major version is the master's; agents set the minor and patch versions (rule 10.8).
-const Version = "5.0.0"
+const Version = "5.1.0"
 
 // Exit codes mean one thing each: done, as reported; could not finish, with the state things are left in; refused, because a rule
 // forbids it. Nothing else ever exits 0.
