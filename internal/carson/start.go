@@ -186,6 +186,10 @@ func (r *repository) afterFailedAdd(m Machine, name, folder string, cause error)
 			if _, found, _ := readOwner(t.admin); found {
 				return now.heldBy(m, name, t, "was taken meanwhile by")
 			}
+			// git refused the branch because it already existed: git made nothing for this session, so the worktree is another's.
+			if cause := reason(cause); strings.Contains(cause, "already exists") || strings.Contains(cause, "cannot lock ref") {
+				return refuse(refused, "%s was taken meanwhile by a session that has not recorded itself yet, at %s.", name, folder)
+			}
 			return nil
 		}
 		return now.heldBy(m, name, t, "was taken meanwhile by")
@@ -251,7 +255,7 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched s
 		now, err := r.pushMain()
 		var unchecked pushedUnchecked
 		if errors.As(err, &unchecked) {
-			return nil, refuse(failed, "local main was pushed, but %s. Nothing else was changed.", unchecked.why)
+			return nil, refuse(failed, "local main was pushed, but %s. GitHub's main had been fetched first; nothing else was changed.", unchecked.why)
 		}
 		if err != nil {
 			return nil, refuse(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s", plural(ahead, "commit"), reason(err), fetched)

@@ -401,7 +401,7 @@ func TestAPushThatCouldNotBeCheckedIsNotCalledFailed(t *testing.T) {
 	f.git(f.local, "config", "remote.github.pushurl", f.github)
 	repo, _ := openRepository(f.local)
 	_, err := repo.bringUpToDate("refs/remotes/github/main", 1, 0, "GitHub's main was fetched; nothing else was changed.")
-	if err == nil || !strings.Contains(err.Error(), "local main was pushed, but GitHub's main could not be checked afterwards (") {
+	if err == nil || !strings.Contains(err.Error(), "local main was pushed, but GitHub's main could not be checked afterwards (") || !strings.Contains(err.Error(), "GitHub's main had been fetched first") {
 		t.Errorf("got %v", err)
 	}
 	if f.git(f.github, "rev-parse", "main") != f.git(f.local, "rev-parse", "main") {
@@ -436,5 +436,17 @@ func TestStartNamesAnUntrackedFolderWhereAFileArrives(t *testing.T) {
 	expectCode(t, code, 2)
 	if !strings.Contains(out, "docs (untracked") {
 		t.Errorf("the untracked folder is not named:\n%s", out)
+	}
+}
+
+// git refused the branch because it already existed: git made nothing for this session, whatever the folder holds.
+func TestAfterABranchConflictTheWorktreeInTheFolderIsNotClaimed(t *testing.T) {
+	f := newFixture(t)
+	folder := f.taskFolder("fix-login")
+	f.git(f.local, "worktree", "add", "-q", "-b", "fix-login", folder, "main")
+	repo, _ := openRepository(f.local)
+	err := repo.afterFailedAdd(Machine{Host: "test-mac", Processes: stranger{}}, "fix-login", folder, errors.New("fatal: a branch named 'fix-login' already exists"))
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by a session that has not recorded itself yet, at "+folder+".") {
+		t.Errorf("got %v", err)
 	}
 }
