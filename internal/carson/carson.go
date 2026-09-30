@@ -16,12 +16,15 @@ const (
 	refused = 2
 )
 
-// Machine is what one run of carson sees of the world: the folder it runs in, where it writes, this machine's name and its processes.
-// Tests give it a machine of their own.
+// Machine is what one run of carson sees of the world: the folder it runs in, where it writes, this machine's name and its stable
+// identity, its environment, carson's own process and the machine's processes. Tests give it a machine of their own.
 type Machine struct {
 	Dir       string
 	Out       io.Writer
 	Host      string
+	ID        string
+	Env       func(string) string
+	PID       int
 	Processes Processes
 }
 
@@ -40,8 +43,10 @@ func Main(args []string, machine Machine) int {
 	switch args[0] {
 	case "status":
 		return status(machine)
-	case "start", "merge", "remove":
-		fmt.Fprintf(machine.Out, "carson %s: not built yet; this carson has only status. Nothing was changed.\n", args[0])
+	case "start":
+		return start(machine, args[1:])
+	case "merge", "remove":
+		fmt.Fprintf(machine.Out, "carson %s: not built yet; this carson has status and start. Nothing was changed.\n", args[0])
 		return failed
 	default:
 		fmt.Fprintf(machine.Out, "carson: no command %q. Its commands:\n%s", args[0], usage)

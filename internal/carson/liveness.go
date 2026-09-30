@@ -9,9 +9,11 @@ import (
 	"strings"
 )
 
-// Processes tells when a process started, as ps reports it, or errNotRunning when no process has that id.
+// Processes tells when a process started, as ps reports it, and which process started it along with its own command name; or
+// errNotRunning when no process has the id.
 type Processes interface {
 	Started(pid int) (string, error)
+	Process(pid int) (ppid int, command string, err error)
 }
 
 var errNotRunning = errors.New("not running")
@@ -42,6 +44,31 @@ func (PS) Started(pid int) (string, error) {
 	return started, nil
 }
 
+func (PS) Process(pid int) (int, string, error) {
+	if pid <= 0 {
+		return 0, "", fmt.Errorf("%d is no process id", pid)
+	}
+	out, err := exec.Command("ps", "-o", "ppid=,comm=", "-p", strconv.Itoa(pid)).Output()
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		if err == nil {
+			return 0, "", errNotRunning
+		}
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return 0, "", errNotRunning
+		}
+		return 0, "", err
+	}
+	ppid, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, "", fmt.Errorf("ps gave no parent for %d: %q", pid, out)
+	}
+	// ps may give the command's whole path, and a path may hold spaces.
+	command := strings.Join(fields[1:], " ")
+	return ppid, command[strings.LastIndex(command, "/")+1:], nil
+}
+
 // liveness is whether a task's owner is still at work. Only ended is ever acted on; unknown never counts as ended.
 type liveness int
 
@@ -69,7 +96,12 @@ func (m Machine) livenessOf(record Record) (liveness, string) {
 	if record.PID <= 0 || record.Started == "" {
 		return unknown, "the record names no process"
 	}
-	if record.Machine != m.Host {
+	// The machine is known by its stable identity when both sides have one; a name alone can change under mDNS.
+	sameMachine := record.Machine == m.Host
+	if record.MachineID != "" && m.ID != "" {
+		sameMachine = record.MachineID == m.ID
+	}
+	if !sameMachine {
 		return unknown, "it cannot be checked from " + m.Host
 	}
 	started, err := m.Processes.Started(record.PID)

@@ -13,15 +13,16 @@ import (
 // Record is who owns a task's worktree: a harness session, known by its process and that process's start time, on one machine. It
 // lives in git's administrative folder for the worktree, so it goes when the worktree goes and never shows in anyone's files.
 type Record struct {
-	Task     string    `json:"task"`
-	Harness  string    `json:"harness"`
-	Session  string    `json:"session"`
-	PID      int       `json:"pid"`
-	Started  string    `json:"process_started"`
-	Machine  string    `json:"machine"`
-	Created  time.Time `json:"created"`
-	Previous []Record  `json:"previous,omitempty"`
-	Merged   string    `json:"merged,omitempty"`
+	Task      string    `json:"task"`
+	Harness   string    `json:"harness"`
+	Session   string    `json:"session"`
+	PID       int       `json:"pid"`
+	Started   string    `json:"process_started"`
+	Machine   string    `json:"machine"`
+	MachineID string    `json:"machine_id,omitempty"`
+	Created   time.Time `json:"created"`
+	Previous  []Record  `json:"previous,omitempty"`
+	Merged    string    `json:"merged,omitempty"`
 }
 
 const ownerFile = "carson-owner.json"

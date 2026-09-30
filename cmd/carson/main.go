@@ -14,9 +14,5 @@ func main() {
 		fmt.Fprintf(os.Stdout, "carson: the current folder cannot be read: %v\n", err)
 		os.Exit(1)
 	}
-	host, err := os.Hostname()
-	if err != nil {
-		host = "this machine"
-	}
-	os.Exit(carson.Main(os.Args[1:], carson.Machine{Dir: dir, Out: os.Stdout, Host: host, Processes: carson.PS{}}))
+	os.Exit(carson.Main(os.Args[1:], carson.ThisMachine(dir, os.Stdout)))
 }

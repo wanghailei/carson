@@ -27,6 +27,8 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Worktrees go under the home folder, so the test gives carson a home of its own.
+	t.Setenv("HOME", root)
 	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(root, "gitconfig"))
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	t.Setenv("GIT_AUTHOR_NAME", "Tester")
@@ -91,7 +93,8 @@ func (f *fixture) worktree(task string) string {
 	return dir
 }
 
-// stranger is a machine whose processes the test describes: started times by process id; a missing id is a process not running.
+// stranger is a machine whose processes the test describes: started times by process id, a missing id being a process not running;
+// and each process's parent and its own command name.
 type stranger map[int]string
 
 func (s stranger) Started(pid int) (string, error) {
@@ -101,10 +104,42 @@ func (s stranger) Started(pid int) (string, error) {
 	return "", errNotRunning
 }
 
-// run runs carson with args in dir, on this test's machine, and returns its output and exit code.
+// parents describes the process tree the test's carson runs in: carson is process 900, its shell 800, and above that a harness.
+var parents = map[int]struct {
+	ppid    int
+	command string
+}{900: {800, "carson"}, 800: {700, "bash"}, 700: {1, "pi"}}
+
+func (s stranger) Process(pid int) (int, string, error) {
+	if p, ok := parents[pid]; ok {
+		return p.ppid, p.command, nil
+	}
+	return 0, "", errNotRunning
+}
+
+// environment is the variables a test's carson sees; the empty one is a plain terminal.
+type environment map[string]string
+
+func (e environment) get(name string) string { return e[name] }
+
+// inClaude is the environment of a Claude Code session whose process is 4121.
+var inClaude = environment{"CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "4121"}
+
+// run runs carson with args in dir, in a plain terminal on this test's machine, and returns its output and exit code.
 func (f *fixture) run(dir string, processes Processes, args ...string) (string, int) {
 	f.t.Helper()
+	return f.runIn(environment{}, dir, processes, args...)
+}
+
+// runIn runs carson in the environment given.
+func (f *fixture) runIn(env environment, dir string, processes Processes, args ...string) (string, int) {
+	f.t.Helper()
+	// Every environment has a home, as a real one does: the test's own folder.
+	withHome := environment{"HOME": f.root}
+	for name, value := range env {
+		withHome[name] = value
+	}
 	var out bytes.Buffer
-	code := Main(args, Machine{Dir: dir, Out: &out, Host: "test-mac", Processes: processes})
+	code := Main(args, Machine{Dir: dir, Out: &out, Host: "test-mac", ID: "test-id", Env: withHome.get, PID: 900, Processes: processes})
 	return out.String(), code
 }

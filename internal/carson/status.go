@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"unicode"
 )
 
@@ -70,11 +69,7 @@ func (m Machine) ownerHeading(record Record) string {
 	if state == unknown {
 		said += " (" + why + ")"
 	}
-	if record.Harness == "terminal" {
-		return fmt.Sprintf("A terminal, process %d, on %s, %s:", record.PID, record.Machine, said)
-	}
-	session, _, _ := strings.Cut(record.Session, "-")
-	return fmt.Sprintf("%s session %s on %s, %s:", capitalised(record.Harness), session, record.Machine, said)
+	return capitalised(ownerName(record)) + ", " + said + ":"
 }
 
 func (t task) name() string {
