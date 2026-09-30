@@ -23,6 +23,12 @@ func merge(m Machine, args []string) int {
 	}
 	interrupted, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// The first Ctrl-C lets the step under way end; after it, a second Ctrl-C ends carson at once, as it would without the catch —
+	// leaving the merge lock, which the next run takes over and says so.
+	go func() {
+		<-interrupted.Done()
+		stop()
+	}()
 	repo, t, record, err := m.taskHere()
 	if err != nil {
 		fmt.Fprintln(m.Out, "Not merged: "+err.Error())
@@ -133,6 +139,9 @@ type merging struct {
 // state says what the task holds now: "fix-login still holds its 2 commits, now rebased onto main (it was at 1a2b3c4 before carson)".
 func (g *merging) state() string {
 	s := fmt.Sprintf("%s still holds its %s", g.task.branch, plural(g.commits, "commit"))
+	if g.commits == 0 {
+		s = g.task.branch + " holds nothing of its own that main lacks"
+	}
 	if g.update != "" {
 		s += ", now " + g.update
 	}
@@ -213,10 +222,13 @@ func (r *repository) mergeTask(m Machine, t task, record Record, interrupted con
 		return g.stop(failed, "interrupted while bringing %s up to main. %s.", t.branch, g.state())
 	}
 	if diverged {
+		carried := len(g.said)
 		if said, code, ok := g.joinGitHub(); !ok {
 			return said, code
 		}
-		g.note("GitHub's main had diverged; its commits are merged into %s first.", t.branch)
+		if len(g.said) == carried {
+			g.note("GitHub's main had diverged; its commits are merged into %s first.", t.branch)
+		}
 	}
 	head, _ := git(t.path, "rev-parse", "HEAD")
 	branch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
@@ -231,11 +243,18 @@ func (r *repository) mergeTask(m Machine, t task, record Record, interrupted con
 		return g.stop(failed, "bin/check changed the task: %s; the merge stops. Look at the worktree before going on.", changed)
 	}
 	tip := head
-	if g.commits, err = r.count("main.." + tip); err != nil {
+	if g.commits, err = r.ownCommits(tip); err != nil {
 		return g.stop(failed, "what %s holds against main cannot be read (%s). %s.", t.branch, reason(err), g.state())
 	}
 	if said, code, ok := g.fastForward(tip); !ok {
+		if stopped() {
+			now, _ := git(r.top, "rev-parse", "main")
+			return g.stop(failed, "interrupted while fast-forwarding main; main is at %s, the task's tip is %s. %s.", r.short(now), r.short(tip), g.state())
+		}
 		return said, code
+	}
+	if stopped() {
+		return g.stop(failed, "interrupted after main was fast-forwarded to %s, before it was pushed. Run carson merge again to push.", r.short(tip))
 	}
 	record.Merged = tip
 	if err := writeOwner(t.admin, record); err != nil {
@@ -274,7 +293,7 @@ func (g *merging) how(alreadyMerged bool) string {
 		s += ", " + g.update + " first"
 	}
 	if g.joined {
-		s += ", GitHub's main merged in"
+		s += ", carrying GitHub's main"
 	}
 	return s
 }
@@ -390,8 +409,14 @@ func (g *merging) bringTaskUpToMain() ([]string, int, bool) {
 }
 
 // joinGitHub merges GitHub's main into the task, when the two mains have diverged, so the task carries both (§3.4 of the design).
+// A task that already carries it — a re-run after an earlier join — is said to, not merged again.
 func (g *merging) joinGitHub() ([]string, int, bool) {
 	tracking := g.repo.remote + "/main"
+	if _, err := git(g.task.path, "merge-base", "--is-ancestor", "refs/remotes/"+tracking, "HEAD"); err == nil {
+		g.joined = true
+		g.note("%s already carries GitHub's main.", g.task.branch)
+		return nil, 0, true
+	}
 	operation := step{name: "merge", doing: "merging GitHub's main (" + g.repo.short("refs/remotes/"+tracking) + ")", command: "git merge " + tracking, args: []string{"merge", "-q", "--no-edit", "refs/remotes/" + tracking}}
 	if said, code, ok := g.run(operation); !ok {
 		return said, code, false

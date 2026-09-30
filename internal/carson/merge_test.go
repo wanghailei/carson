@@ -453,3 +453,46 @@ func TestMergeRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
 	expectCode(t, code, 1)
 	expectLine(t, out, "Not merged: the merge lock is held by other-task's merge, by Claude session 4e7a91d2 on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed.")
 }
+
+// From the review of fdb5297: a task already on local main, and a re-run over a join already made.
+func TestMergeOfATaskAlreadyOnMainSaysItHoldsNothingOfItsOwn(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	flag := filepath.Join(f.root, "fail-checks")
+	f.check(dir, "test ! -e "+flag)
+	f.git(f.local, "config", "remote.github.pushurl", filepath.Join(f.root, "no-push.git"))
+	if _, code := f.merge(dir); code != 1 {
+		t.Fatal("the first merge's push did not fail")
+	}
+	f.git(f.local, "config", "--unset", "remote.github.pushurl")
+	f.otherMachine()
+	os.WriteFile(flag, nil, 0o644)
+	out, code := f.merge(dir)
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "fix-login holds nothing of its own that main lacks, with GitHub's main merged in") {
+		t.Errorf("the task's state is not said truly:\n%s", out)
+	}
+}
+
+func TestMergeRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	flag := filepath.Join(f.root, "fail-checks")
+	f.check(dir, "test ! -e "+flag)
+	f.commit(dir, "login.rb")
+	f.commit(f.local, "merged-here.txt")
+	f.otherMachine()
+	os.WriteFile(flag, nil, 0o644)
+	if _, code := f.merge(dir); code != 2 {
+		t.Fatal("the failing check did not stop the first merge")
+	}
+	os.Remove(flag)
+	out, code := f.merge(dir)
+	expectCode(t, code, 0)
+	if strings.Contains(out, "its commits are merged into fix-login first") {
+		t.Errorf("a join that changed nothing is reported as made:\n%s", out)
+	}
+	if !strings.Contains(out, "fix-login already carries GitHub's main.") || !strings.Contains(out, "(2 commits, ") {
+		t.Errorf("not said that the task carries GitHub's main, or its own commits miscounted:\n%s", out)
+	}
+}

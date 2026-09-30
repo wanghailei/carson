@@ -1,0 +1,8 @@
+#!/bin/sh
+# The checks carson merge runs before a task lands: formatting, vet and the tests.
+set -e
+cd "$(dirname "$0")/.."
+unformatted=$(mise exec -- gofmt -l .)
+if [ -n "$unformatted" ]; then echo "Not formatted by gofmt: $unformatted"; exit 1; fi
+mise exec -- go vet ./...
+mise exec -- go test -count=1 ./...

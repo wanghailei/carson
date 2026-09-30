@@ -145,6 +145,21 @@ func (r *repository) aheadBehind(tracking string) (ahead, behind int, err error)
 	return ahead, behind, err
 }
 
+// ownCommits counts the task's own commits at tip: those main lacks, less merges and less what came from GitHub's main.
+func (r *repository) ownCommits(tip string) (int, error) {
+	args := []string{"rev-list", "--count", "--no-merges", tip, "^main"}
+	if r.remote != "" {
+		if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/remotes/"+r.remote+"/main"); err == nil {
+			args = append(args, "^refs/remotes/"+r.remote+"/main")
+		}
+	}
+	out, err := git(r.top, args...)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(out)
+}
+
 // forwardMain brings local main forward to target by fast-forward in the main working tree, never over what that tree holds: it
 // returns the files that would be overwritten, touching nothing, or git's failure.
 func (r *repository) forwardMain(target string) (inTheWay []string, err error) {

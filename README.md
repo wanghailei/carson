@@ -15,7 +15,7 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says the st
 
 ## State
 
-Carson 5 is being written in Go. `status` and `start` are built; `merge` is in review; `remove` is not built yet. Its design is `~/Documents/AI/design.20260929.carson-and-git.md`.
+Carson 5 is being written in Go. `status`, `start` and `merge` are built; `remove` is not built yet. Its design is `~/Documents/AI/design.20260929.carson-and-git.md`.
 
 ## Building and testing
 
@@ -24,6 +24,8 @@ Go comes from mise, pinned in `mise.toml`.
     mise install
     mise exec -- go test ./...
     mise exec -- go build ./cmd/carson
+
+`bin/check` runs the formatting check, vet and the tests; `carson merge` runs it before a task lands.
 
 The tests run against real git repositories in temporary folders.
 
