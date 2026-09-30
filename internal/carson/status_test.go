@@ -406,6 +406,7 @@ func TestAMissingMainIsSaidWithTheWayBack(t *testing.T) {
 	missing := "local main is missing, though GitHub's main is at " + github + " here; bring it back with: git branch main github/main"
 	out, _ := f.run(f.local, stranger{}, "status")
 	expectLine(t, out, "main: "+missing+".")
+	expectLine(t, out, "Main working tree: on main, which is missing.")
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 1)
 	expectLine(t, out, "Not removed: "+missing+". Nothing was changed.")

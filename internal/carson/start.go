@@ -74,7 +74,7 @@ func start(m Machine, args []string) int {
 	if unobserved != "" {
 		fmt.Fprintln(m.Out, unobserved)
 	}
-	if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/abandoned/"+name); err == nil {
+	if repo.hasBranch("abandoned/" + name) {
 		fmt.Fprintf(m.Out, "Earlier work on %s, declared abandoned, is kept as branch abandoned/%s; this task starts afresh from main.\n", name, name)
 	}
 	if added != nil {
@@ -124,7 +124,10 @@ func (r *repository) nameTaken(m Machine, name string) error {
 			return r.heldBy(m, name, t, "is held by")
 		}
 	}
-	if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); err != nil {
+	if twin := r.caseTwin(name); twin != "" {
+		return refuse(refused, "branch %s exists, and differs from %s only in case, which git cannot always tell apart; choose another name.", twin, name)
+	}
+	if !r.hasBranch(name) {
 		return nil
 	}
 	ahead, err := r.count("main.." + name)
@@ -185,7 +188,7 @@ func (r *repository) afterFailedAdd(m Machine, name, folder string, cause error)
 		}
 		return now.heldBy(m, name, t, "was taken meanwhile by")
 	}
-	if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); err == nil {
+	if r.hasBranch(name) {
 		return refuse(failed, "the worktree could not be made (%s). Branch %s exists now, with no worktree.", reason(cause), name)
 	}
 	return refuse(failed, "the worktree could not be made (%s). No branch or worktree was made.", reason(cause))

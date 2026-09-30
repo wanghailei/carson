@@ -85,6 +85,17 @@ func (r *repository) hasBranch(name string) bool {
 	return err == nil && slices.Contains(lines(out), "refs/heads/"+name)
 }
 
+// caseTwin is a branch whose name differs from name only in case, or "": on a folder that ignores case, git cannot keep the two apart.
+func (r *repository) caseTwin(name string) string {
+	out, _ := git(r.top, "for-each-ref", "--format=%(refname:short)", "refs/heads/")
+	for _, branch := range lines(out) {
+		if branch != name && strings.EqualFold(branch, name) {
+			return branch
+		}
+	}
+	return ""
+}
+
 // mainMissing says why local main is not there — lost, when this machine knows GitHub's main, or never made — or "" when it is.
 func (r *repository) mainMissing() string {
 	if r.hasBranch("main") {
@@ -214,6 +225,8 @@ func (r *repository) mainTree() string {
 		return fmt.Sprintf("Main working tree: on a detached HEAD at %s, not main.", head)
 	} else if branch != "main" {
 		return fmt.Sprintf("Main working tree: on %s, not main.", branch)
+	} else if r.mainMissing() != "" {
+		return "Main working tree: on main, which is missing."
 	}
 	found, err := changes(r.top)
 	if err != nil {

@@ -488,3 +488,12 @@ func TestStartRefusesNamesGitCannotTellApart(t *testing.T) {
 	expectCode(t, code, 2)
 	expectLine(t, out, "Not started: github is a remote's name, not a task's: git could not tell the two apart.")
 }
+
+// From the re-review of 2f003da: a hand-made branch Fix-Login made carson start fix-login say fix-login existed.
+func TestStartRefusesANameGitCannotTellFromABranchByCase(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "branch", "Fix-Login")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: branch Fix-Login exists, and differs from fix-login only in case, which git cannot always tell apart; choose another name.")
+}
