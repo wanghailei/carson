@@ -12,7 +12,8 @@ import (
 )
 
 // Record is who owns a task's worktree: a harness session, known by its process and that process's start time, on one machine. It
-// lives in git's administrative folder for the worktree, so it goes when the worktree goes and never shows in anyone's files.
+// lives in git's administrative folder for the worktree, so it goes when the worktree goes and never shows in anyone's files. The merge
+// lock is a record too, naming the carson that holds it.
 type Record struct {
 	Task      string    `json:"task"`
 	Harness   string    `json:"harness"`
@@ -28,10 +29,28 @@ type Record struct {
 
 const ownerFile = "carson-owner.json"
 
+// errOwned is a record file that already exists: another session recorded it first.
+var errOwned = errors.New("the record already exists")
+
 // readOwner reads the owner record in a worktree's administrative folder. found is false when the worktree has none: it was made
 // outside carson.
-func readOwner(admin string) (record Record, found bool, err error) {
-	data, err := os.ReadFile(filepath.Join(admin, ownerFile))
+func readOwner(admin string) (Record, bool, error) {
+	return readRecordFile(filepath.Join(admin, ownerFile))
+}
+
+// createOwner writes a new owner record where there is none; of two sessions recording the same worktree, exactly one succeeds.
+func createOwner(admin string, record Record) error {
+	return createRecordFile(filepath.Join(admin, ownerFile), record)
+}
+
+// writeOwner replaces a worktree's owner record.
+func writeOwner(admin string, record Record) error {
+	return writeRecordFile(filepath.Join(admin, ownerFile), record)
+}
+
+func readRecordFile(path string) (Record, bool, error) {
+	var record Record
+	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Record{}, false, nil
 	}
@@ -39,44 +58,43 @@ func readOwner(admin string) (record Record, found bool, err error) {
 		return Record{}, false, err
 	}
 	if err := json.Unmarshal(data, &record); err != nil {
-		return Record{}, false, fmt.Errorf("the owner record in %s cannot be read: %w", admin, err)
+		return Record{}, false, fmt.Errorf("%s cannot be read: %w", path, err)
 	}
 	return record, true, nil
 }
 
-// errOwned is a worktree that already has an owner record: another session recorded it first.
-var errOwned = errors.New("the worktree already has an owner record")
-
-// createOwner writes a new owner record where there is none, linking it into place in one step that cannot overwrite: of two sessions
-// recording the same worktree, exactly one succeeds, and the other gets errOwned.
-func createOwner(admin string, record Record) error {
+// writeAside writes the record beside path, under a name of this process's own, for renaming or linking into place.
+func writeAside(path string, record Record) (string, error) {
 	data, err := json.MarshalIndent(record, "", "\t")
+	if err != nil {
+		return "", err
+	}
+	aside := path + "." + strconv.Itoa(os.Getpid()) + ".new"
+	return aside, os.WriteFile(aside, append(data, '\n'), 0o644)
+}
+
+// writeRecordFile writes the record in one step — written aside, then renamed into place — so a crash never leaves half a record.
+func writeRecordFile(path string, record Record) error {
+	aside, err := writeAside(path, record)
 	if err != nil {
 		return err
 	}
-	aside := filepath.Join(admin, ownerFile+"."+strconv.Itoa(os.Getpid())+".new")
-	if err := os.WriteFile(aside, append(data, '\n'), 0o644); err != nil {
+	return os.Rename(aside, path)
+}
+
+// createRecordFile writes the record only where none is, linking it into place in one step that cannot overwrite: of two writers,
+// exactly one succeeds and the other gets errOwned.
+func createRecordFile(path string, record Record) error {
+	aside, err := writeAside(path, record)
+	defer os.Remove(aside)
+	if err != nil {
 		return err
 	}
-	defer os.Remove(aside)
-	if err := os.Link(aside, filepath.Join(admin, ownerFile)); err != nil {
+	if err := os.Link(aside, path); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return errOwned
 		}
 		return err
 	}
 	return nil
-}
-
-// writeOwner writes the record in one step — written aside, then renamed into place — so a crash never leaves half a record.
-func writeOwner(admin string, record Record) error {
-	data, err := json.MarshalIndent(record, "", "\t")
-	if err != nil {
-		return err
-	}
-	aside := filepath.Join(admin, ownerFile+".new")
-	if err := os.WriteFile(aside, append(data, '\n'), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(aside, filepath.Join(admin, ownerFile))
 }
