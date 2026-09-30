@@ -199,7 +199,7 @@ func (r *repository) mergeTask(m Machine, t task, record Record, interrupted con
 				where = "on main and on GitHub"
 			}
 		}
-		return g.stop(refused, "%s has no commits that main lacks. Its work is %s at %s; remove it with: carson remove %s", t.branch, where, r.short("main"), t.branch)
+		return g.stop(refused, "%s has no commits that main lacks: its tip, %s, is %s; remove it with: carson remove %s", t.branch, r.short(t.branch), where, t.branch)
 	}
 	if said, code, ok := g.bringTaskUpToMain(); !ok {
 		return said, code

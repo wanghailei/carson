@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -99,6 +100,8 @@ func taskArgument(args []string) (string, error) {
 		return "", refuse(refused, "Not started: name the task, as in carson start fix-login.")
 	case name == "main" || name == "master":
 		return "", refuse(refused, "Not started: %s is a trunk's name, not a task's.", name)
+	case name == "abandoned":
+		return "", refuse(refused, "Not started: abandoned is where carson keeps the branches of abandoned tasks, not a task's name.")
 	case !taskNamePattern.MatchString(name):
 		return "", refuse(refused, "Not started: %q is not a task name: use lowercase words joined by hyphens, like fix-login.", name)
 	}
@@ -121,6 +124,9 @@ func (m Machine) prepare(name string) (string, *repository, error) {
 	}
 	if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/main"); err != nil {
 		return "", nil, refuse(failed, "this repository has no main yet; starting its first task is not built yet. Nothing was changed.")
+	}
+	if remotes, err := git(repo.top, "remote"); err == nil && slices.Contains(lines(remotes), name) {
+		return "", nil, refuse(refused, "%s is a remote's name, not a task's: git could not tell the two apart.", name)
 	}
 	if err := repo.nameTaken(m, name); err != nil {
 		return "", nil, err

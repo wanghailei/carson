@@ -484,3 +484,14 @@ func TestStartMentionsEarlierAbandonedWork(t *testing.T) {
 	expectCode(t, code, 0)
 	expectLine(t, out, "Earlier work on fix-login, declared abandoned, is kept as branch abandoned/fix-login; this task starts afresh from main.")
 }
+
+// From the second trial: "abandoned" collided with the abandoned/<task> branches in git's raw words, and a remote's name was taken.
+func TestStartRefusesNamesGitCannotTellApart(t *testing.T) {
+	f := newFixture(t)
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "abandoned")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: abandoned is where carson keeps the branches of abandoned tasks, not a task's name.")
+	out, code = f.runIn(inClaude, f.local, claudeRunning, "start", "github")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: github is a remote's name, not a task's: git could not tell the two apart.")
+}

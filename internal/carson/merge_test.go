@@ -75,7 +75,7 @@ func TestMergeRefusesATaskWithNothingMainLacks(t *testing.T) {
 	dir := f.startTask("fix-login")
 	out, code := f.merge(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fix-login has no commits that main lacks. Its work is on main and on GitHub at "+f.short(f.local, "main")+"; remove it with: carson remove fix-login")
+	expectLine(t, out, "Not merged: fix-login has no commits that main lacks: its tip, "+f.short(f.local, "fix-login")+", is on main and on GitHub; remove it with: carson remove fix-login")
 }
 
 func TestMergeUndoesAConflictingRebase(t *testing.T) {
