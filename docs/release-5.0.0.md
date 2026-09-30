@@ -18,6 +18,6 @@ Carson 5 is a rewrite in Go of the git tool for coding agents that work in the s
 
 **Install**
 
-`brew install wanghailei/tap/carson`, or download the build for your system below.
+Download the build for your system below, unpack it, and put `carson` on your PATH. `checksums.txt` holds each download's SHA-256.
 
 Carson 4, the Ruby gem, is kept at the tag `ruby-final`.

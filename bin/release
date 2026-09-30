@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Releases Carson: from a clean main, level with GitHub's and checked, it builds carson for macOS and Linux on arm64 and amd64, tags
-# v<version>, publishes a GitHub release with the downloads and their checksums, and points the Homebrew formula in
-# wanghailei/homebrew-tap at them. Releasing any version is the master's decision (rule 10.8); run it only on that word.
-#   bin/release <version> [--dry-run]    --dry-run builds and writes everything locally, and publishes nothing
+# Releases Carson on GitHub, its one place of publication: from a clean main, level with GitHub's and checked, it builds carson for
+# macOS and Linux on arm64 and amd64, tags v<version>, and publishes a GitHub release with the downloads and their checksums.
+# Releasing any version is the master's decision (rule 10.8); run it only on that word.
+#   bin/release <version> [--dry-run]    --dry-run builds the downloads locally, and publishes nothing
 set -euo pipefail
 
 version="${1:-}"
@@ -36,52 +36,9 @@ for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
 	say "built   $name.tar.gz"
 done
 (cd "$out" && shasum -a 256 carson-"$version"-*.tar.gz >checksums.txt)
-sum() { grep "carson-$version-$1.tar.gz" "$out/checksums.txt" | cut -d' ' -f1; }
-
-url="https://github.com/wanghailei/carson/releases/download/v$version"
-cat >"$out/carson.rb" <<RUBY
-# Carson $version, written by carson's bin/release; do not edit by hand.
-class Carson < Formula
-	desc "Git tool for coding agents: each task in its own worktree, main only moving forward"
-	homepage "https://github.com/wanghailei/carson"
-	version "$version"
-	license "MIT"
-
-	on_macos do
-		on_arm do
-			url "$url/carson-$version-darwin-arm64.tar.gz"
-			sha256 "$(sum darwin-arm64)"
-		end
-		on_intel do
-			url "$url/carson-$version-darwin-amd64.tar.gz"
-			sha256 "$(sum darwin-amd64)"
-		end
-	end
-
-	on_linux do
-		on_arm do
-			url "$url/carson-$version-linux-arm64.tar.gz"
-			sha256 "$(sum linux-arm64)"
-		end
-		on_intel do
-			url "$url/carson-$version-linux-amd64.tar.gz"
-			sha256 "$(sum linux-amd64)"
-		end
-	end
-
-	def install
-		bin.install "carson"
-	end
-
-	test do
-		assert_match "carson #{version}", shell_output("#{bin}/carson --version")
-	end
-end
-RUBY
-say "written $out/carson.rb"
 
 if ((dry)); then
-	say "Dry run: nothing tagged, released or pushed. The downloads and the formula are in $out."
+	say "Dry run: nothing tagged, released or pushed. The downloads are in $out."
 	exit 0
 fi
 
@@ -91,15 +48,3 @@ say "tagged  v$version and pushed it"
 gh release create "v$version" --repo wanghailei/carson --title "Carson $version" --notes-file "$top/docs/release-$version.md" \
 	"$out"/carson-"$version"-*.tar.gz "$out/checksums.txt" >/dev/null
 say "released https://github.com/wanghailei/carson/releases/tag/v$version"
-
-tap="${XDG_CACHE_HOME:-$HOME/.cache}/carson-release/homebrew-tap"
-[[ -d "$tap/.git" ]] || gh repo clone wanghailei/homebrew-tap "$tap" -- -q
-# The formula lands on the tap's main from a branch of its own, by fast-forward (rule 11.5).
-git -C "$tap" fetch -q origin main
-git -C "$tap" switch -q -C "carson-$version" origin/main
-mkdir -p "$tap/Formula"
-cp "$out/carson.rb" "$tap/Formula/carson.rb"
-git -C "$tap" add Formula/carson.rb
-git -C "$tap" commit -q -m "carson $version"
-git -C "$tap" push -q origin "carson-$version:main"
-say "The Homebrew formula now installs $version: brew install wanghailei/tap/carson"

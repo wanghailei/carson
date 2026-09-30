@@ -21,11 +21,7 @@ Carson 5 is written in Go, with its six commands built. Not built yet: the first
 
 ## Installing
 
-On macOS or Linux, with Homebrew:
-
-    brew install wanghailei/tap/carson
-
-Or download the build for your system from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH. `carson --version` says which version you have; `brew upgrade carson` brings the latest.
+Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. `checksums.txt` beside the downloads holds each one's SHA-256. `carson --version` says which version you have.
 
 ## Building and testing
 
@@ -46,7 +42,7 @@ Releasing any version is the master's decision. With the version set in `interna
     bin/release <version> --dry-run
     bin/release <version>
 
-It builds carson for macOS and Linux on arm64 and amd64, tags `v<version>`, publishes the GitHub release with the downloads and their checksums, and points the Homebrew formula in `wanghailei/homebrew-tap` at them.
+It builds carson for macOS and Linux on arm64 and amd64, tags `v<version>`, and publishes the GitHub release with the downloads and their checksums.
 
 ## Licence
 
