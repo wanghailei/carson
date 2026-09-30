@@ -1,6 +1,4 @@
+/carson
 tmp/
 *.log
-.gem
-*.gem
 .claude/
-carson-review*/

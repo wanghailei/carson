@@ -1,5 +1,0 @@
-# Reads the VERSION file and exposes it as Carson::VERSION.
-module Carson
-	version_path = File.expand_path( "../../VERSION", __dir__ )
-	VERSION = File.file?( version_path ) ? File.read( version_path ).strip : "0.0.0"
-end

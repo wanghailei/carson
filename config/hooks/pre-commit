@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-# Pre-commit hook — reserved for future use.
-exit 0
