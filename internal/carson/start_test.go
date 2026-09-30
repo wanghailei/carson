@@ -1,8 +1,10 @@
 package carson
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -31,7 +33,7 @@ func TestStartMakesTheTaskWorktreeAndItsOwnerRecord(t *testing.T) {
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 0)
 	dir := f.taskFolder("fix-login")
-	expectLine(t, out, "Started fix-login from main at "+f.git(f.local, "rev-parse", "--short", "main")+" in "+dir+", owned by Claude session 9cb74d03 on test-mac.")
+	expectLine(t, out, "Started fix-login from local main at "+f.git(f.local, "rev-parse", "--short", "main")+" in "+dir+", owned by Claude session 9cb74d03 on test-mac.")
 	if branch := f.git(dir, "symbolic-ref", "--short", "HEAD"); branch != "fix-login" {
 		t.Errorf("the worktree is on %q", branch)
 	}
@@ -69,7 +71,7 @@ func TestStartPushesMergedWorkGitHubLacks(t *testing.T) {
 	f.commit(f.local, "merged.txt")
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Pushed 1 commit of local main that GitHub lacked.")
+	expectLine(t, out, "Pushed 1 commit of local main that GitHub lacked; GitHub's main is now "+f.git(f.local, "rev-parse", "--short", "main")+".")
 	if local, remote := f.git(f.local, "rev-parse", "main"), f.git(f.github, "rev-parse", "main"); local != remote {
 		t.Errorf("local main %s, GitHub's %s", local, remote)
 	}
@@ -143,7 +145,7 @@ func TestStartRefusesWhenMainTreeIsOffMainAndGitHubIsAhead(t *testing.T) {
 	f.git(f.local, "switch", "-q", "-c", "elsewhere")
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: GitHub's main is 1 commit ahead, and the main working tree is on elsewhere, not main, so local main cannot be brought forward there. Nothing was changed.")
+	expectLine(t, out, "Not started: GitHub's main is 1 commit ahead, and the main working tree is on elsewhere, not main, so local main cannot be brought forward there. GitHub's main was fetched; nothing else was changed.")
 	if f.exists(f.taskFolder("fix-login")) {
 		t.Error("a worktree was made")
 	}
@@ -165,7 +167,7 @@ func TestStartInATerminalRecordsItsShell(t *testing.T) {
 	if record.Harness != "terminal" || record.PID != 800 || record.Started != "Wed Sep 30 08:30:00 2026" {
 		t.Errorf("owner record in a terminal: %+v", record)
 	}
-	expectLine(t, out, "Started fix-login from main at ")
+	expectLine(t, out, "Started fix-login from local main at ")
 }
 
 func TestStartExistingIsNotBuiltYet(t *testing.T) {
@@ -173,4 +175,183 @@ func TestStartExistingIsNotBuiltYet(t *testing.T) {
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login", "--existing")
 	expectCode(t, code, 1)
 	expectLine(t, out, "carson start --existing: not built yet. Nothing was changed.")
+}
+
+// Bringing local main forward never overwrites what the main working tree holds that main does not: modified, untracked or ignored.
+func TestStartRefusesAFastForwardThatWouldOverwriteAnIgnoredFile(t *testing.T) {
+	f := newFixture(t)
+	f.write(f.local, ".gitignore", "build/\n")
+	f.git(f.local, "add", ".gitignore")
+	f.git(f.local, "commit", "-q", "-m", "ignore build")
+	f.git(f.local, "push", "-q", "github", "main")
+	os.Mkdir(filepath.Join(f.local, "build"), 0o755)
+	f.write(filepath.Join(f.local, "build"), "out.txt", "my local output\n")
+	other := f.otherClone()
+	os.Mkdir(filepath.Join(other, "build"), 0o755)
+	f.write(filepath.Join(other, "build"), "out.txt", "from the other machine\n")
+	f.git(other, "add", "-f", "build/out.txt")
+	f.git(other, "commit", "-q", "-m", "track build output")
+	f.git(other, "push", "-q", "origin", "main")
+	before := f.git(f.local, "rev-parse", "main")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: bringing local main forward would overwrite what the main working tree holds in build/out.txt (ignored, changed ")
+	if !strings.Contains(out, "). carson did not touch them and cannot tell whose they are. GitHub's main was fetched; nothing else was changed.") {
+		t.Errorf("the refusal does not say what was and was not changed:\n%s", out)
+	}
+	if content, _ := os.ReadFile(filepath.Join(f.local, "build", "out.txt")); string(content) != "my local output\n" {
+		t.Errorf("the ignored file now holds %q", content)
+	}
+	if f.git(f.local, "rev-parse", "main") != before || f.exists(f.taskFolder("fix-login")) {
+		t.Error("local main moved, or a worktree was made")
+	}
+}
+
+func TestStartNamesModifiedAndUntrackedFilesInTheWay(t *testing.T) {
+	f := newFixture(t)
+	other := f.otherClone()
+	f.write(other, "first.txt", "changed there\n")
+	f.write(other, "new.txt", "new there\n")
+	f.git(other, "add", "first.txt", "new.txt")
+	f.git(other, "commit", "-q", "-m", "change and add")
+	f.git(other, "push", "-q", "origin", "main")
+	f.write(f.local, "first.txt", "changed here\n")
+	f.write(f.local, "new.txt", "made here\n")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	for _, want := range []string{"first.txt (modified, changed ", "new.txt (untracked, changed "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q not named in:\n%s", want, out)
+		}
+	}
+}
+
+// When git worktree add fails, carson looks at what is there rather than guessing.
+func TestStartReportsAWorktreeMadeDespiteAFailingHook(t *testing.T) {
+	f := newFixture(t)
+	hook := filepath.Join(f.local, ".git", "hooks", "post-checkout")
+	if err := os.WriteFile(hook, []byte("#!/bin/sh\necho hook refuses >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Started fix-login from local main at ")
+	if !strings.Contains(out, "but git reported a failure after making it (hook refuses)") {
+		t.Errorf("the hook's failure is not reported:\n%s", out)
+	}
+	if record := f.readRecord(f.taskFolder("fix-login")); record.Harness != "claude" {
+		t.Errorf("the worktree carson made has no owner record: %+v", record)
+	}
+}
+
+func TestAfterAFailedAddANameTakenMeanwhileIsNamed(t *testing.T) {
+	f := newFixture(t)
+	repo, err := openRepository(f.local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	winner := f.worktree("fix-login")
+	f.own(winner, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"})
+	var machine Machine
+	machine.Host, machine.Processes = "test-mac", stranger{5000: "Wed Sep 30 07:00:00 2026"}
+	repo, _ = openRepository(f.local)
+	err = repo.afterFailedAdd(machine, "fix-login", f.taskFolder("fix-login"), errors.New("fatal: a branch named 'fix-login' already exists"))
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session 4e7a91d2 on test-mac, which is live.") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestStartRecordsAndSaysWhenTheHarnessProcessCannotBeObserved(t *testing.T) {
+	f := newFixture(t)
+	out, code := f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "99999"}, f.local, stranger{}, "start", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Its process, 99999, could not be observed (not running), so status will show this task's owner as unknown.")
+	status, _ := f.run(f.local, stranger{}, "status")
+	expectLine(t, status, "Claude session 9cb74d03 on test-mac, unknown (the record has no start time for process 99999):")
+}
+
+func TestStartRefusesTheTrunkAsATaskName(t *testing.T) {
+	f := newFixture(t)
+	for _, name := range []string{"main", "master"} {
+		out, code := f.runIn(inClaude, f.local, claudeRunning, "start", name)
+		expectCode(t, code, 2)
+		expectLine(t, out, "Not started: "+name+" is a trunk's name, not a task's.")
+	}
+}
+
+func TestStartWithAHomeEndingInASlash(t *testing.T) {
+	f := newFixture(t)
+	f.runIn(environment{"HOME": f.root + "/", "CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "4121"}, f.local, claudeRunning, "start", "fix-login")
+	if !f.exists(f.taskFolder("fix-login")) {
+		t.Errorf("the worktree is not at %s", f.taskFolder("fix-login"))
+	}
+}
+
+func TestStartRefusesWithoutAHome(t *testing.T) {
+	f := newFixture(t)
+	out, code := f.runIn(environment{"HOME": ""}, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not started: HOME is not set, so there is no ~/.worktrees to start the task in.")
+}
+
+func TestStartRefusesAFolderInTheWay(t *testing.T) {
+	f := newFixture(t)
+	os.MkdirAll(f.taskFolder("fix-login"), 0o755)
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: "+f.taskFolder("fix-login")+" already exists, and is not a worktree of this task. Nothing was changed.")
+}
+
+func TestStartRefusesANameHeldByAnEndedSession(t *testing.T) {
+	f := newFixture(t)
+	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2 on test-mac, which has ended. Taking it over (carson start fix-login --existing) is not built yet.")
+}
+
+func TestStartRefusesANameHeldFromAnotherMachine(t *testing.T) {
+	f := newFixture(t)
+	dir := f.worktree("fix-login")
+	f.own(dir, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "x", Machine: "linux-box", MachineID: "linux-id"})
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2 on linux-box, whose state is unknown (it cannot be checked from test-mac).")
+}
+
+func TestStartRefusesANameHeldByAWorktreeMadeOutsideCarson(t *testing.T) {
+	f := newFixture(t)
+	dir := f.worktree("fix-login")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: fix-login is held by a worktree made outside carson, at "+dir+"; whose it is is the master's to settle.")
+}
+
+func TestStartPushesMainToAGitHubThatHasNone(t *testing.T) {
+	f := newFixture(t)
+	empty := filepath.Join(f.root, "empty.git")
+	f.git(f.root, "init", "-q", "--bare", "-b", "main", empty)
+	f.git(f.local, "remote", "set-url", "github", empty)
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "GitHub had no main; local main is pushed there, and GitHub's main is now "+f.git(f.local, "rev-parse", "--short", "main")+".")
+}
+
+func TestStartWithoutARemoteStartsFromLocalMain(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "No GitHub remote: the task starts from local main.")
+}
+
+// Liveness knows the machine by its stable identity when both sides have one, whatever its name says.
+func TestStatusKnowsTheMachineByItsIdentityNotItsName(t *testing.T) {
+	f := newFixture(t)
+	renamed, elsewhere := f.worktree("renamed"), f.worktree("elsewhere")
+	f.own(renamed, Record{Task: "renamed", Harness: "claude", Session: "11111111-a", PID: 4121, Started: "Wed Sep 30 09:00:00 2026", Machine: "old-name", MachineID: "test-id"})
+	f.own(elsewhere, Record{Task: "elsewhere", Harness: "claude", Session: "22222222-b", PID: 4121, Started: "Wed Sep 30 09:00:00 2026", Machine: "test-mac", MachineID: "other-id"})
+	out, _ := f.run(f.local, stranger{4121: "Wed Sep 30 09:00:00 2026"}, "status")
+	expectLine(t, out, "Claude session 11111111 on old-name, live:")
+	expectLine(t, out, "Claude session 22222222 on test-mac, unknown (it cannot be checked from test-mac):")
 }

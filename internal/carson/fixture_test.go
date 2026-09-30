@@ -72,8 +72,8 @@ func (f *fixture) write(dir, name, content string) {
 	}
 }
 
-// otherMachine pushes a commit to GitHub from a second clone, as the master's other machine would.
-func (f *fixture) otherMachine() {
+// otherClone is the master's other machine: a second clone of GitHub, up to date.
+func (f *fixture) otherClone() string {
 	f.t.Helper()
 	other := filepath.Join(f.root, "other")
 	if _, err := os.Stat(other); err != nil {
@@ -81,6 +81,13 @@ func (f *fixture) otherMachine() {
 	} else {
 		f.git(other, "pull", "-q", "--ff-only")
 	}
+	return other
+}
+
+// otherMachine pushes a commit to GitHub from the other machine.
+func (f *fixture) otherMachine() {
+	f.t.Helper()
+	other := f.otherClone()
 	f.commit(other, fmt.Sprintf("other-%d.txt", len(f.git(other, "log", "--oneline"))))
 	f.git(other, "push", "-q", "origin", "main")
 }

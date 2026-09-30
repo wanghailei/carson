@@ -93,8 +93,11 @@ func (l liveness) String() string {
 // another process has since taken its id; unknown when it cannot be checked — a record naming no process, a record from another
 // machine, or ps unable to answer.
 func (m Machine) livenessOf(record Record) (liveness, string) {
-	if record.PID <= 0 || record.Started == "" {
+	if record.PID <= 0 {
 		return unknown, "the record names no process"
+	}
+	if record.Started == "" {
+		return unknown, fmt.Sprintf("the record has no start time for process %d", record.PID)
 	}
 	// The machine is known by its stable identity when both sides have one; a name alone can change under mDNS.
 	sameMachine := record.Machine == m.Host

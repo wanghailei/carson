@@ -4,6 +4,7 @@
 package carson
 
 import (
+	"errors"
 	"fmt"
 	"io"
 )
@@ -15,6 +16,27 @@ const (
 	failed  = 1
 	refused = 2
 )
+
+// refusal is why carson did not do what it was asked, with the exit code that means.
+type refusal struct {
+	code int
+	text string
+}
+
+func (r *refusal) Error() string { return r.text }
+
+func refuse(code int, format string, args ...any) error {
+	return &refusal{code: code, text: fmt.Sprintf(format, args...)}
+}
+
+// codeOf is the exit code an error means: a refusal's own, or could-not-finish for any other.
+func codeOf(err error) int {
+	var r *refusal
+	if errors.As(err, &r) {
+		return r.code
+	}
+	return failed
+}
 
 // Machine is what one run of carson sees of the world: the folder it runs in, where it writes, this machine's name and its stable
 // identity, its environment, carson's own process and the machine's processes. Tests give it a machine of their own.

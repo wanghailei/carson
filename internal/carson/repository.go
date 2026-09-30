@@ -93,7 +93,7 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 	fields := strings.Fields(answer)
 	if len(fields) == 0 {
-		return here + ". GitHub has no main yet; the next carson merge pushes it."
+		return here + ". GitHub has no main yet; carson start or carson merge pushes it."
 	}
 	remote := fields[0]
 	if remote == local {

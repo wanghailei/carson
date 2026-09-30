@@ -15,80 +15,35 @@ import (
 var taskNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // start starts a task: from the latest main, in a worktree of its own beside the repository, owned by the session running carson.
-// It removes nothing, ever.
+// Every refusal comes before any change, and it removes nothing, ever.
 func start(m Machine, args []string) int {
-	var name string
-	for _, arg := range args {
-		switch {
-		case arg == "--existing":
-			fmt.Fprintln(m.Out, "carson start --existing: not built yet. Nothing was changed.")
-			return failed
-		case strings.HasPrefix(arg, "-"):
-			fmt.Fprintf(m.Out, "Not started: carson start has no option %q.\n", arg)
-			return refused
-		case name != "":
-			fmt.Fprintf(m.Out, "Not started: one task at a time; %q and %q were given.\n", name, arg)
-			return refused
-		default:
-			name = arg
-		}
-	}
-	if name == "" {
-		fmt.Fprintln(m.Out, "Not started: name the task, as in carson start fix-login.")
-		return refused
-	}
-	if !taskNamePattern.MatchString(name) {
-		fmt.Fprintf(m.Out, "Not started: %q is not a task name: use lowercase words joined by hyphens, like fix-login.\n", name)
-		return refused
-	}
-	home := m.Env("HOME")
-	if home == "" {
-		fmt.Fprintln(m.Out, "Not started: HOME is not set, so there is no ~/.worktrees to start the task in.")
-		return failed
-	}
-	repo, err := openRepository(m.Dir)
-	if errors.Is(err, errNotARepository) {
-		fmt.Fprintf(m.Out, "Not started: %s is not inside a git repository.\n", m.Dir)
-		return failed
-	}
+	name, err := taskArgument(args)
 	if err != nil {
-		fmt.Fprintf(m.Out, "Not started: the repository could not be read (%s).\n", reason(err))
-		return failed
+		fmt.Fprintln(m.Out, err)
+		return codeOf(err)
 	}
-	if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/main"); err != nil {
-		fmt.Fprintln(m.Out, "Not started: this repository has no main yet; starting its first task is not built yet. Nothing was changed.")
-		return failed
+	folder, repo, err := m.prepare(name)
+	if err != nil {
+		fmt.Fprintln(m.Out, "Not started: "+err.Error())
+		return codeOf(err)
 	}
-	if refusal := repo.nameTaken(m, name); refusal != "" {
-		fmt.Fprintln(m.Out, "Not started: "+refusal)
-		return refused
-	}
-	folder := repo.taskFolder(home, name)
-	if _, err := os.Lstat(folder); err == nil {
-		fmt.Fprintf(m.Out, "Not started: %s already exists, and is not a worktree of this task. Nothing was changed.\n", folder)
-		return refused
-	}
-	notes, refusal, code := repo.latestMain()
-	if refusal != "" {
-		fmt.Fprintln(m.Out, "Not started: "+refusal)
-		return code
-	}
+	notes, err := repo.latestMain()
 	for _, note := range notes {
 		fmt.Fprintln(m.Out, note)
 	}
-	if err := os.MkdirAll(filepath.Dir(folder), 0o755); err != nil {
-		fmt.Fprintf(m.Out, "Not started: the folder for its worktree could not be made (%v). Nothing else was changed.\n", err)
-		return failed
+	if err != nil {
+		fmt.Fprintln(m.Out, "Not started: "+err.Error())
+		return codeOf(err)
 	}
-	if _, err := git(repo.top, "worktree", "add", "-q", "-b", name, folder, "main"); err != nil {
-		made := ""
-		if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); err == nil {
-			made = fmt.Sprintf(" Branch %s was made; its worktree was not.", name)
+	_, added := git(repo.top, "worktree", "add", "-q", "-b", name, folder, "main")
+	if added != nil {
+		// git failed; what it made, if anything, is looked at rather than guessed.
+		if err := repo.afterFailedAdd(m, name, folder, added); err != nil {
+			fmt.Fprintln(m.Out, "Not started: "+err.Error())
+			return codeOf(err)
 		}
-		fmt.Fprintf(m.Out, "Not started: the worktree could not be made (%s).%s\n", reason(err), made)
-		return failed
 	}
-	record := m.ownerRecord(name)
+	record, unobserved := m.ownerRecord(name)
 	admin, err := git(folder, "rev-parse", "--absolute-git-dir")
 	if err == nil {
 		err = writeOwner(admin, record)
@@ -97,44 +52,139 @@ func start(m Machine, args []string) int {
 		fmt.Fprintf(m.Out, "Started %s in %s, but its owner record could not be written (%s): it shows as made outside carson until that is put right.\n", name, folder, reason(err))
 		return failed
 	}
-	head, _ := git(folder, "rev-parse", "--short", "HEAD")
-	fmt.Fprintf(m.Out, "Started %s from main at %s in %s, owned by %s.\n", name, head, folder, ownerName(record))
+	head, err := git(folder, "rev-parse", "--short", "HEAD")
+	if err != nil {
+		head = "a commit git could not name (" + reason(err) + ")"
+	}
+	line := fmt.Sprintf("Started %s from local main at %s in %s, owned by %s", name, head, folder, ownerName(record))
+	if added != nil {
+		fmt.Fprintf(m.Out, "%s, but git reported a failure after making it (%s).\n", line, reason(added))
+	} else {
+		fmt.Fprintln(m.Out, line+".")
+	}
+	if unobserved != "" {
+		fmt.Fprintln(m.Out, unobserved)
+	}
+	if added != nil {
+		return failed
+	}
 	return done
 }
 
-// nameTaken says why a task name is not free — a worktree holds its branch, or the branch exists — or "" when it is free.
-func (r *repository) nameTaken(m Machine, name string) string {
-	for _, t := range r.tasks() {
-		if t.branch != name {
-			continue
-		}
-		record, found, err := readOwner(t.admin)
+// taskArgument reads carson start's arguments: one task name, lowercase words joined by hyphens, and not a trunk's.
+func taskArgument(args []string) (string, error) {
+	var name string
+	for _, arg := range args {
 		switch {
-		case t.admin == "" || err != nil || !found:
-			return fmt.Sprintf("%s is held by a worktree made outside carson, at %s; whose it is is the master's to settle.", name, t.path)
-		}
-		state, why := m.livenessOf(record)
-		switch state {
-		case live:
-			return fmt.Sprintf("%s is taken by %s, which is live.", name, ownerName(record))
-		case ended:
-			return fmt.Sprintf("%s is held by %s, which has ended. Taking it over (carson start %s --existing) is not built yet.", name, ownerName(record), name)
+		case arg == "--existing":
+			return "", refuse(failed, "carson start --existing: not built yet. Nothing was changed.")
+		case strings.HasPrefix(arg, "-"):
+			return "", refuse(refused, "Not started: carson start has no option %q.", arg)
+		case name != "":
+			return "", refuse(refused, "Not started: one task at a time; %q and %q were given.", name, arg)
 		default:
-			return fmt.Sprintf("%s is held by %s, whose state is unknown (%s).", name, ownerName(record), why)
+			name = arg
+		}
+	}
+	switch {
+	case name == "":
+		return "", refuse(refused, "Not started: name the task, as in carson start fix-login.")
+	case name == "main" || name == "master":
+		return "", refuse(refused, "Not started: %s is a trunk's name, not a task's.", name)
+	case !taskNamePattern.MatchString(name):
+		return "", refuse(refused, "Not started: %q is not a task name: use lowercase words joined by hyphens, like fix-login.", name)
+	}
+	return name, nil
+}
+
+// prepare finds the repository and checks the task can start there: a home for its worktree, a main to start from, a free name, and
+// no folder in the way. It changes nothing.
+func (m Machine) prepare(name string) (string, *repository, error) {
+	home := m.Env("HOME")
+	if home == "" {
+		return "", nil, refuse(failed, "HOME is not set, so there is no ~/.worktrees to start the task in.")
+	}
+	repo, err := openRepository(m.Dir)
+	if errors.Is(err, errNotARepository) {
+		return "", nil, refuse(failed, "%s is not inside a git repository.", m.Dir)
+	}
+	if err != nil {
+		return "", nil, refuse(failed, "the repository could not be read (%s).", reason(err))
+	}
+	if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/main"); err != nil {
+		return "", nil, refuse(failed, "this repository has no main yet; starting its first task is not built yet. Nothing was changed.")
+	}
+	if err := repo.nameTaken(m, name); err != nil {
+		return "", nil, err
+	}
+	folder := repo.taskFolder(filepath.Clean(home), name)
+	if _, err := os.Lstat(folder); err == nil {
+		return "", nil, refuse(refused, "%s already exists, and is not a worktree of this task. Nothing was changed.", folder)
+	}
+	return folder, repo, nil
+}
+
+// nameTaken says why a task name is not free — a worktree holds its branch, or the branch exists — or nil when it is free.
+func (r *repository) nameTaken(m Machine, name string) error {
+	for _, t := range r.tasks() {
+		if t.branch == name {
+			return r.heldBy(m, name, t, "is held by")
 		}
 	}
 	if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); err != nil {
-		return ""
+		return nil
 	}
 	ahead, err := r.count("main.." + name)
 	switch {
 	case err != nil:
-		return fmt.Sprintf("branch %s already exists; what it holds against main is unknown (%s).", name, reason(err))
+		return refuse(refused, "branch %s already exists; what it holds against main is unknown (%s).", name, reason(err))
 	case ahead == 0:
-		return fmt.Sprintf("branch %s already exists, and its work is on main. Remove it with: carson remove %s", name, name)
+		return refuse(refused, "branch %s already exists, and its work is on main. Remove it with: carson remove %s", name, name)
 	default:
-		return fmt.Sprintf("branch %s already exists, with %s not on main. Taking it up again (carson start %s --existing) is not built yet.", name, plural(ahead, "commit"), name)
+		return refuse(refused, "branch %s already exists, with %s not on main. Taking it up again (carson start %s --existing) is not built yet.", name, plural(ahead, "commit"), name)
 	}
+}
+
+// heldBy says who holds the task's worktree, and whether that owner is live.
+func (r *repository) heldBy(m Machine, name string, t task, held string) error {
+	record, found, err := readOwner(t.admin)
+	if t.admin == "" || err != nil || !found {
+		return refuse(refused, "%s %s a worktree made outside carson, at %s; whose it is is the master's to settle.", name, held, t.path)
+	}
+	state, why := m.livenessOf(record)
+	switch state {
+	case live:
+		if held == "is held by" {
+			held = "is taken by"
+		}
+		return refuse(refused, "%s %s %s, which is live.", name, held, ownerName(record))
+	case ended:
+		return refuse(refused, "%s %s %s, which has ended. Taking it over (carson start %s --existing) is not built yet.", name, held, ownerName(record), name)
+	default:
+		return refuse(refused, "%s %s %s, whose state is unknown (%s).", name, held, ownerName(record), why)
+	}
+}
+
+// afterFailedAdd looks at what git worktree add left when it failed. nil means the worktree carson asked for is there — git failed
+// after making it — and carson owns it; otherwise the error says what is there instead.
+func (r *repository) afterFailedAdd(m Machine, name, folder string, cause error) error {
+	now, err := openRepository(r.top)
+	if err != nil {
+		return refuse(failed, "the worktree could not be made (%s), and what git left cannot be read (%s).", reason(cause), reason(err))
+	}
+	for _, t := range now.tasks() {
+		if t.branch != name {
+			continue
+		}
+		if t.path == folder {
+			return nil
+		}
+		return now.heldBy(m, name, t, "was taken meanwhile by")
+	}
+	if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); err == nil {
+		return refuse(failed, "the worktree could not be made (%s). Branch %s exists now, with no worktree.", reason(cause), name)
+	}
+	return refuse(failed, "the worktree could not be made (%s). No branch or worktree was made.", reason(cause))
 }
 
 // taskFolder is where a task's worktree goes: under ~/.worktrees, mirroring the repository's place, so never inside the main working
@@ -148,61 +198,145 @@ func (r *repository) taskFolder(home, task string) string {
 }
 
 // latestMain brings local main to the latest main before a task starts from it. Merged work GitHub lacks is pushed; GitHub's commits
-// come into local main by fast-forward in the main working tree; a divergence is reported, for the task's merge to bring in. It
-// returns what it did, or why the task cannot start, with the exit code for that.
-func (r *repository) latestMain() (notes []string, refusal string, code int) {
+// come into local main by fast-forward in the main working tree, never over what that tree holds; a divergence is reported, for the
+// task's merge to bring in. It returns what it did, and the refusal when the task cannot start.
+func (r *repository) latestMain() ([]string, error) {
 	if r.remote == "" {
-		return []string{"No GitHub remote: the task starts from local main."}, "", done
+		return []string{"No GitHub remote: the task starts from local main."}, nil
 	}
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
 	if err != nil {
-		return nil, fmt.Sprintf("GitHub could not be reached (%s): the latest main cannot be known. Nothing was changed.", reason(err)), failed
+		return nil, refuse(failed, "GitHub could not be reached (%s): the latest main cannot be known. Nothing was changed.", reason(err))
 	}
 	if answer == "" {
-		if _, err := gitNetwork(r.top, "push", "-q", r.remote, "main"); err != nil {
-			return nil, fmt.Sprintf("GitHub has no main, and pushing local main there failed (%s). Nothing else was changed.", reason(err)), failed
+		now, err := r.pushMain()
+		if err != nil {
+			return nil, refuse(failed, "GitHub has no main, and pushing local main there failed (%s). Nothing else was changed.", reason(err))
 		}
-		return []string{"GitHub had no main; local main is pushed there."}, "", done
+		return []string{"GitHub had no main; local main is pushed there, and GitHub's main is now " + now + "."}, nil
 	}
 	tracking := "refs/remotes/" + r.remote + "/main"
 	if _, err := gitNetwork(r.top, "fetch", "-q", r.remote, "+refs/heads/main:"+tracking); err != nil {
-		return nil, fmt.Sprintf("GitHub's main could not be fetched (%s): the latest main cannot be known. Nothing was changed.", reason(err)), failed
+		return nil, refuse(failed, "GitHub's main could not be fetched (%s): the latest main cannot be known. Nothing was changed.", reason(err))
 	}
+	const fetched = "GitHub's main was fetched; nothing else was changed."
 	ahead, err := r.count(tracking + "..main")
-	if err != nil {
-		return nil, fmt.Sprintf("how local main stands against GitHub's is unknown (%s). Nothing was changed.", reason(err)), failed
+	if err == nil {
+		var behind int
+		if behind, err = r.count("main.." + tracking); err == nil {
+			return r.bringUpToDate(tracking, ahead, behind, fetched)
+		}
 	}
-	behind, err := r.count("main.." + tracking)
-	if err != nil {
-		return nil, fmt.Sprintf("how local main stands against GitHub's is unknown (%s). Nothing was changed.", reason(err)), failed
-	}
+	return nil, refuse(failed, "how local main stands against GitHub's is unknown (%s). %s", reason(err), fetched)
+}
+
+func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched string) ([]string, error) {
 	switch {
 	case ahead > 0 && behind > 0:
-		return []string{fmt.Sprintf("Local main and GitHub's have diverged: %s here, %d there. Merging this task will bring GitHub's commits in.", plural(ahead, "commit"), behind)}, "", done
+		return []string{fmt.Sprintf("Local main and GitHub's have diverged: %s here, %d there. Merging this task will bring GitHub's commits in.", plural(ahead, "commit"), behind)}, nil
 	case ahead > 0:
-		if _, err := gitNetwork(r.top, "push", "-q", r.remote, "main"); err != nil {
-			return nil, fmt.Sprintf("local main holds %s GitHub lacks, and pushing them failed (%s). Nothing else was changed.", plural(ahead, "commit"), reason(err)), failed
+		now, err := r.pushMain()
+		if err != nil {
+			return nil, refuse(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s", plural(ahead, "commit"), reason(err), fetched)
 		}
-		return []string{fmt.Sprintf("Pushed %s of local main that GitHub lacked.", plural(ahead, "commit"))}, "", done
+		return []string{fmt.Sprintf("Pushed %s of local main that GitHub lacked; GitHub's main is now %s.", plural(ahead, "commit"), now)}, nil
 	case behind > 0:
-		branch, _ := git(r.top, "symbolic-ref", "--short", "-q", "HEAD")
-		if branch != "main" {
+		if branch, _ := git(r.top, "symbolic-ref", "--short", "-q", "HEAD"); branch != "main" {
 			if branch == "" {
 				branch = "a detached HEAD"
 			}
-			return nil, fmt.Sprintf("GitHub's main is %s ahead, and the main working tree is on %s, not main, so local main cannot be brought forward there. Nothing was changed.", plural(behind, "commit"), branch), refused
+			return nil, refuse(refused, "GitHub's main is %s ahead, and the main working tree is on %s, not main, so local main cannot be brought forward there. %s", plural(behind, "commit"), branch, fetched)
+		}
+		inTheWay, err := r.inTheWay(tracking)
+		if err != nil {
+			return nil, refuse(failed, "what the main working tree holds could not be read (%s), so local main is not brought forward over it. %s", reason(err), fetched)
+		}
+		if len(inTheWay) > 0 {
+			return nil, refuse(refused, "bringing local main forward would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s", strings.Join(inTheWay, ", "), fetched)
 		}
 		if _, err := git(r.top, "merge", "--ff-only", "-q", tracking); err != nil {
-			return nil, fmt.Sprintf("local main could not be brought forward to GitHub's in the main working tree (%s). Nothing was changed.", reason(err)), refused
+			return nil, refuse(refused, "local main could not be brought forward to GitHub's in the main working tree (%s). %s", reason(err), fetched)
 		}
-		return []string{fmt.Sprintf("Local main was %s behind GitHub's and is brought forward to it.", plural(behind, "commit"))}, "", done
+		return []string{fmt.Sprintf("Local main was %s behind GitHub's and is brought forward to it.", plural(behind, "commit"))}, nil
 	}
-	return nil, "", done
+	return nil, nil
+}
+
+// inTheWay lists what the main working tree holds that bringing main forward to target would overwrite: a file the move changes that
+// is modified there, untracked, or ignored — each with its kind and when it last changed.
+func (r *repository) inTheWay(target string) ([]string, error) {
+	changed, err := git(r.top, "diff", "--name-only", "-z", "main", target)
+	if err != nil {
+		return nil, err
+	}
+	held, err := git(r.top, "--no-optional-locks", "status", "--porcelain", "-z", "--ignored=matching", "--untracked-files=all")
+	if err != nil {
+		return nil, err
+	}
+	kinds := map[string]string{}
+	entries := strings.Split(held, "\x00")
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
+		if len(entry) < 4 {
+			continue
+		}
+		code, path := entry[:2], entry[3:]
+		switch {
+		case code == "??":
+			kinds[path] = "untracked"
+		case code == "!!":
+			kinds[path] = "ignored"
+		default:
+			kinds[path] = "modified"
+		}
+		if code[0] == 'R' || code[0] == 'C' {
+			i++ // a rename or copy is followed by the path it came from
+		}
+	}
+	var found []string
+	for _, path := range strings.Split(changed, "\x00") {
+		if path == "" {
+			continue
+		}
+		kind := kinds[path]
+		for held, heldKind := range kinds {
+			// An ignored or untracked folder is listed once, as the folder.
+			if kind == "" && strings.HasSuffix(held, "/") && strings.HasPrefix(path, held) {
+				kind = heldKind
+			}
+		}
+		if kind == "" {
+			continue
+		}
+		item := path + " (" + kind
+		if info, err := os.Stat(filepath.Join(r.top, path)); err == nil {
+			item += ", changed " + info.ModTime().Format("15:04")
+		}
+		found = append(found, item+")")
+	}
+	return found, nil
+}
+
+// pushMain pushes local main to GitHub and then looks: it returns GitHub's main as observed afterwards, which must be local main.
+func (r *repository) pushMain() (string, error) {
+	if _, err := gitNetwork(r.top, "push", "-q", r.remote, "main"); err != nil {
+		return "", err
+	}
+	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
+	if err != nil {
+		return "", fmt.Errorf("pushed, but GitHub could not be asked afterwards: %s", reason(err))
+	}
+	local, _ := git(r.top, "rev-parse", "main")
+	if fields := strings.Fields(answer); len(fields) == 0 || fields[0] != local {
+		return "", fmt.Errorf("pushed, but GitHub's main is not local main's %s afterwards", r.short(local))
+	}
+	return r.short(local), nil
 }
 
 // ownerRecord is who is running carson, as the harness says: a Claude Code session with its process; a Pi session, whose process is
-// the pi above carson; or a terminal, whose process is the shell carson runs in.
-func (m Machine) ownerRecord(task string) Record {
+// the pi above carson; or a terminal, whose process is the shell carson runs in. When that process cannot be observed, the second
+// value says so, for the start message.
+func (m Machine) ownerRecord(task string) (Record, string) {
 	record := Record{Task: task, Machine: m.Host, MachineID: m.ID, Created: time.Now().UTC()}
 	switch {
 	case m.Env("CLAUDE_CODE_SESSION_ID") != "":
@@ -215,10 +349,15 @@ func (m Machine) ownerRecord(task string) Record {
 		record.Harness = "terminal"
 		record.PID, _, _ = m.Processes.Process(m.PID)
 	}
-	if record.PID > 0 {
-		record.Started, _ = m.Processes.Started(record.PID)
+	if record.PID <= 0 {
+		return record, "No process of its session could be found, so status will show this task's owner as unknown."
 	}
-	return record
+	started, err := m.Processes.Started(record.PID)
+	if err != nil {
+		return record, fmt.Sprintf("Its process, %d, could not be observed (%s), so status will show this task's owner as unknown.", record.PID, err)
+	}
+	record.Started = started
+	return record, ""
 }
 
 // ancestor is the nearest process above carson running the command named, or 0 when there is none within reach.
