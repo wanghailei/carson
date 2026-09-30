@@ -1,4 +1,4 @@
-package carson
+package main
 
 import (
 	"os"

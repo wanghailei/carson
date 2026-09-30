@@ -1,7 +1,4 @@
-// Package carson starts, shows, lands, removes, abandons and adopts the tasks agents work on, each in its own worktree, so that local main only moves
-// forward, and only by a finished task landing (rules 11.1–11.8). It keeps no state of its own beyond one owner record per worktree,
-// runs only when called, and reports what it observed, not what it attempted.
-package carson
+package main
 
 import (
 	"errors"

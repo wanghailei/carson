@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # Releases Carson on GitHub, its one place of publication: from a clean main, level with GitHub's and checked, it builds carson for
-# macOS and Linux on arm64 and amd64, tags v<version>, and publishes a GitHub release with the downloads and their checksums.
-# Releasing any version is the master's decision (rule 10.8); run it only on that word.
-#   bin/release <version> [--dry-run]    --dry-run builds the downloads locally, and publishes nothing
+# macOS and Linux on arm64 and amd64, tags v<version> with the release notes as the tag's message, and publishes a GitHub release with
+# those notes, the downloads and their checksums. Releasing any version is the master's decision (rule 10.8); run it only on that word.
+#   bin/release <version> <notes file> [--dry-run]    --dry-run builds the downloads locally, and publishes nothing
 set -euo pipefail
 
 version="${1:-}"
+notes="${2:-}"
 dry=0
-[[ "${2:-}" == "--dry-run" ]] && dry=1
+[[ "${3:-}" == "--dry-run" ]] && dry=1
 top="$(cd "$(dirname "$0")/.." && pwd)"
+[[ -n "$notes" ]] && notes="$(cd "$(dirname "$notes")" && pwd)/$(basename "$notes")"
 cd "$top"
 say() { echo "$*"; }
 refuse() { echo "Not released: $*" >&2; exit 2; }
 
-[[ -n "$version" ]] || refuse "name the version, as in bin/release 5.0.0."
-[[ -f "docs/release-$version.md" ]] || refuse "write its release notes in docs/release-$version.md and land them first."
-code_version="$(grep -E '^const Version = ' internal/carson/carson.go | cut -d'"' -f2)"
-[[ "$version" == "$code_version" ]] || refuse "carson says it is $code_version; set const Version in internal/carson/carson.go to $version and land that first."
+[[ -n "$version" ]] || refuse "name the version and its notes, as in bin/release 5.2.0 ~/notes.md."
+[[ -f "$notes" ]] || refuse "write the release notes in a file and name it, as in bin/release $version ~/notes.md."
+code_version="$(grep -E '^const Version = ' carson.go | cut -d'"' -f2)"
+[[ "$version" == "$code_version" ]] || refuse "carson says it is $code_version; set const Version in carson.go to $version and land that first."
 [[ "$(git symbolic-ref --short -q HEAD)" == main ]] || refuse "run it from the main working tree, on main."
 [[ -z "$(git status --porcelain)" ]] || refuse "the main working tree holds changes; it must be clean."
 git fetch -q github main
@@ -30,7 +32,7 @@ for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
 	os="${target%/*}" arch="${target#*/}"
 	name="carson-$version-$os-$arch"
 	mkdir -p "$out/$name"
-	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 mise exec -- go build -trimpath -ldflags "-s -w" -o "$out/$name/carson" ./cmd/carson
+	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 mise exec -- go build -trimpath -ldflags "-s -w" -o "$out/$name/carson" .
 	cp LICENSE README.md "$out/$name/"
 	tar -C "$out" -czf "$out/$name.tar.gz" "$name"
 	say "built   $name.tar.gz"
@@ -42,9 +44,9 @@ if ((dry)); then
 	exit 0
 fi
 
-git tag -a "v$version" -m "Carson $version"
+git tag -a "v$version" -F "$notes"
 git push -q github "v$version"
-say "tagged  v$version and pushed it"
-gh release create "v$version" --repo wanghailei/carson --title "Carson $version" --notes-file "$top/docs/release-$version.md" \
+say "tagged  v$version, its notes as its message, and pushed it"
+gh release create "v$version" --repo wanghailei/carson --title "Carson $version" --notes-from-tag \
 	"$out"/carson-"$version"-*.tar.gz "$out/checksums.txt" >/dev/null
 say "released https://github.com/wanghailei/carson/releases/tag/v$version"

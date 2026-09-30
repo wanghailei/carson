@@ -69,7 +69,7 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says what s
 
 ## Building from source
 
-    go build ./cmd/carson
+    go build
 
 `bin/check` runs the formatting check, vet and the tests.
 
