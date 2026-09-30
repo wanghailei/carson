@@ -414,3 +414,10 @@ func TestAMissingMainIsSaidWithTheWayBack(t *testing.T) {
 	out, _ = f.run(f.local, stranger{}, "status")
 	expectLine(t, out, "main: at "+github+", the same as GitHub's.")
 }
+
+func TestVersionIsShown(t *testing.T) {
+	f := newFixture(t)
+	out, code := f.run(f.local, stranger{}, "--version")
+	expectCode(t, code, 0)
+	expectLine(t, out, "carson "+Version)
+}

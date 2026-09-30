@@ -1,6 +1,6 @@
 # Carson
 
-Carson is the git tool for the master's agents. Each task starts from the latest `main`, in a worktree of its own, and reaches `main` only as a finished task landing by fast-forward, so `main` only ever moves forward. Carson keeps no state of its own beyond one owner record per worktree, runs only when called, and says what it observed, "unknown" when it cannot tell.
+Carson is a git tool for coding agents that work in the same repositories at once. Each task starts from the latest `main`, in a worktree of its own, and reaches `main` only as a finished task landing by fast-forward, so `main` only ever moves forward. Carson keeps no state of its own beyond one owner record per worktree, runs only when called, and says what it observed, "unknown" when it cannot tell.
 
 ## Commands
 
@@ -17,15 +17,15 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says the st
 
 ## State
 
-Carson 5 is written in Go, with its six commands built. Not built yet: the first task of a repository with no `main`. Its design is `~/Documents/AI/design.20260929.carson-and-git.md`; the commands' names were settled with the master on 2026-09-30 and differ from the design's: `land` for its `merge`, `abandon` for `remove --abandoned`, and `adopt` for `start --existing`.
+Carson 5 is written in Go, with its six commands built. Not built yet: the first task of a repository with no `main`.
 
 ## Installing
 
-Each machine builds Carson from its own clone's `main`, into one binary on the PATH; nothing is released. With `main` level with GitHub's:
+On macOS or Linux, with Homebrew:
 
-    cd ~/Dev/carson && mise exec -- go build -o ~/.local/bin/carson ./cmd/carson
+    brew install wanghailei/tap/carson
 
-Build it on every machine that runs AGT: Claude Code's own worktrees go through `carson start` and `carson remove` by AGT's `carson-worktree` hook. To remove it, move `~/.local/bin/carson` into `~/.cache/deleted/`.
+Or download the build for your system from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH. `carson --version` says which version you have; `brew upgrade carson` brings the latest.
 
 ## Building and testing
 
@@ -38,6 +38,19 @@ Go comes from mise, pinned in `mise.toml`.
 `bin/check` runs the formatting check, vet and the tests; `carson land` runs it before a task lands.
 
 The tests run against real git repositories in temporary folders.
+
+## Releasing
+
+Releasing any version is the master's decision. With the version set in `internal/carson/carson.go` and its notes in `docs/release-<version>.md`, both landed on `main`, run from the main working tree:
+
+    bin/release <version> --dry-run
+    bin/release <version>
+
+It builds carson for macOS and Linux on arm64 and amd64, tags `v<version>`, publishes the GitHub release with the downloads and their checksums, and points the Homebrew formula in `wanghailei/homebrew-tap` at them.
+
+## Licence
+
+MIT; see `LICENSE`.
 
 ## The Ruby Carson
 

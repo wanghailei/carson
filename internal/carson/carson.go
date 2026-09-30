@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// Version is Carson's version. The major version is the master's; agents set the minor and patch versions (rule 10.8).
+const Version = "5.0.0"
+
 // Exit codes mean one thing each: done, as reported; could not finish, with the state things are left in; refused, because a rule
 // forbids it. Nothing else ever exits 0.
 const (
@@ -57,6 +60,7 @@ carson land <task>      land a finished task on main, checked, and push main to 
 carson remove <task>    remove a landed task's worktree and branch, from outside its worktree
 carson abandon <task>   keep an unfinished task's work on a branch abandoned/<task>, and remove its worktree
 carson adopt <task>     make yours an ended agent's task, abandoned work, or a branch left without a worktree
+carson --version        show carson's version
 `
 
 // Main runs carson with its arguments on machine and returns its exit code.
@@ -66,6 +70,10 @@ func Main(args []string, machine Machine) int {
 			fmt.Fprint(machine.Out, usage)
 			return done
 		}
+	}
+	if len(args) == 1 && args[0] == "--version" {
+		fmt.Fprintln(machine.Out, "carson "+Version)
+		return done
 	}
 	if len(args) == 0 || args[0] == "help" {
 		fmt.Fprint(machine.Out, usage)
