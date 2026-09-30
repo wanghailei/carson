@@ -72,23 +72,9 @@ func (m Machine) taskHere() (*repository, task, Record, error) {
 	case t.branch == "":
 		return nil, task{}, Record{}, refuse(refused, "this worktree is on a detached HEAD, not a task's branch.")
 	}
-	record, found, err := readOwner(t.admin)
-	switch {
-	case t.admin == "" || err != nil:
-		return nil, task{}, Record{}, refuse(failed, "the owner record of %s cannot be read (%v).", t.branch, err)
-	case !found:
-		return nil, task{}, Record{}, refuse(refused, "%s was made outside carson, so whose it is cannot be told; that is the master's to settle.", t.branch)
-	}
-	if me, _ := m.ownerRecord(t.branch); !sameOwner(record, me) {
-		state, why := m.livenessOf(record)
-		switch state {
-		case live:
-			return nil, task{}, Record{}, refuse(refused, "%s belongs to %s, which is live. Only its owner merges it.", t.branch, ownerName(record))
-		case ended:
-			return nil, task{}, Record{}, refuse(refused, "%s belongs to %s, which has ended. Taking it over (carson start %s --existing) is not built yet.", t.branch, ownerName(record), t.branch)
-		default:
-			return nil, task{}, Record{}, refuse(refused, "%s belongs to %s, whose state is unknown (%s). Only its owner merges it.", t.branch, ownerName(record), why)
-		}
+	record, err := m.ownRecord(t, "merges it")
+	if err != nil {
+		return nil, task{}, Record{}, err
 	}
 	return repo, t, record, nil
 }

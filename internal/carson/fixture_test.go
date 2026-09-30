@@ -117,6 +117,9 @@ var parents = map[int]struct {
 	command string
 }{900: {800, "carson"}, 800: {700, "bash"}, 700: {1, "pi"}}
 
+// Inside finds no process working inside any folder: the test's machine is idle.
+func (s stranger) Inside(dir string) ([]string, error) { return nil, nil }
+
 func (s stranger) Process(pid int) (int, string, error) {
 	if p, ok := parents[pid]; ok {
 		return p.ppid, p.command, nil

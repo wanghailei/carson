@@ -70,8 +70,7 @@ func Main(args []string, machine Machine) int {
 	case "merge":
 		return merge(machine, args[1:])
 	case "remove":
-		fmt.Fprintf(machine.Out, "carson %s: not built yet; this carson has status, start and merge. Nothing was changed.\n", args[0])
-		return failed
+		return remove(machine, args[1:])
 	default:
 		fmt.Fprintf(machine.Out, "carson: no command %q. Its commands:\n%s", args[0], usage)
 		return refused

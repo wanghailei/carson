@@ -15,7 +15,7 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says the st
 
 ## State
 
-Carson 5 is being written in Go. `status`, `start` and `merge` are built; `remove` is not built yet. Its design is `~/Documents/AI/design.20260929.carson-and-git.md`.
+Carson 5 is written in Go, with its four commands built. Not built yet: `carson start --existing`, to take up a branch again or take over an ended owner's task, and the first task of a repository with no `main`. Its design is `~/Documents/AI/design.20260929.carson-and-git.md`.
 
 ## Building and testing
 

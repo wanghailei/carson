@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 type Processes interface {
 	Started(pid int) (string, error)
 	Process(pid int) (ppid int, command string, err error)
+	Inside(dir string) ([]string, error)
 }
 
 var errNotRunning = errors.New("not running")
@@ -67,6 +69,33 @@ func (PS) Process(pid int) (int, string, error) {
 	// ps may give the command's whole path, and a path may hold spaces.
 	command := strings.Join(fields[1:], " ")
 	return ppid, command[strings.LastIndex(command, "/")+1:], nil
+}
+
+// Inside names the processes working inside dir — whose working folder is dir or below it — as "puma (pid 4121)", from lsof. carson
+// itself is left out.
+func (PS) Inside(dir string) ([]string, error) {
+	out, err := exec.Command("lsof", "-d", "cwd", "-F", "pcn").Output()
+	if len(out) == 0 && err != nil {
+		return nil, fmt.Errorf("lsof: %v", err)
+	}
+	var found []string
+	var pid, command string
+	for _, line := range strings.Split(string(out), "\n") {
+		if line == "" {
+			continue
+		}
+		switch line[0] {
+		case 'p':
+			pid, command = line[1:], ""
+		case 'c':
+			command = line[1:]
+		case 'n':
+			if path := line[1:]; (path == dir || strings.HasPrefix(path, dir+"/")) && pid != strconv.Itoa(os.Getpid()) {
+				found = append(found, fmt.Sprintf("%s (pid %s)", command, pid))
+			}
+		}
+	}
+	return found, nil
 }
 
 // liveness is whether a task's owner is still at work. Only ended is ever acted on; unknown never counts as ended.
