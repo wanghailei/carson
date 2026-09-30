@@ -90,7 +90,7 @@ func Main(args []string, machine Machine) int {
 	}
 }
 
-// repository opens the repository carson runs in, or says why it cannot.
+// repository opens the repository carson runs in, with its main, or says why it cannot.
 func (m Machine) repository() (*repository, error) {
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
@@ -98,6 +98,9 @@ func (m Machine) repository() (*repository, error) {
 	}
 	if err != nil {
 		return nil, refuse(failed, "the repository could not be read (%s).", reason(err))
+	}
+	if missing := repo.mainMissing(); missing != "" {
+		return nil, refuse(failed, "%s. Nothing was changed.", missing)
 	}
 	return repo, nil
 }

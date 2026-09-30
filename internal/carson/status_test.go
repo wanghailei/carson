@@ -44,7 +44,7 @@ func TestStatusMainTheSameAsGitHub(t *testing.T) {
 	expectCode(t, code, 0)
 	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+", the same as GitHub's.")
 	expectLine(t, out, "Main working tree: on main, clean.")
-	expectLine(t, out, "No tasks.")
+	expectLine(t, out, "No tasks under way.")
 }
 
 func TestStatusMainAheadOfGitHub(t *testing.T) {
@@ -211,7 +211,7 @@ func TestStatusRepositoryWithoutMainSaysTaskStateUnknown(t *testing.T) {
 	f.git(f.local, "worktree", "add", "-q", dir, "-b", "task", "master")
 	f.commit(dir, "work.txt")
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "main: this repository has no main yet.")
+	expectLine(t, out, "main: local main is missing, though GitHub's main is at "+f.short(f.local, "refs/remotes/github/main")+" here; bring it back with: git branch main github/main.")
 	expectLine(t, out, "task at "+dir+": state unknown (")
 	expectNoLine(t, out, "landed and clean")
 }
@@ -395,4 +395,21 @@ func TestTwoPiSessionsAreToldApart(t *testing.T) {
 	if a == b || a != "Pi session 01a0f196-aa18 on test-mac" {
 		t.Errorf("%q and %q", a, b)
 	}
+}
+
+// From the third trial: with main deleted (by carson remove MAIN, before it was fixed), every command answered in git's raw words.
+func TestAMissingMainIsSaidWithTheWayBack(t *testing.T) {
+	f := newFixture(t)
+	f.startTask("fix-login")
+	github := f.short(f.local, "refs/remotes/github/main")
+	f.git(f.local, "update-ref", "-d", "refs/heads/main")
+	missing := "local main is missing, though GitHub's main is at " + github + " here; bring it back with: git branch main github/main"
+	out, _ := f.run(f.local, stranger{}, "status")
+	expectLine(t, out, "main: "+missing+".")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not removed: "+missing+". Nothing was changed.")
+	f.git(f.local, "branch", "main", "github/main")
+	out, _ = f.run(f.local, stranger{}, "status")
+	expectLine(t, out, "main: at "+github+", the same as GitHub's.")
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -77,11 +78,34 @@ func (r *repository) count(revisions string) (int, error) {
 	return strconv.Atoi(out)
 }
 
+// hasBranch is whether a branch has exactly this name. On a folder that ignores case, git also finds refs/heads/MAIN as the file of
+// refs/heads/main, so asking git for the name is not enough: the names it lists are compared.
+func (r *repository) hasBranch(name string) bool {
+	out, err := git(r.top, "for-each-ref", "--format=%(refname)", "refs/heads/"+name)
+	return err == nil && slices.Contains(lines(out), "refs/heads/"+name)
+}
+
+// mainMissing says why local main is not there — lost, when this machine knows GitHub's main, or never made — or "" when it is.
+func (r *repository) mainMissing() string {
+	if r.hasBranch("main") {
+		return ""
+	}
+	if r.remote != "" {
+		if github, err := git(r.top, "rev-parse", "--verify", "-q", "refs/remotes/"+r.remote+"/main"); err == nil {
+			return fmt.Sprintf("local main is missing, though GitHub's main is at %s here; bring it back with: git branch main %s/main", r.short(github), r.remote)
+		}
+	}
+	return "this repository has no main yet"
+}
+
 // mainAgainstGitHub says where local main is and how it stands against GitHub's main, asked with ls-remote, which changes nothing here.
 func (r *repository) mainAgainstGitHub() string {
+	if missing := r.mainMissing(); missing != "" {
+		return "main: " + missing + "."
+	}
 	local, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/main")
 	if err != nil {
-		return "main: this repository has no main yet."
+		return "main: where it is cannot be read (" + reason(err) + ")."
 	}
 	here := "main: at " + r.short(local)
 	if r.remote == "" {

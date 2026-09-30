@@ -51,7 +51,7 @@ func (m Machine) removeTask(name string, abandoned bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if name == "main" || name == "master" {
+	if strings.EqualFold(name, "main") || strings.EqualFold(name, "master") {
 		return nil, refuse(refused, "%s is a trunk's name, not a task's.", name)
 	}
 	t, on, found := repo.task(name)
@@ -209,7 +209,7 @@ func (m Machine) ownRecord(t task, verb string) (Record, error) {
 // removeLeftoverBranch removes a branch that has no worktree and whose work is all on main: nothing is lost but the name. With abandoned,
 // a branch holding work main lacks is kept as abandoned/<name> instead.
 func (r *repository) removeLeftoverBranch(name string, abandoned bool) ([]string, error) {
-	if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); err != nil {
+	if !r.hasBranch(name) {
 		return nil, refuse(refused, "no task or branch is named %s.", name)
 	}
 	if r.worktrees[0].branch == name {
@@ -332,7 +332,7 @@ func offBranch(t task, on, command string) error {
 func (r *repository) freeBranch(name string) string {
 	free := name
 	for n := 2; ; n++ {
-		if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/"+free); err != nil {
+		if !r.hasBranch(free) {
 			return free
 		}
 		free = name + "-" + strconv.Itoa(n)

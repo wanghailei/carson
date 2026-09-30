@@ -36,7 +36,7 @@ func status(m Machine, args []string) int {
 func (m Machine) showTasks(repo *repository) {
 	tasks := repo.tasks()
 	if len(tasks) == 0 {
-		fmt.Fprintln(m.Out, "No tasks.")
+		fmt.Fprintln(m.Out, "No tasks under way.")
 		return
 	}
 	var headings, unowned []string

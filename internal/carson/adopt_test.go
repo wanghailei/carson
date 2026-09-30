@@ -102,7 +102,7 @@ func TestAdoptRefusesABranchWithNothingMainLacks(t *testing.T) {
 	f.git(f.local, "branch", "abandoned/fix-login")
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not adopted: branch fix-login holds nothing main lacks, and its name stands in the way of the abandoned work on abandoned/fix-login. Remove it with carson remove fix-login, then adopt again.")
+	expectLine(t, out, "Not adopted: branch fix-login holds nothing main lacks, and its name stands in the way of the abandoned work on abandoned/fix-login. Remove it with carson remove fix-login, then adopt again to take up that work.")
 }
 
 func TestAdoptRefusesWhatIsNotThere(t *testing.T) {
@@ -133,9 +133,64 @@ func TestReplaceOwnerLetsOnlyOneAdopterWin(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Rename(filepath.Join(admin, ownerFile), filepath.Join(admin, ownerFile+".1.old")) // the other adopter's step
-	if err := replaceOwner(admin, claude("fix-login", 4121)); err != errOwned {
+	if err := replaceOwner(admin, claude("fix-login", 5000), claude("fix-login", 4121)); err != errOwned {
 		t.Errorf("the second adopter got %v", err)
 	}
+}
+
+// From the review of 36da910: an adopter coming after another has finished must not replace the winner's record.
+func TestReplaceOwnerRefusesAfterAnotherAdopterFinished(t *testing.T) {
+	admin := t.TempDir()
+	ended := claude("fix-login", 5000)
+	createOwner(admin, ended)
+	first := claude("fix-login", 4121)
+	first.Session = "11111111-first"
+	if err := replaceOwner(admin, ended, first); err != nil {
+		t.Fatal(err)
+	}
+	second := claude("fix-login", 6000)
+	second.Session = "22222222-second"
+	if err := replaceOwner(admin, ended, second); err != errOwned {
+		t.Errorf("the later adopter got %v", err)
+	}
+	if record, _, _ := readOwner(admin); record.Session != "11111111-first" {
+		t.Errorf("the record is now %+v", record)
+	}
+}
+
+// From the review of 36da910: an ended agent's task whose folder is gone could be neither adopted, abandoned nor removed.
+func TestAdoptAnEndedAgentsTaskWhoseFolderIsGone(t *testing.T) {
+	f := newFixture(t)
+	dir := f.otherSession("fix-login")
+	f.commit(dir, "login.rb")
+	os.RemoveAll(dir)
+	out, code := f.adopt(claudeRunning, "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Adopted fix-login from Claude session 4e7a91d2-other on test-mac, which has ended. Its worktree folder, "+dir+", is gone: keep its 1 commit with: carson abandon fix-login")
+	out, code = f.abandon("fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Abandoned fix-login: its work — 1 commit — is kept as branch abandoned/fix-login")
+}
+
+// From the review of 36da910: "then adopt again" was said with no abandoned work to adopt.
+func TestAdoptSaysThereIsNothingToAdopt(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "branch", "fix-login")
+	out, code := f.adopt(claudeRunning, "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not adopted: branch fix-login holds nothing main lacks, so there is nothing to adopt. Remove it with: carson remove fix-login")
+}
+
+// From the review of 36da910: adoption dropped the landed mark, which the branch's unchanged tip still earns.
+func TestAdoptKeepsTheLandedMark(t *testing.T) {
+	f := newFixture(t)
+	dir := f.worktree("fix-login")
+	record := claude("fix-login", 5000)
+	record.Landed = f.git(f.local, "rev-parse", "main")
+	f.own(dir, record)
+	f.adopt(claudeRunning, "fix-login")
+	out, _ := f.run(f.local, stranger{}, "status")
+	expectLine(t, out, "fix-login at "+dir+": landed and clean.")
 }
 
 // From the third trial: a landed task that is already yours was answered "work there", where the next step is to remove it.

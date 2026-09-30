@@ -43,10 +43,11 @@ func createOwner(admin string, record Record) error {
 	return createRecordFile(filepath.Join(admin, ownerFile), record)
 }
 
-// replaceOwner replaces a worktree's owner record with record, for an adoption. The old record is moved aside in one step that only one
-// session can make, so of two sessions adopting the same task exactly one succeeds and the other gets errOwned; if the new record then
-// cannot be written, the old one is put back.
-func replaceOwner(admin string, record Record) error {
+// replaceOwner replaces a worktree's owner record, judged ended, with record, for an adoption. The record there is moved aside in one
+// step that only one session can make, and kept only if it is the one judged: of two sessions adopting the same task exactly one
+// succeeds, and the other gets errOwned, whether it comes while the first is adopting or after. If the new record then cannot be
+// written, the old one is put back.
+func replaceOwner(admin string, judged, record Record) error {
 	path := filepath.Join(admin, ownerFile)
 	aside := path + "." + strconv.Itoa(os.Getpid()) + ".old"
 	if err := os.Rename(path, aside); err != nil {
@@ -55,6 +56,10 @@ func replaceOwner(admin string, record Record) error {
 		}
 		return err
 	}
+	if moved, found, err := readRecordFile(aside); err != nil || !found || !sameRecord(moved, judged) {
+		os.Rename(aside, path)
+		return errOwned
+	}
 	if err := createRecordFile(path, record); err != nil {
 		if os.Link(aside, path) == nil {
 			os.Remove(aside)
@@ -62,6 +67,11 @@ func replaceOwner(admin string, record Record) error {
 		return err
 	}
 	return os.Remove(aside)
+}
+
+// sameRecord is whether two records are one: the same session's process, recorded at the same moment.
+func sameRecord(a, b Record) bool {
+	return a.Session == b.Session && a.PID == b.PID && a.Started == b.Started && a.Created.Equal(b.Created)
 }
 
 // writeOwner replaces a worktree's owner record.

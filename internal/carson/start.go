@@ -97,8 +97,12 @@ func (m Machine) prepare(name string) (string, *repository, error) {
 	if err != nil {
 		return "", nil, refuse(failed, "the repository could not be read (%s).", reason(err))
 	}
-	if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/main"); err != nil {
+	switch missing := repo.mainMissing(); missing {
+	case "":
+	case "this repository has no main yet":
 		return "", nil, refuse(failed, "this repository has no main yet; starting its first task is not built yet. Nothing was changed.")
+	default:
+		return "", nil, refuse(failed, "%s. Nothing was changed.", missing)
 	}
 	if remotes, err := git(repo.top, "remote"); err == nil && slices.Contains(lines(remotes), name) {
 		return "", nil, refuse(refused, "%s is a remote's name, not a task's: git could not tell the two apart.", name)

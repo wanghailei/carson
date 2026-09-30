@@ -483,3 +483,29 @@ func TestFreeFolderNeverSharesAFolder(t *testing.T) {
 		t.Errorf("second: %q, %v", second, err)
 	}
 }
+
+// From the third trial (Grok): on a folder that ignores case, refs/heads/MAIN is the file of refs/heads/main, and carson remove MAIN
+// deleted main.
+func TestRemoveNeverTakesAnotherCaseForABranch(t *testing.T) {
+	f := newFixture(t)
+	for _, name := range []string{"MAIN", "Main", "MASTER"} {
+		out, code := f.remove(name)
+		expectCode(t, code, 2)
+		expectLine(t, out, "Not removed: "+name+" is a trunk's name, not a task's.")
+	}
+	f.git(f.local, "branch", "fix-login")
+	for _, command := range []string{"remove", "abandon"} {
+		out, code := f.runIn(inClaude, f.local, claudeRunning, command, "Fix-Login")
+		expectCode(t, code, 2)
+		expectLine(t, out, "Not ")
+		if !strings.Contains(out, "no task or branch is named Fix-Login.") {
+			t.Errorf("carson %s Fix-Login:\n%s", command, out)
+		}
+	}
+	if _, err := git(f.local, "rev-parse", "--verify", "-q", "refs/heads/main"); err != nil {
+		t.Error("main was deleted")
+	}
+	if f.git(f.local, "branch", "--list", "fix-login") == "" {
+		t.Error("fix-login was deleted")
+	}
+}

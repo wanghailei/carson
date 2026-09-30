@@ -65,18 +65,19 @@ func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error)
 	case unknown:
 		return nil, refuse(refused, "%s belongs to %s, whose state is unknown (%s); only an agent seen to have ended gives up its task.", name, ownerName(record), why)
 	}
-	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
-		return nil, refuse(refused, "%s's worktree folder, %s, is gone, so the task cannot be adopted where it is; that is the master's to settle.", name, t.path)
-	}
 	previous := record
 	previous.Previous = nil
 	me.Previous = append(record.Previous, previous)
-	err = replaceOwner(t.admin, me)
+	me.Landed = record.Landed
+	err = replaceOwner(t.admin, record, me)
 	if errors.Is(err, errOwned) {
 		return nil, refuse(refused, "%s was adopted meanwhile by another session.", name)
 	}
 	if err != nil {
 		return nil, refuse(failed, "the owner record of %s could not be replaced (%v); it is left as it was.", name, err)
+	}
+	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
+		return repo.adoptedWithoutFolder(t, record), nil
 	}
 	said := []string{fmt.Sprintf("Adopted %s from %s, which has ended: its worktree at %s is yours now, as it was left.", name, ownerName(record), t.path)}
 	if on != "" {
@@ -91,13 +92,12 @@ func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error)
 // takeUp makes work declared abandoned, or a branch left without a worktree, the running session's task, in a new worktree beside the
 // repository. Abandoned work's branch takes the task's name again. Every check comes before any change.
 func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
-	_, noBranch := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/"+name)
-	_, noAbandoned := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/abandoned/"+name)
-	if noBranch != nil && noAbandoned != nil {
+	hasBranch, hasAbandoned := repo.hasBranch(name), repo.hasBranch("abandoned/"+name)
+	if !hasBranch && !hasAbandoned {
 		return nil, refuse(refused, "no task or branch is named %s, and no abandoned work either. Start it with: carson start %s", name, name)
 	}
 	from := name
-	if noBranch != nil {
+	if !hasBranch {
 		from = "abandoned/" + name
 	}
 	ahead, err := repo.count("main.." + from)
@@ -105,11 +105,10 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed.", from, reason(err))
 	}
 	if ahead == 0 && from == name {
-		blocks := ""
-		if noAbandoned == nil {
-			blocks = fmt.Sprintf(", and its name stands in the way of the abandoned work on abandoned/%s", name)
+		if hasAbandoned {
+			return nil, refuse(refused, "branch %s holds nothing main lacks, and its name stands in the way of the abandoned work on abandoned/%s. Remove it with carson remove %s, then adopt again to take up that work.", name, name, name)
 		}
-		return nil, refuse(refused, "branch %s holds nothing main lacks%s. Remove it with carson remove %s, then adopt again.", name, blocks, name)
+		return nil, refuse(refused, "branch %s holds nothing main lacks, so there is nothing to adopt. Remove it with: carson remove %s", name, name)
 	}
 	home := m.Env("HOME")
 	if !filepath.IsAbs(home) {
@@ -144,11 +143,25 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 		what = fmt.Sprintf("its abandoned work, %s not on main, now back on branch %s,", plural(ahead, "commit"), name)
 	}
 	said := []string{fmt.Sprintf("Adopted %s: %s is in %s, owned by %s.", name, what, folder, ownerName(record))}
-	if from == name && noAbandoned == nil {
+	if from == name && hasAbandoned {
 		said = append(said, fmt.Sprintf("Earlier work on %s, declared abandoned, is still kept as branch abandoned/%s.", name, name))
 	}
 	if unobserved != "" {
 		said = append(said, unobserved)
 	}
 	return said, nil
+}
+
+// adoptedWithoutFolder says what an adopted task whose worktree folder is gone holds, and the one way on: to keep its commits as
+// abandoned work, or, when main holds them all, to remove it.
+func (r *repository) adoptedWithoutFolder(t task, previous Record) []string {
+	said := fmt.Sprintf("Adopted %s from %s, which has ended. Its worktree folder, %s, is gone", t.branch, ownerName(previous), t.path)
+	ahead, err := r.count("main.." + t.branch)
+	switch {
+	case err != nil:
+		return []string{fmt.Sprintf("%s, and what its branch holds against main cannot be read (%s).", said, reason(err))}
+	case ahead > 0:
+		return []string{fmt.Sprintf("%s: keep its %s with: carson abandon %s", said, plural(ahead, "commit"), t.branch)}
+	}
+	return []string{fmt.Sprintf("%s, and main holds all its work: remove it with: carson remove %s", said, t.branch)}
 }
