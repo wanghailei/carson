@@ -42,7 +42,7 @@ Download the build for your system — macOS or Linux, arm64 or amd64 — from t
 
 ```
 $ carson start xyz
-⧓ Started xyz from local main at 4d4d3e0 in ~/.worktrees/code/notes/xyz, owned by Claude session 4e7a91d2-b1c0 on studio.
+⧓ Started xyz from local main at 4d4d3e0 in ~/.worktrees/code/notes/xyz, owned by Claude session 4e7a91d2-b1c0.
 
 $ cd ~/.worktrees/code/notes/xyz      # work, test, commit
 
