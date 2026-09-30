@@ -13,10 +13,18 @@ import (
 	"time"
 )
 
-// gitError is a git command that failed, with git's own first line of explanation.
+// gitError is a git command that failed, with git's own explanation. cut marks a call to GitHub stopped before git finished —
+// interrupted, or given up on at the time limit — after which what reached GitHub is unknown.
 type gitError struct {
 	args    []string
 	message string
+	cut     bool
+}
+
+// wasCut is whether err is a call to GitHub stopped before git finished.
+func wasCut(err error) bool {
+	var failure *gitError
+	return errors.As(err, &failure) && failure.cut
 }
 
 func (e *gitError) Error() string {
@@ -57,9 +65,9 @@ func gitNetwork(dir string, args ...string) (string, error) {
 	case err == nil:
 		return out, nil
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return out, &gitError{args: args, message: "no answer within " + networkLimit.String()}
+		return out, &gitError{args: args, message: "no answer within " + networkLimit.String(), cut: true}
 	case interrupted.Err() != nil:
-		return out, &gitError{args: args, message: "interrupted"}
+		return out, &gitError{args: args, message: "interrupted", cut: true}
 	default:
 		return out, err
 	}
@@ -78,13 +86,25 @@ func run(command *exec.Cmd, args []string) (string, error) {
 		err = nil
 	}
 	if err != nil {
-		message := firstLine(errs.String())
+		message := explanation(errs.String())
 		if message == "" {
 			message = err.Error()
 		}
 		return strings.TrimRight(out.String(), "\n"), &gitError{args: args, message: message}
 	}
 	return strings.TrimRight(out.String(), "\n"), nil
+}
+
+// explanation is the line of git's error output that says what went wrong: the first that is an error, a fatal one, or a refusal
+// ("! [rejected]"), before any line naming the remote or hinting; else the first line.
+func explanation(stderr string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "error:") || strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "!") {
+			return line
+		}
+	}
+	return firstLine(stderr)
 }
 
 func firstLine(text string) string {

@@ -120,6 +120,41 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 }
 
+// mainTreeBranch is the branch the main working tree has checked out, or "a detached HEAD".
+func (r *repository) mainTreeBranch() string {
+	branch, err := git(r.top, "symbolic-ref", "--short", "-q", "HEAD")
+	if err != nil || branch == "" {
+		return "a detached HEAD"
+	}
+	return branch
+}
+
+// fetchMain fetches GitHub's main into its tracking reference, which it returns.
+func (r *repository) fetchMain() (string, error) {
+	tracking := "refs/remotes/" + r.remote + "/main"
+	_, err := gitNetwork(r.top, "fetch", "-q", r.remote, "+refs/heads/main:"+tracking)
+	return tracking, err
+}
+
+// aheadBehind counts the commits local main has that tracking lacks, and those tracking has that local main lacks.
+func (r *repository) aheadBehind(tracking string) (ahead, behind int, err error) {
+	if ahead, err = r.count(tracking + "..main"); err != nil {
+		return 0, 0, err
+	}
+	behind, err = r.count("main.." + tracking)
+	return ahead, behind, err
+}
+
+// forwardMain brings local main forward to target by fast-forward in the main working tree, never over what that tree holds: it
+// returns the files that would be overwritten, touching nothing, or git's failure.
+func (r *repository) forwardMain(target string) (inTheWay []string, err error) {
+	if inTheWay, err = r.inTheWay(target); err != nil || len(inTheWay) > 0 {
+		return inTheWay, err
+	}
+	_, err = git(r.top, "merge", "--ff-only", "-q", target)
+	return nil, err
+}
+
 // changes lists what a working tree holds that its commit does not, each untracked file on its own. It takes no lock, so it never
 // rewrites the index under an agent at work there.
 func changes(dir string) ([]string, error) {

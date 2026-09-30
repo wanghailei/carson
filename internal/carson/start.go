@@ -232,19 +232,16 @@ func (r *repository) latestMain() ([]string, error) {
 		}
 		return []string{"GitHub had no main; local main is pushed there, and GitHub's main is now " + now + "."}, nil
 	}
-	tracking := "refs/remotes/" + r.remote + "/main"
-	if _, err := gitNetwork(r.top, "fetch", "-q", r.remote, "+refs/heads/main:"+tracking); err != nil {
+	tracking, err := r.fetchMain()
+	if err != nil {
 		return nil, refuse(failed, "GitHub's main could not be fetched (%s): the latest main cannot be known. Nothing was changed.", reason(err))
 	}
 	const fetched = "GitHub's main was fetched; nothing else was changed."
-	ahead, err := r.count(tracking + "..main")
-	if err == nil {
-		var behind int
-		if behind, err = r.count("main.." + tracking); err == nil {
-			return r.bringUpToDate(tracking, ahead, behind, fetched)
-		}
+	ahead, behind, err := r.aheadBehind(tracking)
+	if err != nil {
+		return nil, refuse(failed, "how local main stands against GitHub's is unknown (%s). %s", reason(err), fetched)
 	}
-	return nil, refuse(failed, "how local main stands against GitHub's is unknown (%s). %s", reason(err), fetched)
+	return r.bringUpToDate(tracking, ahead, behind, fetched)
 }
 
 func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched string) ([]string, error) {
@@ -257,26 +254,23 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched s
 		if errors.As(err, &unchecked) {
 			return nil, refuse(failed, "local main was pushed, but %s. GitHub's main had been fetched first; nothing else was changed.", unchecked.why)
 		}
+		if wasCut(err) {
+			return nil, refuse(failed, "local main holds %s GitHub lacked, and whether the push reached GitHub is unknown (%s). GitHub's main had been fetched first; nothing else was changed.", plural(ahead, "commit"), reason(err))
+		}
 		if err != nil {
 			return nil, refuse(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s", plural(ahead, "commit"), reason(err), fetched)
 		}
 		return []string{fmt.Sprintf("Pushed %s of local main that GitHub lacked; GitHub's main is now %s.", plural(ahead, "commit"), now)}, nil
 	case behind > 0:
-		if branch, _ := git(r.top, "symbolic-ref", "--short", "-q", "HEAD"); branch != "main" {
-			if branch == "" {
-				branch = "a detached HEAD"
-			}
+		if branch := r.mainTreeBranch(); branch != "main" {
 			return nil, refuse(refused, "GitHub's main is %s ahead, and the main working tree is on %s, not main, so local main cannot be brought forward there. %s", plural(behind, "commit"), branch, fetched)
 		}
-		inTheWay, err := r.inTheWay(tracking)
-		if err != nil {
-			return nil, refuse(failed, "what the main working tree holds could not be read (%s), so local main is not brought forward over it. %s", reason(err), fetched)
-		}
+		inTheWay, err := r.forwardMain(tracking)
 		if len(inTheWay) > 0 {
 			return nil, refuse(refused, "bringing local main forward would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s", strings.Join(inTheWay, ", "), fetched)
 		}
-		if _, err := git(r.top, "merge", "--ff-only", "-q", tracking); err != nil {
-			return nil, refuse(refused, "local main could not be brought forward to GitHub's in the main working tree (%s). %s", reason(err), fetched)
+		if err != nil {
+			return nil, refuse(failed, "local main could not be brought forward to GitHub's in the main working tree (%s). %s", reason(err), fetched)
 		}
 		return []string{fmt.Sprintf("Local main was %s behind GitHub's and is brought forward to it.", plural(behind, "commit"))}, nil
 	}
