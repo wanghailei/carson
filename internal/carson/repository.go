@@ -210,6 +210,7 @@ type worktree struct {
 	head     string
 	branch   string // "" for a detached HEAD
 	prunable string // git's reason when it cannot find the worktree's checkout; "" when it can
+	locked   string // git's reason for a lock on the worktree, "no reason given" when it has none; "" when it is not locked
 }
 
 func parseWorktrees(list string) []worktree {
@@ -225,6 +226,11 @@ func parseWorktrees(list string) []worktree {
 				w.head = value
 			case "branch":
 				w.branch = strings.TrimPrefix(value, "refs/heads/")
+			case "locked":
+				w.locked = value
+				if w.locked == "" {
+					w.locked = "no reason given"
+				}
 			case "prunable":
 				w.prunable = value
 				if w.prunable == "" {

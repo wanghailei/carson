@@ -279,7 +279,7 @@ func TestRemoveAbandonedATaskWhoseFolderIsGone(t *testing.T) {
 	os.RemoveAll(dir)
 	out, code := f.remove("fix-login", "--abandoned")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Removed fix-login's worktree, its task declared abandoned. Its work — 1 commit — is kept as branch abandoned/fix-login at "+f.short(f.local, "abandoned/fix-login")+".")
+	expectLine(t, out, "Removed fix-login's worktree (its folder was already gone), its task declared abandoned. Its work — 1 commit — is kept as branch abandoned/fix-login at "+f.short(f.local, "abandoned/fix-login")+".")
 	if strings.Contains(f.git(f.local, "worktree", "list"), "fix-login") {
 		t.Error("git still records the worktree")
 	}
@@ -351,4 +351,68 @@ func TestRemoveSaysWhereThingsStandWhenGitDeletesOnlyPartOfTheFolder(t *testing.
 	out, code = f.remove("fix-login")
 	expectCode(t, code, 0)
 	expectLine(t, out, "Removed the leftover branch fix-login: it had no worktree, and its work is on main.")
+}
+
+// Cases from the re-review of 2d9450a, each staged there against it.
+
+func TestRemoveRefusesATaskWorktreeOffItsBranch(t *testing.T) {
+	f := newFixture(t)
+	dir := f.mergedTask("fix-login")
+	f.git(dir, "switch", "-q", "--detach")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not removed: fix-login's worktree at "+dir+" is on a detached HEAD, not its branch. Switch it back there with git switch fix-login, then run carson remove again.")
+	if f.git(f.local, "branch", "--list", "fix-login") == "" {
+		t.Error("the branch was deleted")
+	}
+}
+
+func TestRemoveAbandonedChangesNothingWhenTheCommitIsRefused(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, "draft.txt", "half done\n")
+	hooks := filepath.Join(f.root, "hooks")
+	os.MkdirAll(hooks, 0o755)
+	os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\necho 'commit check: refused' >&2\nexit 1\n"), 0o755)
+	f.git(f.local, "config", "core.hooksPath", hooks)
+	out, code := f.remove("fix-login", "--abandoned")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not removed: what was uncommitted could not be committed (commit check: refused). Its files are left as they are, none of them staged, on branch fix-login; run carson remove fix-login --abandoned again once that is cleared.")
+	if f.git(dir, "status", "--porcelain") != "?? draft.txt" || f.git(f.local, "branch", "--list", "abandoned/fix-login") != "" {
+		t.Errorf("something was changed: %q", f.git(dir, "status", "--porcelain"))
+	}
+}
+
+func TestRemoveRefusesALockedWorktree(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, ".gitignore", "local.env\n")
+	f.git(dir, "add", ".gitignore")
+	f.git(dir, "commit", "-q", "-m", "ignore local.env")
+	f.merge(dir)
+	f.write(dir, "local.env", "SECRET=kept\n")
+	f.git(f.local, "worktree", "lock", "--reason", "on a slow disk", dir)
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not removed: fix-login's worktree is locked (on a slow disk). If the lock is no longer wanted: git worktree unlock "+dir+", then run carson remove again.")
+	if !f.exists(filepath.Join(dir, "local.env")) {
+		t.Error("the ignored file was moved")
+	}
+}
+
+func TestRemoveRefusesWhileTheMainWorkingTreeIsOffMain(t *testing.T) {
+	f := newFixture(t)
+	f.mergedTask("fix-login")
+	f.git(f.local, "switch", "-q", "--detach", "main~1")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not removed: the main working tree is on a detached HEAD, not main, so git cannot safely delete branch fix-login. Switch it back to main, then run carson remove again.")
+}
+
+func TestRemoveRefusesWithoutAHome(t *testing.T) {
+	f := newFixture(t)
+	f.mergedTask("fix-login")
+	out, code := f.runIn(environment{"HOME": "", "CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "4121"}, f.local, claudeRunning, "remove", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not removed: HOME does not name a folder, so the worktree's ignored files would have nowhere to be kept. Nothing was changed.")
 }
