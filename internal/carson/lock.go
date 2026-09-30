@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -20,7 +21,7 @@ func (r *repository) lockMerge(m Machine, task string) (release func(), note str
 	if started, err := m.Processes.Started(m.PID); err == nil {
 		holder.Started = started
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := 0; attempt < 4; attempt++ {
 		err := createRecordFile(path, holder)
 		if err == nil {
 			return func() {
@@ -46,10 +47,20 @@ func (r *repository) lockMerge(m Machine, task string) (release func(), note str
 		case unknown:
 			return nil, "", refuse(failed, "the merge lock is held by %s's merge, by %s, whose state is unknown (%s). Nothing was changed.", held.Task, ownerName(held), why)
 		}
-		// The carson that held it has ended: its lock is only a leftover.
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, "", refuse(failed, "the merge lock left by an ended carson could not be cleared (%v). Nothing was changed.", err)
+		// The carson that held it has ended: its lock is only a leftover. It is moved aside rather than removed, and only when the file
+		// moved is the one judged stale is it cleared — so two carsons clearing the same leftover never clear each other's new lock.
+		aside := path + "." + strconv.Itoa(os.Getpid()) + ".stale"
+		if err := os.Rename(path, aside); err != nil {
+			continue // another carson moved it first; look again
 		}
+		moved, _, err := readRecordFile(aside)
+		if err != nil || moved.PID != held.PID || !moved.Created.Equal(held.Created) {
+			// A fresh lock was moved by mistake: put it back where it was, unless another has been taken meanwhile.
+			os.Link(aside, path)
+			os.Remove(aside)
+			continue
+		}
+		os.Remove(aside)
 		note = "The merge lock left by an ended carson (" + held.Task + ", by " + ownerName(held) + ") is taken over."
 	}
 	return nil, "", refuse(failed, "the merge lock could not be taken; another merge keeps taking it. Nothing was changed.")
