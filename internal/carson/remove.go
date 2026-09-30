@@ -225,13 +225,13 @@ func (r *repository) removeLeftoverBranch(name string, abandoned bool) ([]string
 	case err != nil:
 		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed.", name, reason(err))
 	case strings.HasPrefix(name, "abandoned/"):
-		return nil, refuse(refused, "branch %s holds the work of a task declared abandoned, %s not on main, and carson keeps it. To take it up again: git worktree add <folder> %s", name, plural(ahead, "commit"), name)
+		return nil, refuse(refused, "branch %s holds the work of a task declared abandoned, %s not on main, and carson keeps it. %s", name, plural(ahead, "commit"), takeUp)
 	case abandoned && ahead > 0:
 		kept := r.freeBranch("abandoned/" + name)
 		if _, err := git(r.top, "branch", "-m", name, kept); err != nil {
 			return nil, refuse(failed, "branch %s could not be renamed %s (%s). Nothing was changed.", name, kept, reason(err))
 		}
-		return []string{fmt.Sprintf("Kept the leftover branch %s, its task declared abandoned, as branch %s at %s (%s not on main). To take it up again: git worktree add <folder> %s", name, kept, r.short(kept), plural(ahead, "commit"), kept)}, nil
+		return []string{fmt.Sprintf("Kept the leftover branch %s, its task declared abandoned, as branch %s at %s (%s not on main). %s", name, kept, r.short(kept), plural(ahead, "commit"), takeUp)}, nil
 	case abandoned:
 		return nil, refuse(refused, "branch %s holds nothing main lacks, so there is nothing to keep; remove it with: carson remove %s", name, name)
 	case ahead > 0:
@@ -311,9 +311,12 @@ func (r removal) abandon(m Machine) ([]string, error) {
 	if r.gone {
 		worktree += " (its folder was already gone)"
 	}
-	result := fmt.Sprintf("Removed %s, its task declared abandoned. Its work — %s — is kept as branch %s at %s. To take it up again: git worktree add <folder> %s", worktree, what, kept, r.repo.short(kept), kept)
+	result := fmt.Sprintf("Removed %s, its task declared abandoned. Its work — %s — is kept as branch %s at %s. %s", worktree, what, kept, r.repo.short(kept), takeUp)
 	return append([]string{result}, said...), nil
 }
+
+// takeUp says how an abandoned task is taken up again. A worktree added by hand would be one carson neither owns nor merges.
+const takeUp = "Taking it up again (carson start --existing) is not built yet."
 
 // freeBranch is name, or when a branch already has that name, the first of name-2, name-3 … that none has.
 func (r *repository) freeBranch(name string) string {

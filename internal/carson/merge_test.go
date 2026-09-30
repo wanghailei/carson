@@ -159,7 +159,7 @@ func TestMergeRefusesAnotherSessionsTask(t *testing.T) {
 	f.commit(dir, "login.rb")
 	out, code := f.runIn(inClaude, dir, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "merge")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fix-login belongs to Claude session 4e7a91d2 on test-mac, which is live. Only its owner merges it.")
+	expectLine(t, out, "Not merged: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner merges it.")
 }
 
 func TestMergeRefusesInTheMainWorkingTree(t *testing.T) {
@@ -268,10 +268,10 @@ func TestMergeRefusesWhileALiveMergeHoldsTheLockAndTakesOverAStaleOne(t *testing
 	running := stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}
 	out, code := f.runIn(inClaude, dir, running, "merge")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: another merge is running in this repository — other-task, by Claude session 4e7a91d2 on test-mac. Run carson merge again when it has finished. Nothing was changed.")
+	expectLine(t, out, "Not merged: another merge is running in this repository — other-task, by Claude session 4e7a91d2-other on test-mac. Run carson merge again when it has finished. Nothing was changed.")
 	out, code = f.merge(dir) // process 5000 has ended
 	expectCode(t, code, 0)
-	expectLine(t, out, "The merge lock left by an ended carson (other-task, by Claude session 4e7a91d2 on test-mac) is taken over.")
+	expectLine(t, out, "The merge lock left by an ended carson (other-task, by Claude session 4e7a91d2-other on test-mac) is taken over.")
 	if f.exists(lock) {
 		t.Error("the merge lock was not released")
 	}
@@ -454,7 +454,7 @@ func TestMergeRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
 	writeRecordFile(lock, Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "x", Machine: "linux-box", MachineID: "linux-id"})
 	out, code := f.merge(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: the merge lock is held by other-task's merge, by Claude session 4e7a91d2 on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed.")
+	expectLine(t, out, "Not merged: the merge lock is held by other-task's merge, by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed.")
 }
 
 // From the review of fdb5297: a task already on local main, and a re-run over a join already made.

@@ -70,6 +70,9 @@ func start(m Machine, args []string) int {
 	if unobserved != "" {
 		fmt.Fprintln(m.Out, unobserved)
 	}
+	if _, err := git(repo.top, "rev-parse", "--verify", "-q", "refs/heads/abandoned/"+name); err == nil {
+		fmt.Fprintf(m.Out, "Earlier work on %s, declared abandoned, is kept as branch abandoned/%s; this task starts afresh from main.\n", name, name)
+	}
 	if added != nil {
 		return failed
 	}
@@ -432,6 +435,15 @@ func ownerName(record Record) string {
 	if record.Harness == "terminal" {
 		return fmt.Sprintf("a terminal, process %d, on %s", record.PID, record.Machine)
 	}
-	session, _, _ := strings.Cut(record.Session, "-")
-	return fmt.Sprintf("%s session %s on %s", capitalised(record.Harness), session, record.Machine)
+	return fmt.Sprintf("%s session %s on %s", capitalised(record.Harness), shortSession(record.Session), record.Machine)
+}
+
+// shortSession is a session identity's first two groups: "9cb74d03-a065". Pi's identities begin with the time, so their first group
+// alone is shared by sessions started within a minute of each other.
+func shortSession(session string) string {
+	if first, rest, found := strings.Cut(session, "-"); found {
+		second, _, _ := strings.Cut(rest, "-")
+		return first + "-" + second
+	}
+	return session
 }

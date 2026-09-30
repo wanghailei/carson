@@ -82,8 +82,19 @@ func (r *repository) showAbandoned(m Machine) {
 	if len(branches) == 0 {
 		return
 	}
-	fmt.Fprintln(m.Out, "Abandoned tasks (to take one up again: git worktree add <folder> <branch>):")
+	checkedOut := map[string]bool{}
+	for _, w := range r.worktrees {
+		checkedOut[w.branch] = true
+	}
+	shown := false
 	for _, branch := range branches {
+		if checkedOut[branch] {
+			continue // it is listed with the tasks
+		}
+		if !shown {
+			fmt.Fprintln(m.Out, "Abandoned tasks, kept. "+takeUp)
+			shown = true
+		}
 		held := "what it holds against main is unknown"
 		if ahead, err := r.count("main.." + branch); err == nil {
 			held = plural(ahead, "commit") + " not on main"
