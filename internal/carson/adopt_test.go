@@ -67,7 +67,7 @@ func TestAdoptRefusesAWorktreeMadeOutsideCarson(t *testing.T) {
 	f.worktree("fix-login")
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not adopted: fix-login was made outside carson, so whose it is cannot be told; that is the master's to settle.")
+	expectLine(t, out, "Not adopted: fix-login was made outside carson, so whose it is cannot be told; a person must settle it; leave it until then.")
 }
 
 func TestAdoptTakesUpAbandonedWork(t *testing.T) {
@@ -123,7 +123,7 @@ func TestAdoptRefusesAFolderInTheWay(t *testing.T) {
 	os.MkdirAll(f.taskFolder("fix-login"), 0o755)
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not adopted: "+f.taskFolder("fix-login")+" already exists, and is not a worktree of this task. Nothing was changed.")
+	expectLine(t, out, "Not adopted: "+f.taskFolder("fix-login")+" already exists, and is not a worktree of this task. Nothing was changed; move that folder out of the way, then run carson adopt fix-login again.")
 }
 
 // Of two sessions adopting one task at once, the one that finds the old record already moved aside gets errOwned.

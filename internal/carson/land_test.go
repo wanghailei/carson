@@ -159,7 +159,7 @@ func TestLandRefusesAnotherSessionsTask(t *testing.T) {
 	f.commit(dir, "login.rb")
 	out, code := f.runIn(inClaude, dir, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "land", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner lands it.")
+	expectLine(t, out, "Not landed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner lands it; leave it to that session.")
 }
 
 // carson land runs from anywhere in the repository: the main working tree as well as the task's worktree.
@@ -185,7 +185,7 @@ func TestLandRefusesATaskMadeOutsideCarson(t *testing.T) {
 	f.commit(dir, "login.rb")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: fix-login was made outside carson, so whose it is cannot be told; that is the master's to settle.")
+	expectLine(t, out, "Not landed: fix-login was made outside carson, so whose it is cannot be told; a person must settle it; leave it until then.")
 }
 
 func TestLandRefusesWhenGitHubCannotBeReached(t *testing.T) {
@@ -464,7 +464,7 @@ func TestLandRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
 	writeRecordFile(lock, Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "x", Machine: "linux-box", MachineID: "linux-id"})
 	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: the landing lock is held by other-task's landing, by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed.")
+	expectLine(t, out, "Not landed: the landing lock is held by other-task's landing, by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed; run carson land fix-login again when that landing has finished, and if its session is gone, a person must settle it.")
 }
 
 // From the review of fdb5297: a task already on local main, and a re-run over a join already made.

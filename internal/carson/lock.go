@@ -31,11 +31,11 @@ func (r *repository) lockLanding(m Machine, task string) (release func(), note s
 			}, note, nil
 		}
 		if !errors.Is(err, errOwned) {
-			return nil, "", refuse(failed, "the landing lock could not be taken (%v). Nothing was changed.", err)
+			return nil, "", refuse(failed, "the landing lock could not be taken (%v). Nothing was changed; run carson land %s again once that is cleared.", err, task)
 		}
 		held, found, err := readRecordFile(path)
 		if err != nil {
-			return nil, "", refuse(failed, "the landing lock is held, and cannot be read (%v). Nothing was changed.", err)
+			return nil, "", refuse(failed, "the landing lock is held, and cannot be read (%v). Nothing was changed; run carson land %s again once that is cleared.", err, task)
 		}
 		if !found {
 			continue // given back between the two looks
@@ -45,7 +45,7 @@ func (r *repository) lockLanding(m Machine, task string) (release func(), note s
 		case live:
 			return nil, "", refuse(failed, "another landing is running in this repository — %s, by %s. Run carson land %s again when it has finished. Nothing was changed.", held.Task, ownerName(held), task)
 		case unknown:
-			return nil, "", refuse(failed, "the landing lock is held by %s's landing, by %s, whose state is unknown (%s). Nothing was changed.", held.Task, ownerName(held), why)
+			return nil, "", refuse(failed, "the landing lock is held by %s's landing, by %s, whose state is unknown (%s). Nothing was changed; run carson land %s again when that landing has finished, and if its session is gone, a person must settle it.", held.Task, ownerName(held), why, task)
 		}
 		// The carson that held it has ended: its lock is only a leftover. It is moved aside rather than removed, and only when the file
 		// moved is the one judged stale is it cleared — so two carsons clearing the same leftover never clear each other's new lock.
@@ -63,5 +63,5 @@ func (r *repository) lockLanding(m Machine, task string) (release func(), note s
 		os.Remove(aside)
 		note = "The landing lock left by an ended carson (" + held.Task + ", by " + ownerName(held) + ") is taken over."
 	}
-	return nil, "", refuse(failed, "the landing lock could not be taken; another landing keeps taking it. Nothing was changed.")
+	return nil, "", refuse(failed, "the landing lock could not be taken; another landing keeps taking it. Nothing was changed; run carson land %s again in a moment.", task)
 }

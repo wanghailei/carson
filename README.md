@@ -1,6 +1,4 @@
-<img src="icon.svg" width="141" alt="Carson">
-
-# ⧓ Carson
+# Carson ⧓
 
 Named after the butler of Downton Abbey, Carson keeps order among the coding agents working in one repository.
 

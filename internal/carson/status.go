@@ -8,7 +8,7 @@ import (
 	"unicode"
 )
 
-const noOwnerHeading = "No owner record (made outside carson; whose it is is the master's to settle):"
+const noOwnerHeading = "No owner record (made outside carson, so whose they are cannot be told; a person must settle them):"
 
 // status shows main against GitHub, the main working tree, every task grouped by the session that owns it, the tasks carson does not
 // own last, and the branches of tasks declared abandoned. It changes nothing.
@@ -19,11 +19,11 @@ func status(m Machine, args []string) int {
 	}
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
-		fmt.Fprintf(m.Out, "carson: %s is not inside a git repository.\n", m.Dir)
+		fmt.Fprintf(m.Out, notARepository+"\n", m.Dir)
 		return failed
 	}
 	if err != nil {
-		fmt.Fprintf(m.Out, "carson: the repository could not be read (%s).\n", reason(err))
+		fmt.Fprintf(m.Out, unreadableRepository+"\n", reason(err))
 		return failed
 	}
 	fmt.Fprintln(m.Out, repo.mainAgainstGitHub())

@@ -94,7 +94,7 @@ func Main(args []string, machine Machine) int {
 	case "adopt":
 		return adopt(machine, args[1:])
 	default:
-		fmt.Fprintf(machine.Out, "carson: no command %q. Its commands:\n%s", args[0], usage)
+		fmt.Fprintf(machine.Out, "No command %q. Carson's commands:\n%s", args[0], usage)
 		return refused
 	}
 }
@@ -127,14 +127,22 @@ func (b *badged) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// What every command says when it cannot open the repository it runs in.
+const (
+	notARepository       = "%s is not inside a git repository; run carson from inside one."
+	unreadableRepository = "the repository could not be read (%s); run carson again once that is cleared."
+	// settled says who decides what carson cannot: a person, not another agent.
+	settled = "a person must settle it; leave it until then"
+)
+
 // repository opens the repository carson runs in, with its main, or says why it cannot.
 func (m Machine) repository() (*repository, error) {
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
-		return nil, refuse(failed, "%s is not inside a git repository.", m.Dir)
+		return nil, refuse(failed, notARepository, m.Dir)
 	}
 	if err != nil {
-		return nil, refuse(failed, "the repository could not be read (%s).", reason(err))
+		return nil, refuse(failed, unreadableRepository, reason(err))
 	}
 	if missing := repo.mainMissing(); missing != "" {
 		return nil, refuse(failed, "%s. Nothing was changed.", missing)

@@ -46,14 +46,14 @@ func (m Machine) adoptTask(name string) ([]string, error) {
 func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error) {
 	name := t.branch
 	if t.admin == "" {
-		return nil, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree.", name)
+		return nil, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree. Run git worktree repair in the main working tree, then carson adopt %s again.", name, name)
 	}
 	record, found, err := readOwner(t.admin)
 	switch {
 	case err != nil:
-		return nil, refuse(failed, "the owner record of %s cannot be read (%v).", name, err)
+		return nil, refuse(failed, "the owner record of %s cannot be read (%v); "+settled+".", name, err)
 	case !found:
-		return nil, refuse(refused, "%s was made outside carson, so whose it is cannot be told; that is the master's to settle.", name)
+		return nil, refuse(refused, "%s was made outside carson, so whose it is cannot be told; "+settled+".", name)
 	}
 	me, unobserved := m.ownerRecord(name)
 	if sameOwner(record, me) {
@@ -61,9 +61,9 @@ func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error)
 	}
 	switch state, why := m.livenessOf(record); state {
 	case live:
-		return nil, refuse(refused, "%s belongs to %s, which is live; only an ended agent's task is adopted.", name, ownerName(record))
+		return nil, refuse(refused, "%s belongs to %s, which is live; only an ended agent's task is adopted. Leave it to that session.", name, ownerName(record))
 	case unknown:
-		return nil, refuse(refused, "%s belongs to %s, whose state is unknown (%s); only an agent seen to have ended gives up its task.", name, ownerName(record), why)
+		return nil, refuse(refused, "%s belongs to %s, whose state is unknown (%s); only an agent seen to have ended gives up its task. Leave it to that session; if it is gone, a person must settle it.", name, ownerName(record), why)
 	}
 	previous := record
 	previous.Previous = nil
@@ -71,10 +71,10 @@ func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error)
 	me.Landed = record.Landed
 	err = replaceOwner(t.admin, record, me)
 	if errors.Is(err, errOwned) {
-		return nil, refuse(refused, "%s was adopted meanwhile by another session.", name)
+		return nil, refuse(refused, "%s was adopted meanwhile by another session; carson status shows whose it is now.", name)
 	}
 	if err != nil {
-		return nil, refuse(failed, "the owner record of %s could not be replaced (%v); it is left as it was.", name, err)
+		return nil, refuse(failed, "the owner record of %s could not be replaced (%v); it is left as it was. Run carson adopt %s again once that is cleared.", name, err, name)
 	}
 	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
 		return repo.adoptedWithoutFolder(t, record), nil
@@ -102,7 +102,7 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 	}
 	ahead, err := repo.count("main.." + from)
 	if err != nil {
-		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed.", from, reason(err))
+		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed; run carson adopt %s again once that is cleared.", from, reason(err), name)
 	}
 	if ahead == 0 && from == name {
 		if hasAbandoned {
@@ -112,15 +112,15 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 	}
 	home := m.Env("HOME")
 	if !filepath.IsAbs(home) {
-		return nil, refuse(failed, "HOME does not name a folder, so there is no ~/.worktrees to adopt the task in. Nothing was changed.")
+		return nil, refuse(failed, "HOME does not name a folder, so there is no ~/.worktrees to adopt the task in. Nothing was changed; set HOME to your home folder, then run carson adopt %s again.", name)
 	}
 	folder := repo.taskFolder(filepath.Clean(home), name)
 	if _, err := os.Stat(folder); err == nil {
-		return nil, refuse(refused, "%s already exists, and is not a worktree of this task. Nothing was changed.", folder)
+		return nil, refuse(refused, "%s already exists, and is not a worktree of this task. Nothing was changed; move that folder out of the way, then run carson adopt %s again.", folder, name)
 	}
 	if from != name {
 		if _, err := git(repo.top, "branch", "-m", from, name); err != nil {
-			return nil, refuse(failed, "branch %s could not be renamed %s (%s). Nothing was changed.", from, name, reason(err))
+			return nil, refuse(failed, "branch %s could not be renamed %s (%s). Nothing was changed; run carson adopt %s again once that is cleared.", from, name, reason(err), name)
 		}
 	}
 	if _, err := git(repo.top, "worktree", "add", "-q", folder, name); err != nil {
@@ -136,7 +136,7 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 		err = createOwner(admin, record)
 	}
 	if err != nil {
-		return nil, refuse(failed, "its worktree is made at %s, but its owner record could not be written (%s): it shows as made outside carson until that is put right.", folder, reason(err))
+		return nil, refuse(failed, "its worktree is made at %s, but its owner record could not be written (%s), so it shows as made outside carson; "+settled+".", folder, reason(err))
 	}
 	what := fmt.Sprintf("branch %s, left without a worktree with %s not on main,", name, plural(ahead, "commit"))
 	if from != name {
@@ -159,7 +159,7 @@ func (r *repository) adoptedWithoutFolder(t task, previous Record) []string {
 	ahead, err := r.count("main.." + t.branch)
 	switch {
 	case err != nil:
-		return []string{fmt.Sprintf("%s, and what its branch holds against main cannot be read (%s).", said, reason(err))}
+		return []string{fmt.Sprintf("%s, and what its branch holds against main cannot be read (%s). Once that is cleared, keep its work with carson abandon %s, or, if main holds it all, remove it with carson remove %s.", said, reason(err), t.branch, t.branch)}
 	case ahead > 0:
 		return []string{fmt.Sprintf("%s: keep its %s with: carson abandon %s", said, plural(ahead, "commit"), t.branch)}
 	}

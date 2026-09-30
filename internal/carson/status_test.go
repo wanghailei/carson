@@ -173,7 +173,7 @@ func TestStatusWorktreeWithoutOwnerRecord(t *testing.T) {
 	f := newFixture(t)
 	dir := f.worktree("old-thing")
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "No owner record (made outside carson; whose it is is the master's to settle):")
+	expectLine(t, out, "No owner record (made outside carson, so whose they are cannot be told; a person must settle them):")
 	expectLine(t, out, "old-thing at "+dir+": clean, nothing main lacks.")
 }
 
@@ -202,14 +202,14 @@ func TestUnknownCommandIsRefused(t *testing.T) {
 	f := newFixture(t)
 	out, code := f.run(f.local, stranger{}, "deliver")
 	expectCode(t, code, 2)
-	expectLine(t, out, "carson: no command \"deliver\". Its commands:")
+	expectLine(t, out, "No command \"deliver\". Carson's commands:")
 }
 
 func TestStatusOutsideARepository(t *testing.T) {
 	f := newFixture(t)
 	out, code := f.run(f.root, stranger{}, "status")
 	expectCode(t, code, 1)
-	expectLine(t, out, "carson: "+f.root+" is not inside a git repository.")
+	expectLine(t, out, f.root+" is not inside a git repository; run carson from inside one.")
 }
 
 func expectNoLine(t *testing.T, out, unwanted string) {

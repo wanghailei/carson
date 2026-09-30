@@ -106,8 +106,11 @@ func (r *repository) mainMissing() string {
 			return fmt.Sprintf("local main is missing, though GitHub's main is at %s here; bring it back with: git branch main %s/main", r.short(github), r.remote)
 		}
 	}
-	return "this repository has no main yet"
+	return noMainYet
 }
+
+// noMainYet is a repository whose main has no first commit; carson starts tasks from main, so a person makes that commit.
+const noMainYet = "this repository has no main yet; a person must make its first commit before carson can start a task from it"
 
 // mainAgainstGitHub says where local main is and how it stands against GitHub's main, asked with ls-remote, which changes nothing here.
 func (r *repository) mainAgainstGitHub() string {
@@ -135,7 +138,7 @@ func (r *repository) mainAgainstGitHub() string {
 		return here + ", the same as GitHub's."
 	}
 	if _, err := git(r.top, "cat-file", "-e", remote+"^{commit}"); err != nil {
-		return fmt.Sprintf("%s. GitHub's main is at %s, which this machine has not fetched: how far behind, or whether diverged, is unknown.", here, r.short(remote))
+		return fmt.Sprintf("%s. GitHub's main is at %s, which this machine has not fetched: how far behind, or whether diverged, is unknown. The next carson start or carson land fetches it.", here, r.short(remote))
 	}
 	ahead, err := r.count(remote + ".." + local)
 	if err != nil {
@@ -149,9 +152,9 @@ func (r *repository) mainAgainstGitHub() string {
 	case ahead > 0 && behind > 0:
 		return fmt.Sprintf("%s, diverged from GitHub: %s here, %d there. The next carson land brings GitHub's commits in.", here, plural(ahead, "commit"), behind)
 	case ahead > 0:
-		return fmt.Sprintf("%s, %s ahead of GitHub (landed here, not pushed).", here, plural(ahead, "commit"))
+		return fmt.Sprintf("%s, %s ahead of GitHub (landed here, not pushed). The next carson start or carson land pushes it.", here, plural(ahead, "commit"))
 	default:
-		return fmt.Sprintf("%s, %s behind GitHub.", here, plural(behind, "commit"))
+		return fmt.Sprintf("%s, %s behind GitHub. The next carson start or carson land brings it forward.", here, plural(behind, "commit"))
 	}
 }
 

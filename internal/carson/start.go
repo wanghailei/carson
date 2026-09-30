@@ -31,7 +31,7 @@ func start(m Machine, args []string) int {
 		fmt.Fprintln(m.Out, "Not started: "+err.Error())
 		return codeOf(err)
 	}
-	notes, err := repo.latestMain()
+	notes, err := repo.latestMain(name)
 	for _, note := range notes {
 		fmt.Fprintln(m.Out, note)
 	}
@@ -58,7 +58,7 @@ func start(m Machine, args []string) int {
 		return codeOf(taken)
 	}
 	if err != nil {
-		fmt.Fprintf(m.Out, "Started %s in %s, but its owner record could not be written (%s): it shows as made outside carson until that is put right.\n", name, folder, reason(err))
+		fmt.Fprintf(m.Out, "Started %s in %s, but its owner record could not be written (%s), so it shows as made outside carson; "+settled+".\n", name, folder, reason(err))
 		return failed
 	}
 	head, err := git(folder, "rev-parse", "--short", "HEAD")
@@ -67,7 +67,7 @@ func start(m Machine, args []string) int {
 	}
 	line := fmt.Sprintf("Started %s from local main at %s in %s, owned by %s", name, head, folder, ownerName(record))
 	if added != nil {
-		fmt.Fprintf(m.Out, "%s, but git reported a failure after making it (%s).\n", line, reason(added))
+		fmt.Fprintf(m.Out, "%s, but git reported a failure after making it (%s). The task is yours; look at its worktree before working there.\n", line, reason(added))
 	} else {
 		fmt.Fprintln(m.Out, line+".")
 	}
@@ -88,31 +88,27 @@ func start(m Machine, args []string) int {
 func (m Machine) prepare(name string) (string, *repository, error) {
 	home := m.Env("HOME")
 	if home == "" {
-		return "", nil, refuse(failed, "HOME is not set, so there is no ~/.worktrees to start the task in.")
+		return "", nil, refuse(failed, "HOME is not set, so there is no ~/.worktrees to start the task in. Nothing was changed; set HOME to your home folder, then run carson start %s again.", name)
 	}
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
-		return "", nil, refuse(failed, "%s is not inside a git repository.", m.Dir)
+		return "", nil, refuse(failed, notARepository, m.Dir)
 	}
 	if err != nil {
-		return "", nil, refuse(failed, "the repository could not be read (%s).", reason(err))
+		return "", nil, refuse(failed, unreadableRepository, reason(err))
 	}
-	switch missing := repo.mainMissing(); missing {
-	case "":
-	case "this repository has no main yet":
-		return "", nil, refuse(failed, "this repository has no main yet; starting its first task is not built yet. Nothing was changed.")
-	default:
+	if missing := repo.mainMissing(); missing != "" {
 		return "", nil, refuse(failed, "%s. Nothing was changed.", missing)
 	}
 	if remotes, err := git(repo.top, "remote"); err == nil && slices.Contains(lines(remotes), name) {
-		return "", nil, refuse(refused, "%s is a remote's name, not a task's: git could not tell the two apart.", name)
+		return "", nil, refuse(refused, "%s is a remote's name, not a task's: git could not tell the two apart. Choose another name.", name)
 	}
 	if err := repo.nameTaken(m, name); err != nil {
 		return "", nil, err
 	}
 	folder := repo.taskFolder(filepath.Clean(home), name)
 	if _, err := os.Lstat(folder); err == nil {
-		return "", nil, refuse(refused, "%s already exists, and is not a worktree of this task. Nothing was changed.", folder)
+		return "", nil, refuse(refused, "%s already exists, and is not a worktree of this task. Nothing was changed; move that folder out of the way, or choose another name.", folder)
 	}
 	return folder, repo, nil
 }
@@ -133,7 +129,7 @@ func (r *repository) nameTaken(m Machine, name string) error {
 	ahead, err := r.count("main.." + name)
 	switch {
 	case err != nil:
-		return refuse(refused, "branch %s already exists; what it holds against main is unknown (%s).", name, reason(err))
+		return refuse(refused, "branch %s already exists; what it holds against main is unknown (%s). Run carson start %s again once that is cleared, or choose another name.", name, reason(err), name)
 	case ahead == 0:
 		return refuse(refused, "branch %s already exists, and its work is on main. Remove it with: carson remove %s", name, name)
 	default:
@@ -145,7 +141,7 @@ func (r *repository) nameTaken(m Machine, name string) error {
 func (r *repository) heldBy(m Machine, name string, t task, held string) error {
 	record, found, err := readOwner(t.admin)
 	if t.admin == "" || err != nil || !found {
-		return refuse(refused, "%s %s a worktree made outside carson, at %s; whose it is is the master's to settle.", name, held, t.path)
+		return refuse(refused, "%s %s a worktree made outside carson, at %s, whose owner cannot be told. Choose another name.", name, held, t.path)
 	}
 	state, why := m.livenessOf(record)
 	switch state {
@@ -160,7 +156,7 @@ func (r *repository) heldBy(m Machine, name string, t task, held string) error {
 	case ended:
 		return refuse(refused, "%s %s %s, which has ended. Adopt it with: carson adopt %s", name, held, ownerName(record), name)
 	default:
-		return refuse(refused, "%s %s %s, whose state is unknown (%s).", name, held, ownerName(record), why)
+		return refuse(refused, "%s %s %s, whose state is unknown (%s). Choose another name; if that session is gone, a person must settle it.", name, held, ownerName(record), why)
 	}
 }
 
@@ -169,7 +165,7 @@ func (r *repository) heldBy(m Machine, name string, t task, held string) error {
 func (r *repository) afterFailedAdd(m Machine, name, folder string, cause error) error {
 	now, err := openRepository(r.top)
 	if err != nil {
-		return refuse(failed, "the worktree could not be made (%s), and what git left cannot be read (%s).", reason(cause), reason(err))
+		return refuse(failed, "the worktree could not be made (%s), and what git left cannot be read (%s). Run carson status to see what is there before trying again.", reason(cause), reason(err))
 	}
 	for _, t := range now.tasks() {
 		if t.branch != name {
@@ -182,16 +178,16 @@ func (r *repository) afterFailedAdd(m Machine, name, folder string, cause error)
 			}
 			// git refused the branch because it already existed: git made nothing for this session, so the worktree is another's.
 			if cause := reason(cause); strings.Contains(cause, "already exists") || strings.Contains(cause, "cannot lock ref") {
-				return refuse(refused, "%s was taken meanwhile by a session that has not recorded itself yet, at %s.", name, folder)
+				return refuse(refused, "%s was taken meanwhile by a session that has not recorded itself yet, at %s. Choose another name.", name, folder)
 			}
 			return nil
 		}
 		return now.heldBy(m, name, t, "was taken meanwhile by")
 	}
 	if r.hasBranch(name) {
-		return refuse(failed, "the worktree could not be made (%s). Branch %s exists now, with no worktree.", reason(cause), name)
+		return refuse(failed, "the worktree could not be made (%s). Branch %s exists now, with no worktree; adopt it with carson adopt %s once that is cleared.", reason(cause), name, name)
 	}
-	return refuse(failed, "the worktree could not be made (%s). No branch or worktree was made.", reason(cause))
+	return refuse(failed, "the worktree could not be made (%s). No branch or worktree was made; run carson start %s again once that is cleared.", reason(cause), name)
 }
 
 // taskFolder is where a task's worktree goes: under ~/.worktrees, mirroring the repository's place, so never inside the main working
@@ -206,39 +202,39 @@ func (r *repository) taskFolder(home, task string) string {
 
 // latestMain brings local main to the latest main before a task starts from it. Landed work GitHub lacks is pushed; GitHub's commits
 // come into local main by fast-forward in the main working tree, never over what that tree holds; a divergence is reported, for the
-// task's merge to bring in. It returns what it did, and the refusal when the task cannot start.
-func (r *repository) latestMain() ([]string, error) {
+// task's merge to bring in. It returns what it did, and the refusal when the task cannot start; name is the task's, for the way on.
+func (r *repository) latestMain(name string) ([]string, error) {
 	if r.remote == "" {
 		return []string{"No GitHub remote: the task starts from local main."}, nil
 	}
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
 	if err != nil {
-		return nil, refuse(failed, "GitHub could not be reached (%s): the latest main cannot be known. Nothing was changed.", reason(err))
+		return nil, refuse(failed, "GitHub could not be reached (%s): the latest main cannot be known. Nothing was changed; run carson start %s again when GitHub answers.", reason(err), name)
 	}
 	if answer == "" {
 		now, err := r.pushMain()
 		var unchecked pushedUnchecked
 		if errors.As(err, &unchecked) {
-			return nil, refuse(failed, "GitHub had no main; local main was pushed, but %s. Nothing else was changed.", unchecked.why)
+			return nil, refuse(failed, "GitHub had no main; local main was pushed, but %s. Nothing else was changed; run carson start %s again to check it.", unchecked.why, name)
 		}
 		if err != nil {
-			return nil, refuse(failed, "GitHub has no main, and pushing local main there failed (%s). Nothing else was changed.", reason(err))
+			return nil, refuse(failed, "GitHub has no main, and pushing local main there failed (%s). Nothing else was changed; run carson start %s again once that is cleared.", reason(err), name)
 		}
 		return []string{"GitHub had no main; local main is pushed there, and GitHub's main is now " + now + "."}, nil
 	}
 	tracking, err := r.fetchMain()
 	if err != nil {
-		return nil, refuse(failed, "GitHub's main could not be fetched (%s): the latest main cannot be known. Nothing was changed.", reason(err))
+		return nil, refuse(failed, "GitHub's main could not be fetched (%s): the latest main cannot be known. Nothing was changed; run carson start %s again when GitHub answers.", reason(err), name)
 	}
 	const fetched = "GitHub's main was fetched; nothing else was changed."
 	ahead, behind, err := r.aheadBehind(tracking)
 	if err != nil {
-		return nil, refuse(failed, "how local main stands against GitHub's is unknown (%s). %s", reason(err), fetched)
+		return nil, refuse(failed, "how local main stands against GitHub's is unknown (%s). %s Run carson start %s again once that is cleared.", reason(err), fetched, name)
 	}
-	return r.bringUpToDate(tracking, ahead, behind, fetched)
+	return r.bringUpToDate(tracking, ahead, behind, fetched, name)
 }
 
-func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched string) ([]string, error) {
+func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched, name string) ([]string, error) {
 	switch {
 	case ahead > 0 && behind > 0:
 		return []string{fmt.Sprintf("Local main and GitHub's have diverged: %s here, %d there. Landing this task will bring GitHub's commits in.", plural(ahead, "commit"), behind)}, nil
@@ -246,25 +242,25 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched s
 		now, err := r.pushMain()
 		var unchecked pushedUnchecked
 		if errors.As(err, &unchecked) {
-			return nil, refuse(failed, "local main was pushed, but %s. GitHub's main had been fetched first; nothing else was changed.", unchecked.why)
+			return nil, refuse(failed, "local main was pushed, but %s. GitHub's main had been fetched first; nothing else was changed. Run carson start %s again to check it.", unchecked.why, name)
 		}
 		if wasCut(err) {
-			return nil, refuse(failed, "local main holds %s GitHub lacked, and whether the push reached GitHub is unknown (%s). GitHub's main had been fetched first; nothing else was changed.", plural(ahead, "commit"), reason(err))
+			return nil, refuse(failed, "local main holds %s GitHub lacked, and whether the push reached GitHub is unknown (%s). GitHub's main had been fetched first; nothing else was changed. Run carson start %s again to push or confirm them.", plural(ahead, "commit"), reason(err), name)
 		}
 		if err != nil {
-			return nil, refuse(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s", plural(ahead, "commit"), reason(err), fetched)
+			return nil, refuse(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s Run carson start %s again to push them.", plural(ahead, "commit"), reason(err), fetched, name)
 		}
 		return []string{fmt.Sprintf("Pushed %s of local main that GitHub lacked; GitHub's main is now %s.", plural(ahead, "commit"), now)}, nil
 	case behind > 0:
 		if branch := r.mainTreeBranch(); branch != "main" {
-			return nil, refuse(refused, "GitHub's main is %s ahead, and the main working tree is on %s, not main, so local main cannot be brought forward there. %s", plural(behind, "commit"), branch, fetched)
+			return nil, refuse(refused, "GitHub's main is %s ahead, and the main working tree is on %s, not main, so local main cannot be brought forward there. %s Switch the main working tree back to main, then run carson start %s again.", plural(behind, "commit"), branch, fetched, name)
 		}
 		inTheWay, err := r.forwardMain(tracking)
 		if len(inTheWay) > 0 {
-			return nil, refuse(refused, "bringing local main forward would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s", strings.Join(inTheWay, ", "), fetched)
+			return nil, refuse(refused, "bringing local main forward would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s Ask a person whose they are; once they are out of the main working tree, run carson start %s again.", strings.Join(inTheWay, ", "), fetched, name)
 		}
 		if err != nil {
-			return nil, refuse(failed, "local main could not be brought forward to GitHub's in the main working tree (%s). %s", reason(err), fetched)
+			return nil, refuse(failed, "local main could not be brought forward to GitHub's in the main working tree (%s). %s Run carson start %s again once that is cleared.", reason(err), fetched, name)
 		}
 		return []string{fmt.Sprintf("Local main was %s behind GitHub's and is brought forward to it.", plural(behind, "commit"))}, nil
 	}

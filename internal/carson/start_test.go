@@ -317,7 +317,7 @@ func TestStartRefusesAFolderInTheWay(t *testing.T) {
 	os.MkdirAll(f.taskFolder("fix-login"), 0o755)
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: "+f.taskFolder("fix-login")+" already exists, and is not a worktree of this task. Nothing was changed.")
+	expectLine(t, out, "Not started: "+f.taskFolder("fix-login")+" already exists, and is not a worktree of this task. Nothing was changed; move that folder out of the way, or choose another name.")
 }
 
 func TestStartRefusesANameHeldByAnEndedSession(t *testing.T) {
@@ -342,7 +342,7 @@ func TestStartRefusesANameHeldByAWorktreeMadeOutsideCarson(t *testing.T) {
 	dir := f.worktree("fix-login")
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: fix-login is held by a worktree made outside carson, at "+dir+"; whose it is is the master's to settle.")
+	expectLine(t, out, "Not started: fix-login is held by a worktree made outside carson, at "+dir+", whose owner cannot be told. Choose another name.")
 }
 
 func TestStartPushesMainToAGitHubThatHasNone(t *testing.T) {
@@ -418,7 +418,7 @@ func TestAPushThatCouldNotBeCheckedIsNotCalledFailed(t *testing.T) {
 	f.git(f.local, "remote", "set-url", "github", filepath.Join(f.root, "no-such-repository.git"))
 	f.git(f.local, "config", "remote.github.pushurl", f.github)
 	repo, _ := openRepository(f.local)
-	_, err := repo.bringUpToDate("refs/remotes/github/main", 1, 0, "GitHub's main was fetched; nothing else was changed.")
+	_, err := repo.bringUpToDate("refs/remotes/github/main", 1, 0, "GitHub's main was fetched; nothing else was changed.", "fix-login")
 	if err == nil || !strings.Contains(err.Error(), "local main was pushed, but GitHub's main could not be checked afterwards (") || !strings.Contains(err.Error(), "GitHub's main had been fetched first") {
 		t.Errorf("got %v", err)
 	}

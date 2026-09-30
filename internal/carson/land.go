@@ -138,20 +138,20 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	g := &landing{repo: r, task: t}
 	var err error
 	if g.original, err = git(t.path, "rev-parse", "HEAD"); err != nil {
-		return g.stop(failed, "the task's commit cannot be read (%s). Nothing was changed.", reason(err))
+		return g.stop(failed, "the task's commit cannot be read (%s). Nothing was changed; run carson land %s again once that is cleared.", reason(err), t.branch)
 	}
 	if g.commits, err = r.count("main.." + t.branch); err != nil {
-		return g.stop(failed, "what %s holds against main cannot be read (%s). Nothing was changed.", t.branch, reason(err))
+		return g.stop(failed, "what %s holds against main cannot be read (%s). Nothing was changed; run carson land %s again once that is cleared.", t.branch, reason(err), t.branch)
 	}
 	if err := t.readyToLand(); err != nil {
 		return g.stop(codeOf(err), "%s", err.Error())
 	}
 	if branch := r.mainTreeBranch(); branch != "main" {
-		return g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. Nothing was changed; %s.", branch, g.state())
+		return g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. Nothing was changed; %s. Switch the main working tree back to main, then run carson land %s again.", branch, g.state(), t.branch)
 	}
 	if r.remote != "" {
 		if _, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
-			return g.stop(failed, "GitHub could not be reached (%s). Nothing was changed; %s.", reason(err), g.state())
+			return g.stop(failed, "GitHub could not be reached (%s). Nothing was changed; %s. Run carson land %s again when GitHub answers.", reason(err), g.state(), t.branch)
 		}
 	}
 	release, note, err := r.lockLanding(m, t.branch)
@@ -169,10 +169,10 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		return g.said, code
 	}
 	if stopped() {
-		return g.stop(failed, "interrupted while bringing local main current. %s.", g.state())
+		return g.stop(failed, "interrupted while bringing local main current. %s. Run carson land %s again.", g.state(), t.branch)
 	}
 	if g.commits, err = r.count("main.." + t.branch); err != nil {
-		return g.stop(failed, "what %s holds against main cannot be read (%s). %s.", t.branch, reason(err), g.state())
+		return g.stop(failed, "what %s holds against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 	}
 	// A task already on local main lands only to join a GitHub that moved on meanwhile (a retry after a failed push).
 	alreadyLanded := g.commits == 0
@@ -189,7 +189,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		return said, code
 	}
 	if stopped() {
-		return g.stop(failed, "interrupted while bringing %s up to main. %s.", t.branch, g.state())
+		return g.stop(failed, "interrupted while bringing %s up to main. %s. Run carson land %s again.", t.branch, g.state(), t.branch)
 	}
 	if diverged {
 		carried := len(g.said)
@@ -204,25 +204,25 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	branch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
 	checks, err := runChecks(t.path)
 	if stopped() {
-		return g.stop(failed, "interrupted during the checks. %s.", g.state())
+		return g.stop(failed, "interrupted during the checks. %s. Run carson land %s again.", g.state(), t.branch)
 	}
 	if err != nil && codeOf(err) == refused {
 		return g.stop(refused, "%s\n%s. Fix what bin/check reports, commit, then run carson land %s again.", err.Error(), g.state(), t.branch)
 	}
 	if err != nil {
-		return g.stop(codeOf(err), "%s\n%s.", err.Error(), g.state())
+		return g.stop(codeOf(err), "%s\n%s. Run carson land %s again once that is cleared.", err.Error(), g.state(), t.branch)
 	}
 	if changed := g.checksChanged(head, branch); changed != "" {
-		return g.stop(failed, "bin/check changed the task: %s; the landing stops. Look at the worktree before going on.", changed)
+		return g.stop(failed, "bin/check changed the task: %s; the landing stops, since the checks must leave the task as they found it. Look at git status in %s's worktree, put it back, then run carson land %s again.", changed, t.branch, t.branch)
 	}
 	tip := head
 	if g.commits, err = r.ownCommits(tip); err != nil {
-		return g.stop(failed, "what %s holds against main cannot be read (%s). %s.", t.branch, reason(err), g.state())
+		return g.stop(failed, "what %s holds against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 	}
 	if said, code, ok := g.fastForward(tip); !ok {
 		if stopped() {
 			now, _ := git(r.top, "rev-parse", "main")
-			return g.stop(failed, "interrupted while fast-forwarding main; main is at %s, the task's tip is %s. %s.", r.short(now), r.short(tip), g.state())
+			return g.stop(failed, "interrupted while fast-forwarding main; main is at %s, the task's tip is %s. %s. Run carson land %s again.", r.short(now), r.short(tip), g.state(), t.branch)
 		}
 		return said, code
 	}
@@ -236,7 +236,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	shortTip := r.short(tip)
 	how := g.how(alreadyLanded)
 	if r.remote == "" {
-		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. %s", t.branch, shortTip, how, checks)
+		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, checks, t.branch)
 		return g.said, done
 	}
 	now, err := r.pushMain()
@@ -275,14 +275,14 @@ func (g *landing) how(alreadyLanded bool) string {
 func (t task) readyToLand() error {
 	gitdir, err := git(t.path, "rev-parse", "--absolute-git-dir")
 	if err != nil {
-		return refuse(failed, "the worktree's git folder cannot be found (%s).", reason(err))
+		return refuse(failed, "the worktree's git folder cannot be found (%s). Nothing was changed; run carson land %s again once that is cleared.", reason(err), t.branch)
 	}
 	if err := operationInProgress(gitdir, t.branch+"'s worktree", "carson land "+t.branch+" again"); err != nil {
 		return err
 	}
 	found, err := changes(t.path)
 	if err != nil {
-		return refuse(failed, "what the worktree holds cannot be read (%s).", reason(err))
+		return refuse(failed, "what the worktree holds cannot be read (%s). Nothing was changed; run carson land %s again once that is cleared.", reason(err), t.branch)
 	}
 	if len(found) > 0 {
 		names := make([]string, len(found))
@@ -317,12 +317,12 @@ func (g *landing) bringMainCurrent(m Machine) (diverged, finished bool, code int
 	}
 	tracking, err := r.fetchMain()
 	if err != nil {
-		g.said, code = g.stop(failed, "GitHub's main could not be fetched (%s). Nothing was changed; %s.", reason(err), g.state())
+		g.said, code = g.stop(failed, "GitHub's main could not be fetched (%s). Nothing was changed; %s. Run carson land %s again when GitHub answers.", reason(err), g.state(), g.task.branch)
 		return false, true, code
 	}
 	ahead, behind, err := r.aheadBehind(tracking)
 	if err != nil {
-		g.said, code = g.stop(failed, "how local main stands against GitHub's is unknown (%s). %s.", reason(err), g.state())
+		g.said, code = g.stop(failed, "how local main stands against GitHub's is unknown (%s). %s. Run carson land %s again once that is cleared.", reason(err), g.state(), g.task.branch)
 		return false, true, code
 	}
 	switch {
@@ -333,13 +333,13 @@ func (g *landing) bringMainCurrent(m Machine) (diverged, finished bool, code int
 		var unchecked pushedUnchecked
 		switch {
 		case wasCut(err):
-			g.said, code = g.stop(failed, "local main holds %s GitHub lacked; whether pushing them reached GitHub is unknown (%s). %s.", plural(ahead, "commit"), reason(err), g.state())
+			g.said, code = g.stop(failed, "local main holds %s GitHub lacked; whether pushing them reached GitHub is unknown (%s). %s. Run carson land %s again to push or confirm them.", plural(ahead, "commit"), reason(err), g.state(), g.task.branch)
 			return false, true, code
 		case errors.As(err, &unchecked):
-			g.said, code = g.stop(failed, "local main held %s GitHub lacked; it was pushed, but %s. %s.", plural(ahead, "commit"), unchecked.why, g.state())
+			g.said, code = g.stop(failed, "local main held %s GitHub lacked; it was pushed, but %s. %s. Run carson land %s again to check it.", plural(ahead, "commit"), unchecked.why, g.state(), g.task.branch)
 			return false, true, code
 		case err != nil:
-			g.said, code = g.stop(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s.", plural(ahead, "commit"), reason(err), g.state())
+			g.said, code = g.stop(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s. Run carson land %s again to push them.", plural(ahead, "commit"), reason(err), g.state(), g.task.branch)
 			return false, true, code
 		}
 		if merged, _ := r.count("main.." + g.task.branch); merged == 0 {
@@ -350,11 +350,11 @@ func (g *landing) bringMainCurrent(m Machine) (diverged, finished bool, code int
 	case behind > 0:
 		inTheWay, err := r.forwardMain(tracking)
 		if len(inTheWay) > 0 {
-			g.said, code = g.stop(refused, "bringing local main forward would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s.", strings.Join(inTheWay, ", "), g.state())
+			g.said, code = g.stop(refused, "bringing local main forward would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s. Ask a person whose they are; once they are out of the main working tree, run carson land %s again.", strings.Join(inTheWay, ", "), g.state(), g.task.branch)
 			return false, true, code
 		}
 		if err != nil {
-			g.said, code = g.stop(failed, "local main could not be brought forward to GitHub's (%s). %s.", reason(err), g.state())
+			g.said, code = g.stop(failed, "local main could not be brought forward to GitHub's (%s). %s. Run carson land %s again once that is cleared.", reason(err), g.state(), g.task.branch)
 			return false, true, code
 		}
 		g.note("Local main was %s behind GitHub's and is brought forward to it.", plural(behind, "commit"))
@@ -368,7 +368,7 @@ func (g *landing) bringTaskUpToMain() ([]string, int, bool) {
 	r, t := g.repo, g.task
 	behind, err := r.count(t.branch + "..main")
 	if err != nil {
-		said, code := g.stop(failed, "how %s stands against main cannot be read (%s). %s.", t.branch, reason(err), g.state())
+		said, code := g.stop(failed, "how %s stands against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 		return said, code, false
 	}
 	if behind == 0 {
@@ -423,7 +423,7 @@ func (g *landing) run(s step) ([]string, int, bool) {
 	now, _ := git(t.path, "rev-parse", "HEAD")
 	left, _ := changes(t.path)
 	if now != before || len(left) > 0 {
-		said, code := g.stop(failed, "%s failed (%s), and giving it up left %s at %s with %s, not at %s where it began. Look before going on.", s.doing, reason(err), t.branch, g.repo.short(now), plural(len(left), "change"), g.repo.short(before))
+		said, code := g.stop(failed, "%s failed (%s), and giving it up left %s at %s with %s, not at %s where it began. Look at git status in %s's worktree before running carson land %s again.", s.doing, reason(err), t.branch, g.repo.short(now), plural(len(left), "change"), g.repo.short(before), t.branch, t.branch)
 		return said, code, false
 	}
 	where := "as it was, at " + g.repo.short(before)
@@ -432,7 +432,7 @@ func (g *landing) run(s step) ([]string, int, bool) {
 	}
 	files := strings.Join(lines(conflicts), ", ")
 	if files == "" {
-		said, code := g.stop(failed, "%s failed (%s). It was given up; %s is %s.", s.doing, reason(err), t.branch, where)
+		said, code := g.stop(failed, "%s failed (%s). It was given up; %s is %s. Run carson land %s again once that is cleared.", s.doing, reason(err), t.branch, where, t.branch)
 		return said, code, false
 	}
 	said, code := g.stop(refused, "%s conflicts in %s. The %s was undone; %s is %s. Run %s in %s's worktree, resolve, then run carson land %s again.", s.doing, files, s.name, t.branch, where, s.command, t.branch, t.branch)
@@ -492,20 +492,20 @@ func runChecks(dir string) (string, error) {
 func (g *landing) fastForward(tip string) ([]string, int, bool) {
 	r := g.repo
 	if branch := r.mainTreeBranch(); branch != "main" {
-		said, code := g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. %s.", branch, g.state())
+		said, code := g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. %s. Switch the main working tree back to main, then run carson land %s again.", branch, g.state(), g.task.branch)
 		return said, code, false
 	}
 	inTheWay, err := r.forwardMain(tip)
 	if len(inTheWay) > 0 {
-		said, code := g.stop(refused, "fast-forwarding main would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s.", strings.Join(inTheWay, ", "), g.state())
+		said, code := g.stop(refused, "fast-forwarding main would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s. Ask a person whose they are; once they are out of the main working tree, run carson land %s again.", strings.Join(inTheWay, ", "), g.state(), g.task.branch)
 		return said, code, false
 	}
 	if err != nil {
-		said, code := g.stop(failed, "main could not be fast-forwarded (%s). %s.", reason(err), g.state())
+		said, code := g.stop(failed, "main could not be fast-forwarded (%s). %s. Run carson land %s again once that is cleared.", reason(err), g.state(), g.task.branch)
 		return said, code, false
 	}
 	if now, _ := git(r.top, "rev-parse", "main"); now != tip {
-		said, code := g.stop(failed, "main was fast-forwarded, but it is at %s, not the task's %s. Look before going on.", r.short(now), r.short(tip))
+		said, code := g.stop(failed, "main was fast-forwarded, but it is at %s, not the task's %s. Run carson status to see where things stand, and ask a person before landing again.", r.short(now), r.short(tip))
 		return said, code, false
 	}
 	return nil, 0, true

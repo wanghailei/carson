@@ -111,7 +111,7 @@ func TestRemoveRefusesWhenProcessesCannotBeChecked(t *testing.T) {
 	f.mergedTask("fix-login")
 	out, code := f.runIn(inClaude, f.local, busy{stranger: claudeRunning, err: errors.New("lsof: not found")}, "remove", "fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not removed: whether any process works inside it cannot be checked (lsof: not found). Nothing was changed.")
+	expectLine(t, out, "Not removed: whether any process works inside it cannot be checked (lsof: not found). Nothing was changed; run carson remove fix-login again once that is cleared.")
 }
 
 func TestRemoveRefusesAnotherSessionsTask(t *testing.T) {
@@ -119,7 +119,7 @@ func TestRemoveRefusesAnotherSessionsTask(t *testing.T) {
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	out, code := f.runIn(inClaude, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "remove", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not removed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner removes it.")
+	expectLine(t, out, "Not removed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner removes it; leave it to that session.")
 }
 
 func TestRemoveRefusesAWorktreeMadeOutsideCarson(t *testing.T) {
@@ -127,7 +127,7 @@ func TestRemoveRefusesAWorktreeMadeOutsideCarson(t *testing.T) {
 	f.worktree("fix-login")
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not removed: fix-login was made outside carson, so whose it is cannot be told; that is the master's to settle.")
+	expectLine(t, out, "Not removed: fix-login was made outside carson, so whose it is cannot be told; a person must settle it; leave it until then.")
 }
 
 func TestRemoveClearsALeftoverBranchWhoseWorkIsOnMain(t *testing.T) {
@@ -329,7 +329,7 @@ func TestRemoveStopsWhenIgnoredFilesCannotBeKept(t *testing.T) {
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 1)
 	expectLine(t, out, "Not removed: no folder could be made to keep the worktree's ignored files in (")
-	if !strings.Contains(out, "Nothing was changed. Branch fix-login is left as it is.") {
+	if !strings.Contains(out, "Nothing was changed. Branch fix-login is left as it is; run carson remove fix-login again once that is cleared.") {
 		t.Errorf("the state is not said:\n%s", out)
 	}
 	if !f.exists(filepath.Join(dir, "local.env")) {
@@ -350,7 +350,7 @@ func TestRemoveSaysWhereThingsStandWhenGitDeletesOnlyPartOfTheFolder(t *testing.
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 1)
 	expectLine(t, out, "Not removed: git could not delete all of its worktree's folder (")
-	if !strings.Contains(out, "What is left of the folder, all of it committed, is at "+dir+". Branch fix-login is left as it is.") {
+	if !strings.Contains(out, "What is left of the folder, all of it committed, is at "+dir+". Branch fix-login is left as it is; run carson remove fix-login again once that is cleared.") {
 		t.Errorf("the state is not said:\n%s", out)
 	}
 	out, code = f.remove("fix-login")
@@ -419,7 +419,7 @@ func TestRemoveRefusesWithoutAHome(t *testing.T) {
 	f.mergedTask("fix-login")
 	out, code := f.runIn(environment{"HOME": "", "CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "4121"}, f.local, claudeRunning, "remove", "fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not removed: HOME does not name a folder, so the worktree's ignored files would have nowhere to be kept. Nothing was changed.")
+	expectLine(t, out, "Not removed: HOME does not name a folder, so the worktree's ignored files would have nowhere to be kept. Nothing was changed; set HOME to your home folder, then run carson remove fix-login again.")
 }
 
 // Cases from the trial of 2026-09-30, where agents of four families used carson in sandboxes, and from Sol's review of 80c2b83.
