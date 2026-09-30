@@ -45,7 +45,7 @@ func TestRemoveRemovesAMergedTask(t *testing.T) {
 	dir := f.mergedTask("fix-login")
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, landed on main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03-a065 on test-mac.")
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, landed on main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03-a065.")
 	if f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") != "" {
 		t.Error("the worktree or the branch is still there")
 	}
@@ -119,7 +119,7 @@ func TestRemoveRefusesAnotherSessionsTask(t *testing.T) {
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	out, code := f.runIn(inClaude, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "remove", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not removed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner removes it; leave it to that session.")
+	expectLine(t, out, "Not removed: fix-login belongs to Claude session 4e7a91d2-other, which is live. Only its owner removes it; leave it to that session.")
 }
 
 func TestRemoveRefusesAWorktreeMadeOutsideCarson(t *testing.T) {
@@ -261,7 +261,7 @@ func TestRemoveATaskWhoseFolderIsGone(t *testing.T) {
 	os.RemoveAll(dir)
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", whose folder was already gone, and its branch, landed on main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03-a065 on test-mac.")
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", whose folder was already gone, and its branch, landed on main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03-a065.")
 	if f.git(f.local, "branch", "--list", "fix-login") != "" || strings.Contains(f.git(f.local, "worktree", "list"), "fix-login") {
 		t.Error("the branch or git's record of the worktree is still there")
 	}

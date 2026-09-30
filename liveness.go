@@ -120,22 +120,15 @@ func (l liveness) String() string {
 }
 
 // livenessOf observes a record's owner: live when its process runs with the recorded start time; ended when it does not run, or
-// another process has since taken its id; unknown when it cannot be checked — a record naming no process, a record from another
-// machine, or ps unable to answer.
+// another process has since taken its id; unknown when it cannot be checked — a record naming no process, or ps unable to answer.
+// Every record carson reads was made on the machine reading it: a worktree's record lives in its clone's own git folder, and never
+// travels to another machine.
 func (m Machine) livenessOf(record Record) (liveness, string) {
 	if record.PID <= 0 {
 		return unknown, "the record names no process"
 	}
 	if record.Started == "" {
 		return unknown, fmt.Sprintf("the record has no start time for process %d", record.PID)
-	}
-	// The machine is known by its stable identity when both sides have one; a name alone can change under mDNS.
-	sameMachine := record.Machine == m.Host
-	if record.MachineID != "" && m.ID != "" {
-		sameMachine = record.MachineID == m.ID
-	}
-	if !sameMachine {
-		return unknown, "it cannot be checked from " + m.Host
 	}
 	started, err := m.Processes.Started(record.PID)
 	switch {

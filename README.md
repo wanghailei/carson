@@ -50,7 +50,7 @@ $ carson land xyz
 ⧓ Landed xyz on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Checks: bin/check passed. Remove it with: carson remove xyz (from outside its worktree).
 
 $ cd ~/code/notes && carson remove xyz
-⧓ Removed xyz: its worktree at ~/.worktrees/code/notes/xyz, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0 on studio.
+⧓ Removed xyz: its worktree at ~/.worktrees/code/notes/xyz, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0.
 ```
 
 ## Commands

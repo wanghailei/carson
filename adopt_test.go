@@ -25,7 +25,7 @@ func TestAdoptAnEndedAgentsTask(t *testing.T) {
 	f.commit(dir, "login.rb")
 	out, code := f.adopt(claudeRunning, "fix-login") // process 5000 has ended
 	expectCode(t, code, 0)
-	expectLine(t, out, "Adopted fix-login from Claude session 4e7a91d2-other on test-mac, which has ended: its worktree at "+dir+" is yours now, as it was left.")
+	expectLine(t, out, "Adopted fix-login from Claude session 4e7a91d2-other, which has ended: its worktree at "+dir+" is yours now, as it was left.")
 	record := f.readRecord(dir)
 	if record.Session != "9cb74d03-a065-48ca" || len(record.Previous) != 1 || record.Previous[0].Session != "4e7a91d2-other" {
 		t.Errorf("the owner record after adoption: %+v", record)
@@ -40,18 +40,18 @@ func TestAdoptRefusesALiveOwnersTask(t *testing.T) {
 	f.otherSession("fix-login")
 	out, code := f.adopt(stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not adopted: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live; only an ended agent's task is adopted.")
+	expectLine(t, out, "Not adopted: fix-login belongs to Claude session 4e7a91d2-other, which is live; only an ended agent's task is adopted.")
 }
 
 func TestAdoptRefusesAnOwnerWhoseStateIsUnknown(t *testing.T) {
 	f := newFixture(t)
 	dir := f.worktree("fix-login")
 	record := claude("fix-login", 5000)
-	record.Machine = "linux-box"
+	record.Started = ""
 	f.own(dir, record)
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not adopted: fix-login belongs to Claude session 4e7a91d2-aaaa on linux-box, whose state is unknown (it cannot be checked from test-mac); only an agent seen to have ended gives up its task.")
+	expectLine(t, out, "Not adopted: fix-login belongs to Claude session 4e7a91d2-aaaa, whose state is unknown (the record has no start time for process 5000); only an agent seen to have ended gives up its task.")
 }
 
 func TestAdoptSaysATaskIsAlreadyYours(t *testing.T) {
@@ -77,7 +77,7 @@ func TestAdoptTakesUpAbandonedWork(t *testing.T) {
 	f.abandon("fix-login")
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Adopted fix-login: its abandoned work, 1 commit not on main, now back on branch fix-login, is in "+dir+", owned by Claude session 9cb74d03-a065 on test-mac.")
+	expectLine(t, out, "Adopted fix-login: its abandoned work, 1 commit not on main, now back on branch fix-login, is in "+dir+", owned by Claude session 9cb74d03-a065.")
 	if !f.exists(filepath.Join(dir, "draft.txt")) || f.git(f.local, "branch", "--list", "abandoned/fix-login") != "" {
 		t.Error("the abandoned work is not back as the task")
 	}
@@ -93,7 +93,7 @@ func TestAdoptTakesUpABranchLeftWithoutAWorktree(t *testing.T) {
 	f.git(f.local, "switch", "-q", "main")
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Adopted fix-login: branch fix-login, left without a worktree with 1 commit not on main, is in "+f.taskFolder("fix-login")+", owned by Claude session 9cb74d03-a065 on test-mac.")
+	expectLine(t, out, "Adopted fix-login: branch fix-login, left without a worktree with 1 commit not on main, is in "+f.taskFolder("fix-login")+", owned by Claude session 9cb74d03-a065.")
 }
 
 func TestAdoptRefusesABranchWithNothingMainLacks(t *testing.T) {
@@ -166,7 +166,7 @@ func TestAdoptAnEndedAgentsTaskWhoseFolderIsGone(t *testing.T) {
 	os.RemoveAll(dir)
 	out, code := f.adopt(claudeRunning, "fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Adopted fix-login from Claude session 4e7a91d2-other on test-mac, which has ended. Its worktree folder, "+dir+", is gone: keep its 1 commit with: carson abandon fix-login")
+	expectLine(t, out, "Adopted fix-login from Claude session 4e7a91d2-other, which has ended. Its worktree folder, "+dir+", is gone: keep its 1 commit with: carson abandon fix-login")
 	out, code = f.abandon("fix-login")
 	expectCode(t, code, 0)
 	expectLine(t, out, "Abandoned fix-login: its work — 1 commit — is kept as branch abandoned/fix-login")

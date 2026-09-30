@@ -159,7 +159,7 @@ func TestLandRefusesAnotherSessionsTask(t *testing.T) {
 	f.commit(dir, "login.rb")
 	out, code := f.runIn(inClaude, dir, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "land", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner lands it; leave it to that session.")
+	expectLine(t, out, "Not landed: fix-login belongs to Claude session 4e7a91d2-other, which is live. Only its owner lands it; leave it to that session.")
 }
 
 // carson land runs from anywhere in the repository: the main working tree as well as the task's worktree.
@@ -271,17 +271,17 @@ func TestLandRefusesWhileALiveMergeHoldsTheLockAndTakesOverAStaleOne(t *testing.
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
-	held := Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"}
+	held := Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026"}
 	if err := writeRecordFile(lock, held); err != nil {
 		t.Fatal(err)
 	}
 	running := stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}
 	out, code := f.runIn(inClaude, dir, running, "land", "fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: another landing is running in this repository — other-task, by Claude session 4e7a91d2-other on test-mac. Run carson land fix-login again when it has finished. Nothing was changed.")
+	expectLine(t, out, "Not landed: another landing is running in this repository — other-task, by Claude session 4e7a91d2-other. Run carson land fix-login again when it has finished. Nothing was changed.")
 	out, code = f.land(dir) // process 5000 has ended
 	expectCode(t, code, 0)
-	expectLine(t, out, "The landing lock left by an ended carson (other-task, by Claude session 4e7a91d2-other on test-mac) is taken over.")
+	expectLine(t, out, "The landing lock left by an ended carson (other-task, by Claude session 4e7a91d2-other) is taken over.")
 	if f.exists(lock) {
 		t.Error("the merge lock was not released")
 	}
@@ -461,10 +461,10 @@ func TestLandRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
-	writeRecordFile(lock, Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "x", Machine: "linux-box", MachineID: "linux-id"})
+	writeRecordFile(lock, Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000})
 	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: the landing lock is held by other-task's landing, by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed; run carson land fix-login again when that landing has finished, and if its session is gone, a person must settle it.")
+	expectLine(t, out, "Not landed: the landing lock is held by other-task's landing, by Claude session 4e7a91d2-other, whose state is unknown (the record has no start time for process 5000). Nothing was changed; run carson land fix-login again when that landing has finished, and if its session is gone, a person must settle it.")
 }
 
 // From the review of fdb5297: a task already on local main, and a re-run over a join already made.

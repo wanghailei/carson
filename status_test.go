@@ -50,7 +50,7 @@ func (f *fixture) own(dir string, record Record) {
 }
 
 func claude(task string, pid int) Record {
-	return Record{Task: task, Harness: "claude", Session: "4e7a91d2-aaaa-bbbb", PID: pid, Started: "Wed Sep 30 09:00:00 2026", Machine: "test-mac", Created: time.Date(2026, 9, 30, 9, 1, 0, 0, time.UTC)}
+	return Record{Task: task, Harness: "claude", Session: "4e7a91d2-aaaa-bbbb", PID: pid, Started: "Wed Sep 30 09:00:00 2026", Created: time.Date(2026, 9, 30, 9, 1, 0, 0, time.UTC)}
 }
 
 func TestStatusMainTheSameAsGitHub(t *testing.T) {
@@ -136,7 +136,7 @@ func TestStatusLiveTaskAtWork(t *testing.T) {
 	f.write(dir, "notes.txt", "notes\n")
 	f.own(dir, claude("fix-login", 4121))
 	out, _ := f.run(f.local, stranger{4121: "Wed Sep 30 09:00:00 2026"}, "status")
-	expectLine(t, out, "Claude session 4e7a91d2-aaaa on test-mac, live:")
+	expectLine(t, out, "Claude session 4e7a91d2-aaaa, live:")
 	expectLine(t, out, "fix-login at "+dir+": working, 1 commit not on main, 1 uncommitted file.")
 }
 
@@ -147,7 +147,7 @@ func TestStatusEndedTaskLandedAndClean(t *testing.T) {
 	record.Landed = f.git(f.local, "rev-parse", "main")
 	f.own(dir, record)
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "Claude session 4e7a91d2-aaaa on test-mac, ended:")
+	expectLine(t, out, "Claude session 4e7a91d2-aaaa, ended:")
 	expectLine(t, out, "done-task at "+dir+": landed and clean.")
 }
 
@@ -156,17 +156,7 @@ func TestStatusProcessReusedIsEnded(t *testing.T) {
 	dir := f.worktree("fix-login")
 	f.own(dir, claude("fix-login", 4121))
 	out, _ := f.run(f.local, stranger{4121: "Wed Sep 30 11:45:00 2026"}, "status")
-	expectLine(t, out, "Claude session 4e7a91d2-aaaa on test-mac, ended:")
-}
-
-func TestStatusOwnerOnAnotherMachineIsUnknown(t *testing.T) {
-	f := newFixture(t)
-	dir := f.worktree("fix-login")
-	record := claude("fix-login", 4121)
-	record.Machine = "linux-box"
-	f.own(dir, record)
-	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "Claude session 4e7a91d2-aaaa on linux-box, unknown (it cannot be checked from test-mac):")
+	expectLine(t, out, "Claude session 4e7a91d2-aaaa, ended:")
 }
 
 func TestStatusWorktreeWithoutOwnerRecord(t *testing.T) {
@@ -262,9 +252,9 @@ func TestStatusUnreadableFolderIsNotGone(t *testing.T) {
 func TestStatusRecordNamingNoProcessIsUnknown(t *testing.T) {
 	f := newFixture(t)
 	dir := f.worktree("fix-login")
-	f.own(dir, Record{Task: "fix-login", Harness: "terminal", Machine: "test-mac"})
+	f.own(dir, Record{Task: "fix-login", Harness: "terminal"})
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "A terminal, process 0, on test-mac, unknown (the record names no process):")
+	expectLine(t, out, "A terminal, process 0, unknown (the record names no process):")
 }
 
 func TestStatusRecordWithRelativeGitdirIsFound(t *testing.T) {
@@ -273,7 +263,7 @@ func TestStatusRecordWithRelativeGitdirIsFound(t *testing.T) {
 	f.git(f.local, "-c", "worktree.useRelativePaths=true", "worktree", "add", "-q", dir, "-b", "relative", "main")
 	f.own(dir, claude("relative", 4121))
 	out, _ := f.run(f.local, stranger{4121: "Wed Sep 30 09:00:00 2026"}, "status")
-	expectLine(t, out, "Claude session 4e7a91d2-aaaa on test-mac, live:")
+	expectLine(t, out, "Claude session 4e7a91d2-aaaa, live:")
 	expectNoLine(t, out, "No owner record")
 }
 
@@ -336,7 +326,7 @@ func TestStatusGroupsTwoTasksOfOneSessionAndPutsUnownedLast(t *testing.T) {
 	f.own(first, claude("fix-one", 4121))
 	f.own(second, claude("fix-two", 4121))
 	out, _ := f.run(f.local, stranger{4121: "Wed Sep 30 09:00:00 2026"}, "status")
-	session := strings.Index(out, "Claude session 4e7a91d2-aaaa on test-mac, live:")
+	session := strings.Index(out, "Claude session 4e7a91d2-aaaa, live:")
 	one, two := strings.Index(out, "fix-one at "+first), strings.Index(out, "fix-two at "+second)
 	orphan := strings.Index(out, noOwnerHeading)
 	if strings.Count(out, "Claude session 4e7a91d2") != 1 || session < 0 || !(session < one && session < two && two < orphan) || !strings.Contains(out, "aaa-unowned at "+unowned) {
@@ -405,9 +395,9 @@ func TestStatusListsAnAbandonedBranchOnce(t *testing.T) {
 
 // From the second trial: two Pi sessions started within a minute shared the first group of their identities.
 func TestTwoPiSessionsAreToldApart(t *testing.T) {
-	a := ownerName(Record{Harness: "pi", Session: "01a0f196-aa18-73e7-9fc4-d1b7c9197b0d", Machine: "test-mac"})
-	b := ownerName(Record{Harness: "pi", Session: "01a0f196-aa2c-7578-9a9b-19f0d47abcb4", Machine: "test-mac"})
-	if a == b || a != "Pi session 01a0f196-aa18 on test-mac" {
+	a := ownerName(Record{Harness: "pi", Session: "01a0f196-aa18-73e7-9fc4-d1b7c9197b0d"})
+	b := ownerName(Record{Harness: "pi", Session: "01a0f196-aa2c-7578-9a9b-19f0d47abcb4"})
+	if a == b || a != "Pi session 01a0f196-aa18" {
 		t.Errorf("%q and %q", a, b)
 	}
 }

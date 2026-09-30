@@ -349,7 +349,7 @@ func (r *repository) pushMain() (string, error) {
 // the pi above carson; or a terminal, whose process is the shell carson runs in. When that process cannot be observed, the second
 // value says so, for the start message.
 func (m Machine) ownerRecord(task string) (Record, string) {
-	record := Record{Task: task, Machine: m.Host, MachineID: m.ID, Created: time.Now().UTC()}
+	record := Record{Task: task, Created: time.Now().UTC()}
 	claudePID, _ := strconv.Atoi(m.Env("CLAUDE_PID"))
 	piPID := 0
 	if m.Env("PI_SESSION_ID") != "" {
@@ -414,12 +414,12 @@ func (m Machine) above(pid int) int {
 	return 0
 }
 
-// ownerName names a record's owner: "Claude session 4e7a91d2 on this-mac", or "a terminal, process 800, on this-mac".
+// ownerName names a record's owner: "Claude session 4e7a91d2-a065", or "a terminal, process 800".
 func ownerName(record Record) string {
 	if record.Harness == "terminal" {
-		return fmt.Sprintf("a terminal, process %d, on %s", record.PID, record.Machine)
+		return fmt.Sprintf("a terminal, process %d", record.PID)
 	}
-	return fmt.Sprintf("%s session %s on %s", capitalised(record.Harness), shortSession(record.Session), record.Machine)
+	return fmt.Sprintf("%s session %s", capitalised(record.Harness), shortSession(record.Session))
 }
 
 // shortSession is a session identity's first two groups: "9cb74d03-a065". Pi's identities begin with the time, so their first group

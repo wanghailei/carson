@@ -77,16 +77,9 @@ func branchUnderRebase(dir string) string {
 	return ""
 }
 
-// sameOwner is whether two records name one owner: one harness session on one machine, or one terminal's shell.
+// sameOwner is whether two records name one owner: one harness session, or one terminal's shell.
 func sameOwner(a, b Record) bool {
 	if a.Harness != b.Harness {
-		return false
-	}
-	if a.MachineID != "" && b.MachineID != "" {
-		if a.MachineID != b.MachineID {
-			return false
-		}
-	} else if a.Machine != b.Machine {
 		return false
 	}
 	if a.Harness == "terminal" {

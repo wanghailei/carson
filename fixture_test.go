@@ -150,6 +150,6 @@ func (f *fixture) runIn(env environment, dir string, processes Processes, args .
 		withHome[name] = value
 	}
 	var out bytes.Buffer
-	code := Main(args, Machine{Dir: dir, Out: &out, Host: "test-mac", ID: "test-id", Env: withHome.get, PID: 900, Processes: processes})
+	code := Main(args, Machine{Dir: dir, Out: &out, Env: withHome.get, PID: 900, Processes: processes})
 	return out.String(), code
 }

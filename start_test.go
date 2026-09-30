@@ -33,13 +33,13 @@ func TestStartMakesTheTaskWorktreeAndItsOwnerRecord(t *testing.T) {
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 0)
 	dir := f.taskFolder("fix-login")
-	expectLine(t, out, "Started fix-login from local main at "+f.git(f.local, "rev-parse", "--short", "main")+" in "+dir+", owned by Claude session 9cb74d03-a065 on test-mac.")
+	expectLine(t, out, "Started fix-login from local main at "+f.git(f.local, "rev-parse", "--short", "main")+" in "+dir+", owned by Claude session 9cb74d03-a065.")
 	if branch := f.git(dir, "symbolic-ref", "--short", "HEAD"); branch != "fix-login" {
 		t.Errorf("the worktree is on %q", branch)
 	}
 	record := f.readRecord(dir)
 	if record.Task != "fix-login" || record.Harness != "claude" || record.Session != "9cb74d03-a065-48ca" || record.PID != 4121 ||
-		record.Started != "Wed Sep 30 09:00:00 2026" || record.Machine != "test-mac" || record.MachineID != "test-id" {
+		record.Started != "Wed Sep 30 09:00:00 2026" {
 		t.Errorf("owner record: %+v", record)
 	}
 }
@@ -48,7 +48,7 @@ func TestStartThenStatusShowsTheTaskLive(t *testing.T) {
 	f := newFixture(t)
 	f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	out, _ := f.runIn(inClaude, f.local, claudeRunning, "status")
-	expectLine(t, out, "Claude session 9cb74d03-a065 on test-mac, live:")
+	expectLine(t, out, "Claude session 9cb74d03-a065, live:")
 	expectLine(t, out, "fix-login at "+f.taskFolder("fix-login")+": clean, nothing main lacks.")
 }
 
@@ -118,7 +118,7 @@ func TestStartRefusesANameALiveSessionHolds(t *testing.T) {
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	out, code := f.runIn(inClaude, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: fix-login is taken by Claude session 4e7a91d2-other on test-mac, which is live; its worktree is at "+f.taskFolder("fix-login")+". Choose another name.")
+	expectLine(t, out, "Not started: fix-login is taken by Claude session 4e7a91d2-other, which is live; its worktree is at "+f.taskFolder("fix-login")+". Choose another name.")
 }
 
 func TestStartSaysATaskIsAlreadyYours(t *testing.T) {
@@ -269,12 +269,12 @@ func TestAfterAFailedAddANameTakenMeanwhileIsNamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	winner := f.worktree("fix-login")
-	f.own(winner, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"})
+	f.own(winner, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026"})
 	var machine Machine
-	machine.Host, machine.Env, machine.Processes = "test-mac", environment{}.get, stranger{5000: "Wed Sep 30 07:00:00 2026"}
+	machine.Env, machine.Processes = environment{}.get, stranger{5000: "Wed Sep 30 07:00:00 2026"}
 	repo, _ = openRepository(f.local)
 	err = repo.afterFailedAdd(machine, "fix-login", f.taskFolder("fix-login"), errors.New("fatal: a branch named 'fix-login' already exists"))
-	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session 4e7a91d2-other on test-mac, which is live; its worktree is at ") {
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session 4e7a91d2-other, which is live; its worktree is at ") {
 		t.Errorf("got %v", err)
 	}
 }
@@ -285,7 +285,7 @@ func TestStartRecordsAndSaysWhenTheHarnessProcessCannotBeObserved(t *testing.T) 
 	expectCode(t, code, 0)
 	expectLine(t, out, "Its process, 99999, could not be observed (not running), so status will show this task's owner as unknown.")
 	status, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, status, "Claude session 9cb74d03-a065 on test-mac, unknown (the record has no start time for process 99999):")
+	expectLine(t, status, "Claude session 9cb74d03-a065, unknown (the record has no start time for process 99999):")
 }
 
 func TestStartRefusesTheTrunkAsATaskName(t *testing.T) {
@@ -325,16 +325,16 @@ func TestStartRefusesANameHeldByAnEndedSession(t *testing.T) {
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2-other on test-mac, which has ended. Adopt it with: carson adopt fix-login")
+	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2-other, which has ended. Adopt it with: carson adopt fix-login")
 }
 
-func TestStartRefusesANameHeldFromAnotherMachine(t *testing.T) {
+func TestStartRefusesANameWhoseOwnerCannotBeTold(t *testing.T) {
 	f := newFixture(t)
 	dir := f.worktree("fix-login")
-	f.own(dir, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "x", Machine: "linux-box", MachineID: "linux-id"})
+	f.own(dir, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000})
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac).")
+	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2-other, whose state is unknown (the record has no start time for process 5000).")
 }
 
 func TestStartRefusesANameHeldByAWorktreeMadeOutsideCarson(t *testing.T) {
@@ -363,28 +363,17 @@ func TestStartWithoutARemoteStartsFromLocalMain(t *testing.T) {
 	expectLine(t, out, "No GitHub remote: the task starts from local main.")
 }
 
-// Liveness knows the machine by its stable identity when both sides have one, whatever its name says.
-func TestStatusKnowsTheMachineByItsIdentityNotItsName(t *testing.T) {
-	f := newFixture(t)
-	renamed, elsewhere := f.worktree("renamed"), f.worktree("elsewhere")
-	f.own(renamed, Record{Task: "renamed", Harness: "claude", Session: "11111111-a", PID: 4121, Started: "Wed Sep 30 09:00:00 2026", Machine: "old-name", MachineID: "test-id"})
-	f.own(elsewhere, Record{Task: "elsewhere", Harness: "claude", Session: "22222222-b", PID: 4121, Started: "Wed Sep 30 09:00:00 2026", Machine: "test-mac", MachineID: "other-id"})
-	out, _ := f.run(f.local, stranger{4121: "Wed Sep 30 09:00:00 2026"}, "status")
-	expectLine(t, out, "Claude session 11111111-a on old-name, live:")
-	expectLine(t, out, "Claude session 22222222-b on test-mac, unknown (it cannot be checked from test-mac):")
-}
-
 // Two sessions starting one name aim at one folder; the winner's record must survive the loser's failed add.
 func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testing.T) {
 	f := newFixture(t)
 	folder := f.taskFolder("fix-login")
 	f.git(f.local, "worktree", "add", "-q", "-b", "fix-login", folder, "main")
-	f.own(folder, Record{Task: "fix-login", Harness: "claude", Session: "bbbb2222-winner", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"})
+	f.own(folder, Record{Task: "fix-login", Harness: "claude", Session: "bbbb2222-winner", PID: 5000, Started: "Wed Sep 30 07:00:00 2026"})
 	repo, _ := openRepository(f.local)
 	var machine Machine
-	machine.Host, machine.Env, machine.Processes = "test-mac", environment{}.get, stranger{5000: "Wed Sep 30 07:00:00 2026"}
+	machine.Env, machine.Processes = environment{}.get, stranger{5000: "Wed Sep 30 07:00:00 2026"}
 	err := repo.afterFailedAdd(machine, "fix-login", folder, errors.New("cannot lock ref 'refs/heads/fix-login'"))
-	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session bbbb2222-winner on test-mac, which is live; its worktree is at ") {
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session bbbb2222-winner, which is live; its worktree is at ") {
 		t.Errorf("got %v", err)
 	}
 	if record := f.readRecord(folder); record.Session != "bbbb2222-winner" {
@@ -463,7 +452,7 @@ func TestAfterABranchConflictTheWorktreeInTheFolderIsNotClaimed(t *testing.T) {
 	folder := f.taskFolder("fix-login")
 	f.git(f.local, "worktree", "add", "-q", "-b", "fix-login", folder, "main")
 	repo, _ := openRepository(f.local)
-	err := repo.afterFailedAdd(Machine{Host: "test-mac", Env: environment{}.get, Processes: stranger{}}, "fix-login", folder, errors.New("fatal: a branch named 'fix-login' already exists"))
+	err := repo.afterFailedAdd(Machine{Env: environment{}.get, Processes: stranger{}}, "fix-login", folder, errors.New("fatal: a branch named 'fix-login' already exists"))
 	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by a session that has not recorded itself yet, at "+folder+".") {
 		t.Errorf("got %v", err)
 	}
