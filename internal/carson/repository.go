@@ -310,6 +310,14 @@ func (r *repository) state(t task) string {
 	return "working, " + strings.Join(parts, ", ") + "."
 }
 
+// isOrAre is the verb a count takes: 1 file is, 2 files are.
+func isOrAre(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
+}
+
 // plural writes a count with its noun: 1 commit, 2 commits.
 func plural(n int, noun string) string {
 	if n == 1 {

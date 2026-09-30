@@ -290,13 +290,8 @@ func (t task) readyToMerge() error {
 	if err != nil {
 		return refuse(failed, "the worktree's git folder cannot be found (%s).", reason(err))
 	}
-	for _, operation := range []struct{ marker, name, command string }{
-		{"rebase-merge", "rebase", "git rebase"}, {"rebase-apply", "rebase", "git rebase"}, {"MERGE_HEAD", "merge", "git merge"},
-		{"CHERRY_PICK_HEAD", "cherry-pick", "git cherry-pick"}, {"REVERT_HEAD", "revert", "git revert"},
-	} {
-		if _, err := os.Stat(filepath.Join(gitdir, operation.marker)); err == nil {
-			return refuse(refused, "a %s is in progress in this worktree. Finish it with %s --continue, or give it up with %s --abort, then run carson merge.", operation.name, operation.command, operation.command)
-		}
+	if err := operationInProgress(gitdir, "this worktree", "carson merge"); err != nil {
+		return err
 	}
 	found, err := changes(t.path)
 	if err != nil {
@@ -307,11 +302,21 @@ func (t task) readyToMerge() error {
 		for i, line := range found {
 			names[i] = strings.TrimSpace(line[2:])
 		}
-		verb := "are"
-		if len(found) == 1 {
-			verb = "is"
+		return refuse(refused, "%s %s uncommitted — %s. Commit them in this worktree, then run carson merge.", plural(len(found), "file"), isOrAre(len(found)), strings.Join(names, ", "))
+	}
+	return nil
+}
+
+// operationInProgress refuses a worktree whose git folder shows a git operation stopped part way, saying how to finish it or give it
+// up; where names the worktree, and then is what to run after.
+func operationInProgress(gitdir, where, then string) error {
+	for _, operation := range []struct{ marker, name, command string }{
+		{"rebase-merge", "rebase", "git rebase"}, {"rebase-apply", "rebase", "git rebase"}, {"MERGE_HEAD", "merge", "git merge"},
+		{"CHERRY_PICK_HEAD", "cherry-pick", "git cherry-pick"}, {"REVERT_HEAD", "revert", "git revert"},
+	} {
+		if _, err := os.Stat(filepath.Join(gitdir, operation.marker)); err == nil {
+			return refuse(refused, "a %s is in progress in %s. Finish it with %s --continue, or give it up with %s --abort, then run %s.", operation.name, where, operation.command, operation.command, then)
 		}
-		return refuse(refused, "%s %s uncommitted — %s. Commit them in this worktree, then run carson merge.", plural(len(found), "file"), verb, strings.Join(names, ", "))
 	}
 	return nil
 }

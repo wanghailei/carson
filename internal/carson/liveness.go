@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// Processes tells when a process started, as ps reports it, and which process started it along with its own command name; or
-// errNotRunning when no process has the id.
+// Processes tells when a process started, as ps reports it, and which process started it along with its own command name, or
+// errNotRunning when no process has the id; and which processes work inside a folder.
 type Processes interface {
 	Started(pid int) (string, error)
 	Process(pid int) (ppid int, command string, err error)
@@ -71,13 +71,14 @@ func (PS) Process(pid int) (int, string, error) {
 	return ppid, command[strings.LastIndex(command, "/")+1:], nil
 }
 
-// Inside names the processes working inside dir — whose working folder is dir or below it — as "puma (pid 4121)", from lsof. carson
-// itself is left out.
+// Inside names the processes of the user running carson that work inside dir — whose working folder is dir or below it — as "puma
+// (pid 4121)", from lsof. Other users' processes are not visible to carson, so they are not looked for. carson itself is left out.
 func (PS) Inside(dir string) ([]string, error) {
-	out, err := exec.Command("lsof", "-d", "cwd", "-F", "pcn").Output()
+	out, err := exec.Command("lsof", "-a", "-u", strconv.Itoa(os.Getuid()), "-d", "cwd", "-F", "pcn").Output()
 	if len(out) == 0 && err != nil {
 		return nil, fmt.Errorf("lsof: %v", err)
 	}
+	self := strconv.Itoa(os.Getpid())
 	var found []string
 	var pid, command string
 	for _, line := range strings.Split(string(out), "\n") {
@@ -90,7 +91,7 @@ func (PS) Inside(dir string) ([]string, error) {
 		case 'c':
 			command = line[1:]
 		case 'n':
-			if path := line[1:]; (path == dir || strings.HasPrefix(path, dir+"/")) && pid != strconv.Itoa(os.Getpid()) {
+			if path := line[1:]; (path == dir || strings.HasPrefix(path, dir+"/")) && pid != self {
 				found = append(found, fmt.Sprintf("%s (pid %s)", command, pid))
 			}
 		}
