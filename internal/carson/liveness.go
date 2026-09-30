@@ -1,7 +1,9 @@
 package carson
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -18,10 +20,20 @@ var errNotRunning = errors.New("not running")
 type PS struct{}
 
 func (PS) Started(pid int) (string, error) {
-	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
-	started := strings.TrimSpace(string(out))
+	if pid <= 0 {
+		return "", fmt.Errorf("%d is no process id", pid)
+	}
+	command := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid))
+	var out, errs bytes.Buffer
+	command.Stdout, command.Stderr = &out, &errs
+	err := command.Run()
+	started := strings.TrimSpace(out.String())
+	// ps names no process and says nothing else: none has that id. Anything ps says on its error stream is a failure to tell.
+	if complaint := firstLine(errs.String()); complaint != "" {
+		return "", fmt.Errorf("ps: %s", complaint)
+	}
 	var exit *exec.ExitError
-	if (err == nil || errors.As(err, &exit)) && started == "" {
+	if started == "" && (err == nil || errors.As(err, &exit)) {
 		return "", errNotRunning
 	}
 	if err != nil {
@@ -40,8 +52,12 @@ const (
 )
 
 // livenessOf observes a record's owner: live when its process runs with the recorded start time; ended when it does not run, or
-// another process has since taken its id; unknown when it cannot be checked — on another machine, or when ps cannot answer.
+// another process has since taken its id; unknown when it cannot be checked — a record naming no process, a record from another
+// machine, or ps unable to answer.
 func (m Machine) livenessOf(record Record) (liveness, string) {
+	if record.PID <= 0 || record.Started == "" {
+		return unknown, "the record names no process"
+	}
 	if record.Machine != m.Host {
 		return unknown, "it cannot be checked from " + m.Host
 	}

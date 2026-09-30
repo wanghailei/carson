@@ -16,13 +16,12 @@ const (
 	refused = 2
 )
 
-// Machine is what one run of carson sees of the world: the folder it runs in, where it writes, this machine's name, its environment,
-// and its processes. Tests give it a machine of their own.
+// Machine is what one run of carson sees of the world: the folder it runs in, where it writes, this machine's name and its processes.
+// Tests give it a machine of their own.
 type Machine struct {
 	Dir       string
 	Out       io.Writer
 	Host      string
-	Env       func(string) string
 	Processes Processes
 }
 

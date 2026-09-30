@@ -10,48 +10,48 @@ import (
 
 const noOwnerHeading = "No owner record (made outside carson; whose it is is the master's to settle):"
 
-// status shows main against GitHub, the main working tree, and every task grouped by the session that owns it. It changes nothing.
+// status shows main against GitHub, the main working tree, and every task grouped by the session that owns it, the tasks carson does
+// not own last. It changes nothing.
 func status(m Machine) int {
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
 		fmt.Fprintf(m.Out, "carson: %s is not inside a git repository.\n", m.Dir)
-		return refused
+		return failed
 	}
 	if err != nil {
-		fmt.Fprintf(m.Out, "carson: the repository could not be read: %v\n", err)
+		fmt.Fprintf(m.Out, "carson: the repository could not be read (%s).\n", reason(err))
 		return failed
 	}
 	fmt.Fprintln(m.Out, repo.mainAgainstGitHub())
 	fmt.Fprintln(m.Out, repo.mainTree())
-	tasks, admins, err := repo.tasks()
-	if err != nil {
-		fmt.Fprintf(m.Out, "carson: the worktrees could not be listed: %v\n", err)
-		return failed
-	}
+	tasks := repo.tasks()
 	if len(tasks) == 0 {
 		fmt.Fprintln(m.Out, "No tasks.")
 		return done
 	}
-	var headings []string
+	var headings, unowned []string
 	groups := map[string][]string{}
-	for _, task := range tasks {
-		heading := noOwnerHeading
-		if record, found, err := readOwner(admins[task.path]); err != nil {
+	for _, t := range tasks {
+		line := fmt.Sprintf("%s at %s: %s", t.name(), t.path, repo.state(t))
+		heading := ""
+		if t.admin == "" {
+			heading = "Owner unknown (git keeps no administrative folder that points to it):"
+		} else if record, found, err := readOwner(t.admin); err != nil {
 			heading = "Owner record unreadable (" + err.Error() + "):"
-		} else if found {
+		} else if !found {
+			unowned = append(unowned, line)
+			continue
+		} else {
 			heading = m.ownerHeading(record)
 		}
 		if _, seen := groups[heading]; !seen {
 			headings = append(headings, heading)
 		}
-		groups[heading] = append(groups[heading], fmt.Sprintf("%s at %s: %s", taskName(task), task.path, repo.taskState(task)))
+		groups[heading] = append(groups[heading], line)
 	}
-	// Tasks with no owner record come last: nothing carson does touches them.
-	for i, heading := range headings {
-		if heading == noOwnerHeading {
-			headings = append(append(headings[:i:i], headings[i+1:]...), heading)
-			break
-		}
+	if len(unowned) > 0 {
+		headings = append(headings, noOwnerHeading)
+		groups[noOwnerHeading] = unowned
 	}
 	fmt.Fprintln(m.Out, "Tasks:")
 	for _, heading := range headings {
@@ -65,16 +65,8 @@ func status(m Machine) int {
 
 // ownerHeading names a session and whether it is live: "Claude session 4e7a91d2 on this-mac, live:".
 func (m Machine) ownerHeading(record Record) string {
-	state, reason := m.livenessOf(record)
-	var said string
-	switch state {
-	case live:
-		said = "live"
-	case ended:
-		said = "ended"
-	default:
-		said = "unknown (" + reason + ")"
-	}
+	state, why := m.livenessOf(record)
+	said := map[liveness]string{live: "live", ended: "ended", unknown: "unknown (" + why + ")"}[state]
 	if record.Harness == "terminal" {
 		return fmt.Sprintf("A terminal, process %d, on %s, %s:", record.PID, record.Machine, said)
 	}
@@ -82,11 +74,11 @@ func (m Machine) ownerHeading(record Record) string {
 	return fmt.Sprintf("%s session %s on %s, %s:", capitalised(record.Harness), session, record.Machine, said)
 }
 
-func taskName(w worktree) string {
-	if w.branch != "" {
-		return w.branch
+func (t task) name() string {
+	if t.branch != "" {
+		return t.branch
 	}
-	return filepath.Base(w.path)
+	return filepath.Base(t.path)
 }
 
 func capitalised(word string) string {

@@ -105,6 +105,6 @@ func (s stranger) Started(pid int) (string, error) {
 func (f *fixture) run(dir string, processes Processes, args ...string) (string, int) {
 	f.t.Helper()
 	var out bytes.Buffer
-	code := Main(args, Machine{Dir: dir, Out: &out, Host: "test-mac", Env: func(string) string { return "" }, Processes: processes})
+	code := Main(args, Machine{Dir: dir, Out: &out, Host: "test-mac", Processes: processes})
 	return out.String(), code
 }

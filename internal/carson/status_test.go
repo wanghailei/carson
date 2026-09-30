@@ -191,6 +191,6 @@ func TestUnknownCommandIsRefused(t *testing.T) {
 func TestStatusOutsideARepository(t *testing.T) {
 	f := newFixture(t)
 	out, code := f.run(f.root, stranger{}, "status")
-	expectCode(t, code, 2)
+	expectCode(t, code, 1)
 	expectLine(t, out, "carson: "+f.root+" is not inside a git repository.")
 }

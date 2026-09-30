@@ -3,6 +3,7 @@ package carson
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,9 +13,10 @@ import (
 // repository is what carson reads of a git repository. Every fact comes from the repository itself: its trunk is main, and its GitHub
 // remote is the one main tracks, else its only remote, else the one named github. carson owns no setting.
 type repository struct {
-	top    string // the main working tree
-	common string // git's common folder, which holds each worktree's administrative folder
-	remote string // GitHub's remote, or "" when there is none
+	top       string     // the main working tree
+	common    string     // git's common folder, which holds each worktree's administrative folder
+	remote    string     // GitHub's remote, or "" when there is none
+	worktrees []worktree // git's worktree list; the main working tree first
 }
 
 var errNotARepository = errors.New("not inside a git repository")
@@ -32,26 +34,31 @@ func openRepository(dir string) (*repository, error) {
 	if len(worktrees) == 0 {
 		return nil, errNotARepository
 	}
-	repo := &repository{top: worktrees[0].path, common: common}
-	repo.remote = repo.githubRemote()
+	repo := &repository{top: worktrees[0].path, common: common, worktrees: worktrees}
+	if repo.remote, err = repo.githubRemote(); err != nil {
+		return nil, err
+	}
 	return repo, nil
 }
 
-func (r *repository) githubRemote() string {
+func (r *repository) githubRemote() (string, error) {
 	if tracked, err := git(r.top, "config", "--get", "branch.main.remote"); err == nil && tracked != "" && tracked != "." {
-		return tracked
+		return tracked, nil
 	}
-	remotes, _ := git(r.top, "remote")
+	remotes, err := git(r.top, "remote")
+	if err != nil {
+		return "", err
+	}
 	names := lines(remotes)
 	if len(names) == 1 {
-		return names[0]
+		return names[0], nil
 	}
 	for _, name := range names {
 		if name == "github" {
-			return name
+			return name, nil
 		}
 	}
-	return ""
+	return "", nil
 }
 
 // short names a commit as git abbreviates it, or by its first seven characters when this machine does not hold it.
@@ -62,13 +69,12 @@ func (r *repository) short(commit string) string {
 	return commit[:min(7, len(commit))]
 }
 
-func (r *repository) count(revisions string) int {
+func (r *repository) count(revisions string) (int, error) {
 	out, err := git(r.top, "rev-list", "--count", revisions)
 	if err != nil {
-		return 0
+		return 0, err
 	}
-	n, _ := strconv.Atoi(out)
-	return n
+	return strconv.Atoi(out)
 }
 
 // mainAgainstGitHub says where local main is and how it stands against GitHub's main, asked with ls-remote, which changes nothing here.
@@ -83,12 +89,7 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
 	if err != nil {
-		var failure *gitError
-		reason := err.Error()
-		if errors.As(err, &failure) {
-			reason = failure.message
-		}
-		return fmt.Sprintf("%s. GitHub could not be reached (%s). How main stands against it is unknown.", here, reason)
+		return fmt.Sprintf("%s. GitHub could not be reached (%s). How main stands against it is unknown.", here, reason(err))
 	}
 	fields := strings.Fields(answer)
 	if len(fields) == 0 {
@@ -101,7 +102,14 @@ func (r *repository) mainAgainstGitHub() string {
 	if _, err := git(r.top, "cat-file", "-e", remote+"^{commit}"); err != nil {
 		return fmt.Sprintf("%s. GitHub's main is at %s, which this machine has not fetched: how far behind, or whether diverged, is unknown.", here, r.short(remote))
 	}
-	ahead, behind := r.count(remote+".."+local), r.count(local+".."+remote)
+	ahead, err := r.count(remote + ".." + local)
+	if err != nil {
+		return fmt.Sprintf("%s. How it stands against GitHub's main, at %s, is unknown (%s).", here, r.short(remote), reason(err))
+	}
+	behind, err := r.count(local + ".." + remote)
+	if err != nil {
+		return fmt.Sprintf("%s. How it stands against GitHub's main, at %s, is unknown (%s).", here, r.short(remote), reason(err))
+	}
 	switch {
 	case ahead > 0 && behind > 0:
 		return fmt.Sprintf("%s, diverged from GitHub: %s here, %d there. The next carson merge brings GitHub's commits in.", here, plural(ahead, "commit"), behind)
@@ -112,25 +120,38 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 }
 
+// changes lists what a working tree holds that its commit does not, each untracked file on its own. It takes no lock, so it never
+// rewrites the index under an agent at work there.
+func changes(dir string) ([]string, error) {
+	out, err := git(dir, "--no-optional-locks", "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return nil, err
+	}
+	return lines(out), nil
+}
+
 // mainTree says what the main working tree holds: main and nothing else, as rule 11.6 wants, or what is there instead.
 func (r *repository) mainTree() string {
-	branch, _ := git(r.top, "symbolic-ref", "--short", "-q", "HEAD")
-	if branch == "" {
-		head, _ := git(r.top, "rev-parse", "--short", "HEAD")
+	if branch, err := git(r.top, "symbolic-ref", "--short", "-q", "HEAD"); err != nil || branch == "" {
+		head, err := git(r.top, "rev-parse", "--short", "HEAD")
+		if err != nil {
+			return "Main working tree: what it holds cannot be read (" + reason(err) + ")."
+		}
 		return fmt.Sprintf("Main working tree: on a detached HEAD at %s, not main.", head)
-	}
-	if branch != "main" {
+	} else if branch != "main" {
 		return fmt.Sprintf("Main working tree: on %s, not main.", branch)
 	}
-	out, _ := git(r.top, "status", "--porcelain")
-	changes := lines(out)
-	if len(changes) == 0 {
+	found, err := changes(r.top)
+	if err != nil {
+		return "Main working tree: on main; its changes cannot be read (" + reason(err) + ")."
+	}
+	if len(found) == 0 {
 		return "Main working tree: on main, clean."
 	}
-	for i, change := range changes {
-		changes[i] = strings.TrimSpace(change)
+	for i, change := range found {
+		found[i] = strings.TrimSpace(change)
 	}
-	return fmt.Sprintf("Main working tree: on main, with %s: %s.", plural(len(changes), "change"), strings.Join(changes, ", "))
+	return fmt.Sprintf("Main working tree: on main, with %s: %s.", plural(len(found), "change"), strings.Join(found, ", "))
 }
 
 // worktree is one entry of git's worktree list.
@@ -138,7 +159,7 @@ type worktree struct {
 	path     string
 	head     string
 	branch   string // "" for a detached HEAD
-	prunable bool   // git knows its folder is gone
+	prunable string // git's reason when it cannot find the worktree's checkout; "" when it can
 }
 
 func parseWorktrees(list string) []worktree {
@@ -155,7 +176,10 @@ func parseWorktrees(list string) []worktree {
 			case "branch":
 				w.branch = strings.TrimPrefix(value, "refs/heads/")
 			case "prunable":
-				w.prunable = true
+				w.prunable = value
+				if w.prunable == "" {
+					w.prunable = "prunable"
+				}
 			}
 		}
 		if w.path != "" {
@@ -165,50 +189,73 @@ func parseWorktrees(list string) []worktree {
 	return worktrees
 }
 
-// tasks are the worktrees other than the main working tree, each with its administrative folder, found through the gitdir file git
-// keeps there, since a worktree whose folder is gone cannot be asked.
-func (r *repository) tasks() ([]worktree, map[string]string, error) {
-	list, err := git(r.top, "worktree", "list", "--porcelain")
-	if err != nil {
-		return nil, nil, err
-	}
-	all := parseWorktrees(list)
+// task is a worktree other than the main working tree, with git's administrative folder for it — "" if git keeps none that points
+// back to it.
+type task struct {
+	worktree
+	admin string
+}
+
+// tasks finds each worktree's administrative folder through the gitdir file git keeps there, since a worktree whose folder is gone
+// cannot be asked; the file's path may be relative to that folder.
+func (r *repository) tasks() []task {
 	admins := map[string]string{}
 	entries, _ := os.ReadDir(filepath.Join(r.common, "worktrees"))
 	for _, entry := range entries {
 		admin := filepath.Join(r.common, "worktrees", entry.Name())
-		gitdir, err := os.ReadFile(filepath.Join(admin, "gitdir"))
-		if err == nil {
-			admins[filepath.Dir(strings.TrimSpace(string(gitdir)))] = admin
+		content, err := os.ReadFile(filepath.Join(admin, "gitdir"))
+		if err != nil {
+			continue
 		}
+		gitdir := strings.TrimSpace(string(content))
+		if !filepath.IsAbs(gitdir) {
+			gitdir = filepath.Join(admin, gitdir)
+		}
+		admins[filepath.Dir(filepath.Clean(gitdir))] = admin
 	}
-	return all[1:], admins, nil
+	var tasks []task
+	for _, w := range r.worktrees[1:] {
+		tasks = append(tasks, task{worktree: w, admin: admins[w.path]})
+	}
+	return tasks
 }
 
-// taskState says what a task's worktree holds against main.
-func (r *repository) taskState(w worktree) string {
-	tip := w.branch
+// state says what a task's worktree holds against main, or that it cannot be told.
+func (r *repository) state(t task) string {
+	tip := t.branch
 	if tip == "" {
-		tip = w.head
+		tip = t.head
 	}
-	ahead := r.count("main.." + tip)
-	if _, err := os.Stat(w.path); w.prunable || err != nil {
-		if w.branch == "" {
+	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
+		if t.branch == "" {
 			return "its folder is gone."
 		}
-		return fmt.Sprintf("its folder is gone; branch %s holds %s not on main.", w.branch, plural(ahead, "commit"))
+		ahead, err := r.count("main.." + tip)
+		if err != nil {
+			return fmt.Sprintf("its folder is gone; what branch %s holds against main is unknown (%s).", t.branch, reason(err))
+		}
+		return fmt.Sprintf("its folder is gone; branch %s holds %s not on main.", t.branch, plural(ahead, "commit"))
 	}
-	out, _ := git(w.path, "status", "--porcelain")
-	uncommitted := len(lines(out))
-	if ahead == 0 && uncommitted == 0 {
+	if t.prunable != "" {
+		return fmt.Sprintf("git cannot find its checkout (%s); what the folder holds is unknown.", t.prunable)
+	}
+	ahead, err := r.count("main.." + tip)
+	if err != nil {
+		return "state unknown (" + reason(err) + ")."
+	}
+	found, err := changes(t.path)
+	if err != nil {
+		return "state unknown (" + reason(err) + ")."
+	}
+	if ahead == 0 && len(found) == 0 {
 		return "merged and clean."
 	}
 	var parts []string
 	if ahead > 0 {
 		parts = append(parts, plural(ahead, "commit")+" not on main")
 	}
-	if uncommitted > 0 {
-		parts = append(parts, plural(uncommitted, "uncommitted file"))
+	if len(found) > 0 {
+		parts = append(parts, plural(len(found), "uncommitted file"))
 	}
 	return "working, " + strings.Join(parts, ", ") + "."
 }

@@ -18,5 +18,5 @@ func main() {
 	if err != nil {
 		host = "this machine"
 	}
-	os.Exit(carson.Main(os.Args[1:], carson.Machine{Dir: dir, Out: os.Stdout, Host: host, Env: os.Getenv, Processes: carson.PS{}}))
+	os.Exit(carson.Main(os.Args[1:], carson.Machine{Dir: dir, Out: os.Stdout, Host: host, Processes: carson.PS{}}))
 }
