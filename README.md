@@ -13,18 +13,18 @@ Plain git leaves too much to habit when agents share a repository. Tasks start f
 ## How a task goes
 
 ```
-carson start dark-mode    a worktree and branch of its own, from the latest main, owned by this session
+carson start xyz    a worktree and branch of its own, from the latest main, owned by this session
       │
-      │   the agent works and commits in ~/.worktrees/<repository>/dark-mode
+      │   the agent works and commits in ~/.worktrees/<repository>/xyz
       ▼
-carson land dark-mode     checked with bin/check, fast-forwarded onto main, pushed to GitHub
+carson land xyz     checked with bin/check, fast-forwarded onto main, pushed to GitHub
       │
       ▼
-carson remove dark-mode   worktree and branch removed; ignored files kept
+carson remove xyz   worktree and branch removed; ignored files kept
 
-carson abandon dark-mode  instead of landing: the work kept on abandoned/dark-mode
-carson adopt dark-mode    take up abandoned work, or the task of an agent that has ended
-carson status             main, the main working tree, every task and whose it is
+carson abandon xyz  instead of landing: the work kept on abandoned/xyz
+carson adopt xyz    take up abandoned work, or the task of an agent that has ended
+carson status       main, the main working tree, every task and whose it is
 ```
 
 ## Principles
@@ -41,16 +41,16 @@ carson status             main, the main working tree, every task and whose it i
 Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`; a GitHub remote and a `bin/check` in the repository are used when they are there.
 
 ```
-$ carson start dark-mode
-⧓ Started dark-mode from local main at 4d4d3e0 in ~/.worktrees/code/notes/dark-mode, owned by Claude session 4e7a91d2-b1c0 on studio.
+$ carson start xyz
+⧓ Started xyz from local main at 4d4d3e0 in ~/.worktrees/code/notes/xyz, owned by Claude session 4e7a91d2-b1c0 on studio.
 
-$ cd ~/.worktrees/code/notes/dark-mode      # work, test, commit
+$ cd ~/.worktrees/code/notes/xyz      # work, test, commit
 
-$ carson land dark-mode
-⧓ Landed dark-mode on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Checks: bin/check passed. Remove it with: carson remove dark-mode (from outside its worktree).
+$ carson land xyz
+⧓ Landed xyz on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Checks: bin/check passed. Remove it with: carson remove xyz (from outside its worktree).
 
-$ cd ~/code/notes && carson remove dark-mode
-⧓ Removed dark-mode: its worktree at ~/.worktrees/code/notes/dark-mode, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0 on studio.
+$ cd ~/code/notes && carson remove xyz
+⧓ Removed xyz: its worktree at ~/.worktrees/code/notes/xyz, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0 on studio.
 ```
 
 ## Commands
@@ -69,20 +69,9 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says what s
 
 ## Building from source
 
-Go comes from [mise](https://mise.jdx.dev), pinned in `mise.toml`:
+    go build ./cmd/carson
 
-    mise install
-    mise exec -- go build ./cmd/carson
-
-`bin/check` runs the formatting check, vet and the tests, which work on real git repositories in temporary folders; `carson land` runs it before a task lands.
-
-## Releasing
-
-With the version set in `internal/carson/carson.go` and its notes in `docs/release-<version>.md`, both landed on `main`, run `bin/release <version>` from the main working tree (`--dry-run` first). It builds the four downloads, tags `v<version>`, and publishes the GitHub release with their checksums.
-
-## Licence
-
-MIT; see `LICENSE`.
+`bin/check` runs the formatting check, vet and the tests.
 
 ## History
 

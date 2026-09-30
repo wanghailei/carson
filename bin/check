@@ -1,8 +1,10 @@
 #!/bin/sh
-# The checks carson land runs before a task lands: formatting, vet and the tests.
+# The checks carson land runs before a task lands: formatting, vet and the tests. Go comes from mise where mise is installed (it pins
+# the version in mise.toml), and from the PATH otherwise.
 set -e
 cd "$(dirname "$0")/.."
-unformatted=$(mise exec -- gofmt -l .)
+if command -v mise >/dev/null; then run="mise exec --"; else run=""; fi
+unformatted=$($run gofmt -l .)
 if [ -n "$unformatted" ]; then echo "Not formatted by gofmt: $unformatted"; exit 1; fi
-mise exec -- go vet ./...
-mise exec -- go test -count=1 ./...
+$run go vet ./...
+$run go test -count=1 ./...
