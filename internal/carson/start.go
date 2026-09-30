@@ -147,7 +147,7 @@ func (r *repository) heldBy(m Machine, name string, t task, held string) error {
 			held = "is taken by"
 		}
 		if me, _ := m.ownerRecord(name); sameOwner(record, me) {
-			return refuse(refused, "%s is already yours, at %s; work there.", name, t.path)
+			return r.yours(name, t.path, record)
 		}
 		return refuse(refused, "%s %s %s, which is live; its worktree is at %s. Choose another name.", name, held, ownerName(record), t.path)
 	case ended:

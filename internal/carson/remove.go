@@ -315,6 +315,14 @@ func takeUp(kept string) string {
 	return "Take it up again with: carson adopt " + strings.TrimPrefix(kept, "abandoned/")
 }
 
+// yours refuses to start or adopt a task the running session already owns, saying where it is, or, once it has landed, how to clear it.
+func (r *repository) yours(name, path string, record Record) error {
+	if ahead, err := r.count("main.." + name); err == nil && ahead == 0 && record.Landed != "" {
+		return refuse(refused, "%s is already yours, and has landed; remove it with: carson remove %s (from outside its worktree)", name, name)
+	}
+	return refuse(refused, "%s is already yours, at %s; work there.", name, path)
+}
+
 // offBranch refuses a task whose worktree has left its branch for what on says, with the way back; command is what to run after.
 func offBranch(t task, on, command string) error {
 	return refuse(refused, "%s's worktree at %s is on %s, not its branch. Switch it back there with git switch %s, then run %s again.", t.branch, t.path, on, t.branch, command)

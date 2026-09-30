@@ -36,14 +36,14 @@ func (m Machine) adoptTask(name string) ([]string, error) {
 		return nil, err
 	}
 	if t, on, found := repo.task(name); found {
-		return m.takeOver(t, on)
+		return m.takeOver(repo, t, on)
 	}
 	return m.takeUp(repo, name)
 }
 
 // takeOver makes an ended agent's task the running session's own, in the task's worktree as it is: the previous owner is kept in the
 // new record, and no file of the task is touched.
-func (m Machine) takeOver(t task, on string) ([]string, error) {
+func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error) {
 	name := t.branch
 	if t.admin == "" {
 		return nil, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree.", name)
@@ -57,7 +57,7 @@ func (m Machine) takeOver(t task, on string) ([]string, error) {
 	}
 	me, unobserved := m.ownerRecord(name)
 	if sameOwner(record, me) {
-		return nil, refuse(refused, "%s is already yours, at %s; work there.", name, t.path)
+		return nil, repo.yours(name, t.path, record)
 	}
 	switch state, why := m.livenessOf(record); state {
 	case live:

@@ -3,6 +3,7 @@ package carson
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -134,5 +135,19 @@ func TestReplaceOwnerLetsOnlyOneAdopterWin(t *testing.T) {
 	os.Rename(filepath.Join(admin, ownerFile), filepath.Join(admin, ownerFile+".1.old")) // the other adopter's step
 	if err := replaceOwner(admin, claude("fix-login", 4121)); err != errOwned {
 		t.Errorf("the second adopter got %v", err)
+	}
+}
+
+// From the third trial: a landed task that is already yours was answered "work there", where the next step is to remove it.
+func TestALandedTaskThatIsYoursIsToBeRemoved(t *testing.T) {
+	f := newFixture(t)
+	f.mergedTask("fix-login")
+	for _, command := range []string{"start", "adopt"} {
+		out, code := f.runIn(inClaude, f.local, claudeRunning, command, "fix-login")
+		expectCode(t, code, 2)
+		expectLine(t, out, "Not ")
+		if !strings.Contains(out, "fix-login is already yours, and has landed; remove it with: carson remove fix-login (from outside its worktree)") {
+			t.Errorf("carson %s:\n%s", command, out)
+		}
 	}
 }
