@@ -162,7 +162,10 @@ func (r *repository) heldBy(m Machine, name string, t task, held string) error {
 		if held == "is held by" {
 			held = "is taken by"
 		}
-		return refuse(refused, "%s %s %s, which is live.", name, held, ownerName(record))
+		if me, _ := m.ownerRecord(name); sameOwner(record, me) {
+			return refuse(refused, "%s is already yours, at %s; work there.", name, t.path)
+		}
+		return refuse(refused, "%s %s %s, which is live; its worktree is at %s. Choose another name.", name, held, ownerName(record), t.path)
 	case ended:
 		return refuse(refused, "%s %s %s, which has ended. Taking it over (carson start %s --existing) is not built yet.", name, held, ownerName(record), name)
 	default:
@@ -360,13 +363,23 @@ func (r *repository) pushMain() (string, error) {
 // value says so, for the start message.
 func (m Machine) ownerRecord(task string) (Record, string) {
 	record := Record{Task: task, Machine: m.Host, MachineID: m.ID, Created: time.Now().UTC()}
+	claudePID, _ := strconv.Atoi(m.Env("CLAUDE_PID"))
+	piPID := 0
+	if m.Env("PI_SESSION_ID") != "" {
+		piPID = m.ancestor("pi")
+	}
+	// A harness started inside another inherits the outer one's variables: the harness nearer carson is the one running it.
+	inClaude := m.Env("CLAUDE_CODE_SESSION_ID") != ""
+	if claude := m.above(claudePID); inClaude && piPID > 0 && (claude == 0 || m.above(piPID) < claude) {
+		inClaude = false
+	}
 	switch {
-	case m.Env("CLAUDE_CODE_SESSION_ID") != "":
+	case inClaude:
 		record.Harness, record.Session = "claude", m.Env("CLAUDE_CODE_SESSION_ID")
-		record.PID, _ = strconv.Atoi(m.Env("CLAUDE_PID"))
+		record.PID = claudePID
 	case m.Env("PI_SESSION_ID") != "":
 		record.Harness, record.Session = "pi", m.Env("PI_SESSION_ID")
-		record.PID = m.ancestor("pi")
+		record.PID = piPID
 	default:
 		record.Harness = "terminal"
 		record.PID, _, _ = m.Processes.Process(m.PID)
@@ -394,6 +407,22 @@ func (m Machine) ancestor(command string) int {
 			return parent
 		}
 		pid = parent
+	}
+	return 0
+}
+
+// above is how many steps above carson the process pid is, 1 being its parent, or 0 when it is not above carson within reach.
+func (m Machine) above(pid int) int {
+	current := m.PID
+	for step := 1; step <= 16 && pid > 1; step++ {
+		parent, _, err := m.Processes.Process(current)
+		if err != nil || parent <= 1 {
+			return 0
+		}
+		if parent == pid {
+			return step
+		}
+		current = parent
 	}
 	return 0
 }

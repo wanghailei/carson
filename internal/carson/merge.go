@@ -55,7 +55,7 @@ func (m Machine) taskHere() (*repository, task, Record, error) {
 		return nil, task{}, Record{}, refuse(failed, "the worktree carson runs in cannot be told (%s).", reason(err))
 	}
 	if here == repo.top {
-		return nil, task{}, Record{}, refuse(refused, "carson merge runs inside a task's worktree; %s is the main working tree.", here)
+		return nil, task{}, Record{}, refuse(refused, "carson merge runs inside a task's worktree; %s is the main working tree. Run it in the task's worktree; carson status lists them.", here)
 	}
 	var t task
 	for _, candidate := range repo.tasks() {
@@ -221,6 +221,9 @@ func (r *repository) mergeTask(m Machine, t task, record Record, interrupted con
 	checks, err := runChecks(t.path)
 	if stopped() {
 		return g.stop(failed, "interrupted during the checks. %s.", g.state())
+	}
+	if err != nil && codeOf(err) == refused {
+		return g.stop(refused, "%s\n%s. Fix what bin/check reports, commit, then run carson merge again.", err.Error(), g.state())
 	}
 	if err != nil {
 		return g.stop(codeOf(err), "%s\n%s.", err.Error(), g.state())

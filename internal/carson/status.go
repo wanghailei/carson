@@ -9,9 +9,13 @@ import (
 
 const noOwnerHeading = "No owner record (made outside carson; whose it is is the master's to settle):"
 
-// status shows main against GitHub, the main working tree, and every task grouped by the session that owns it, the tasks carson does
-// not own last. It changes nothing.
-func status(m Machine) int {
+// status shows main against GitHub, the main working tree, every task grouped by the session that owns it, the tasks carson does not
+// own last, and the branches of tasks declared abandoned. It changes nothing.
+func status(m Machine, args []string) int {
+	if len(args) > 0 {
+		fmt.Fprintln(m.Out, "carson status takes no arguments; it shows every task.")
+		return refused
+	}
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
 		fmt.Fprintf(m.Out, "carson: %s is not inside a git repository.\n", m.Dir)
@@ -23,10 +27,16 @@ func status(m Machine) int {
 	}
 	fmt.Fprintln(m.Out, repo.mainAgainstGitHub())
 	fmt.Fprintln(m.Out, repo.mainTree())
+	m.showTasks(repo)
+	repo.showAbandoned(m)
+	return done
+}
+
+func (m Machine) showTasks(repo *repository) {
 	tasks := repo.tasks()
 	if len(tasks) == 0 {
 		fmt.Fprintln(m.Out, "No tasks.")
-		return done
+		return
 	}
 	var headings, unowned []string
 	groups := map[string][]string{}
@@ -59,7 +69,27 @@ func status(m Machine) int {
 			fmt.Fprintln(m.Out, "    "+line)
 		}
 	}
-	return done
+}
+
+// showAbandoned lists the branches of tasks declared abandoned, and how to take one up again.
+func (r *repository) showAbandoned(m Machine) {
+	out, err := git(r.top, "for-each-ref", "--format=%(refname:short)", "refs/heads/abandoned/")
+	if err != nil {
+		fmt.Fprintf(m.Out, "Abandoned tasks: cannot be listed (%s).\n", reason(err))
+		return
+	}
+	branches := lines(out)
+	if len(branches) == 0 {
+		return
+	}
+	fmt.Fprintln(m.Out, "Abandoned tasks (to take one up again: git worktree add <folder> <branch>):")
+	for _, branch := range branches {
+		held := "what it holds against main is unknown"
+		if ahead, err := r.count("main.." + branch); err == nil {
+			held = plural(ahead, "commit") + " not on main"
+		}
+		fmt.Fprintf(m.Out, "  %s at %s: %s.\n", branch, r.short(branch), held)
+	}
 }
 
 // ownerHeading names a session and whether it is live: "Claude session 4e7a91d2 on this-mac, live:".

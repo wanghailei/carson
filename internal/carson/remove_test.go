@@ -40,7 +40,7 @@ func TestRemoveRemovesAMergedTask(t *testing.T) {
 	dir := f.mergedTask("fix-login")
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, whose work is on main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03 on test-mac.")
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, merged into main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03 on test-mac.")
 	if f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") != "" {
 		t.Error("the worktree or the branch is still there")
 	}
@@ -256,7 +256,7 @@ func TestRemoveATaskWhoseFolderIsGone(t *testing.T) {
 	os.RemoveAll(dir)
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", whose folder was already gone, and its branch, whose work is on main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03 on test-mac.")
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", whose folder was already gone, and its branch, merged into main at "+f.short(f.local, "main")+". It was owned by Claude session 9cb74d03 on test-mac.")
 	if f.git(f.local, "branch", "--list", "fix-login") != "" || strings.Contains(f.git(f.local, "worktree", "list"), "fix-login") {
 		t.Error("the branch or git's record of the worktree is still there")
 	}
@@ -323,8 +323,8 @@ func TestRemoveStopsWhenIgnoredFilesCannotBeKept(t *testing.T) {
 	f.write(f.root, ".cache/deleted", "a file where the folder would be\n")
 	out, code := f.remove("fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not removed: ignored file local.env could not be kept (")
-	if !strings.Contains(out, "0 of 1 are in") || !strings.Contains(out, "the worktree is left as it is. Branch fix-login is left as it is.") {
+	expectLine(t, out, "Not removed: no folder could be made to keep the worktree's ignored files in (")
+	if !strings.Contains(out, "Nothing was changed. Branch fix-login is left as it is.") {
 		t.Errorf("the state is not said:\n%s", out)
 	}
 	if !f.exists(filepath.Join(dir, "local.env")) {
@@ -415,4 +415,66 @@ func TestRemoveRefusesWithoutAHome(t *testing.T) {
 	out, code := f.runIn(environment{"HOME": "", "CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "4121"}, f.local, claudeRunning, "remove", "fix-login")
 	expectCode(t, code, 1)
 	expectLine(t, out, "Not removed: HOME does not name a folder, so the worktree's ignored files would have nowhere to be kept. Nothing was changed.")
+}
+
+// Cases from the trial of 2026-09-30, where agents of four families used carson in sandboxes, and from Sol's review of 80c2b83.
+
+func TestRemoveAnEmptyTaskSaysItHeldNothing(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, which held nothing main lacks.")
+}
+
+func TestRemoveAbandonedCanBeRunAgainAfterAFailure(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, ".gitignore", "local.env\n")
+	f.write(dir, "local.env", "SECRET=kept\n")
+	os.MkdirAll(filepath.Join(f.root, ".cache"), 0o755)
+	f.write(f.root, ".cache/deleted", "a file where the folder would be\n")
+	out, code := f.remove("fix-login", "--abandoned")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not removed: no folder could be made to keep the worktree's ignored files in (")
+	if !strings.Contains(out, "Its work is on branch fix-login, what was uncommitted now committed; run carson remove fix-login --abandoned again once that is cleared.") {
+		t.Errorf("no way on:\n%s", out)
+	}
+	os.Rename(filepath.Join(f.root, ".cache", "deleted"), filepath.Join(f.root, ".cache", "deleted-file"))
+	out, code = f.remove("fix-login", "--abandoned")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Removed fix-login's worktree, its task declared abandoned. Its work — 1 commit — is kept as branch abandoned/fix-login")
+}
+
+func TestRemoveAbandonedKeepsALeftoverBranch(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "branch", "fix-login")
+	f.git(f.local, "switch", "-q", "fix-login")
+	f.commit(f.local, "login.rb")
+	f.git(f.local, "switch", "-q", "main")
+	out, code := f.remove("fix-login", "--abandoned")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Kept the leftover branch fix-login, its task declared abandoned, as branch abandoned/fix-login at "+f.short(f.local, "abandoned/fix-login")+" (1 commit not on main).")
+}
+
+func TestRemoveKeepsAnAbandonedBranch(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, "draft.txt", "half done\n")
+	f.remove("fix-login", "--abandoned")
+	out, code := f.remove("abandoned/fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not removed: branch abandoned/fix-login holds the work of a task declared abandoned, 1 commit not on main, and carson keeps it. To take it up again: git worktree add <folder> abandoned/fix-login")
+}
+
+func TestFreeFolderNeverSharesAFolder(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "kept", "fix-login-20260930-164500")
+	first, err := freeFolder(base)
+	if err != nil || first != base {
+		t.Fatalf("first: %q, %v", first, err)
+	}
+	second, err := freeFolder(base)
+	if err != nil || second != base+"-2" {
+		t.Errorf("second: %q, %v", second, err)
+	}
 }

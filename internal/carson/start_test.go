@@ -49,7 +49,7 @@ func TestStartThenStatusShowsTheTaskLive(t *testing.T) {
 	f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	out, _ := f.runIn(inClaude, f.local, claudeRunning, "status")
 	expectLine(t, out, "Claude session 9cb74d03 on test-mac, live:")
-	expectLine(t, out, "fix-login at "+f.taskFolder("fix-login")+": merged and clean.")
+	expectLine(t, out, "fix-login at "+f.taskFolder("fix-login")+": clean, nothing main lacks.")
 }
 
 func TestStartBringsLocalMainForwardToGitHubs(t *testing.T) {
@@ -118,7 +118,32 @@ func TestStartRefusesANameALiveSessionHolds(t *testing.T) {
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	out, code := f.runIn(inClaude, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: fix-login is taken by Claude session 4e7a91d2 on test-mac, which is live.")
+	expectLine(t, out, "Not started: fix-login is taken by Claude session 4e7a91d2 on test-mac, which is live; its worktree is at "+f.taskFolder("fix-login")+". Choose another name.")
+}
+
+func TestStartSaysATaskIsAlreadyYours(t *testing.T) {
+	f := newFixture(t)
+	f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not started: fix-login is already yours, at "+f.taskFolder("fix-login")+"; work there.")
+}
+
+// The trial of 2026-09-30: a Pi started from inside a Claude session inherits Claude's variables, and was recorded as Claude.
+func TestStartUnderPiInsideClaudeRecordsPi(t *testing.T) {
+	f := newFixture(t)
+	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "4121", "PI_SESSION_ID": "01a0f100-a845"}, f.local, claudeRunning, "start", "fix-login")
+	if record := f.readRecord(f.taskFolder("fix-login")); record.Harness != "pi" || record.PID != 700 {
+		t.Errorf("owner record of Pi inside Claude: %+v", record)
+	}
+}
+
+func TestStartUnderClaudeInsidePiRecordsClaude(t *testing.T) {
+	f := newFixture(t)
+	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "9cb74d03-a065-48ca", "CLAUDE_PID": "800", "PI_SESSION_ID": "01a0f100-a845"}, f.local, claudeRunning, "start", "fix-login")
+	if record := f.readRecord(f.taskFolder("fix-login")); record.Harness != "claude" || record.PID != 800 {
+		t.Errorf("owner record of Claude inside Pi: %+v", record)
+	}
 }
 
 func TestStartRefusesALeftoverBranchWhoseWorkIsOnMain(t *testing.T) {
@@ -253,10 +278,10 @@ func TestAfterAFailedAddANameTakenMeanwhileIsNamed(t *testing.T) {
 	winner := f.worktree("fix-login")
 	f.own(winner, Record{Task: "fix-login", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"})
 	var machine Machine
-	machine.Host, machine.Processes = "test-mac", stranger{5000: "Wed Sep 30 07:00:00 2026"}
+	machine.Host, machine.Env, machine.Processes = "test-mac", environment{}.get, stranger{5000: "Wed Sep 30 07:00:00 2026"}
 	repo, _ = openRepository(f.local)
 	err = repo.afterFailedAdd(machine, "fix-login", f.taskFolder("fix-login"), errors.New("fatal: a branch named 'fix-login' already exists"))
-	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session 4e7a91d2 on test-mac, which is live.") {
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session 4e7a91d2 on test-mac, which is live; its worktree is at ") {
 		t.Errorf("got %v", err)
 	}
 }
@@ -364,9 +389,9 @@ func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testi
 	f.own(folder, Record{Task: "fix-login", Harness: "claude", Session: "bbbb2222-winner", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"})
 	repo, _ := openRepository(f.local)
 	var machine Machine
-	machine.Host, machine.Processes = "test-mac", stranger{5000: "Wed Sep 30 07:00:00 2026"}
+	machine.Host, machine.Env, machine.Processes = "test-mac", environment{}.get, stranger{5000: "Wed Sep 30 07:00:00 2026"}
 	err := repo.afterFailedAdd(machine, "fix-login", folder, errors.New("cannot lock ref 'refs/heads/fix-login'"))
-	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session bbbb2222 on test-mac, which is live.") {
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session bbbb2222 on test-mac, which is live; its worktree is at ") {
 		t.Errorf("got %v", err)
 	}
 	if record := f.readRecord(folder); record.Session != "bbbb2222-winner" {
@@ -445,7 +470,7 @@ func TestAfterABranchConflictTheWorktreeInTheFolderIsNotClaimed(t *testing.T) {
 	folder := f.taskFolder("fix-login")
 	f.git(f.local, "worktree", "add", "-q", "-b", "fix-login", folder, "main")
 	repo, _ := openRepository(f.local)
-	err := repo.afterFailedAdd(Machine{Host: "test-mac", Processes: stranger{}}, "fix-login", folder, errors.New("fatal: a branch named 'fix-login' already exists"))
+	err := repo.afterFailedAdd(Machine{Host: "test-mac", Env: environment{}.get, Processes: stranger{}}, "fix-login", folder, errors.New("fatal: a branch named 'fix-login' already exists"))
 	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by a session that has not recorded itself yet, at "+folder+".") {
 		t.Errorf("got %v", err)
 	}

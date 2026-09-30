@@ -114,6 +114,9 @@ func TestMergeStopsWhenTheChecksFail(t *testing.T) {
 	out, code := f.merge(dir)
 	expectCode(t, code, 2)
 	expectLine(t, out, "Not merged: bin/check failed (exit 1). Its output ends:")
+	if !strings.Contains(out, "Fix what bin/check reports, commit, then run carson merge again.") {
+		t.Errorf("no way on after failed checks:\n%s", out)
+	}
 	expectLine(t, out, "2 tests failed")
 	if f.git(f.local, "rev-parse", "main") != main {
 		t.Error("main moved although the checks failed")

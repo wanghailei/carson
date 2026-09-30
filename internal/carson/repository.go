@@ -304,7 +304,10 @@ func (r *repository) state(t task) string {
 		return "state unknown (" + reason(err) + ")."
 	}
 	if ahead == 0 && len(found) == 0 {
-		return "merged and clean."
+		if record, owned, _ := readOwner(t.admin); t.admin != "" && owned && record.Merged != "" {
+			return "merged and clean."
+		}
+		return "clean, nothing main lacks."
 	}
 	var parts []string
 	if ahead > 0 {

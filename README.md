@@ -7,9 +7,10 @@ Carson is the git tool for the master's agents. Each task starts from the latest
 | Command | What it does |
 |---|---|
 | `carson start <task>` | Starts a task from the latest `main`, in its own worktree under `~/.worktrees`, owned by the session that runs it. |
-| `carson status` | Shows `main` against GitHub's, the main working tree, and every task with its owner. Changes nothing. |
+| `carson status` | Shows `main` against GitHub's, the main working tree, every task with its owner, and the branches of abandoned tasks. Changes nothing. |
 | `carson merge` | Merges the task you are in into `main`: rebased onto the latest `main`, checked with `bin/check` if the repository has one, fast-forwarded, and pushed. |
-| `carson remove <task>` | Removes a task's worktree and branch. |
+| `carson remove <task>` | Removes a finished task's worktree and branch, by its owner, from outside the worktree. Its ignored files are kept in `~/.cache/deleted`. |
+| `carson remove <task> --abandoned` | Keeps what the task holds, uncommitted work committed, on a branch `abandoned/<task>`, and removes its worktree. |
 
 Exit codes: 0 done, as reported; 1 could not finish, and the message says the state things are left in; 2 refused, because a rule forbids it.
 

@@ -53,18 +53,26 @@ type Machine struct {
 const usage = `carson start <task>    start a task in its own worktree, from the latest main
 carson status          show main, the main working tree and every task; changes nothing
 carson merge           merge the task you are in into main, and push main to GitHub
-carson remove <task>   remove a task's worktree and branch
+carson remove <task>   remove a finished task's worktree and branch, from outside it
+carson remove <task> --abandoned
+                       keep what the task holds on a branch abandoned/<task>, and remove its worktree
 `
 
 // Main runs carson with its arguments on machine and returns its exit code.
 func Main(args []string, machine Machine) int {
-	if len(args) == 0 {
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Fprint(machine.Out, usage)
+			return done
+		}
+	}
+	if len(args) == 0 || args[0] == "help" {
 		fmt.Fprint(machine.Out, usage)
 		return done
 	}
 	switch args[0] {
 	case "status":
-		return status(machine)
+		return status(machine, args[1:])
 	case "start":
 		return start(machine, args[1:])
 	case "merge":
