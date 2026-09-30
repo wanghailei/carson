@@ -65,6 +65,7 @@ carson --version        show carson's version
 
 // Main runs carson with its arguments on machine and returns its exit code.
 func Main(args []string, machine Machine) int {
+	machine.Out = &badged{out: machine.Out}
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
 			fmt.Fprint(machine.Out, usage)
@@ -96,6 +97,34 @@ func Main(args []string, machine Machine) int {
 		fmt.Fprintf(machine.Out, "carson: no command %q. Its commands:\n%s", args[0], usage)
 		return refused
 	}
+}
+
+// Badge marks every line carson writes, so a person reading an agent's conversation can tell carson's words from the rest, as Carson 4
+// did: ⧓, BLACK BOWTIE (U+29D3).
+const Badge = "⧓"
+
+// badged writes what it is given with the badge in front of every line that has something on it.
+type badged struct {
+	out     io.Writer
+	midLine bool
+}
+
+func (b *badged) Write(p []byte) (int, error) {
+	marked := make([]byte, 0, len(p)+8)
+	for _, c := range p {
+		if !b.midLine && c != '\n' {
+			marked = append(marked, Badge+" "...)
+			b.midLine = true
+		}
+		marked = append(marked, c)
+		if c == '\n' {
+			b.midLine = false
+		}
+	}
+	if _, err := b.out.Write(marked); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 // repository opens the repository carson runs in, with its main, or says why it cannot.

@@ -16,14 +16,29 @@ func expectCode(t *testing.T, got, want int) {
 }
 
 // expectLine fails unless some line of out starts with want.
+// expectLine finds a line of carson's that starts with want, after the badge every line carries.
 func expectLine(t *testing.T, out, want string) {
 	t.Helper()
 	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), want) {
+		if strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(line, Badge+" ")), want) {
 			return
 		}
 	}
 	t.Errorf("no line starting %q in:\n%s", want, out)
+}
+
+// Every line carson writes carries the badge, so a person reading a conversation can tell carson's words from the rest.
+func TestEveryLineCarriesTheBadge(t *testing.T) {
+	f := newFixture(t)
+	f.startTask("dark-mode")
+	for _, args := range [][]string{{"status"}, {}, {"--version"}, {"remove", "no-such-task"}} {
+		out, _ := f.run(f.local, stranger{}, args...)
+		for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+			if line != "" && !strings.HasPrefix(line, "⧓ ") {
+				t.Errorf("carson %v wrote a line without the badge: %q", args, line)
+			}
+		}
+	}
 }
 
 func (f *fixture) own(dir string, record Record) {

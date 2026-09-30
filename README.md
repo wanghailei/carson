@@ -36,7 +36,7 @@ carson status             main, the main working tree, every task and whose it i
 - **Only a task's owner lands, removes or abandons it.** Ownership is recorded when a task starts, and whether its owner is still running is always shown. An ended agent's task is adopted openly, never taken by guess.
 - **Nothing is destroyed.** Every check comes before any change; ignored files and abandoned work are kept.
 - **Carson runs only when called,** and keeps no state beyond one owner record per worktree.
-- **Every message says what happened and what to do next,** and "unknown" when Carson cannot tell.
+- **Every message says what happened and what to do next,** and "unknown" when Carson cannot tell. Each line Carson writes starts with ⧓, so its words stand out in an agent's conversation.
 
 ## Quickstart
 
@@ -44,15 +44,15 @@ Download the build for your system — macOS or Linux, arm64 or amd64 — from t
 
 ```
 $ carson start dark-mode
-Started dark-mode from local main at 4d4d3e0 in ~/.worktrees/code/notes/dark-mode, owned by Claude session 4e7a91d2-b1c0 on studio.
+⧓ Started dark-mode from local main at 4d4d3e0 in ~/.worktrees/code/notes/dark-mode, owned by Claude session 4e7a91d2-b1c0 on studio.
 
 $ cd ~/.worktrees/code/notes/dark-mode      # work, test, commit
 
 $ carson land dark-mode
-Landed dark-mode on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Checks: bin/check passed. Remove it with: carson remove dark-mode (from outside its worktree).
+⧓ Landed dark-mode on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Checks: bin/check passed. Remove it with: carson remove dark-mode (from outside its worktree).
 
 $ cd ~/code/notes && carson remove dark-mode
-Removed dark-mode: its worktree at ~/.worktrees/code/notes/dark-mode, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0 on studio.
+⧓ Removed dark-mode: its worktree at ~/.worktrees/code/notes/dark-mode, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0 on studio.
 ```
 
 ## Commands
