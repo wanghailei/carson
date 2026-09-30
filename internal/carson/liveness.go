@@ -51,6 +51,17 @@ const (
 	unknown
 )
 
+func (l liveness) String() string {
+	switch l {
+	case live:
+		return "live"
+	case ended:
+		return "ended"
+	default:
+		return "unknown"
+	}
+}
+
 // livenessOf observes a record's owner: live when its process runs with the recorded start time; ended when it does not run, or
 // another process has since taken its id; unknown when it cannot be checked — a record naming no process, a record from another
 // machine, or ps unable to answer.

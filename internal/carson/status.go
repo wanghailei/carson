@@ -66,7 +66,10 @@ func status(m Machine) int {
 // ownerHeading names a session and whether it is live: "Claude session 4e7a91d2 on this-mac, live:".
 func (m Machine) ownerHeading(record Record) string {
 	state, why := m.livenessOf(record)
-	said := map[liveness]string{live: "live", ended: "ended", unknown: "unknown (" + why + ")"}[state]
+	said := state.String()
+	if state == unknown {
+		said += " (" + why + ")"
+	}
 	if record.Harness == "terminal" {
 		return fmt.Sprintf("A terminal, process %d, on %s, %s:", record.PID, record.Machine, said)
 	}
