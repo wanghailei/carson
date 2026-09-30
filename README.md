@@ -19,6 +19,14 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says the st
 
 Carson 5 is written in Go, with its six commands built. Not built yet: the first task of a repository with no `main`. Its design is `~/Documents/AI/design.20260929.carson-and-git.md`; the commands' names were settled with the master on 2026-09-30 and differ from the design's: `land` for its `merge`, `abandon` for `remove --abandoned`, and `adopt` for `start --existing`.
 
+## Installing
+
+Each machine builds Carson from its own clone's `main`, into one binary on the PATH; nothing is released. With `main` level with GitHub's:
+
+    cd ~/Dev/carson && mise exec -- go build -o ~/.local/bin/carson ./cmd/carson
+
+Build it on every machine that runs AGT: Claude Code's own worktrees go through `carson start` and `carson remove` by AGT's `carson-worktree` hook. To remove it, move `~/.local/bin/carson` into `~/.cache/deleted/`.
+
 ## Building and testing
 
 Go comes from mise, pinned in `mise.toml`.
