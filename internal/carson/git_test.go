@@ -28,7 +28,7 @@ func TestInterruptingACallToGitHubStopsItsHelpers(t *testing.T) {
 	f := newFixture(t)
 	bin := filepath.Join(f.root, "bin")
 	os.Mkdir(bin, 0o755)
-	if err := os.WriteFile(filepath.Join(bin, "git-remote-silent"), []byte("#!/bin/sh\nsleep 21\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-silent"), []byte("#!/bin/sh\nsleep 21.7319\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -41,7 +41,7 @@ func TestInterruptingACallToGitHubStopsItsHelpers(t *testing.T) {
 		t.Errorf("got %v; wanted the call reported as interrupted", err)
 	}
 	time.Sleep(300 * time.Millisecond)
-	if out, _ := exec.Command("pgrep", "-f", "sleep 21").Output(); len(out) > 0 {
+	if out, _ := exec.Command("pgrep", "-f", "sleep 21.7319").Output(); len(out) > 0 {
 		t.Errorf("the helper outlived the interrupted call: %s", out)
 	}
 }

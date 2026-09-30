@@ -43,6 +43,7 @@ var networkLimit = 30 * time.Second
 
 // gitNetwork runs a git command that reaches GitHub. It runs in a process group of its own, so that at networkLimit — or on Ctrl-C,
 // which carson catches for the length of the call — the whole group is stopped: git and every helper it started, none left behind.
+// An interrupted call is reported as interrupted; status carries on, but a command that changes things must end its run on it.
 func gitNetwork(dir string, args ...string) (string, error) {
 	interrupted, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
