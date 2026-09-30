@@ -18,9 +18,12 @@ var taskNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // start starts a task: from the latest main, in a worktree of its own beside the repository, owned by the session running carson.
 // Every refusal comes before any change, and it removes nothing, ever.
 func start(m Machine, args []string) int {
-	name, err := taskArgument(args)
+	name, err := oneTask(args, "carson start")
+	if err == nil {
+		err = newTaskName(name)
+	}
 	if err != nil {
-		fmt.Fprintln(m.Out, err)
+		fmt.Fprintln(m.Out, "Not started: "+err.Error())
 		return codeOf(err)
 	}
 	folder, repo, err := m.prepare(name)
@@ -80,34 +83,6 @@ func start(m Machine, args []string) int {
 	return done
 }
 
-// taskArgument reads carson start's arguments: one task name, lowercase words joined by hyphens, and not a trunk's.
-func taskArgument(args []string) (string, error) {
-	var name string
-	for _, arg := range args {
-		switch {
-		case arg == "--existing":
-			return "", refuse(failed, "carson start --existing: not built yet. Nothing was changed.")
-		case strings.HasPrefix(arg, "-"):
-			return "", refuse(refused, "Not started: carson start has no option %q.", arg)
-		case name != "":
-			return "", refuse(refused, "Not started: one task at a time; %q and %q were given.", name, arg)
-		default:
-			name = arg
-		}
-	}
-	switch {
-	case name == "":
-		return "", refuse(refused, "Not started: name the task, as in carson start fix-login.")
-	case name == "main" || name == "master":
-		return "", refuse(refused, "Not started: %s is a trunk's name, not a task's.", name)
-	case name == "abandoned":
-		return "", refuse(refused, "Not started: abandoned is where carson keeps the branches of abandoned tasks, not a task's name.")
-	case !taskNamePattern.MatchString(name):
-		return "", refuse(refused, "Not started: %q is not a task name: use lowercase words joined by hyphens, like fix-login.", name)
-	}
-	return name, nil
-}
-
 // prepare finds the repository and checks the task can start there: a home for its worktree, a main to start from, a free name, and
 // no folder in the way. It changes nothing.
 func (m Machine) prepare(name string) (string, *repository, error) {
@@ -155,7 +130,7 @@ func (r *repository) nameTaken(m Machine, name string) error {
 	case ahead == 0:
 		return refuse(refused, "branch %s already exists, and its work is on main. Remove it with: carson remove %s", name, name)
 	default:
-		return refuse(refused, "branch %s already exists, with %s not on main. Taking it up again (carson start %s --existing) is not built yet.", name, plural(ahead, "commit"), name)
+		return refuse(refused, "branch %s already exists, with %s not on main. Adopt it with: carson adopt %s", name, plural(ahead, "commit"), name)
 	}
 }
 
@@ -176,7 +151,7 @@ func (r *repository) heldBy(m Machine, name string, t task, held string) error {
 		}
 		return refuse(refused, "%s %s %s, which is live; its worktree is at %s. Choose another name.", name, held, ownerName(record), t.path)
 	case ended:
-		return refuse(refused, "%s %s %s, which has ended. Taking it over (carson start %s --existing) is not built yet.", name, held, ownerName(record), name)
+		return refuse(refused, "%s %s %s, which has ended. Adopt it with: carson adopt %s", name, held, ownerName(record), name)
 	default:
 		return refuse(refused, "%s %s %s, whose state is unknown (%s).", name, held, ownerName(record), why)
 	}
@@ -222,7 +197,7 @@ func (r *repository) taskFolder(home, task string) string {
 	return filepath.Join(home, ".worktrees", place, task)
 }
 
-// latestMain brings local main to the latest main before a task starts from it. Merged work GitHub lacks is pushed; GitHub's commits
+// latestMain brings local main to the latest main before a task starts from it. Landed work GitHub lacks is pushed; GitHub's commits
 // come into local main by fast-forward in the main working tree, never over what that tree holds; a divergence is reported, for the
 // task's merge to bring in. It returns what it did, and the refusal when the task cannot start.
 func (r *repository) latestMain() ([]string, error) {
@@ -259,7 +234,7 @@ func (r *repository) latestMain() ([]string, error) {
 func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched string) ([]string, error) {
 	switch {
 	case ahead > 0 && behind > 0:
-		return []string{fmt.Sprintf("Local main and GitHub's have diverged: %s here, %d there. Merging this task will bring GitHub's commits in.", plural(ahead, "commit"), behind)}, nil
+		return []string{fmt.Sprintf("Local main and GitHub's have diverged: %s here, %d there. Landing this task will bring GitHub's commits in.", plural(ahead, "commit"), behind)}, nil
 	case ahead > 0:
 		now, err := r.pushMain()
 		var unchecked pushedUnchecked

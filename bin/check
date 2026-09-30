@@ -1,5 +1,5 @@
 #!/bin/sh
-# The checks carson merge runs before a task lands: formatting, vet and the tests.
+# The checks carson land runs before a task lands: formatting, vet and the tests.
 set -e
 cd "$(dirname "$0")/.."
 unformatted=$(mise exec -- gofmt -l .)

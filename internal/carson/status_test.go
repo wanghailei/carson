@@ -51,7 +51,7 @@ func TestStatusMainAheadOfGitHub(t *testing.T) {
 	f := newFixture(t)
 	f.commit(f.local, "second.txt")
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+", 1 commit ahead of GitHub (merged here, not pushed).")
+	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+", 1 commit ahead of GitHub (landed here, not pushed).")
 }
 
 func TestStatusMainBehindGitHub(t *testing.T) {
@@ -78,7 +78,7 @@ func TestStatusMainDivergedFromGitHub(t *testing.T) {
 	f.otherMachine()
 	f.git(f.local, "fetch", "-q", "github")
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+", diverged from GitHub: 1 commit here, 2 there. The next carson merge brings GitHub's commits in.")
+	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+", diverged from GitHub: 1 commit here, 2 there. The next carson land brings GitHub's commits in.")
 }
 
 func TestStatusGitHubUnreachable(t *testing.T) {
@@ -125,15 +125,15 @@ func TestStatusLiveTaskAtWork(t *testing.T) {
 	expectLine(t, out, "fix-login at "+dir+": working, 1 commit not on main, 1 uncommitted file.")
 }
 
-func TestStatusEndedTaskMergedAndClean(t *testing.T) {
+func TestStatusEndedTaskLandedAndClean(t *testing.T) {
 	f := newFixture(t)
 	dir := f.worktree("done-task")
 	record := claude("done-task", 4121)
-	record.Merged = f.git(f.local, "rev-parse", "main")
+	record.Landed = f.git(f.local, "rev-parse", "main")
 	f.own(dir, record)
 	out, _ := f.run(f.local, stranger{}, "status")
 	expectLine(t, out, "Claude session 4e7a91d2-aaaa on test-mac, ended:")
-	expectLine(t, out, "done-task at "+dir+": merged and clean.")
+	expectLine(t, out, "done-task at "+dir+": landed and clean.")
 }
 
 func TestStatusProcessReusedIsEnded(t *testing.T) {
@@ -178,7 +178,7 @@ func TestBareCarsonPrintsItsFourCommands(t *testing.T) {
 	f := newFixture(t)
 	out, code := f.run(f.local, stranger{})
 	expectCode(t, code, 0)
-	for _, command := range []string{"carson start <task>", "carson status", "carson merge", "carson remove <task>"} {
+	for _, command := range []string{"carson start <task>", "carson status", "carson land <task>", "carson remove <task>", "carson abandon <task>", "carson adopt <task>"} {
 		expectLine(t, out, command)
 	}
 }
@@ -213,7 +213,7 @@ func TestStatusRepositoryWithoutMainSaysTaskStateUnknown(t *testing.T) {
 	out, _ := f.run(f.local, stranger{}, "status")
 	expectLine(t, out, "main: this repository has no main yet.")
 	expectLine(t, out, "task at "+dir+": state unknown (")
-	expectNoLine(t, out, "merged and clean")
+	expectNoLine(t, out, "landed and clean")
 }
 
 func TestStatusFolderPresentButUnknownToGitIsNotGone(t *testing.T) {
@@ -238,7 +238,7 @@ func TestStatusUnreadableFolderIsNotGone(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 	out, _ := f.run(f.local, stranger{}, "status")
 	expectNoLine(t, out, "folder is gone")
-	expectNoLine(t, out, "merged and clean")
+	expectNoLine(t, out, "landed and clean")
 	if !strings.Contains(out, "locked at "+dir+": ") || !strings.Contains(out, "unknown") {
 		t.Errorf("an unreadable worktree is not reported as unknown:\n%s", out)
 	}
@@ -359,8 +359,8 @@ func TestStatusListsAbandonedTasks(t *testing.T) {
 	f.commit(f.local, "login.rb")
 	f.git(f.local, "switch", "-q", "main")
 	out, _ := f.run(f.local, stranger{}, "status")
-	expectLine(t, out, "Abandoned tasks, kept. Taking it up again (carson start --existing) is not built yet.")
-	expectLine(t, out, "abandoned/fix-login at "+f.short(f.local, "abandoned/fix-login")+": 1 commit not on main.")
+	expectLine(t, out, "Abandoned tasks (take one up again with: carson adopt <task>):")
+	expectLine(t, out, "fix-login: branch abandoned/fix-login at "+f.short(f.local, "abandoned/fix-login")+", 1 commit not on main.")
 }
 
 func TestStatusTakesNoArguments(t *testing.T) {

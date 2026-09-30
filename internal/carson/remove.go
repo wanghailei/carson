@@ -11,55 +11,45 @@ import (
 	"time"
 )
 
-// remove removes a finished task's worktree and branch, by its owner, from outside the worktree. Every check comes before any change:
+// remove removes a landed task's worktree and branch, by its owner, from outside the worktree. Every check comes before any change:
 // it refuses while the task holds uncommitted files or commits main lacks, a git operation in it has stopped part way, it holds a git
 // repository of its own, or a process of the user running carson works inside it. Ignored files are kept, never deleted, and the
-// branch goes by git's safe delete. With --abandoned, what was uncommitted is committed, and the task's branch is renamed
-// abandoned/<task>.
+// branch goes by git's safe delete.
 func remove(m Machine, args []string) int {
-	say := func(text string) { fmt.Fprintln(m.Out, text) }
-	name, abandoned, err := removeArguments(args)
+	return m.removeOrAbandon(args, false)
+}
+
+// abandon keeps an unfinished task's work on a branch abandoned/<task>, what was uncommitted committed, and removes its worktree, by
+// its owner, from outside the worktree, with the same checks as remove.
+func abandon(m Machine, args []string) int {
+	return m.removeOrAbandon(args, true)
+}
+
+func (m Machine) removeOrAbandon(args []string, abandoned bool) int {
+	command, not := "carson remove", "Not removed: "
+	if abandoned {
+		command, not = "carson abandon", "Not abandoned: "
+	}
+	name, err := oneTask(args, command)
 	if err != nil {
-		say("Not removed: " + err.Error())
+		fmt.Fprintln(m.Out, not+err.Error())
 		return codeOf(err)
 	}
 	said, err := m.removeTask(name, abandoned)
 	for _, line := range said {
-		say(line)
+		fmt.Fprintln(m.Out, line)
 	}
 	if err != nil {
-		say("Not removed: " + err.Error())
+		fmt.Fprintln(m.Out, not+err.Error())
 		return codeOf(err)
 	}
 	return done
 }
 
-func removeArguments(args []string) (name string, abandoned bool, err error) {
-	for _, arg := range args {
-		switch {
-		case arg == "--abandoned":
-			abandoned = true
-		case strings.HasPrefix(arg, "-"):
-			return "", false, refuse(refused, "carson remove has no option %q.", arg)
-		case name != "":
-			return "", false, refuse(refused, "one task at a time; %q and %q were given.", name, arg)
-		default:
-			name = arg
-		}
-	}
-	if name == "" {
-		return "", false, refuse(refused, "name the task, as in carson remove fix-login.")
-	}
-	return name, abandoned, nil
-}
-
 func (m Machine) removeTask(name string, abandoned bool) ([]string, error) {
-	repo, err := openRepository(m.Dir)
-	if errors.Is(err, errNotARepository) {
-		return nil, refuse(failed, "%s is not inside a git repository.", m.Dir)
-	}
+	repo, err := m.repository()
 	if err != nil {
-		return nil, refuse(failed, "the repository could not be read (%s).", reason(err))
+		return nil, err
 	}
 	if name == "main" || name == "master" {
 		return nil, refuse(refused, "%s is a trunk's name, not a task's.", name)
@@ -101,7 +91,7 @@ func (r *repository) task(name string) (t task, on string, found bool) {
 	return task{}, "", false
 }
 
-// removal is a task that has passed every check for carson remove, and what the checks found in it.
+// removal is a task that has passed every check for carson remove or carson abandon, and what the checks found in it.
 type removal struct {
 	repo        *repository
 	task        task
@@ -115,21 +105,26 @@ type removal struct {
 // removed. on is what the worktree has checked out when it is not the task's branch.
 func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned bool) (removal, error) {
 	name := t.branch
-	if here, err := filepath.EvalSymlinks(m.Dir); err == nil && (here == t.path || strings.HasPrefix(here, t.path+"/")) {
-		return removal{}, refuse(refused, "carson remove runs from outside the worktree it removes; run it from %s.", repo.top)
+	command, verb := "carson remove", "removes it"
+	if abandoned {
+		command, verb = "carson abandon", "abandons it"
 	}
-	record, err := m.ownRecord(t, "removes it")
+	again := command + " " + name + " again"
+	if here, err := filepath.EvalSymlinks(m.Dir); err == nil && (here == t.path || strings.HasPrefix(here, t.path+"/")) {
+		return removal{}, refuse(refused, "%s runs from outside the worktree it removes; run it from %s.", command, repo.top)
+	}
+	record, err := m.ownRecord(t, verb)
 	if err != nil {
 		return removal{}, err
 	}
 	if on != "" {
-		return removal{}, refuse(refused, "%s's worktree at %s is on %s, not its branch. Switch it back there with git switch %s, then run carson remove again.", name, t.path, on, name)
+		return removal{}, offBranch(t, on, command+" "+name)
 	}
 	if t.locked != "" {
-		return removal{}, refuse(refused, "%s's worktree is locked (%s). If the lock is no longer wanted: git worktree unlock %s, then run carson remove again.", name, t.locked, t.path)
+		return removal{}, refuse(refused, "%s's worktree is locked (%s). If the lock is no longer wanted: git worktree unlock %s, then run %s.", name, t.locked, t.path, again)
 	}
 	if branch := repo.mainTreeBranch(); !abandoned && branch != "main" {
-		return removal{}, refuse(refused, "the main working tree is on %s, not main, so git cannot safely delete branch %s. Switch it back to main, then run carson remove again.", branch, name)
+		return removal{}, refuse(refused, "the main working tree is on %s, not main, so git cannot safely delete branch %s. Switch it back to main, then run %s.", branch, name, again)
 	}
 	r := removal{repo: repo, task: t, record: record}
 	if r.ahead, err = repo.count("main.." + name); err != nil {
@@ -141,14 +136,14 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 		case abandoned && r.ahead == 0:
 			return removal{}, refuse(refused, "%s's folder is gone, and its branch holds nothing main lacks, so there is nothing to keep; remove it with: carson remove %s", name, name)
 		case !abandoned && r.ahead > 0:
-			return removal{}, refuse(refused, "%s's folder is gone, and its branch holds %s not on main. Keep its work on a branch by declaring the task abandoned: carson remove %s --abandoned", name, plural(r.ahead, "commit"), name)
+			return removal{}, refuse(refused, "%s's folder is gone, and its branch holds %s not on main. Keep its work on a branch by abandoning the task: carson abandon %s", name, plural(r.ahead, "commit"), name)
 		}
 		return r, nil
 	}
 	if home := m.Env("HOME"); !filepath.IsAbs(home) {
 		return removal{}, refuse(failed, "HOME does not name a folder, so the worktree's ignored files would have nowhere to be kept. Nothing was changed.")
 	}
-	if err := operationInProgress(t.admin, name+"'s worktree", "carson remove again"); err != nil {
+	if err := operationInProgress(t.admin, name+"'s worktree", again); err != nil {
 		return removal{}, err
 	}
 	inside, err := m.Processes.Inside(t.path)
@@ -156,7 +151,7 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 		return removal{}, refuse(failed, "whether any process works inside it cannot be checked (%s). Nothing was changed.", reason(err))
 	}
 	if len(inside) > 0 {
-		return removal{}, refuse(refused, "processes are working inside it — %s. Stop them, then run carson remove again.", strings.Join(inside, ", "))
+		return removal{}, refuse(refused, "processes are working inside it — %s. Stop them, then run %s.", strings.Join(inside, ", "), again)
 	}
 	nested, err := ownRepositories(t.path)
 	if err != nil {
@@ -167,7 +162,7 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 		if len(nested) > 1 {
 			what, them = "git repositories", "them"
 		}
-		return removal{}, refuse(refused, "%s holds %s of its own at %s, which git cannot remove with the worktree. Move %s out, then run carson remove again. Nothing was changed.", name, what, strings.Join(nested, ", "), them)
+		return removal{}, refuse(refused, "%s holds %s of its own at %s, which git cannot remove with the worktree. Move %s out, then run %s. Nothing was changed.", name, what, strings.Join(nested, ", "), them, again)
 	}
 	if r.uncommitted, err = untrackedAndChanged(t.path); err != nil {
 		return removal{}, refuse(failed, "what the worktree holds cannot be read (%s). Nothing was changed.", reason(err))
@@ -177,15 +172,15 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 		return removal{}, refuse(refused, "%s holds nothing main lacks and nothing uncommitted, so there is nothing to keep; remove it with: carson remove %s", name, name)
 	case abandoned:
 	case len(r.uncommitted) > 0:
-		return removal{}, refuse(refused, "%s holds %s — %s. Commit and merge it, or declare the task abandoned: carson remove %s --abandoned", name, plural(len(r.uncommitted), "uncommitted file"), strings.Join(r.uncommitted, ", "), name)
+		return removal{}, refuse(refused, "%s holds %s — %s. Commit it and land it, or abandon the task: carson abandon %s", name, plural(len(r.uncommitted), "uncommitted file"), strings.Join(r.uncommitted, ", "), name)
 	case r.ahead > 0:
-		return removal{}, refuse(refused, "%s holds %s not on main. Merge it with carson merge, or declare the task abandoned: carson remove %s --abandoned", name, plural(r.ahead, "commit"), name)
+		return removal{}, refuse(refused, "%s holds %s not on main. Land it with carson land %s, or abandon the task: carson abandon %s", name, plural(r.ahead, "commit"), name, name)
 	}
 	return r, nil
 }
 
 // ownRecord is the task's owner record, when the session running carson owns it; otherwise it says whose the task is, and whether
-// that owner is live. verb is what only the owner does: "merges it", "removes it".
+// that owner is live. verb is what only the owner does: "lands it", "removes it".
 func (m Machine) ownRecord(t task, verb string) (Record, error) {
 	if t.admin == "" {
 		return Record{}, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree.", t.branch)
@@ -205,7 +200,7 @@ func (m Machine) ownRecord(t task, verb string) (Record, error) {
 	case live:
 		return Record{}, refuse(refused, "%s belongs to %s, which is live. Only its owner %s.", t.branch, ownerName(record), verb)
 	case ended:
-		return Record{}, refuse(refused, "%s belongs to %s, which has ended. Taking it over (carson start %s --existing) is not built yet.", t.branch, ownerName(record), t.branch)
+		return Record{}, refuse(refused, "%s belongs to %s, which has ended. Adopt it first: carson adopt %s", t.branch, ownerName(record), t.branch)
 	default:
 		return Record{}, refuse(refused, "%s belongs to %s, whose state is unknown (%s). Only its owner %s.", t.branch, ownerName(record), why, verb)
 	}
@@ -218,27 +213,27 @@ func (r *repository) removeLeftoverBranch(name string, abandoned bool) ([]string
 		return nil, refuse(refused, "no task or branch is named %s.", name)
 	}
 	if r.worktrees[0].branch == name {
-		return nil, refuse(refused, "branch %s is checked out in the main working tree, at %s. Switch it back to main, then run carson remove again.", name, r.top)
+		return nil, refuse(refused, "branch %s is checked out in the main working tree, at %s. Switch it back to main, then run carson remove %s again.", name, r.top, name)
 	}
 	ahead, err := r.count("main.." + name)
 	switch {
 	case err != nil:
 		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed.", name, reason(err))
 	case strings.HasPrefix(name, "abandoned/"):
-		return nil, refuse(refused, "branch %s holds the work of a task declared abandoned, %s not on main, and carson keeps it. %s", name, plural(ahead, "commit"), takeUp)
+		return nil, refuse(refused, "branch %s holds the work of a task declared abandoned, %s not on main, and carson keeps it. %s", name, plural(ahead, "commit"), takeUp(name))
 	case abandoned && ahead > 0:
 		kept := r.freeBranch("abandoned/" + name)
 		if _, err := git(r.top, "branch", "-m", name, kept); err != nil {
 			return nil, refuse(failed, "branch %s could not be renamed %s (%s). Nothing was changed.", name, kept, reason(err))
 		}
-		return []string{fmt.Sprintf("Kept the leftover branch %s, its task declared abandoned, as branch %s at %s (%s not on main). %s", name, kept, r.short(kept), plural(ahead, "commit"), takeUp)}, nil
+		return []string{fmt.Sprintf("Kept the leftover branch %s, its task declared abandoned, as branch %s at %s (%s not on main). %s", name, kept, r.short(kept), plural(ahead, "commit"), takeUp(kept))}, nil
 	case abandoned:
 		return nil, refuse(refused, "branch %s holds nothing main lacks, so there is nothing to keep; remove it with: carson remove %s", name, name)
 	case ahead > 0:
-		return nil, refuse(refused, "branch %s has no worktree, and holds %s not on main; it is left as it is. To keep it as abandoned work: carson remove %s --abandoned", name, plural(ahead, "commit"), name)
+		return nil, refuse(refused, "branch %s has no worktree, and holds %s not on main; it is left as it is. Adopt it with carson adopt %s, or keep it as abandoned work with carson abandon %s", name, plural(ahead, "commit"), name, name)
 	}
 	if branch := r.mainTreeBranch(); branch != "main" {
-		return nil, refuse(refused, "the main working tree is on %s, not main, so git cannot safely delete branch %s. Switch it back to main, then run carson remove again.", branch, name)
+		return nil, refuse(refused, "the main working tree is on %s, not main, so git cannot safely delete branch %s. Switch it back to main, then run carson remove %s again.", branch, name, name)
 	}
 	if _, err := git(r.top, "branch", "-d", name); err != nil {
 		return nil, refuse(failed, "the leftover branch %s could not be deleted (%s).", name, reason(err))
@@ -262,8 +257,8 @@ func (r removal) remove(m Machine) ([]string, error) {
 		worktree += ", whose folder was already gone"
 	}
 	branch := "its branch, which held nothing main lacks"
-	if r.record.Merged != "" {
-		branch = "its branch, merged into main at " + r.repo.short(r.record.Merged)
+	if r.record.Landed != "" {
+		branch = "its branch, landed on main at " + r.repo.short(r.record.Landed)
 	}
 	result := fmt.Sprintf("Removed %s: %s, and %s. It was owned by %s.", name, worktree, branch, ownerName(r.record))
 	return append([]string{result}, said...), nil
@@ -272,7 +267,7 @@ func (r removal) remove(m Machine) ([]string, error) {
 // abandon keeps everything the task holds on a branch named abandoned/<task> — its commits, and what was uncommitted, committed — and
 // removes its worktree, keeping its ignored files. The commit goes through the repository's own checks; when one refuses, what was
 // staged for it is unstaged, so the worktree is as it was. The branch is renamed last: whatever fails before, the task is still under
-// its own name, and carson remove <task> --abandoned takes it on from there. Nothing is destroyed.
+// its own name, and carson abandon <task> takes it on from there. Nothing is destroyed.
 func (r removal) abandon(m Machine) ([]string, error) {
 	name := r.task.branch
 	if len(r.uncommitted) > 0 {
@@ -284,14 +279,14 @@ func (r removal) abandon(m Machine) ([]string, error) {
 			if _, unstaged := git(r.task.path, "reset", "-q"); unstaged != nil {
 				return nil, refuse(failed, "what was uncommitted could not be committed (%s), and what was staged for it could not be unstaged (%s). Its branch is still %s.", reason(err), reason(unstaged), name)
 			}
-			return nil, refuse(failed, "what was uncommitted could not be committed (%s). Its files are left as they are, none of them staged, on branch %s; run carson remove %s --abandoned again once that is cleared.", reason(err), name, name)
+			return nil, refuse(failed, "what was uncommitted could not be committed (%s). Its files are left as they are, none of them staged, on branch %s; run carson abandon %s again once that is cleared.", reason(err), name, name)
 		}
 	}
 	again := "Its work is on branch " + name
 	if len(r.uncommitted) > 0 {
 		again += ", what was uncommitted now committed"
 	}
-	again += "; run carson remove " + name + " --abandoned again once that is cleared."
+	again += "; run carson abandon " + name + " again once that is cleared."
 	said, err := r.clear(m, again)
 	if err != nil {
 		return said, err
@@ -307,16 +302,23 @@ func (r removal) abandon(m Machine) ([]string, error) {
 	case len(r.uncommitted) > 0:
 		what = plural(r.ahead+1, "commit") + ", the last holding what was uncommitted"
 	}
-	worktree := name + "'s worktree"
+	worktree := "its worktree is removed"
 	if r.gone {
-		worktree += " (its folder was already gone)"
+		worktree = "git's record of its worktree, whose folder was already gone, is removed"
 	}
-	result := fmt.Sprintf("Removed %s, its task declared abandoned. Its work — %s — is kept as branch %s at %s. %s", worktree, what, kept, r.repo.short(kept), takeUp)
+	result := fmt.Sprintf("Abandoned %s: its work — %s — is kept as branch %s at %s, and %s. %s", name, what, kept, r.repo.short(kept), worktree, takeUp(kept))
 	return append([]string{result}, said...), nil
 }
 
-// takeUp says how an abandoned task is taken up again. A worktree added by hand would be one carson neither owns nor merges.
-const takeUp = "Taking it up again (carson start --existing) is not built yet."
+// takeUp says how the task whose abandoned work is kept on branch kept is taken up again.
+func takeUp(kept string) string {
+	return "Take it up again with: carson adopt " + strings.TrimPrefix(kept, "abandoned/")
+}
+
+// offBranch refuses a task whose worktree has left its branch for what on says, with the way back; command is what to run after.
+func offBranch(t task, on, command string) error {
+	return refuse(refused, "%s's worktree at %s is on %s, not its branch. Switch it back there with git switch %s, then run %s again.", t.branch, t.path, on, t.branch, command)
+}
 
 // freeBranch is name, or when a branch already has that name, the first of name-2, name-3 … that none has.
 func (r *repository) freeBranch(name string) string {

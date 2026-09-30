@@ -12,7 +12,7 @@ import (
 )
 
 // Record is who owns a task's worktree: a harness session, known by its process and that process's start time, on one machine. It
-// lives in git's administrative folder for the worktree, so it goes when the worktree goes and never shows in anyone's files. The merge
+// lives in git's administrative folder for the worktree, so it goes when the worktree goes and never shows in anyone's files. The landing
 // lock is a record too, naming the carson that holds it.
 type Record struct {
 	Task      string    `json:"task"`
@@ -24,7 +24,7 @@ type Record struct {
 	MachineID string    `json:"machine_id,omitempty"`
 	Created   time.Time `json:"created"`
 	Previous  []Record  `json:"previous,omitempty"`
-	Merged    string    `json:"merged,omitempty"`
+	Landed    string    `json:"landed,omitempty"`
 }
 
 const ownerFile = "carson-owner.json"
@@ -41,6 +41,27 @@ func readOwner(admin string) (Record, bool, error) {
 // createOwner writes a new owner record where there is none; of two sessions recording the same worktree, exactly one succeeds.
 func createOwner(admin string, record Record) error {
 	return createRecordFile(filepath.Join(admin, ownerFile), record)
+}
+
+// replaceOwner replaces a worktree's owner record with record, for an adoption. The old record is moved aside in one step that only one
+// session can make, so of two sessions adopting the same task exactly one succeeds and the other gets errOwned; if the new record then
+// cannot be written, the old one is put back.
+func replaceOwner(admin string, record Record) error {
+	path := filepath.Join(admin, ownerFile)
+	aside := path + "." + strconv.Itoa(os.Getpid()) + ".old"
+	if err := os.Rename(path, aside); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return errOwned
+		}
+		return err
+	}
+	if err := createRecordFile(path, record); err != nil {
+		if os.Link(aside, path) == nil {
+			os.Remove(aside)
+		}
+		return err
+	}
+	return os.Remove(aside)
 }
 
 // writeOwner replaces a worktree's owner record.

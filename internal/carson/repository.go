@@ -93,7 +93,7 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 	fields := strings.Fields(answer)
 	if len(fields) == 0 {
-		return here + ". GitHub has no main yet; carson start or carson merge pushes it."
+		return here + ". GitHub has no main yet; carson start or carson land pushes it."
 	}
 	remote := fields[0]
 	if remote == local {
@@ -112,9 +112,9 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 	switch {
 	case ahead > 0 && behind > 0:
-		return fmt.Sprintf("%s, diverged from GitHub: %s here, %d there. The next carson merge brings GitHub's commits in.", here, plural(ahead, "commit"), behind)
+		return fmt.Sprintf("%s, diverged from GitHub: %s here, %d there. The next carson land brings GitHub's commits in.", here, plural(ahead, "commit"), behind)
 	case ahead > 0:
-		return fmt.Sprintf("%s, %s ahead of GitHub (merged here, not pushed).", here, plural(ahead, "commit"))
+		return fmt.Sprintf("%s, %s ahead of GitHub (landed here, not pushed).", here, plural(ahead, "commit"))
 	default:
 		return fmt.Sprintf("%s, %s behind GitHub.", here, plural(behind, "commit"))
 	}
@@ -304,8 +304,8 @@ func (r *repository) state(t task) string {
 		return "state unknown (" + reason(err) + ")."
 	}
 	if ahead == 0 && len(found) == 0 {
-		if record, owned, _ := readOwner(t.admin); t.admin != "" && owned && record.Merged != "" {
-			return "merged and clean."
+		if record, owned, _ := readOwner(t.admin); t.admin != "" && owned && record.Landed != "" {
+			return "landed and clean."
 		}
 		return "clean, nothing main lacks."
 	}

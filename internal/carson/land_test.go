@@ -18,67 +18,67 @@ func (f *fixture) startTask(name string) string {
 	return f.taskFolder(name)
 }
 
-func (f *fixture) merge(dir string) (string, int) {
+func (f *fixture) land(dir string) (string, int) {
 	f.t.Helper()
-	return f.runIn(inClaude, dir, claudeRunning, "merge")
+	return f.runIn(inClaude, dir, claudeRunning, "land", filepath.Base(dir))
 }
 
 func (f *fixture) short(dir, revision string) string {
 	return f.git(dir, "rev-parse", "--short", revision)
 }
 
-func TestMergeFastForwardsMainAndPushes(t *testing.T) {
+func TestLandFastForwardsMainAndPushes(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.commit(dir, "login_test.rb")
 	tip := f.git(dir, "rev-parse", "HEAD")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	short := f.short(dir, "HEAD")
-	expectLine(t, out, "Merged fix-login into main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+". No checks declared (no bin/check). Remove the worktree with: carson remove fix-login (from outside it).")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+". No checks declared (no bin/check). Remove it with: carson remove fix-login (from outside its worktree).")
 	if f.git(f.local, "rev-parse", "main") != tip || f.git(f.github, "rev-parse", "main") != tip {
 		t.Error("main, here or on GitHub, is not the task's tip")
 	}
-	if record := f.readRecord(dir); record.Merged != tip {
+	if record := f.readRecord(dir); record.Landed != tip {
 		t.Errorf("the owner record does not name the merge: %+v", record)
 	}
 }
 
-func TestMergeRebasesOntoANewerMainFirst(t *testing.T) {
+func TestLandRebasesOntoANewerMainFirst(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.otherMachine()
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	short := f.short(dir, "HEAD")
-	expectLine(t, out, "Merged fix-login into main by fast-forward at "+short+" (1 commit, rebased onto main first) and pushed; GitHub's main is "+short+".")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (1 commit, rebased onto main first) and pushed; GitHub's main is "+short+".")
 	if f.git(f.github, "rev-parse", "main") != f.git(dir, "rev-parse", "HEAD") {
 		t.Error("GitHub's main is not the rebased task")
 	}
 }
 
-func TestMergeRefusesUncommittedFiles(t *testing.T) {
+func TestLandRefusesUncommittedFiles(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.write(dir, "notes.txt", "unsaved\n")
 	f.write(dir, "login.rb", "changed\n")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: 2 files are uncommitted — login.rb, notes.txt. Commit them in this worktree, then run carson merge.")
+	expectLine(t, out, "Not landed: 2 files are uncommitted in fix-login's worktree — login.rb, notes.txt. Commit them there, then run carson land fix-login again.")
 }
 
-func TestMergeRefusesATaskWithNothingMainLacks(t *testing.T) {
+func TestLandRefusesATaskWithNothingMainLacks(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fix-login has no commits that main lacks: its tip, "+f.short(f.local, "fix-login")+", is on main and on GitHub; remove it with: carson remove fix-login")
+	expectLine(t, out, "Not landed: fix-login has no commits that main lacks: its tip, "+f.short(f.local, "fix-login")+", is on main and on GitHub; remove it with: carson remove fix-login")
 }
 
-func TestMergeUndoesAConflictingRebase(t *testing.T) {
+func TestLandUndoesAConflictingRebase(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.write(dir, "first.txt", "the task's line\n")
@@ -88,9 +88,9 @@ func TestMergeUndoesAConflictingRebase(t *testing.T) {
 	f.write(other, "first.txt", "the other machine's line\n")
 	f.git(other, "commit", "-q", "-am", "change first there")
 	f.git(other, "push", "-q", "origin", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase main in this worktree, resolve, then carson merge.")
+	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase main in fix-login's worktree, resolve, then run carson land fix-login again.")
 	if f.git(dir, "rev-parse", "HEAD") != before || f.git(dir, "status", "--porcelain") != "" || f.exists(filepath.Join(f.git(dir, "rev-parse", "--absolute-git-dir"), "rebase-merge")) {
 		t.Error("the task is not as it was")
 	}
@@ -106,15 +106,15 @@ func (f *fixture) check(dir, script string) {
 	f.git(dir, "commit", "-q", "-m", "add bin/check")
 }
 
-func TestMergeStopsWhenTheChecksFail(t *testing.T) {
+func TestLandStopsWhenTheChecksFail(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.check(dir, "echo 2 tests failed; exit 1")
 	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: bin/check failed (exit 1). Its output ends:")
-	if !strings.Contains(out, "Fix what bin/check reports, commit, then run carson merge again.") {
+	expectLine(t, out, "Not landed: bin/check failed (exit 1). Its output ends:")
+	if !strings.Contains(out, "Fix what bin/check reports, commit, then run carson land fix-login again.") {
 		t.Errorf("no way on after failed checks:\n%s", out)
 	}
 	expectLine(t, out, "2 tests failed")
@@ -123,76 +123,86 @@ func TestMergeStopsWhenTheChecksFail(t *testing.T) {
 	}
 }
 
-func TestMergeSaysTheChecksPassed(t *testing.T) {
+func TestLandSaysTheChecksPassed(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.check(dir, "exit 0")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	if !strings.Contains(out, "Checks: bin/check passed.") {
 		t.Errorf("the checks are not reported:\n%s", out)
 	}
 }
 
-func TestMergeWhosePushFailsSaysSoAndIsPushedByTheNextMerge(t *testing.T) {
+func TestLandWhosePushFailsSaysSoAndIsPushedByTheNextMerge(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.git(f.local, "config", "remote.github.pushurl", filepath.Join(f.root, "no-push.git"))
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
 	short := f.short(dir, "HEAD")
-	expectLine(t, out, "Merged fix-login into local main at "+short+". Not on GitHub (")
-	if !strings.Contains(out, "Run carson merge again to push.") {
+	expectLine(t, out, "Landed fix-login on local main at "+short+". Not on GitHub (")
+	if !strings.Contains(out, "Run carson land fix-login again to push.") {
 		t.Errorf("the way to push is not named:\n%s", out)
 	}
 	f.git(f.local, "config", "--unset", "remote.github.pushurl")
-	out, code = f.merge(dir)
+	out, code = f.land(dir)
 	expectCode(t, code, 0)
-	expectLine(t, out, "fix-login was already merged into local main at "+short+"; pushed it now. GitHub's main is "+short+".")
+	expectLine(t, out, "fix-login had already landed on local main at "+short+"; pushed it now. GitHub's main is "+short+".")
 }
 
-func TestMergeRefusesAnotherSessionsTask(t *testing.T) {
+func TestLandRefusesAnotherSessionsTask(t *testing.T) {
 	f := newFixture(t)
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	dir := f.taskFolder("fix-login")
 	f.commit(dir, "login.rb")
-	out, code := f.runIn(inClaude, dir, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "merge")
+	out, code := f.runIn(inClaude, dir, stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}, "land", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner merges it.")
+	expectLine(t, out, "Not landed: fix-login belongs to Claude session 4e7a91d2-other on test-mac, which is live. Only its owner lands it.")
 }
 
-func TestMergeRefusesInTheMainWorkingTree(t *testing.T) {
+// carson land runs from anywhere in the repository: the main working tree as well as the task's worktree.
+func TestLandFromTheMainWorkingTree(t *testing.T) {
 	f := newFixture(t)
-	out, code := f.merge(f.local)
-	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: carson merge runs inside a task's worktree; "+f.local+" is the main working tree.")
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "land", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(f.local, "main")+" (1 commit) and pushed")
 }
 
-func TestMergeRefusesATaskMadeOutsideCarson(t *testing.T) {
+func TestLandRefusesAnUnknownTask(t *testing.T) {
+	f := newFixture(t)
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "land", "no-such-task")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: no task is named no-such-task; carson status lists them.")
+}
+
+func TestLandRefusesATaskMadeOutsideCarson(t *testing.T) {
 	f := newFixture(t)
 	dir := f.worktree("fix-login")
 	f.commit(dir, "login.rb")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fix-login was made outside carson, so whose it is cannot be told; that is the master's to settle.")
+	expectLine(t, out, "Not landed: fix-login was made outside carson, so whose it is cannot be told; that is the master's to settle.")
 }
 
-func TestMergeRefusesWhenGitHubCannotBeReached(t *testing.T) {
+func TestLandRefusesWhenGitHubCannotBeReached(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.git(f.local, "remote", "set-url", "github", filepath.Join(f.root, "no-such-repository.git"))
 	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: GitHub could not be reached (")
+	expectLine(t, out, "Not landed: GitHub could not be reached (")
 	if !strings.Contains(out, "Nothing was changed; fix-login still holds its 1 commit.") || f.git(f.local, "rev-parse", "main") != main {
 		t.Errorf("not refused before any change:\n%s", out)
 	}
 }
 
-func TestMergeRefusesWhileARebaseIsInProgress(t *testing.T) {
+func TestLandRefusesWhileARebaseIsInProgress(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.write(dir, "first.txt", "here\n")
@@ -205,43 +215,43 @@ func TestMergeRefusesWhileARebaseIsInProgress(t *testing.T) {
 	if out, err := git(dir, command...); err == nil {
 		t.Fatalf("the staged rebase did not stop: %s", out)
 	}
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: a rebase is in progress in this worktree. Finish it with git rebase --continue, or give it up with git rebase --abort, then run carson merge.")
+	expectLine(t, out, "Not landed: a rebase is in progress in fix-login's worktree. Finish it with git rebase --continue, or give it up with git rebase --abort, then run carson land fix-login again.")
 }
 
-func TestMergeRefusesWhenTheMainTreeIsOffMain(t *testing.T) {
+func TestLandRefusesWhenTheMainTreeIsOffMain(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.git(f.local, "switch", "-q", "-c", "elsewhere")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: the main working tree is on elsewhere, not main, so main cannot be fast-forwarded there. Nothing was changed; fix-login still holds its 1 commit.")
+	expectLine(t, out, "Not landed: the main working tree is on elsewhere, not main, so main cannot be fast-forwarded there. Nothing was changed; fix-login still holds its 1 commit.")
 }
 
-func TestMergeRefusesToOverwriteWhatTheMainTreeHolds(t *testing.T) {
+func TestLandRefusesToOverwriteWhatTheMainTreeHolds(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "notes.md")
 	f.write(f.local, "notes.md", "the master's own notes\n")
 	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fast-forwarding main would overwrite what the main working tree holds in notes.md (untracked, changed ")
+	expectLine(t, out, "Not landed: fast-forwarding main would overwrite what the main working tree holds in notes.md (untracked, changed ")
 	if content, _ := os.ReadFile(filepath.Join(f.local, "notes.md")); string(content) != "the master's own notes\n" || f.git(f.local, "rev-parse", "main") != main {
 		t.Error("the main working tree's file or main was changed")
 	}
 }
 
-func TestMergeJoinsDivergedMains(t *testing.T) {
+func TestLandJoinsDivergedMains(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.commit(f.local, "merged-here.txt") // merged here, not yet pushed
 	f.otherMachine()
 	theirs := f.git(f.github, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	if !strings.Contains(out, "GitHub's main had diverged; its commits are merged into fix-login first.") {
 		t.Errorf("the divergence is not reported:\n%s", out)
@@ -256,78 +266,78 @@ func TestMergeJoinsDivergedMains(t *testing.T) {
 	}
 }
 
-func TestMergeRefusesWhileALiveMergeHoldsTheLockAndTakesOverAStaleOne(t *testing.T) {
+func TestLandRefusesWhileALiveMergeHoldsTheLockAndTakesOverAStaleOne(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
-	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), mergeLockFile)
+	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
 	held := Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"}
 	if err := writeRecordFile(lock, held); err != nil {
 		t.Fatal(err)
 	}
 	running := stranger{5000: "Wed Sep 30 07:00:00 2026", 4121: "Wed Sep 30 09:00:00 2026"}
-	out, code := f.runIn(inClaude, dir, running, "merge")
+	out, code := f.runIn(inClaude, dir, running, "land", "fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: another merge is running in this repository — other-task, by Claude session 4e7a91d2-other on test-mac. Run carson merge again when it has finished. Nothing was changed.")
-	out, code = f.merge(dir) // process 5000 has ended
+	expectLine(t, out, "Not landed: another landing is running in this repository — other-task, by Claude session 4e7a91d2-other on test-mac. Run carson land fix-login again when it has finished. Nothing was changed.")
+	out, code = f.land(dir) // process 5000 has ended
 	expectCode(t, code, 0)
-	expectLine(t, out, "The merge lock left by an ended carson (other-task, by Claude session 4e7a91d2-other on test-mac) is taken over.")
+	expectLine(t, out, "The landing lock left by an ended carson (other-task, by Claude session 4e7a91d2-other on test-mac) is taken over.")
 	if f.exists(lock) {
 		t.Error("the merge lock was not released")
 	}
 }
 
-func TestMergeWithoutARemoteMergesLocally(t *testing.T) {
+func TestLandWithoutARemoteMergesLocally(t *testing.T) {
 	f := newFixture(t)
 	f.git(f.local, "remote", "remove", "github")
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
-	expectLine(t, out, "Merged fix-login into main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit). No GitHub remote: main is on this machine only.")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit). No GitHub remote: main is on this machine only.")
 }
 
 // Cases from the review of cca4a81, each staged there against the slice before it was fixed.
 
-func TestMergeStopsWhenTheCheckMovesTheBranch(t *testing.T) {
+func TestLandStopsWhenTheCheckMovesTheBranch(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.check(dir, "git reset -q --hard main")
 	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: bin/check changed the task: fix-login moved from ")
+	expectLine(t, out, "Not landed: bin/check changed the task: fix-login moved from ")
 	if f.git(f.local, "rev-parse", "main") != main {
 		t.Error("main moved")
 	}
 }
 
-func TestMergeStopsWhenTheCheckSwitchesBranch(t *testing.T) {
+func TestLandStopsWhenTheCheckSwitchesBranch(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.check(dir, "git switch -q -c scratch && echo x > x.txt && git add x.txt && git commit -q -m scratch")
 	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: bin/check changed the task: the worktree is now on scratch, not fix-login")
+	expectLine(t, out, "Not landed: bin/check changed the task: the worktree is now on scratch, not fix-login")
 	if f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != main {
 		t.Error("main moved, here or on GitHub")
 	}
 }
 
-func TestMergeRetryAfterAFailedPushJoinsAGitHubThatMovedOn(t *testing.T) {
+func TestLandRetryAfterAFailedPushJoinsAGitHubThatMovedOn(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.git(f.local, "config", "remote.github.pushurl", filepath.Join(f.root, "no-push.git"))
-	if _, code := f.merge(dir); code != 1 {
+	if _, code := f.land(dir); code != 1 {
 		t.Fatal("the first merge's push did not fail")
 	}
 	f.git(f.local, "config", "--unset", "remote.github.pushurl")
 	f.otherMachine()
 	theirs := f.git(f.github, "rev-parse", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	if !strings.Contains(out, "and pushed; GitHub's main is ") {
 		t.Errorf("not merged and pushed:\n%s", out)
@@ -339,7 +349,7 @@ func TestMergeRetryAfterAFailedPushJoinsAGitHubThatMovedOn(t *testing.T) {
 	}
 }
 
-func TestMergeConflictJoiningGitHubSaysTheTaskWasRebased(t *testing.T) {
+func TestLandConflictJoiningGitHubSaysTheTaskWasRebased(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.write(dir, "shared.txt", "the task's\n")
@@ -352,22 +362,22 @@ func TestMergeConflictJoiningGitHubSaysTheTaskWasRebased(t *testing.T) {
 	f.git(other, "add", "shared.txt")
 	f.git(other, "commit", "-q", "-m", "other adds shared")
 	f.git(other, "push", "-q", "origin", "main")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
 	if !strings.Contains(out, "The merge was undone; fix-login is rebased onto main at "+f.short(dir, "HEAD")+" (it was at "+original+" before carson).") {
 		t.Errorf("the rebase is not said:\n%s", out)
 	}
 }
 
-func TestMergeFailedCheckAfterARebaseSaysSo(t *testing.T) {
+func TestLandFailedCheckAfterARebaseSaysSo(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.check(dir, "exit 1")
 	original := f.short(dir, "HEAD")
 	f.otherMachine()
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: bin/check failed (exit 1). It printed nothing.")
+	expectLine(t, out, "Not landed: bin/check failed (exit 1). It printed nothing.")
 	if !strings.Contains(out, "fix-login still holds its 1 commit, now rebased onto main (it was at "+original+" before carson).") {
 		t.Errorf("the rebase is not said:\n%s", out)
 	}
@@ -381,7 +391,7 @@ func TestGitGivesTheReasonNotTheURLLine(t *testing.T) {
 	}
 }
 
-func TestMergeWhosePushIsCutOffDoesNotClaimItFailed(t *testing.T) {
+func TestLandWhosePushIsCutOffDoesNotClaimItFailed(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
@@ -393,31 +403,31 @@ func TestMergeWhosePushIsCutOffDoesNotClaimItFailed(t *testing.T) {
 	limit := networkLimit
 	networkLimit = 2 * time.Second
 	t.Cleanup(func() { networkLimit = limit })
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Merged fix-login into local main at "+f.short(dir, "HEAD")+". Whether it reached GitHub is unknown (no answer within 2s). Run carson merge again to push or confirm it.")
+	expectLine(t, out, "Landed fix-login on local main at "+f.short(dir, "HEAD")+". Whether it reached GitHub is unknown (no answer within 2s). Run carson land fix-login again to push or confirm it.")
 }
 
-func TestMergeKeepsATaskThatCarriesAJoinUnflattened(t *testing.T) {
+func TestLandKeepsATaskThatCarriesAJoinUnflattened(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.check(dir, "exit 1")
 	f.commit(f.local, "merged-here.txt")
 	f.otherMachine()
-	if _, code := f.merge(dir); code != 2 {
+	if _, code := f.land(dir); code != 2 {
 		t.Fatal("the failing check did not stop the first merge")
 	}
 	f.write(filepath.Join(dir, "bin"), "check", "#!/bin/sh\nexit 0\n")
 	f.git(dir, "commit", "-q", "-am", "fix the check")
 	f.commit(f.local, "merged-here-2.txt")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	if n := f.git(f.github, "log", "main", "--format=%s"); strings.Count(n, "add other-") != 1 {
 		t.Errorf("GitHub's main holds the other machine's commit more than once:\n%s\n%s", n, out)
 	}
 }
 
-func TestMergeInterruptedDuringTheCheckEndsInOneLineAndGivesBackTheLock(t *testing.T) {
+func TestLandInterruptedDuringTheCheckEndsInOneLineAndGivesBackTheLock(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.check(dir, "sleep 2")
@@ -426,58 +436,58 @@ func TestMergeInterruptedDuringTheCheckEndsInOneLineAndGivesBackTheLock(t *testi
 		time.Sleep(700 * time.Millisecond)
 		syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: interrupted during the checks.")
-	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), mergeLockFile)
+	expectLine(t, out, "Not landed: interrupted during the checks.")
+	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
 	if f.exists(lock) || f.git(f.local, "rev-parse", "main") != main {
 		t.Error("the lock is still held, or main moved")
 	}
 }
 
-func TestMergeRefusesToOverwriteAModifiedFileInTheMainTree(t *testing.T) {
+func TestLandRefusesToOverwriteAModifiedFileInTheMainTree(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.write(dir, "first.txt", "the task's\n")
 	f.git(dir, "commit", "-q", "-am", "task changes first")
 	f.write(f.local, "first.txt", "the master's edit\n")
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not merged: fast-forwarding main would overwrite what the main working tree holds in first.txt (modified, changed ")
+	expectLine(t, out, "Not landed: fast-forwarding main would overwrite what the main working tree holds in first.txt (modified, changed ")
 }
 
-func TestMergeRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
+func TestLandRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
-	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), mergeLockFile)
+	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
 	writeRecordFile(lock, Record{Task: "other-task", Harness: "claude", Session: "4e7a91d2-other", PID: 5000, Started: "x", Machine: "linux-box", MachineID: "linux-id"})
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not merged: the merge lock is held by other-task's merge, by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed.")
+	expectLine(t, out, "Not landed: the landing lock is held by other-task's landing, by Claude session 4e7a91d2-other on linux-box, whose state is unknown (it cannot be checked from test-mac). Nothing was changed.")
 }
 
 // From the review of fdb5297: a task already on local main, and a re-run over a join already made.
-func TestMergeOfATaskAlreadyOnMainSaysItHoldsNothingOfItsOwn(t *testing.T) {
+func TestLandOfATaskAlreadyOnMainSaysItHoldsNothingOfItsOwn(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	flag := filepath.Join(f.root, "fail-checks")
 	f.check(dir, "test ! -e "+flag)
 	f.git(f.local, "config", "remote.github.pushurl", filepath.Join(f.root, "no-push.git"))
-	if _, code := f.merge(dir); code != 1 {
+	if _, code := f.land(dir); code != 1 {
 		t.Fatal("the first merge's push did not fail")
 	}
 	f.git(f.local, "config", "--unset", "remote.github.pushurl")
 	f.otherMachine()
 	os.WriteFile(flag, nil, 0o644)
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 2)
 	if !strings.Contains(out, "fix-login holds nothing of its own that main lacks, with GitHub's main merged in") {
 		t.Errorf("the task's state is not said truly:\n%s", out)
 	}
 }
 
-func TestMergeRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T) {
+func TestLandRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	flag := filepath.Join(f.root, "fail-checks")
@@ -486,11 +496,11 @@ func TestMergeRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T
 	f.commit(f.local, "merged-here.txt")
 	f.otherMachine()
 	os.WriteFile(flag, nil, 0o644)
-	if _, code := f.merge(dir); code != 2 {
+	if _, code := f.land(dir); code != 2 {
 		t.Fatal("the failing check did not stop the first merge")
 	}
 	os.Remove(flag)
-	out, code := f.merge(dir)
+	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	if strings.Contains(out, "its commits are merged into fix-login first") {
 		t.Errorf("a join that changed nothing is reported as made:\n%s", out)

@@ -1,4 +1,4 @@
-// Package carson starts, shows, merges and removes the tasks agents work on, each in its own worktree, so that local main only moves
+// Package carson starts, shows, lands, removes, abandons and adopts the tasks agents work on, each in its own worktree, so that local main only moves
 // forward, and only by a finished task landing (rules 11.1–11.8). It keeps no state of its own beyond one owner record per worktree,
 // runs only when called, and reports what it observed, not what it attempted.
 package carson
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Exit codes mean one thing each: done, as reported; could not finish, with the state things are left in; refused, because a rule
@@ -50,12 +51,12 @@ type Machine struct {
 	Processes Processes
 }
 
-const usage = `carson start <task>    start a task in its own worktree, from the latest main
-carson status          show main, the main working tree and every task; changes nothing
-carson merge           merge the task you are in into main, and push main to GitHub
-carson remove <task>   remove a finished task's worktree and branch, from outside it
-carson remove <task> --abandoned
-                       keep what the task holds on a branch abandoned/<task>, and remove its worktree
+const usage = `carson start <task>     start a task in its own worktree, from the latest main
+carson status           show main, the main working tree, every task and abandoned work; changes nothing
+carson land <task>      land a finished task on main, checked, and push main to GitHub
+carson remove <task>    remove a landed task's worktree and branch, from outside its worktree
+carson abandon <task>   keep an unfinished task's work on a branch abandoned/<task>, and remove its worktree
+carson adopt <task>     make yours an ended agent's task, abandoned work, or a branch left without a worktree
 `
 
 // Main runs carson with its arguments on machine and returns its exit code.
@@ -75,12 +76,61 @@ func Main(args []string, machine Machine) int {
 		return status(machine, args[1:])
 	case "start":
 		return start(machine, args[1:])
-	case "merge":
-		return merge(machine, args[1:])
+	case "land":
+		return land(machine, args[1:])
 	case "remove":
 		return remove(machine, args[1:])
+	case "abandon":
+		return abandon(machine, args[1:])
+	case "adopt":
+		return adopt(machine, args[1:])
 	default:
 		fmt.Fprintf(machine.Out, "carson: no command %q. Its commands:\n%s", args[0], usage)
 		return refused
 	}
+}
+
+// repository opens the repository carson runs in, or says why it cannot.
+func (m Machine) repository() (*repository, error) {
+	repo, err := openRepository(m.Dir)
+	if errors.Is(err, errNotARepository) {
+		return nil, refuse(failed, "%s is not inside a git repository.", m.Dir)
+	}
+	if err != nil {
+		return nil, refuse(failed, "the repository could not be read (%s).", reason(err))
+	}
+	return repo, nil
+}
+
+// oneTask reads a command's arguments: one task's name, and no options.
+func oneTask(args []string, command string) (string, error) {
+	var name string
+	for _, arg := range args {
+		switch {
+		case strings.HasPrefix(arg, "-"):
+			return "", refuse(refused, "%s has no option %q.", command, arg)
+		case name != "":
+			return "", refuse(refused, "one task at a time; %q and %q were given.", name, arg)
+		default:
+			name = arg
+		}
+	}
+	if name == "" {
+		return "", refuse(refused, "name the task, as in %s fix-login.", command)
+	}
+	return name, nil
+}
+
+// newTaskName refuses a name no new task may take: lowercase words joined by hyphens, and neither a trunk's nor where abandoned work
+// is kept.
+func newTaskName(name string) error {
+	switch {
+	case name == "main" || name == "master":
+		return refuse(refused, "%s is a trunk's name, not a task's.", name)
+	case name == "abandoned":
+		return refuse(refused, "abandoned is where carson keeps the branches of abandoned tasks, not a task's name.")
+	case !taskNamePattern.MatchString(name):
+		return refuse(refused, "%q is not a task name: use lowercase words joined by hyphens, like fix-login.", name)
+	}
+	return nil
 }

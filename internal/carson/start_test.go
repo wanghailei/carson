@@ -85,7 +85,7 @@ func TestStartWhenMainsDivergedSaysTheMergeWillJoinThem(t *testing.T) {
 	f.otherMachine()
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 0)
-	expectLine(t, out, "Local main and GitHub's have diverged: 1 commit here, 2 there. Merging this task will bring GitHub's commits in.")
+	expectLine(t, out, "Local main and GitHub's have diverged: 1 commit here, 2 there. Landing this task will bring GitHub's commits in.")
 }
 
 func TestStartRefusesWhenGitHubCannotBeReached(t *testing.T) {
@@ -161,7 +161,7 @@ func TestStartRefusesABranchThatHoldsWork(t *testing.T) {
 	f.git(f.local, "worktree", "remove", dir)
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: branch fix-login already exists, with 1 commit not on main. Taking it up again (carson start fix-login --existing) is not built yet.")
+	expectLine(t, out, "Not started: branch fix-login already exists, with 1 commit not on main. Adopt it with: carson adopt fix-login")
 }
 
 func TestStartRefusesWhenMainTreeIsOffMainAndGitHubIsAhead(t *testing.T) {
@@ -193,13 +193,6 @@ func TestStartInATerminalRecordsItsShell(t *testing.T) {
 		t.Errorf("owner record in a terminal: %+v", record)
 	}
 	expectLine(t, out, "Started fix-login from local main at ")
-}
-
-func TestStartExistingIsNotBuiltYet(t *testing.T) {
-	f := newFixture(t)
-	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login", "--existing")
-	expectCode(t, code, 1)
-	expectLine(t, out, "carson start --existing: not built yet. Nothing was changed.")
 }
 
 // Bringing local main forward never overwrites what the main working tree holds that main does not: modified, untracked or ignored.
@@ -332,7 +325,7 @@ func TestStartRefusesANameHeldByAnEndedSession(t *testing.T) {
 	f.runIn(environment{"CLAUDE_CODE_SESSION_ID": "4e7a91d2-other", "CLAUDE_PID": "5000"}, f.local, stranger{5000: "Wed Sep 30 07:00:00 2026"}, "start", "fix-login")
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2-other on test-mac, which has ended. Taking it over (carson start fix-login --existing) is not built yet.")
+	expectLine(t, out, "Not started: fix-login is held by Claude session 4e7a91d2-other on test-mac, which has ended. Adopt it with: carson adopt fix-login")
 }
 
 func TestStartRefusesANameHeldFromAnotherMachine(t *testing.T) {

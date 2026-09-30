@@ -1,4 +1,4 @@
-// Command carson is the git tool for the master's agents: it starts, shows, merges and removes tasks, each in its own worktree.
+// Command carson is the git tool for the master's agents: it starts, shows, lands, removes, abandons and adopts tasks, each in its own worktree.
 package main
 
 import (
