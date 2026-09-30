@@ -46,7 +46,12 @@ func start(m Machine, args []string) int {
 	record, unobserved := m.ownerRecord(name)
 	admin, err := git(folder, "rev-parse", "--absolute-git-dir")
 	if err == nil {
-		err = writeOwner(admin, record)
+		err = createOwner(admin, record)
+	}
+	if errors.Is(err, errOwned) {
+		taken := repo.heldBy(m, name, task{worktree: worktree{path: folder, branch: name}, admin: admin}, "was taken meanwhile by")
+		fmt.Fprintln(m.Out, "Not started: "+taken.Error())
+		return codeOf(taken)
 	}
 	if err != nil {
 		fmt.Fprintf(m.Out, "Started %s in %s, but its owner record could not be written (%s): it shows as made outside carson until that is put right.\n", name, folder, reason(err))
@@ -176,7 +181,11 @@ func (r *repository) afterFailedAdd(m Machine, name, folder string, cause error)
 		if t.branch != name {
 			continue
 		}
+		// The folder is where carson asked git to make the worktree; if it holds a record, another session made it first.
 		if t.path == folder {
+			if _, found, _ := readOwner(t.admin); found {
+				return now.heldBy(m, name, t, "was taken meanwhile by")
+			}
 			return nil
 		}
 		return now.heldBy(m, name, t, "was taken meanwhile by")
@@ -210,6 +219,10 @@ func (r *repository) latestMain() ([]string, error) {
 	}
 	if answer == "" {
 		now, err := r.pushMain()
+		var unchecked pushedUnchecked
+		if errors.As(err, &unchecked) {
+			return nil, refuse(failed, "GitHub had no main; local main was pushed, but %s. Nothing else was changed.", unchecked.why)
+		}
 		if err != nil {
 			return nil, refuse(failed, "GitHub has no main, and pushing local main there failed (%s). Nothing else was changed.", reason(err))
 		}
@@ -236,6 +249,10 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched s
 		return []string{fmt.Sprintf("Local main and GitHub's have diverged: %s here, %d there. Merging this task will bring GitHub's commits in.", plural(ahead, "commit"), behind)}, nil
 	case ahead > 0:
 		now, err := r.pushMain()
+		var unchecked pushedUnchecked
+		if errors.As(err, &unchecked) {
+			return nil, refuse(failed, "local main was pushed, but %s. Nothing else was changed.", unchecked.why)
+		}
 		if err != nil {
 			return nil, refuse(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s", plural(ahead, "commit"), reason(err), fetched)
 		}
@@ -289,8 +306,10 @@ func (r *repository) inTheWay(target string) ([]string, error) {
 		default:
 			kinds[path] = "modified"
 		}
-		if code[0] == 'R' || code[0] == 'C' {
-			i++ // a rename or copy is followed by the path it came from
+		// A rename or copy is followed by the path it came from, which the working tree no longer holds as main does either.
+		if (code[0] == 'R' || code[0] == 'C') && i+1 < len(entries) {
+			i++
+			kinds[entries[i]] = "modified"
 		}
 	}
 	var found []string
@@ -300,8 +319,8 @@ func (r *repository) inTheWay(target string) ([]string, error) {
 		}
 		kind := kinds[path]
 		for held, heldKind := range kinds {
-			// An ignored or untracked folder is listed once, as the folder.
-			if kind == "" && strings.HasSuffix(held, "/") && strings.HasPrefix(path, held) {
+			// An ignored or untracked folder is listed once, as the folder; and a file may arrive where a folder of files is held.
+			if kind == "" && (strings.HasSuffix(held, "/") && strings.HasPrefix(path, held) || strings.HasPrefix(held, path+"/")) {
 				kind = heldKind
 			}
 		}
@@ -317,18 +336,23 @@ func (r *repository) inTheWay(target string) ([]string, error) {
 	return found, nil
 }
 
+// pushedUnchecked is a push that went through, whose result on GitHub could not be confirmed afterwards.
+type pushedUnchecked struct{ why string }
+
+func (e pushedUnchecked) Error() string { return e.why }
+
 // pushMain pushes local main to GitHub and then looks: it returns GitHub's main as observed afterwards, which must be local main.
 func (r *repository) pushMain() (string, error) {
 	if _, err := gitNetwork(r.top, "push", "-q", r.remote, "main"); err != nil {
 		return "", err
 	}
+	local, _ := git(r.top, "rev-parse", "main")
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
 	if err != nil {
-		return "", fmt.Errorf("pushed, but GitHub could not be asked afterwards: %s", reason(err))
+		return "", pushedUnchecked{"GitHub's main could not be checked afterwards (" + reason(err) + ")"}
 	}
-	local, _ := git(r.top, "rev-parse", "main")
 	if fields := strings.Fields(answer); len(fields) == 0 || fields[0] != local {
-		return "", fmt.Errorf("pushed, but GitHub's main is not local main's %s afterwards", r.short(local))
+		return "", pushedUnchecked{"GitHub's main is not local main's " + r.short(local) + " afterwards"}
 	}
 	return r.short(local), nil
 }

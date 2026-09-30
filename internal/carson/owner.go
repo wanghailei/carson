@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -41,6 +42,30 @@ func readOwner(admin string) (record Record, found bool, err error) {
 		return Record{}, false, fmt.Errorf("the owner record in %s cannot be read: %w", admin, err)
 	}
 	return record, true, nil
+}
+
+// errOwned is a worktree that already has an owner record: another session recorded it first.
+var errOwned = errors.New("the worktree already has an owner record")
+
+// createOwner writes a new owner record where there is none, linking it into place in one step that cannot overwrite: of two sessions
+// recording the same worktree, exactly one succeeds, and the other gets errOwned.
+func createOwner(admin string, record Record) error {
+	data, err := json.MarshalIndent(record, "", "\t")
+	if err != nil {
+		return err
+	}
+	aside := filepath.Join(admin, ownerFile+"."+strconv.Itoa(os.Getpid())+".new")
+	if err := os.WriteFile(aside, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	defer os.Remove(aside)
+	if err := os.Link(aside, filepath.Join(admin, ownerFile)); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return errOwned
+		}
+		return err
+	}
+	return nil
 }
 
 // writeOwner writes the record in one step — written aside, then renamed into place — so a crash never leaves half a record.

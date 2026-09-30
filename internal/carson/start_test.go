@@ -355,3 +355,86 @@ func TestStatusKnowsTheMachineByItsIdentityNotItsName(t *testing.T) {
 	expectLine(t, out, "Claude session 11111111 on old-name, live:")
 	expectLine(t, out, "Claude session 22222222 on test-mac, unknown (it cannot be checked from test-mac):")
 }
+
+// Two sessions starting one name aim at one folder; the winner's record must survive the loser's failed add.
+func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testing.T) {
+	f := newFixture(t)
+	folder := f.taskFolder("fix-login")
+	f.git(f.local, "worktree", "add", "-q", "-b", "fix-login", folder, "main")
+	f.own(folder, Record{Task: "fix-login", Harness: "claude", Session: "bbbb2222-winner", PID: 5000, Started: "Wed Sep 30 07:00:00 2026", Machine: "test-mac"})
+	repo, _ := openRepository(f.local)
+	var machine Machine
+	machine.Host, machine.Processes = "test-mac", stranger{5000: "Wed Sep 30 07:00:00 2026"}
+	err := repo.afterFailedAdd(machine, "fix-login", folder, errors.New("cannot lock ref 'refs/heads/fix-login'"))
+	if err == nil || !strings.Contains(err.Error(), "fix-login was taken meanwhile by Claude session bbbb2222 on test-mac, which is live.") {
+		t.Errorf("got %v", err)
+	}
+	if record := f.readRecord(folder); record.Session != "bbbb2222-winner" {
+		t.Errorf("the winner's record was replaced: %+v", record)
+	}
+}
+
+// An owner record is created only where none is: of two creators, one wins and the other learns it.
+func TestAnOwnerRecordIsCreatedOnlyOnce(t *testing.T) {
+	admin := t.TempDir()
+	if err := createOwner(admin, Record{Task: "fix-login", Session: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := createOwner(admin, Record{Task: "fix-login", Session: "second"}); !errors.Is(err, errOwned) {
+		t.Errorf("second creation: %v, wanted errOwned", err)
+	}
+	record, _, _ := readOwner(admin)
+	if record.Session != "first" {
+		t.Errorf("the record is %+v", record)
+	}
+	if entries, _ := os.ReadDir(admin); len(entries) != 1 {
+		t.Errorf("left behind in the administrative folder: %v", entries)
+	}
+}
+
+// A push that went through but could not be checked afterwards is said as such, not as a failed push.
+func TestAPushThatCouldNotBeCheckedIsNotCalledFailed(t *testing.T) {
+	f := newFixture(t)
+	f.commit(f.local, "merged.txt")
+	f.git(f.local, "config", "remote.github.pushurl", f.github)
+	f.git(f.local, "remote", "set-url", "github", filepath.Join(f.root, "no-such-repository.git"))
+	f.git(f.local, "config", "remote.github.pushurl", f.github)
+	repo, _ := openRepository(f.local)
+	_, err := repo.bringUpToDate("refs/remotes/github/main", 1, 0, "GitHub's main was fetched; nothing else was changed.")
+	if err == nil || !strings.Contains(err.Error(), "local main was pushed, but GitHub's main could not be checked afterwards (") {
+		t.Errorf("got %v", err)
+	}
+	if f.git(f.github, "rev-parse", "main") != f.git(f.local, "rev-parse", "main") {
+		t.Error("the push did not go through")
+	}
+}
+
+func TestStartNamesAStagedRenamesOriginInTheWay(t *testing.T) {
+	f := newFixture(t)
+	other := f.otherClone()
+	f.write(other, "first.txt", "changed there\n")
+	f.git(other, "commit", "-q", "-am", "change first")
+	f.git(other, "push", "-q", "origin", "main")
+	f.git(f.local, "mv", "first.txt", "moved.txt")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "first.txt (modified") {
+		t.Errorf("the renamed file's origin is not named:\n%s", out)
+	}
+}
+
+func TestStartNamesAnUntrackedFolderWhereAFileArrives(t *testing.T) {
+	f := newFixture(t)
+	other := f.otherClone()
+	f.write(other, "docs", "a file named docs\n")
+	f.git(other, "add", "docs")
+	f.git(other, "commit", "-q", "-m", "add docs")
+	f.git(other, "push", "-q", "origin", "main")
+	os.Mkdir(filepath.Join(f.local, "docs"), 0o755)
+	f.write(filepath.Join(f.local, "docs"), "a.md", "mine\n")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "docs (untracked") {
+		t.Errorf("the untracked folder is not named:\n%s", out)
+	}
+}
