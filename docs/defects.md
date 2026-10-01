@@ -12,6 +12,7 @@ Bugs and wrong designs in Carson itself: what Carson 4 did wrong, and what Carso
 
 - 113 of the 162 failures catalogued on 2026-09-29 were Carson 4's own defects; 12 of those rows also show an agent's damage (see scenarios.md).
 - Carson 5's defects come from agents of three model families using it in sandboxes on 2026-09-30, and from what was seen on 2026-10-01.
+- On 2026-10-01 every issue in 14 repositories was read in full. That added four sources to defects already listed (ai#343, ai#457, ai#878, pi#1), and found no new defect.
 
 ## Status on 2026-10-01
 
@@ -121,7 +122,7 @@ The tests named below pass: `bin/check` ran all 165 of Carson's tests on 2fc3547
   - Carson 4, 2026-03-23 (carson#458, #468): "unable to reach the bureaucrats", with the real cause discarded.
   - Carson 4, 2026-03-16 (carson#348): the advice was a flag the command does not take.
   - Carson 4, 2026-03-16 (current-state audit): the advice taught raw `git` and `gh`.
-  - Carson 4, also: carson#280; ai#642, ai#846; reviews of 2026-03-16; the retrospective of 2026-03-25.
+  - Carson 4, also: carson#280; ai#642, ai#846, ai#878 (2026-06-11); reviews of 2026-03-16; the retrospective of 2026-03-25.
   - Carson 5, 2026-09-30 (trials): advice that failed where the agent stood; a refusal with no next step; git's raw words once `main` was missing.
 - **Root cause.** Errors were replaced by generic text, git's own reason was discarded, and no next step was ever run against the state it was given for.
 - **Fix.**
@@ -228,7 +229,7 @@ The tests named below pass: `bin/check` ran all 165 of Carson's tests on 2fc3547
 ## D13. Kept per-repository facts in one global setting
 
 - **What happened.**
-  - Carson 4, 2026-09-12 to 14 and 2026-09-19 (aix#180, aix#185; carson#531): one global remote name broke every landing for two days, reported as a network fault.
+  - Carson 4, 2026-09-12 to 14 and 2026-09-19 (aix#180, aix#185; carson#531; pi#1): one global remote name broke every landing for two days, reported as a network fault.
   - Carson 4, 2026-09-11: a stale registry entry needed editing by hand.
   - Carson 4, 2026-03-09 (release notes 3.22.0): a setting was silently ignored.
 - **Root cause.** Carson kept its own configuration for facts that belong to each repository.
@@ -260,7 +261,7 @@ The tests named below pass: `bin/check` ran all 165 of Carson's tests on 2fc3547
   - Carson 4, 2026-03-15 (govern incident review): a merge silently kept `main`'s code over a branch's (scenario S7).
   - Carson 4, 2026-03-23 (carson#466, #469): eight landings stranded, and were merged by hand on GitHub.
   - Carson 4, 2026-03-24 (retrospective): CI minutes ran out, and every job failed.
-  - Carson 4, also: carson#57, #203, #214, #238, #251, #281, #282, #287, #334, #347, #352, #360, #390, #421, #423, #439, #444, #445, #459, #461, #462, #464, #465, #510, #520, #523; ai#382, #666, #728, #730, #749, #751, #753–#756, #758, #774, #776; aix#191; release notes, reviews and plans of March 2026.
+  - Carson 4, also: carson#57, #203, #214, #238, #251, #281, #282, #287, #334, #347, #352, #360, #390, #421, #423, #439, #444, #445, #459, #461, #462, #464, #465, #510, #520, #523; ai#343, #382, #457, #666, #728, #730, #749, #751, #753–#756, #758, #774, #776; aix#191; release notes, reviews and plans of March 2026.
 - **Root cause.** Pull requests, a merge queue, a background governor, CI gates and templates were built for a team that did not exist (the retrospective of 2026-03-24; carson#520).
 - **Fix.** None of it exists. Carson lands locally, and runs only when an agent calls it.
 - **Holds.** Yes.
