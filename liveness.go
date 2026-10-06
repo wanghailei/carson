@@ -78,7 +78,7 @@ func (PS) Inside(dir string) ([]string, error) {
 	if len(out) == 0 && err != nil {
 		// Name the cure, not just the lack: lsof ships with macOS but is no base package on Linux (5.1's refusal on Oma).
 		if errors.Is(err, exec.ErrNotFound) {
-			return nil, errors.New("lsof is not installed — it ships with macOS; on Omarchy install it with: sudo pacman -S lsof")
+			return nil, errors.New("lsof is not installed — it ships with macOS; on Linux install it with your package manager (on Omarchy: sudo pacman -S lsof)")
 		}
 		return nil, fmt.Errorf("lsof: %v", err)
 	}

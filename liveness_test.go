@@ -29,7 +29,7 @@ func TestPSTellsARunningProcessFromAnEndedOne(t *testing.T) {
 // machine without it.
 func TestPSNamesTheCureWhenLsofIsMissing(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	if _, err := (PS{}).Inside(t.TempDir()); err == nil || !strings.Contains(err.Error(), "sudo pacman -S lsof") {
-		t.Errorf("missing lsof: %v, wanted the install command named", err)
+	if _, err := (PS{}).Inside(t.TempDir()); err == nil || !strings.Contains(err.Error(), "package manager") || !strings.Contains(err.Error(), "sudo pacman -S lsof") {
+		t.Errorf("missing lsof: %v, wanted the install way named", err)
 	}
 }
