@@ -368,6 +368,7 @@ func TestLandOfTheFirstTaskRunsAgainOnceAFileIsOutOfTheWayOfGitHubsMain(t *testi
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.pushFirstCommit()
+	github := f.git(f.github, "rev-parse", "main")
 	f.write(f.local, "readme.md", "someone's draft\n")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
@@ -378,6 +379,14 @@ func TestLandOfTheFirstTaskRunsAgainOnceAFileIsOutOfTheWayOfGitHubsMain(t *testi
 	out, code = f.land(dir)
 	expectCode(t, code, 0)
 	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD"))
+	tip := f.git(dir, "rev-parse", "HEAD")
+	if f.git(f.local, "rev-parse", "main") != tip || f.git(f.github, "rev-parse", "main") != tip {
+		t.Error("main, here or on GitHub, is not the task's tip")
+	}
+	f.git(f.local, "merge-base", "--is-ancestor", github, "main") // fails the test when main does not carry GitHub's first main
+	if !f.exists(filepath.Join(f.local, "login.rb")) || !f.exists(filepath.Join(f.local, "readme.md")) {
+		t.Error("the main working tree does not hold both GitHub's first commit and the task's work")
+	}
 }
 
 // Cases from the review of cca4a81, each staged there against the slice before it was fixed.

@@ -36,7 +36,7 @@ Bugs and wrong designs in Carson itself: what Carson 4 did wrong, and what Carso
 | D16 | Built machinery for a team that does not exist | Yes, by having none of it |
 | D17 | Built for cases that never happened | No: about 290 lines, harmless |
 
-The tests named below pass: `bin/check` ran all 181 of Carson's tests on 31c08f9, 2026-10-06.
+The tests named below pass: `bin/check` ran all 183 of Carson's tests on 15daf68, 2026-10-06.
 
 ## D1. Removed work on its own judgement
 
