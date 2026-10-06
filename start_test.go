@@ -434,6 +434,21 @@ func TestStartWithoutMainOnADetachedHeadSaysHowToMakeMain(t *testing.T) {
 	expectLine(t, out, "Not started: this repository has no main, which carson starts every task from; the main working tree is on a detached HEAD. If its commit is where main belongs, make main there with: git switch -c main. Nothing was changed.")
 }
 
+// From the review of 2bfec0f: a main deleted where GitHub's is not known looked like one never made, and the first landing would have
+// made an unrelated main in its place.
+func TestStartRefusesWhereMainWasDeletedAndGitHubsIsNotKnown(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	last := f.short(f.local, "main")
+	f.git(f.local, "update-ref", "-d", "refs/heads/main")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not started: local main is missing; it was last at "+last+"; bring it back with: git branch main "+last+". Nothing was changed.")
+	if f.exists(f.taskFolder("fix-login")) {
+		t.Error("a task was started")
+	}
+}
+
 // Two sessions starting one name aim at one folder; the winner's record must survive the loser's failed add.
 func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testing.T) {
 	f := newFixture(t)

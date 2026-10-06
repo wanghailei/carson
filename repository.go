@@ -115,28 +115,53 @@ func (r *repository) mainMissing() string {
 			return fmt.Sprintf("local main is missing, though GitHub's main is at %s here; bring it back with: git branch main %s/main", r.short(github), r.remote)
 		}
 	}
-	// main is neither here nor still to be made, so the main working tree is on the trunk under another name, or off any branch.
+	branch := r.mainTreeBranch()
+	if branch == "main" {
+		// The main working tree is on main, which had commits, as HEAD's reflog shows; GitHub's main is not known here.
+		last := r.short(r.headLastAt())
+		return fmt.Sprintf("local main is missing; it was last at %s; bring it back with: git branch main %s", last, last)
+	}
+	// The main working tree is on the trunk under another name, or off any branch.
 	const noMain = "this repository has no main, which carson starts every task from; the main working tree is on "
-	if branch := r.mainTreeBranch(); branch != "a detached HEAD" {
+	if branch != "a detached HEAD" {
 		return fmt.Sprintf(noMain+"%s. If %s is its trunk, rename it with: git branch -m %s main", branch, branch, branch)
 	}
 	return noMain + "a detached HEAD. If its commit is where main belongs, make main there with: git switch -c main"
 }
 
 // noMainYet is whether main is still to be made, as in a repository with no commit: the main working tree is on main, which has no
-// commit, and this machine knows of no main on GitHub. The first task then starts empty, and landing it makes main.
+// commit and never had one — HEAD's reflog holds none, unlike a main deleted. The first task then starts empty, and landing it makes
+// main; a main GitHub has meanwhile is brought in first.
 func (r *repository) noMainYet() bool {
-	if r.hasBranch("main") {
-		return false
+	return !r.hasBranch("main") && r.mainTreeBranch() == "main" && r.headLastAt() == ""
+}
+
+// headLastAt is the last commit HEAD's reflog shows the main working tree at, or "" when it shows none. A worktree keeps its own
+// reflog, so a task's commits are not in it.
+func (r *repository) headLastAt() string {
+	path, err := git(r.top, "rev-parse", "--path-format=absolute", "--git-path", "logs/HEAD")
+	if err != nil {
+		return ""
 	}
-	if head, err := git(r.top, "symbolic-ref", "-q", "HEAD"); err != nil || head != "refs/heads/main" {
-		return false
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return ""
 	}
-	if r.remote == "" {
-		return true
+	entries := lines(strings.TrimSpace(string(content)))
+	if len(entries) == 0 {
+		return ""
 	}
-	_, err := git(r.top, "rev-parse", "--verify", "-q", "refs/remotes/"+r.remote+"/main")
-	return err != nil
+	// An entry is the old commit, the new one, and who moved it; a deletion moves HEAD to all zeros, from the commit it was last at.
+	fields := strings.Fields(entries[len(entries)-1])
+	if len(fields) < 2 {
+		return ""
+	}
+	for _, commit := range []string{fields[1], fields[0]} {
+		if strings.Trim(commit, "0") != "" {
+			return commit
+		}
+	}
+	return ""
 }
 
 // firstTask says what becomes of the first task of a repository with no commit yet.

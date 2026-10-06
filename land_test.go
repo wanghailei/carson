@@ -362,6 +362,24 @@ func TestLandOfTheFirstTaskAfterGitHubWasGivenAMain(t *testing.T) {
 	f.git(f.local, "merge-base", "--is-ancestor", github, "main") // fails the test when main does not carry GitHub's main
 }
 
+// From the review of 2bfec0f: once GitHub's first main was fetched, a landing refused for a file in the way could not be run again.
+func TestLandOfTheFirstTaskRunsAgainOnceAFileIsOutOfTheWayOfGitHubsMain(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.pushFirstCommit()
+	f.write(f.local, "readme.md", "someone's draft\n")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: bringing local main forward would overwrite what the main working tree holds in readme.md (untracked")
+	if err := os.Rename(filepath.Join(f.local, "readme.md"), filepath.Join(f.root, "readme.md")); err != nil {
+		t.Fatal(err)
+	}
+	out, code = f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD"))
+}
+
 // Cases from the review of cca4a81, each staged there against the slice before it was fixed.
 
 func TestLandStopsWhenTheCheckMovesTheBranch(t *testing.T) {
