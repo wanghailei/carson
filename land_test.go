@@ -297,6 +297,57 @@ func TestLandWithoutARemoteMergesLocally(t *testing.T) {
 	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit). No GitHub remote: main is on this machine only.")
 }
 
+// From carson#529 and #528: in a repository made empty on GitHub, the first landing makes main and pushes it.
+func TestLandOfTheFirstTaskMakesMainAndPushesIt(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.commit(dir, "login_test.rb")
+	tip := f.git(dir, "rev-parse", "HEAD")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	short := f.short(dir, "HEAD")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+".")
+	if f.git(f.local, "rev-parse", "main") != tip || f.git(f.github, "rev-parse", "main") != tip {
+		t.Error("main, here or on GitHub, is not the task's tip")
+	}
+	if held := f.git(f.local, "status", "--porcelain"); held != "" || !f.exists(filepath.Join(f.local, "login.rb")) {
+		t.Errorf("the main working tree does not hold main: %q", held)
+	}
+}
+
+func TestLandOfTheFirstTaskWithoutARemoteMakesMain(t *testing.T) {
+	f := newEmptyFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit). No GitHub remote: main is on this machine only.")
+}
+
+// A folder may hold files before its first commit; making main must not overwrite them.
+func TestLandOfTheFirstTaskRefusesToOverwriteAFileInTheMainTree(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.write(f.local, "login.rb", "someone's draft\n")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: fast-forwarding main would overwrite what the main working tree holds in login.rb (untracked")
+	if f.git(f.local, "for-each-ref", "refs/heads/main") != "" {
+		t.Error("main was made")
+	}
+}
+
+func TestLandOfAFirstTaskWithNoCommitSaysToCommit(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: fix-login has no commit yet. Commit its work in its worktree, then run carson land fix-login again.")
+}
+
 // Cases from the review of cca4a81, each staged there against the slice before it was fixed.
 
 func TestLandStopsWhenTheCheckMovesTheBranch(t *testing.T) {

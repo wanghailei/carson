@@ -70,6 +70,14 @@ func (r *repository) short(commit string) string {
 	return commit[:min(7, len(commit))]
 }
 
+// notOnMain counts the commits at tip that main lacks: every one of them while main has no commit yet.
+func (r *repository) notOnMain(tip string) (int, error) {
+	if r.noMainYet() {
+		return r.count(tip)
+	}
+	return r.count("main.." + tip)
+}
+
 func (r *repository) count(revisions string) (int, error) {
 	out, err := git(r.top, "rev-list", "--count", revisions)
 	if err != nil {
@@ -207,7 +215,10 @@ func (r *repository) aheadBehind(tracking string) (ahead, behind int, err error)
 
 // ownCommits counts the task's own commits at tip: those main lacks, less merges and less what came from GitHub's main.
 func (r *repository) ownCommits(tip string) (int, error) {
-	args := []string{"rev-list", "--count", "--no-merges", tip, "^main"}
+	args := []string{"rev-list", "--count", "--no-merges", tip}
+	if !r.noMainYet() {
+		args = append(args, "^main")
+	}
 	if r.remote != "" {
 		if _, err := git(r.top, "rev-parse", "--verify", "-q", "refs/remotes/"+r.remote+"/main"); err == nil {
 			args = append(args, "^refs/remotes/"+r.remote+"/main")

@@ -90,13 +90,14 @@ func sameOwner(a, b Record) bool {
 
 // landing is one landing under way: what carson has done to the task so far, so every refusal says the state the task is left in.
 type landing struct {
-	repo     *repository
-	task     task
-	original string // the task's commit before carson touched it
-	commits  int    // the commits the task holds that main lacks
-	update   string // how it was brought up to main: "rebased onto main", "with main merged in", or ""
-	joined   bool   // GitHub's main merged in
-	said     []string
+	repo       *repository
+	task       task
+	original   string // the task's commit before carson touched it
+	githubMain string // GitHub's answer for its main, as ls-remote gives it; "" when GitHub has none
+	commits    int    // the commits the task holds that main lacks
+	update     string // how it was brought up to main: "rebased onto main", "with main merged in", or ""
+	joined     bool   // GitHub's main merged in
+	said       []string
 }
 
 // state says what the task holds now: "fix-login still holds its 2 commits, now rebased onto main (it was at 1a2b3c4 before carson)".
@@ -131,9 +132,13 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	g := &landing{repo: r, task: t}
 	var err error
 	if g.original, err = git(t.path, "rev-parse", "HEAD"); err != nil {
+		// The first task of a repository with no commit has no commit of its own until its work is committed.
+		if t.branch != "" && !r.hasBranch(t.branch) {
+			return g.stop(refused, "%s has no commit yet. Commit its work in its worktree, then run carson land %s again.", t.branch, t.branch)
+		}
 		return g.stop(failed, "the task's commit cannot be read (%s). Nothing was changed; run carson land %s again once that is cleared.", reason(err), t.branch)
 	}
-	if g.commits, err = r.count("main.." + t.branch); err != nil {
+	if g.commits, err = r.notOnMain(t.branch); err != nil {
 		return g.stop(failed, "what %s holds against main cannot be read (%s). Nothing was changed; run carson land %s again once that is cleared.", t.branch, reason(err), t.branch)
 	}
 	if err := t.readyToLand(); err != nil {
@@ -143,7 +148,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		return g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. Nothing was changed; %s. Switch the main working tree back to main, then run carson land %s again.", branch, g.state(), t.branch)
 	}
 	if r.remote != "" {
-		if _, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
+		if g.githubMain, err = gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
 			return g.stop(failed, "GitHub could not be reached (%s). Nothing was changed; %s. Run carson land %s again when GitHub answers.", reason(err), g.state(), t.branch)
 		}
 	}
@@ -164,7 +169,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	if stopped() {
 		return g.stop(failed, "interrupted while bringing local main current. %s. Run carson land %s again.", g.state(), t.branch)
 	}
-	if g.commits, err = r.count("main.." + t.branch); err != nil {
+	if g.commits, err = r.notOnMain(t.branch); err != nil {
 		return g.stop(failed, "what %s holds against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 	}
 	// A task already on local main lands only to join a GitHub that moved on meanwhile (a retry after a failed push).
@@ -305,7 +310,8 @@ func operationInProgress(gitdir, where, then string) error {
 // lacked, the landing is finished; GitHub's commits come in by fast-forward; a divergence is returned, for the task to join.
 func (g *landing) bringMainCurrent(m Machine) (diverged, finished bool, code int) {
 	r := g.repo
-	if r.remote == "" {
+	// GitHub with no main has nothing to bring in; the landing's push gives it one.
+	if r.remote == "" || g.githubMain == "" {
 		return false, false, done
 	}
 	tracking, err := r.fetchMain()
@@ -359,6 +365,9 @@ func (g *landing) bringMainCurrent(m Machine) (diverged, finished bool, code int
 // carries a merge, which a rebase would flatten into duplicates — by merging main into it.
 func (g *landing) bringTaskUpToMain() ([]string, int, bool) {
 	r, t := g.repo, g.task
+	if r.noMainYet() {
+		return nil, 0, true // no main to be behind
+	}
 	behind, err := r.count(t.branch + "..main")
 	if err != nil {
 		said, code := g.stop(failed, "how %s stands against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)

@@ -289,7 +289,12 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched, 
 // inTheWay lists what the main working tree holds that bringing main forward to target would overwrite: a file the move changes that
 // is modified there, untracked, or ignored — each with its kind and when it last changed.
 func (r *repository) inTheWay(target string) ([]string, error) {
-	changed, err := git(r.top, "diff", "--name-only", "-z", "main", target)
+	arriving := []string{"diff", "--name-only", "-z", "main", target}
+	if r.noMainYet() {
+		// With no main yet, every file target holds arrives in the main working tree.
+		arriving = []string{"ls-tree", "-r", "--name-only", "-z", target}
+	}
+	changed, err := git(r.top, arriving...)
 	if err != nil {
 		return nil, err
 	}
