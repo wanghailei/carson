@@ -57,7 +57,7 @@ $ cd ~/code/notes && carson remove xyz
 
 | Command | Does |
 |---|---|
-| `carson start <task>` | Starts a task from the latest `main`, in its own worktree, owned by the session running it. |
+| `carson start <task>` | Starts a task from the latest `main`, in its own worktree, owned by the session running it. In a repository with no commit yet, the task starts empty, and landing it makes `main`. |
 | `carson status` | Shows `main` against GitHub's, the main working tree, every task with its owner, and abandoned work. Changes nothing. |
 | `carson land <task>` | Lands a finished task on `main`, checked and pushed. Runs from anywhere in the repository. |
 | `carson remove <task>` | Removes a landed task's worktree and branch. Runs from outside the worktree. |

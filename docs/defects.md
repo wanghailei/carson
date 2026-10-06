@@ -14,7 +14,7 @@ Bugs and wrong designs in Carson itself: what Carson 4 did wrong, and what Carso
 - Carson 5's defects come from agents of three model families using it in sandboxes on 2026-09-30, and from what was seen on 2026-10-01.
 - On 2026-10-01 every issue in 14 repositories was read in full. That added four sources to defects already listed (ai#343, ai#457, ai#878, pi#1), and found no new defect.
 
-## Status on 2026-10-01
+## Status on 2026-10-06
 
 | | Defect | Holds in Carson 5 |
 |---|---|---|
@@ -24,7 +24,7 @@ Bugs and wrong designs in Carson itself: what Carson 4 did wrong, and what Carso
 | D4 | Reported what it tried, not what happened | Yes |
 | D5 | Read "cannot tell" as "no" | Yes |
 | D6 | One message for many causes, and advice that did not work | Yes |
-| D7 | Refused with no way through | Partly: two dead ends, and 15 places that hand a case to a person |
+| D7 | Refused with no way through | Partly: one dead end, and 14 places that hand a case to a person |
 | D8 | Started from a stale `main` without a word, or left local `main` behind | Yes |
 | D9 | Showed no ownership, or misjudged it | Partly: a continued conversation could not land its own task |
 | D10 | Confused names that git or the disk could not tell apart | Yes |
@@ -36,7 +36,7 @@ Bugs and wrong designs in Carson itself: what Carson 4 did wrong, and what Carso
 | D16 | Built machinery for a team that does not exist | Yes, by having none of it |
 | D17 | Built for cases that never happened | No: about 290 lines, harmless |
 
-The tests named below pass: `bin/check` ran all 165 of Carson's tests on 2fc3547, 2026-10-01.
+The tests named below pass: `bin/check` ran all 181 of Carson's tests on 31c08f9, 2026-10-06.
 
 ## D1. Removed work on its own judgement
 
@@ -143,17 +143,18 @@ The tests named below pass: `bin/check` ran all 165 of Carson's tests on 2fc3547
   - Carson 4, 2026-09-23 (aix#11, aix#12, aix#61): a file left in the main working tree blocked landings with no way through.
   - Carson 4, also: carson#335, #443, #452, #456, #460, #492, #521; ai#923; the retrospective of 2026-03-25; the govern incident review of 2026-03-15.
   - Carson 5, 2026-09-30 (trial): Carson's own advice to run a raw `git worktree add` stranded the agent.
+  - Carson 5, to 2026-10-06: in a repository with no commit, `start` still ended with "a person must make its first commit", and named no way to make it.
 - **Root cause.** Guards were built to refuse, with no sanctioned way through for the case they refused, so agents learned raw routes (scenario S8). Carson's own design note of 2026-03-16 named the chain: "baseline-red deadlock → escape hatch → bypass habit → guardrail legitimacy erosion".
 - **Fix.**
   - `adopt` takes up a branch without a worktree, or abandoned work.
   - `land` brings a task up to `main` itself, and undoes a conflict.
   - `start` pushes `main` to a GitHub copy that has none.
+  - In a repository with no commit, `start` makes the first task empty, as an orphan, and its landing makes `main` and pushes it; a `main` GitHub was given meanwhile is brought in first.
   - Carson installs no hooks and never looks at CI.
-- **Tests.** TestAdoptTakesUpABranchLeftWithoutAWorktree, TestAdoptTakesUpAbandonedWork, TestLandRebasesOntoANewerMainFirst, TestLandUndoesAConflictingRebase, TestStartPushesMainToAGitHubThatHasNone.
+- **Tests.** TestAdoptTakesUpABranchLeftWithoutAWorktree, TestAdoptTakesUpAbandonedWork, TestLandRebasesOntoANewerMainFirst, TestLandUndoesAConflictingRebase, TestStartPushesMainToAGitHubThatHasNone, TestStartMakesTheFirstTaskOfAnEmptyRepository, TestLandOfTheFirstTaskMakesMainAndPushesIt, TestLandOfTheFirstTaskAfterGitHubWasGivenAMain, TestStartBringsInTheMainGitHubWasGivenSinceTheEmptyClone.
 - **Holds.** Partly.
-  - An empty repository still ends with "a person must make its first commit".
   - Files in the main working tree still end with "ask a person whose they are" (scenarios.md, Open 1).
-  - 15 places in Carson 5 hand a case to a person (see Open).
+  - 14 places in Carson 5 hand a case to a person (see Open).
 
 ## D8. Started from a stale `main` without a word, or left local `main` behind
 
@@ -301,8 +302,7 @@ One part has no scenario but rests on a rule, that nothing of the person's is de
    - `adopt` accepts such a branch even when all its work is on `main` (today it refuses), and its new owner can then remove it.
    - New test: no command deletes a branch whose owner is not the caller.
 3. **D1: a test that another session's fresh worktree survives every Carson command** (carson#350).
-4. **D7: an empty repository.** `start` makes the first task as an orphan, and its landing makes `main` and pushes it. git does this in two commands: `git worktree add --orphan -b <task>`, then `git merge --ff-only <task>` in the main working tree (tried 2026-09-30).
-5. **D7: no case left for a person.** These 15 places change:
+4. **D7: no case left for a person.** These 14 places change:
 
    | Where | Carson 5 says | Carson will say |
    |---|---|---|
@@ -311,7 +311,6 @@ One part has no scenario but rests on a rule, that nothing of the person's is de
    | `adopt.go`, `remove.go`, `status.go`: a worktree made outside Carson | "a person must settle it" | Made outside Carson, so it is left as it is; start your task under another name |
    | `start.go`, `adopt.go`: the owner record could not be written | "a person must settle it" | Carson undoes what it has just done, and says to run the command again |
    | `start.go`, `land.go` (twice): files in the main working tree in the way | "Ask a person whose they are" | scenarios.md, Open 1 |
-   | `repository.go`: no `main` yet | "a person must make its first commit" | Open 4: `start` works |
    | `lock.go`: the landing lock's holder cannot be observed | "a person must settle it" | Goes with the lock (D17) |
 
-6. **D11: a test that no Carson command changes a repository's git configuration.**
+5. **D11: a test that no Carson command changes a repository's git configuration.**
