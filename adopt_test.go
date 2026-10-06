@@ -96,6 +96,36 @@ func TestAdoptTakesUpABranchLeftWithoutAWorktree(t *testing.T) {
 	expectLine(t, out, "Adopted fix-login: branch fix-login, left without a worktree with 1 commit not on main, is in "+f.taskFolder("fix-login")+", owned by Claude session 9cb74d03-a065.")
 }
 
+// Before the first landing there is no main, and the first task's work is all of the repository's.
+func TestTheFirstTaskIsAbandonedAdoptedAndLanded(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, "draft.txt", "half done\n")
+	out, code := f.abandon("fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Abandoned fix-login: its work — 1 commit, holding what was uncommitted — is kept as branch abandoned/fix-login")
+	out, _ = f.runIn(inClaude, f.local, claudeRunning, "status")
+	expectLine(t, out, "fix-login: branch abandoned/fix-login at "+f.short(f.local, "abandoned/fix-login")+", 1 commit not on main.")
+	out, code = f.adopt(claudeRunning, "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Adopted fix-login: its abandoned work, 1 commit not on main, now back on branch fix-login, is in "+dir+", owned by Claude session 9cb74d03-a065.")
+	if out, code := f.land(dir); code != 0 {
+		t.Errorf("the first task does not land:\n%s", out)
+	}
+}
+
+// A first task started by mistake, with nothing in it, goes as any task does.
+func TestRemoveOfAnEmptyFirstTask(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", which held no commit.")
+	if f.exists(dir) {
+		t.Error("the worktree is still there")
+	}
+}
+
 func TestAdoptRefusesABranchWithNothingMainLacks(t *testing.T) {
 	f := newFixture(t)
 	f.git(f.local, "branch", "fix-login")

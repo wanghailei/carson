@@ -138,7 +138,7 @@ func (r *repository) nameTaken(m Machine, name string) error {
 	if !r.hasBranch(name) {
 		return nil
 	}
-	ahead, err := r.count("main.." + name)
+	ahead, err := r.notOnMain(name)
 	switch {
 	case err != nil:
 		return refuse(refused, "branch %s already exists; what it holds against main is unknown (%s). Run carson start %s again once that is cleared, or choose another name.", name, reason(err), name)

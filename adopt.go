@@ -100,7 +100,7 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 	if !hasBranch {
 		from = "abandoned/" + name
 	}
-	ahead, err := repo.count("main.." + from)
+	ahead, err := repo.notOnMain(from)
 	if err != nil {
 		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed; run carson adopt %s again once that is cleared.", from, reason(err), name)
 	}
@@ -156,7 +156,7 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 // abandoned work, or, when main holds them all, to remove it.
 func (r *repository) adoptedWithoutFolder(t task, previous Record) []string {
 	said := fmt.Sprintf("Adopted %s from %s, which has ended. Its worktree folder, %s, is gone", t.branch, ownerName(previous), t.path)
-	ahead, err := r.count("main.." + t.branch)
+	ahead, err := r.notOnMain(t.branch)
 	switch {
 	case err != nil:
 		return []string{fmt.Sprintf("%s, and what its branch holds against main cannot be read (%s). Once that is cleared, keep its work with carson abandon %s, or, if main holds it all, remove it with carson remove %s.", said, reason(err), t.branch, t.branch)}

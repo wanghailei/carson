@@ -147,6 +147,16 @@ func (r *repository) mainAgainstGitHub() string {
 	if missing := r.mainMissing(); missing != "" {
 		return "main: " + missing + "."
 	}
+	if r.noMainYet() {
+		if r.remote == "" {
+			return "main: no commit yet; landing the first task makes it."
+		}
+		if answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
+			return fmt.Sprintf("main: no commit yet here. GitHub could not be reached (%s); whether it has a main is unknown.", reason(err))
+		} else if answer == "" {
+			return "main: no commit yet, here or on GitHub; landing the first task makes it and pushes it."
+		}
+	}
 	local, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/main")
 	if err != nil {
 		return "main: where it is cannot be read (" + reason(err) + ")."
@@ -286,6 +296,24 @@ type worktree struct {
 	locked   string // git's reason for a lock on the worktree, "no reason given" when it has none; "" when it is not locked
 }
 
+// noCommitYet is whether the worktree's branch has no commit yet, as the first task of a repository with no commit has until its work
+// is committed: git lists its HEAD as all zeros.
+func (w worktree) noCommitYet() bool {
+	return w.head != "" && strings.Trim(w.head, "0") == ""
+}
+
+// aheadOfMain counts the commits a worktree holds that main lacks: none while its branch has no commit yet.
+func (r *repository) aheadOfMain(w worktree) (int, error) {
+	if w.noCommitYet() {
+		return 0, nil
+	}
+	tip := w.branch
+	if tip == "" {
+		tip = w.head
+	}
+	return r.notOnMain(tip)
+}
+
 func parseWorktrees(list string) []worktree {
 	var worktrees []worktree
 	for _, entry := range strings.Split(list, "\n\n") {
@@ -351,15 +379,11 @@ func (r *repository) tasks() []task {
 
 // state says what a task's worktree holds against main, or that it cannot be told.
 func (r *repository) state(t task) string {
-	tip := t.branch
-	if tip == "" {
-		tip = t.head
-	}
 	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
 		if t.branch == "" {
 			return "its folder is gone."
 		}
-		ahead, err := r.count("main.." + tip)
+		ahead, err := r.aheadOfMain(t.worktree)
 		if err != nil {
 			return fmt.Sprintf("its folder is gone; what branch %s holds against main is unknown (%s).", t.branch, reason(err))
 		}
@@ -368,7 +392,7 @@ func (r *repository) state(t task) string {
 	if t.prunable != "" {
 		return fmt.Sprintf("git cannot find its checkout (%s); what the folder holds is unknown.", t.prunable)
 	}
-	ahead, err := r.count("main.." + tip)
+	ahead, err := r.aheadOfMain(t.worktree)
 	if err != nil {
 		return "state unknown (" + reason(err) + ")."
 	}

@@ -107,6 +107,34 @@ func TestStatusGitHubUnreachable(t *testing.T) {
 	}
 }
 
+func TestStatusBeforeTheFirstLanding(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "status")
+	expectCode(t, code, 0)
+	expectLine(t, out, "main: no commit yet, here or on GitHub; landing the first task makes it and pushes it.")
+	expectLine(t, out, "Main working tree: on main, clean.")
+	expectLine(t, out, "fix-login at "+dir+": working, 1 commit not on main.")
+}
+
+func TestStatusOfAFirstTaskWithNoCommitYet(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	out, _ := f.runIn(inClaude, f.local, claudeRunning, "status")
+	expectLine(t, out, "fix-login at "+dir+": clean, nothing main lacks.")
+	f.write(dir, "login.rb", "draft\n")
+	out, _ = f.runIn(inClaude, f.local, claudeRunning, "status")
+	expectLine(t, out, "fix-login at "+dir+": working, 1 uncommitted file.")
+}
+
+func TestStatusBeforeTheFirstLandingWithoutARemote(t *testing.T) {
+	f := newEmptyFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	out, _ := f.run(f.local, stranger{}, "status")
+	expectLine(t, out, "main: no commit yet; landing the first task makes it.")
+}
+
 func TestStatusNoRemote(t *testing.T) {
 	f := newFixture(t)
 	f.git(f.local, "remote", "remove", "github")

@@ -131,11 +131,11 @@ func (g *landing) stop(code int, format string, args ...any) ([]string, int) {
 func (r *repository) landTask(m Machine, t task, record Record, interrupted context.Context) ([]string, int) {
 	g := &landing{repo: r, task: t}
 	var err error
+	// The first task of a repository with no commit has no commit of its own until its work is committed.
+	if t.noCommitYet() {
+		return g.stop(refused, "%s has no commit yet. Commit its work in its worktree, then run carson land %s again.", t.branch, t.branch)
+	}
 	if g.original, err = git(t.path, "rev-parse", "HEAD"); err != nil {
-		// The first task of a repository with no commit has no commit of its own until its work is committed.
-		if t.branch != "" && !r.hasBranch(t.branch) {
-			return g.stop(refused, "%s has no commit yet. Commit its work in its worktree, then run carson land %s again.", t.branch, t.branch)
-		}
 		return g.stop(failed, "the task's commit cannot be read (%s). Nothing was changed; run carson land %s again once that is cleared.", reason(err), t.branch)
 	}
 	if g.commits, err = r.notOnMain(t.branch); err != nil {
@@ -341,7 +341,7 @@ func (g *landing) bringMainCurrent(m Machine) (diverged, finished bool, code int
 			g.said, code = g.stop(failed, "local main holds %s GitHub lacks, and pushing them failed (%s). %s. Run carson land %s again to push them.", plural(ahead, "commit"), reason(err), g.state(), g.task.branch)
 			return false, true, code
 		}
-		if merged, _ := r.count("main.." + g.task.branch); merged == 0 {
+		if merged, _ := r.notOnMain(g.task.branch); merged == 0 {
 			g.note("%s had already landed on local main at %s; pushed it now. GitHub's main is %s.", g.task.branch, r.short("main"), now)
 			return false, true, done
 		}

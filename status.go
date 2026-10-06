@@ -97,7 +97,7 @@ func (r *repository) showAbandoned(m Machine) {
 			shown = true
 		}
 		held := "what it holds against main is unknown"
-		if ahead, err := r.count("main.." + branch); err == nil {
+		if ahead, err := r.notOnMain(branch); err == nil {
 			held = plural(ahead, "commit") + " not on main"
 		}
 		fmt.Fprintf(m.Out, "  %s: branch %s at %s, %s.\n", strings.TrimPrefix(branch, "abandoned/"), branch, r.short(branch), held)

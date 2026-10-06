@@ -127,7 +127,7 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 		return removal{}, refuse(refused, "the main working tree is on %s, not main, so git cannot safely delete branch %s. Switch it back to main, then run %s.", branch, name, again)
 	}
 	r := removal{repo: repo, task: t, record: record}
-	if r.ahead, err = repo.count("main.." + name); err != nil {
+	if r.ahead, err = repo.aheadOfMain(t.worktree); err != nil {
 		return removal{}, refuse(failed, "what %s holds against main cannot be read (%s). Nothing was changed; run %s once that is cleared.", name, reason(err), again)
 	}
 	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
@@ -215,7 +215,7 @@ func (r *repository) removeLeftoverBranch(name string, abandoned bool) ([]string
 	if r.worktrees[0].branch == name {
 		return nil, refuse(refused, "branch %s is checked out in the main working tree, at %s. Switch it back to main, then run carson remove %s again.", name, r.top, name)
 	}
-	ahead, err := r.count("main.." + name)
+	ahead, err := r.notOnMain(name)
 	switch {
 	case err != nil:
 		return nil, refuse(failed, "what branch %s holds against main cannot be read (%s). Nothing was changed; run carson remove %s again once that is cleared.", name, reason(err), name)
@@ -248,6 +248,10 @@ func (r removal) remove(m Machine) ([]string, error) {
 	said, err := r.clear(m, "Branch "+name+" is left as it is; run carson remove "+name+" again once that is cleared.")
 	if err != nil {
 		return said, err
+	}
+	// A branch with no commit yet is only a name in the worktree's HEAD; with the worktree gone, so is the branch.
+	if r.task.noCommitYet() {
+		return append([]string{fmt.Sprintf("Removed %s: its worktree at %s, which held no commit. It was owned by %s.", name, r.task.path, ownerName(r.record))}, said...), nil
 	}
 	if _, err := git(r.repo.top, "branch", "-d", name); err != nil {
 		return said, refuse(failed, "its worktree at %s is removed, but branch %s could not be deleted (%s); it holds nothing main lacks. Run carson remove %s again once that is cleared.", r.task.path, name, reason(err), name)
@@ -317,7 +321,7 @@ func takeUp(kept string) string {
 
 // yours refuses to start or adopt a task the running session already owns, saying where it is, or, once it has landed, how to clear it.
 func (r *repository) yours(name, path string, record Record) error {
-	if ahead, err := r.count("main.." + name); err == nil && ahead == 0 && record.Landed != "" {
+	if ahead, err := r.notOnMain(name); err == nil && ahead == 0 && record.Landed != "" {
 		return refuse(refused, "%s is already yours, and has landed; remove it with: carson remove %s (from outside its worktree)", name, name)
 	}
 	return refuse(refused, "%s is already yours, at %s; work there.", name, path)
