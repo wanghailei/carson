@@ -39,7 +39,13 @@ func start(m Machine, args []string) int {
 		fmt.Fprintln(m.Out, "Not started: "+err.Error())
 		return codeOf(err)
 	}
-	_, added := git(repo.top, "worktree", "add", "-q", "-b", name, folder, "main")
+	add := []string{"worktree", "add", "-q", "-b", name, folder, "main"}
+	// With no main yet, there is nothing to start from: the task starts empty, on a branch of its own, and its landing makes main.
+	first := repo.noMainYet()
+	if first {
+		add = []string{"worktree", "add", "-q", "--orphan", "-b", name, folder}
+	}
+	_, added := git(repo.top, add...)
 	if added != nil {
 		// git failed; what it made, if anything, is looked at rather than guessed.
 		if err := repo.afterFailedAdd(m, name, folder, added); err != nil {
@@ -61,14 +67,20 @@ func start(m Machine, args []string) int {
 		fmt.Fprintf(m.Out, "Started %s in %s, but its owner record could not be written (%s), so it shows as made outside carson; "+settled+".\n", name, folder, reason(err))
 		return failed
 	}
-	head, err := git(folder, "rev-parse", "--short", "HEAD")
-	if err != nil {
-		head = "a commit git could not name (" + reason(err) + ")"
+	line := fmt.Sprintf("Started %s in %s, owned by %s", name, folder, ownerName(record))
+	if !first {
+		head, err := git(folder, "rev-parse", "--short", "HEAD")
+		if err != nil {
+			head = "a commit git could not name (" + reason(err) + ")"
+		}
+		line = fmt.Sprintf("Started %s from local main at %s in %s, owned by %s", name, head, folder, ownerName(record))
 	}
-	line := fmt.Sprintf("Started %s from local main at %s in %s, owned by %s", name, head, folder, ownerName(record))
-	if added != nil {
+	switch {
+	case added != nil:
 		fmt.Fprintf(m.Out, "%s, but git reported a failure after making it (%s). The task is yours; look at its worktree before working there.\n", line, reason(added))
-	} else {
+	case first:
+		fmt.Fprintln(m.Out, line+". "+repo.firstTask())
+	default:
 		fmt.Fprintln(m.Out, line+".")
 	}
 	if unobserved != "" {
@@ -205,11 +217,18 @@ func (r *repository) taskFolder(home, task string) string {
 // task's merge to bring in. It returns what it did, and the refusal when the task cannot start; name is the task's, for the way on.
 func (r *repository) latestMain(name string) ([]string, error) {
 	if r.remote == "" {
+		if r.noMainYet() {
+			return nil, nil
+		}
 		return []string{"No GitHub remote: the task starts from local main."}, nil
 	}
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
 	if err != nil {
 		return nil, refuse(failed, "GitHub could not be reached (%s): the latest main cannot be known. Nothing was changed; run carson start %s again when GitHub answers.", reason(err), name)
+	}
+	// Neither has a main yet: there is nothing to bring forward or push until the first landing makes it.
+	if answer == "" && r.noMainYet() {
+		return nil, nil
 	}
 	if answer == "" {
 		now, err := r.pushMain()

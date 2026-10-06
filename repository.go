@@ -96,9 +96,10 @@ func (r *repository) caseTwin(name string) string {
 	return ""
 }
 
-// mainMissing says why local main is not there — lost, when this machine knows GitHub's main, or never made — or "" when it is.
+// mainMissing says why local main is not there — lost, when this machine knows GitHub's main, or never made — or "" when it is, or is
+// still to be made by the first landing.
 func (r *repository) mainMissing() string {
-	if r.hasBranch("main") {
+	if r.hasBranch("main") || r.noMainYet() {
 		return ""
 	}
 	if r.remote != "" {
@@ -106,11 +107,32 @@ func (r *repository) mainMissing() string {
 			return fmt.Sprintf("local main is missing, though GitHub's main is at %s here; bring it back with: git branch main %s/main", r.short(github), r.remote)
 		}
 	}
-	return noMainYet
+	return "this repository has no main yet; a person must make its first commit before carson can start a task from it"
 }
 
-// noMainYet is a repository whose main has no first commit; carson starts tasks from main, so a person makes that commit.
-const noMainYet = "this repository has no main yet; a person must make its first commit before carson can start a task from it"
+// noMainYet is whether main is still to be made, as in a repository with no commit: the main working tree is on main, which has no
+// commit, and this machine knows of no main on GitHub. The first task then starts empty, and landing it makes main.
+func (r *repository) noMainYet() bool {
+	if r.hasBranch("main") {
+		return false
+	}
+	if head, err := git(r.top, "symbolic-ref", "-q", "HEAD"); err != nil || head != "refs/heads/main" {
+		return false
+	}
+	if r.remote == "" {
+		return true
+	}
+	_, err := git(r.top, "rev-parse", "--verify", "-q", "refs/remotes/"+r.remote+"/main")
+	return err != nil
+}
+
+// firstTask says what becomes of the first task of a repository with no commit yet.
+func (r *repository) firstTask() string {
+	if r.remote == "" {
+		return "The repository has no commit yet, so the task starts empty; landing it makes main."
+	}
+	return "The repository has no commit yet, so the task starts empty; landing it makes main and pushes it to GitHub."
+}
 
 // mainAgainstGitHub says where local main is and how it stands against GitHub's main, asked with ls-remote, which changes nothing here.
 func (r *repository) mainAgainstGitHub() string {

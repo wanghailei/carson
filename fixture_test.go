@@ -21,6 +21,16 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	f := newEmptyFixture(t)
+	f.commit(f.local, "first.txt")
+	f.git(f.local, "push", "-q", "-u", "github", "main")
+	return f
+}
+
+// newEmptyFixture is the world before the first commit, as when a repository is made empty on GitHub and cloned: GitHub has no main,
+// and local main has no commit.
+func newEmptyFixture(t *testing.T) *fixture {
+	t.Helper()
 	root := t.TempDir()
 	// On macOS the temporary folder is reached through a link; git reports real paths, so the fixture uses them too.
 	root, err := filepath.EvalSymlinks(root)
@@ -39,8 +49,6 @@ func newFixture(t *testing.T) *fixture {
 	f.git(root, "init", "-q", "--bare", "-b", "main", f.github)
 	f.git(root, "clone", "-q", f.github, f.local)
 	f.git(f.local, "remote", "rename", "origin", "github")
-	f.commit(f.local, "first.txt")
-	f.git(f.local, "push", "-q", "-u", "github", "main")
 	return f
 }
 

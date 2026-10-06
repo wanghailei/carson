@@ -363,6 +363,33 @@ func TestStartWithoutARemoteStartsFromLocalMain(t *testing.T) {
 	expectLine(t, out, "No GitHub remote: the task starts from local main.")
 }
 
+// From carson#529: a repository made empty on GitHub and cloned had no main to start from, so its first commit had to bypass carson.
+func TestStartMakesTheFirstTaskOfAnEmptyRepository(t *testing.T) {
+	f := newEmptyFixture(t)
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 0)
+	dir := f.taskFolder("fix-login")
+	expectLine(t, out, "Started fix-login in "+dir+", owned by Claude session 9cb74d03-a065. The repository has no commit yet, so the task starts empty; landing it makes main and pushes it to GitHub.")
+	if branch := f.git(dir, "symbolic-ref", "--short", "HEAD"); branch != "fix-login" {
+		t.Errorf("the worktree is on %q", branch)
+	}
+	if record := f.readRecord(dir); record.Task != "fix-login" {
+		t.Errorf("owner record: %+v", record)
+	}
+	if answer := f.git(f.local, "ls-remote", "github"); answer != "" {
+		t.Errorf("GitHub was changed: %s", answer)
+	}
+}
+
+func TestStartMakesTheFirstTaskOfAnEmptyRepositoryWithoutARemote(t *testing.T) {
+	f := newEmptyFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Started fix-login in "+f.taskFolder("fix-login")+", owned by Claude session 9cb74d03-a065. The repository has no commit yet, so the task starts empty; landing it makes main.")
+	expectNoLine(t, out, "No GitHub remote: the task starts from local main.")
+}
+
 // Two sessions starting one name aim at one folder; the winner's record must survive the loser's failed add.
 func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testing.T) {
 	f := newFixture(t)
