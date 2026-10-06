@@ -38,7 +38,7 @@ carson status       main, the main working tree, every task and whose it is
 
 ## Quickstart
 
-Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`; a GitHub remote and a `bin/check` in the repository are used when they are there.
+Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`, and `lsof` for `carson remove`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote and a `bin/check` in the repository are used when they are there.
 
 ```
 $ carson start xyz

@@ -76,6 +76,10 @@ func (PS) Process(pid int) (int, string, error) {
 func (PS) Inside(dir string) ([]string, error) {
 	out, err := exec.Command("lsof", "-a", "-u", strconv.Itoa(os.Getuid()), "-d", "cwd", "-F", "pcn").Output()
 	if len(out) == 0 && err != nil {
+		// Name the cure, not just the lack: lsof ships with macOS but is no base package on Linux (5.1's refusal on Oma).
+		if errors.Is(err, exec.ErrNotFound) {
+			return nil, errors.New("lsof is not installed — it ships with macOS; on Omarchy install it with: sudo pacman -S lsof")
+		}
 		return nil, fmt.Errorf("lsof: %v", err)
 	}
 	self := strconv.Itoa(os.Getpid())

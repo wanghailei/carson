@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -21,5 +22,14 @@ func TestPSTellsARunningProcessFromAnEndedOne(t *testing.T) {
 	}
 	if _, err := (PS{}).Started(0); err == errNotRunning {
 		t.Error("process 0 is read as not running; it is no process at all")
+	}
+}
+
+// Without lsof the error names the cure — the lack 5.1 hit on Oma, where lsof is no base package. An empty PATH stands in for a
+// machine without it.
+func TestPSNamesTheCureWhenLsofIsMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	if _, err := (PS{}).Inside(t.TempDir()); err == nil || !strings.Contains(err.Error(), "sudo pacman -S lsof") {
+		t.Errorf("missing lsof: %v, wanted the install command named", err)
 	}
 }
