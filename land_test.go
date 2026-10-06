@@ -348,6 +348,20 @@ func TestLandOfAFirstTaskWithNoCommitSaysToCommit(t *testing.T) {
 	expectLine(t, out, "Not landed: fix-login has no commit yet. Commit its work in its worktree, then run carson land fix-login again.")
 }
 
+// The first task started empty, and GitHub was given a main meanwhile: the task lands on top of that main, which it then carries.
+func TestLandOfTheFirstTaskAfterGitHubWasGivenAMain(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.pushFirstCommit()
+	github := f.git(f.github, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "Local main was 1 commit behind GitHub's and is brought forward to it.")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit, rebased onto main first) and pushed")
+	f.git(f.local, "merge-base", "--is-ancestor", github, "main") // fails the test when main does not carry GitHub's main
+}
+
 // Cases from the review of cca4a81, each staged there against the slice before it was fixed.
 
 func TestLandStopsWhenTheCheckMovesTheBranch(t *testing.T) {

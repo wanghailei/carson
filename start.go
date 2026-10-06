@@ -290,7 +290,7 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched, 
 // is modified there, untracked, or ignored — each with its kind and when it last changed.
 func (r *repository) inTheWay(target string) ([]string, error) {
 	arriving := []string{"diff", "--name-only", "-z", "main", target}
-	if r.noMainYet() {
+	if !r.hasBranch("main") {
 		// With no main yet, every file target holds arrives in the main working tree.
 		arriving = []string{"ls-tree", "-r", "--name-only", "-z", target}
 	}

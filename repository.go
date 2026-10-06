@@ -115,7 +115,12 @@ func (r *repository) mainMissing() string {
 			return fmt.Sprintf("local main is missing, though GitHub's main is at %s here; bring it back with: git branch main %s/main", r.short(github), r.remote)
 		}
 	}
-	return "this repository has no main yet; a person must make its first commit before carson can start a task from it"
+	// main is neither here nor still to be made, so the main working tree is on the trunk under another name, or off any branch.
+	const noMain = "this repository has no main, which carson starts every task from; the main working tree is on "
+	if branch := r.mainTreeBranch(); branch != "a detached HEAD" {
+		return fmt.Sprintf(noMain+"%s. If %s is its trunk, rename it with: git branch -m %s main", branch, branch, branch)
+	}
+	return noMain + "a detached HEAD. If its commit is where main belongs, make main there with: git switch -c main"
 }
 
 // noMainYet is whether main is still to be made, as in a repository with no commit: the main working tree is on main, which has no
@@ -153,8 +158,10 @@ func (r *repository) mainAgainstGitHub() string {
 		}
 		if answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
 			return fmt.Sprintf("main: no commit yet here. GitHub could not be reached (%s); whether it has a main is unknown.", reason(err))
-		} else if answer == "" {
+		} else if fields := strings.Fields(answer); len(fields) == 0 {
 			return "main: no commit yet, here or on GitHub; landing the first task makes it and pushes it."
+		} else {
+			return fmt.Sprintf("main: no commit yet here; GitHub's main is at %s, which the next carson start or carson land brings here.", r.short(fields[0]))
 		}
 	}
 	local, err := git(r.top, "rev-parse", "--verify", "-q", "refs/heads/main")
@@ -216,6 +223,11 @@ func (r *repository) fetchMain() (string, error) {
 
 // aheadBehind counts the commits local main has that tracking lacks, and those tracking has that local main lacks.
 func (r *repository) aheadBehind(tracking string) (ahead, behind int, err error) {
+	// A local main with no commit yet has nothing GitHub lacks, and lacks all GitHub's main holds.
+	if !r.hasBranch("main") {
+		behind, err = r.count(tracking)
+		return 0, behind, err
+	}
 	if ahead, err = r.count(tracking + "..main"); err != nil {
 		return 0, 0, err
 	}

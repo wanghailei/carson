@@ -390,6 +390,50 @@ func TestStartMakesTheFirstTaskOfAnEmptyRepositoryWithoutARemote(t *testing.T) {
 	expectNoLine(t, out, "No GitHub remote: the task starts from local main.")
 }
 
+// pushFirstCommit gives GitHub a main from the other machine, after this one cloned it empty.
+func (f *fixture) pushFirstCommit() string {
+	f.t.Helper()
+	other := f.otherClone()
+	f.commit(other, "readme.md")
+	f.git(other, "push", "-q", "origin", "main")
+	return f.git(other, "rev-parse", "--short", "main")
+}
+
+// Cloned empty, while GitHub has since been given a main: the task starts from that main, not as an unrelated history beside it.
+func TestStartBringsInTheMainGitHubWasGivenSinceTheEmptyClone(t *testing.T) {
+	f := newEmptyFixture(t)
+	github := f.pushFirstCommit()
+	out, _ := f.run(f.local, stranger{}, "status")
+	expectLine(t, out, "main: no commit yet here; GitHub's main is at "+github+", which the next carson start or carson land brings here.")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Local main was 1 commit behind GitHub's and is brought forward to it.")
+	expectLine(t, out, "Started fix-login from local main at "+github+" in "+f.taskFolder("fix-login"))
+	if held := f.git(f.local, "status", "--porcelain"); held != "" || !f.exists(filepath.Join(f.local, "readme.md")) {
+		t.Errorf("the main working tree does not hold GitHub's main: %q", held)
+	}
+}
+
+// Without main, and with the main working tree on another branch, the repository's trunk has another name.
+func TestStartInARepositoryWhoseTrunkIsNotMainSaysHowToRenameIt(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	f.git(f.local, "branch", "-m", "main", "master")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not started: this repository has no main, which carson starts every task from; the main working tree is on master. If master is its trunk, rename it with: git branch -m master main. Nothing was changed.")
+}
+
+func TestStartWithoutMainOnADetachedHeadSaysHowToMakeMain(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	f.git(f.local, "switch", "-q", "--detach")
+	f.git(f.local, "branch", "-D", "main")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not started: this repository has no main, which carson starts every task from; the main working tree is on a detached HEAD. If its commit is where main belongs, make main there with: git switch -c main. Nothing was changed.")
+}
+
 // Two sessions starting one name aim at one folder; the winner's record must survive the loser's failed add.
 func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testing.T) {
 	f := newFixture(t)
