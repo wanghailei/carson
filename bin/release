@@ -47,6 +47,9 @@ fi
 git tag -a "v$version" -F "$notes"
 git push -q github "v$version"
 say "tagged  v$version, its notes as its message, and pushed it"
-gh release create "v$version" --repo wanghailei/carson --title "Carson $version" --notes-from-tag \
+# --repo keeps the release where the tag was pushed, whatever GH_REPO says; the notes come from their file, the tag's source, since
+# gh 2.102 refuses --notes-from-tag together with --repo.
+# Behaviour (by eye): the release appears on wanghailei/carson under the tag, with these notes, the four downloads and checksums.txt.
+gh release create "v$version" --repo wanghailei/carson --title "Carson $version" --notes-file "$notes" \
 	"$out"/carson-"$version"-*.tar.gz "$out/checksums.txt" >/dev/null
 say "released https://github.com/wanghailei/carson/releases/tag/v$version"
