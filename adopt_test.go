@@ -306,6 +306,19 @@ func TestAdoptRelinksWithoutWritingThroughAFileInTheWay(t *testing.T) {
 	}
 }
 
+// From the second audit of #542: a link written aside that cannot be renamed into place, here because a folder stands where it goes,
+// is not left beside it.
+func TestWriteLinkLeavesNothingBesideWhenItCannotBePutInPlace(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".git", "objects"), 0o755)
+	if err := writeLink(filepath.Join(dir, ".git"), "/repository/.git/worktrees/fix-login"); err == nil {
+		t.Fatal("the link was put in place over a folder")
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".git?*")); len(left) > 0 {
+		t.Errorf("files were left beside the link: %v", left)
+	}
+}
+
 // From the review of the plan for #542: git's own repair, run from the repository, relinks every worktree the repository holds, so
 // adopting one task would change the worktrees of others.
 func TestAdoptRelinksOnlyTheTaskItAdopts(t *testing.T) {
