@@ -319,12 +319,17 @@ func takeUp(kept string) string {
 	return "Take it up again with: carson adopt " + strings.TrimPrefix(kept, "abandoned/")
 }
 
-// yours refuses to start or adopt a task the running session already owns, saying where it is, or, once it has landed, how to clear it.
+// yours refuses to start or adopt a task the running session already owns, saying what alreadyYours says.
 func (r *repository) yours(name, path string, record Record) error {
+	return refuse(refused, "%s", r.alreadyYours(name, path, record))
+}
+
+// alreadyYours says that a task is already the running session's, and where it is, or, once it has landed, how to clear it.
+func (r *repository) alreadyYours(name, path string, record Record) string {
 	if ahead, err := r.notOnMain(name); err == nil && ahead == 0 && record.Landed != "" {
-		return refuse(refused, "%s is already yours, and has landed; remove it with: carson remove %s (from outside its worktree)", name, name)
+		return fmt.Sprintf("%s is already yours, and has landed; remove it with: carson remove %s (from outside its worktree)", name, name)
 	}
-	return refuse(refused, "%s is already yours, at %s; work there.", name, path)
+	return fmt.Sprintf("%s is already yours, at %s; work there.", name, path)
 }
 
 // offBranch refuses a task whose worktree has left its branch for what on says, with the way back; command is what to run after.

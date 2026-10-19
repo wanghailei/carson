@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 // adopt makes a task the running session's own (will 11.2): the task of an agent seen to have ended, in its own worktree; or work
@@ -57,7 +59,15 @@ func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error)
 	}
 	me, unobserved := m.ownerRecord(name)
 	if sameOwner(record, me) {
-		return nil, repo.yours(name, t.path, record)
+		// A task already yours is adopted again only to relink it: where the link is whole, there is nothing to do.
+		relinked, err := repo.relink(t)
+		if err != nil {
+			return nil, err
+		}
+		if relinked == nil {
+			return nil, repo.yours(name, t.path, record)
+		}
+		return append([]string{repo.alreadyYours(name, t.path, record)}, relinked...), nil
 	}
 	switch state, why := m.livenessOf(record); state {
 	case live:
@@ -65,21 +75,27 @@ func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error)
 	case unknown:
 		return nil, refuse(refused, "%s belongs to %s, whose state is unknown (%s); only an agent seen to have ended gives up its task. Leave it to that session; if it is gone, a person must settle it.", name, ownerName(record), why)
 	}
+	// Relinked before the record is replaced, so a worktree that cannot be relinked is not adopted: the task is left as it was.
+	relinked, err := repo.relink(t)
+	if err != nil {
+		return nil, err
+	}
 	previous := record
 	previous.Previous = nil
 	me.Previous = append(record.Previous, previous)
 	me.Landed = record.Landed
 	err = replaceOwner(t.admin, record, me)
 	if errors.Is(err, errOwned) {
-		return nil, refuse(refused, "%s was adopted meanwhile by another session; carson status shows whose it is now.", name)
+		return relinked, refuse(refused, "%s was adopted meanwhile by another session; carson status shows whose it is now.", name)
 	}
 	if err != nil {
-		return nil, refuse(failed, "the owner record of %s could not be replaced (%v); it is left as it was. Run carson adopt %s again once that is cleared.", name, err, name)
+		return relinked, refuse(failed, "the owner record of %s could not be replaced (%v); it is left as it was. Run carson adopt %s again once that is cleared.", name, err, name)
 	}
 	if _, err := os.Stat(t.path); errors.Is(err, fs.ErrNotExist) {
 		return repo.adoptedWithoutFolder(t, record), nil
 	}
 	said := []string{fmt.Sprintf("Adopted %s from %s, which has ended: its worktree at %s is yours now, as it was left.", name, ownerName(record), t.path)}
+	said = append(said, relinked...)
 	if on != "" {
 		said = append(said, fmt.Sprintf("It is on %s, not its branch; switch it back there with git switch %s.", on, name))
 	}
@@ -150,6 +166,56 @@ func (m Machine) takeUp(repo *repository, name string) ([]string, error) {
 		said = append(said, unobserved)
 	}
 	return said, nil
+}
+
+// relink links a task's worktree back to its repository when the git folder the worktree's .git file names is gone, as after the
+// repository's folder has moved: git keeps the link both ways, and a move breaks only the worktree's side. The repository's side
+// still names the worktree, so the task's administrative folder is known, and the worktree's .git file is written to name it, as git
+// writes it. git's own repair is not used: run from the repository, it relinks every worktree there, other agents' tasks among them.
+// relink says what it did, nothing when the link was whole, or why it could not relink, having changed nothing.
+func (r *repository) relink(t task) ([]string, error) {
+	gone := brokenLink(t.path)
+	if gone == "" {
+		return nil, nil
+	}
+	if err := writeLink(filepath.Join(t.path, ".git"), t.admin); err != nil {
+		return nil, refuse(failed, "%s's worktree at %s is linked to %s, which is gone, and could not be linked back (%v). Nothing was changed; run carson adopt %s again once that is cleared.", t.branch, t.path, gone, err, t.branch)
+	}
+	return []string{fmt.Sprintf("%s's worktree was still linked to %s, which is gone; it is linked to the repository at %s again.", t.branch, gone, r.top)}, nil
+}
+
+// writeLink writes a worktree's .git file to name its administrative folder, in one step — written aside, then renamed into place —
+// so a failure leaves the old link as it was.
+func writeLink(path, admin string) error {
+	aside := path + "." + strconv.Itoa(os.Getpid()) + ".new"
+	if err := os.WriteFile(aside, []byte("gitdir: "+admin+"\n"), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(aside, path); err != nil {
+		os.Remove(aside)
+		return err
+	}
+	return nil
+}
+
+// brokenLink is the git folder a worktree's .git file names, when that folder is gone; "" when it is there, or when the worktree has
+// no .git file to read — its folder gone, or a .git folder of its own — which git judges as it always has.
+func brokenLink(worktree string) string {
+	content, err := os.ReadFile(filepath.Join(worktree, ".git"))
+	if err != nil {
+		return ""
+	}
+	named, found := strings.CutPrefix(strings.TrimSpace(string(content)), "gitdir: ")
+	if !found {
+		return ""
+	}
+	if !filepath.IsAbs(named) {
+		named = filepath.Join(worktree, named)
+	}
+	if _, err := os.Stat(named); !errors.Is(err, fs.ErrNotExist) {
+		return ""
+	}
+	return named
 }
 
 // adoptedWithoutFolder says what an adopted task whose worktree folder is gone holds, and the one way on: to keep its commits as

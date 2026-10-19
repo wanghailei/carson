@@ -9,7 +9,7 @@ import (
 )
 
 // Version is Carson's version. The major version is the master's; agents set the minor and patch versions (rule 10.8).
-const Version = "5.2.0"
+const Version = "5.3.0"
 
 // Exit codes mean one thing each: done, as reported; could not finish, with the state things are left in; refused, because a rule
 // forbids it. Nothing else ever exits 0.
@@ -60,7 +60,7 @@ carson status           show main, the main working tree, every task and abandon
 carson land <task>      land a finished task on main, checked, and push main to GitHub
 carson remove <task>    remove a landed task's worktree and branch, from outside its worktree
 carson abandon <task>   keep an unfinished task's work on a branch abandoned/<task>, and remove its worktree
-carson adopt <task>     make yours an ended agent's task, abandoned work, or a branch left without a worktree
+carson adopt <task>     make yours an ended agent's task, abandoned work, or a branch left without a worktree; relink a task whose repository's folder has moved
 carson --version        show carson's version
 `
 

@@ -211,6 +211,105 @@ func TestAdoptSaysThereIsNothingToAdopt(t *testing.T) {
 	expectLine(t, out, "Not adopted: branch fix-login holds nothing main lacks, so there is nothing to adopt. Remove it with: carson remove fix-login")
 }
 
+// moveRepository moves the local repository to a folder of another name, as the master moved ~/Dev/Prepwise to ~/Dev/Acemon: its
+// worktrees stay where they are, each still linked to the old folder. It returns the old folder.
+func (f *fixture) moveRepository() string {
+	f.t.Helper()
+	old, moved := f.local, filepath.Join(f.root, "moved")
+	if err := os.Rename(old, moved); err != nil {
+		f.t.Fatal(err)
+	}
+	f.local = moved
+	return old
+}
+
+// From wanghailei/carson#542: the master moved a repository's folder, and the five tasks it held could be neither worked, landed nor
+// removed; carson adopt took one of them over without a word.
+func TestAdoptRelinksAnEndedAgentsTaskAfterTheRepositoryMoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.otherSession("fix-login")
+	f.commit(dir, "login.rb")
+	old := f.moveRepository()
+	out, code := f.adopt(claudeRunning, "fix-login") // process 5000 has ended
+	expectCode(t, code, 0)
+	expectLine(t, out, "Adopted fix-login from Claude session 4e7a91d2-other, which has ended: its worktree at "+dir+" is yours now, as it was left.")
+	expectLine(t, out, "fix-login's worktree was still linked to "+filepath.Join(old, ".git", "worktrees", "fix-login")+", which is gone; it is linked to the repository at "+f.local+" again.")
+	if out, code := f.land(dir); code != 0 {
+		t.Errorf("the relinked task does not land:\n%s", out)
+	}
+	if out, code := f.remove("fix-login"); code != 0 {
+		t.Errorf("the relinked task is not removed:\n%s", out)
+	}
+}
+
+// From wanghailei/carson#542: a task adopted before carson could relink, and so already the session's, was answered "work there",
+// where no one could.
+func TestAdoptRelinksATaskAlreadyYoursAfterTheRepositoryMoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	old := f.moveRepository()
+	out, code := f.adopt(claudeRunning, "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "fix-login is already yours, at "+dir+"; work there.")
+	expectLine(t, out, "fix-login's worktree was still linked to "+filepath.Join(old, ".git", "worktrees", "fix-login")+", which is gone; it is linked to the repository at "+f.local+" again.")
+	if out, code := f.land(dir); code != 0 {
+		t.Errorf("the relinked task does not land:\n%s", out)
+	}
+}
+
+func TestAdoptSaysWhyAWorktreeCannotBeRelinkedAndChangesNothing(t *testing.T) {
+	f := newFixture(t)
+	dir := f.otherSession("fix-login")
+	old := f.moveRepository()
+	// A worktree whose folder and .git file cannot be written cannot be relinked; both are put back as they were, so the test's folder
+	// can go.
+	link := filepath.Join(dir, ".git")
+	os.Chmod(link, 0o444)
+	os.Chmod(dir, 0o555)
+	t.Cleanup(func() { os.Chmod(dir, 0o755); os.Chmod(link, 0o644) })
+	out, code := f.adopt(claudeRunning, "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not adopted: fix-login's worktree at "+dir+" is linked to "+filepath.Join(old, ".git", "worktrees", "fix-login")+", which is gone, and could not be linked back (")
+	if !strings.Contains(out, "Nothing was changed; run carson adopt fix-login again once that is cleared.") {
+		t.Errorf("the refusal does not say that nothing was changed:\n%s", out)
+	}
+	if record, _, _ := readOwner(filepath.Join(f.local, ".git", "worktrees", "fix-login")); record.Session != "4e7a91d2-other" {
+		t.Errorf("the owner record changed: %+v", record)
+	}
+}
+
+// From the review of the plan for #542: git's own repair, run from the repository, relinks every worktree the repository holds, so
+// adopting one task would change the worktrees of others.
+func TestAdoptRelinksOnlyTheTaskItAdopts(t *testing.T) {
+	f := newFixture(t)
+	f.otherSession("fix-login")
+	other := f.otherSession("dark-mode")
+	old := f.moveRepository()
+	if _, code := f.adopt(claudeRunning, "fix-login"); code != 0 {
+		t.Fatal("fix-login is not adopted")
+	}
+	link, _ := os.ReadFile(filepath.Join(other, ".git"))
+	if want := "gitdir: " + filepath.Join(old, ".git", "worktrees", "dark-mode"); strings.TrimSpace(string(link)) != want {
+		t.Errorf("dark-mode's worktree was relinked too: its .git file now reads %q", link)
+	}
+}
+
+// From the review of the plan for #542: a landed task already yours is answered "remove it", and must be relinked for carson remove
+// to work.
+func TestAdoptRelinksALandedTaskSoThatItIsRemoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.mergedTask("fix-login")
+	old := f.moveRepository()
+	out, code := f.adopt(claudeRunning, "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "fix-login is already yours, and has landed; remove it with: carson remove fix-login (from outside its worktree)")
+	expectLine(t, out, "fix-login's worktree was still linked to "+filepath.Join(old, ".git", "worktrees", "fix-login")+", which is gone; it is linked to the repository at "+f.local+" again.")
+	if out, code := f.remove("fix-login"); code != 0 || f.exists(dir) {
+		t.Errorf("the relinked task is not removed:\n%s", out)
+	}
+}
+
 // From the review of 36da910: adoption dropped the landed mark, which the branch's unchanged tip still earns.
 func TestAdoptKeepsTheLandedMark(t *testing.T) {
 	f := newFixture(t)
