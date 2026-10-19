@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -185,17 +184,27 @@ func (r *repository) relink(t task) ([]string, error) {
 }
 
 // writeLink writes a worktree's .git file to name its administrative folder, in one step — written aside, then renamed into place —
-// so a failure leaves the old link as it was.
+// so a failure leaves the old link as it was, and nothing beside it. The file aside is made new under a name no file has, so no file
+// already in the worktree is written through.
 func writeLink(path, admin string) error {
-	aside := path + "." + strconv.Itoa(os.Getpid()) + ".new"
-	if err := os.WriteFile(aside, []byte("gitdir: "+admin+"\n"), 0o644); err != nil {
+	aside, err := os.CreateTemp(filepath.Dir(path), ".git.*.new")
+	if err != nil {
 		return err
 	}
-	if err := os.Rename(aside, path); err != nil {
-		os.Remove(aside)
-		return err
+	_, err = aside.WriteString("gitdir: " + admin + "\n")
+	if err == nil {
+		err = aside.Chmod(0o644)
 	}
-	return nil
+	if closed := aside.Close(); err == nil {
+		err = closed
+	}
+	if err == nil {
+		err = os.Rename(aside.Name(), path)
+	}
+	if err != nil {
+		os.Remove(aside.Name())
+	}
+	return err
 }
 
 // brokenLink is the git folder a worktree's .git file names, when that folder is gone; "" when it is there, or when the worktree has

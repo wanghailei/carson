@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -276,6 +277,32 @@ func TestAdoptSaysWhyAWorktreeCannotBeRelinkedAndChangesNothing(t *testing.T) {
 	}
 	if record, _, _ := readOwner(filepath.Join(f.local, ".git", "worktrees", "fix-login")); record.Session != "4e7a91d2-other" {
 		t.Errorf("the owner record changed: %+v", record)
+	}
+	if content, _ := os.ReadFile(link); strings.TrimSpace(string(content)) != "gitdir: "+filepath.Join(old, ".git", "worktrees", "fix-login") {
+		t.Errorf("the worktree's .git file changed: it reads %q", content)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".git?*")); len(left) > 0 {
+		t.Errorf("files were left in the worktree: %v", left)
+	}
+}
+
+// From the audit of #542: a file already in the worktree, under the name the link is written aside to, is not written through, so a
+// link planted there cannot make carson overwrite another file.
+func TestAdoptRelinksWithoutWritingThroughAFileInTheWay(t *testing.T) {
+	f := newFixture(t)
+	dir := f.otherSession("fix-login")
+	f.moveRepository()
+	target := filepath.Join(f.root, "target")
+	os.WriteFile(target, []byte("kept\n"), 0o644)
+	os.Symlink(target, filepath.Join(dir, ".git."+strconv.Itoa(os.Getpid())+".new"))
+	if out, code := f.adopt(claudeRunning, "fix-login"); code != 0 {
+		t.Fatalf("fix-login is not adopted:\n%s", out)
+	}
+	if content, _ := os.ReadFile(target); string(content) != "kept\n" {
+		t.Errorf("a file outside the worktree was written through the link in its way: it reads %q", content)
+	}
+	if info, err := os.Lstat(filepath.Join(dir, ".git")); err != nil || !info.Mode().IsRegular() {
+		t.Errorf("the worktree's .git is not a file of carson's own writing: %v %v", info, err)
 	}
 }
 
