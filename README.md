@@ -114,7 +114,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 
-The tests named below pass: `bin/check` ran all 190 of Carson's tests on 2026-10-19, with S13's change.
+The tests named below pass: `bin/check` ran all 199 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543 and carson#537.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -317,6 +317,7 @@ Damage found in the issues that neither git nor Carson could prevent:
 - 2026-09-19 (aix#15): a `find … -delete` removed a person's own files outside any repository; git was only the way back.
 - 2026-03-26 (ai#868, ai#882): a renamed file made a posting tool repost every entry, and a clean-up deleted 107 posts. The damage was on a website.
 - 2026-09-13 (aix#31): an entry was pushed while the posting secrets were known to be missing, and the post failed.
+- carson#537: with reflogs off or expired, `main` deleted with plumbing, and no remote or a GitHub without `main`, Carson cannot tell a lost `main` from one never made, and the first landing can make an unrelated `main`. Not observed in real use; accepted.
 
 ## History
 

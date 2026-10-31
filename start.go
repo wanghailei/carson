@@ -293,9 +293,15 @@ func (r *repository) bringUpToDate(tracking string, ahead, behind int, fetched, 
 // is modified there, untracked, or ignored — each with its kind and when it last changed.
 func (r *repository) inTheWay(target string) ([]string, error) {
 	arriving := []string{"diff", "--name-only", "-z", "main", target}
+	unchanged := map[string]bool{}
 	if !r.hasBranch("main") {
-		// With no main yet, every file target holds arrives in the main working tree.
+		// With no main yet, every file target holds arrives in the main working tree. One already staged there as target has it, as
+		// the files of a main deleted are, is left as it is.
 		arriving = []string{"ls-tree", "-r", "--name-only", "-z", target}
+		var err error
+		if unchanged, err = r.stagedAs(target); err != nil {
+			return nil, err
+		}
 	}
 	changed, err := git(r.top, arriving...)
 	if err != nil {
@@ -339,7 +345,7 @@ func (r *repository) inTheWay(target string) ([]string, error) {
 				kind = heldKind
 			}
 		}
-		if kind == "" {
+		if kind == "" || kind == "modified" && unchanged[path] {
 			continue
 		}
 		item := path + " (" + kind
@@ -349,6 +355,31 @@ func (r *repository) inTheWay(target string) ([]string, error) {
 		found = append(found, item+")")
 	}
 	return found, nil
+}
+
+// stagedAs is the set of files the main working tree holds staged, and unchanged since, exactly as target has them.
+func (r *repository) stagedAs(target string) (map[string]bool, error) {
+	staged, err := git(r.top, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	differ := map[string]bool{}
+	for _, against := range [][]string{{"diff", "--name-only", "-z", target}, {"diff", "--cached", "--name-only", "-z", target}} {
+		out, err := git(r.top, against...)
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range strings.Split(out, "\x00") {
+			differ[path] = true
+		}
+	}
+	same := map[string]bool{}
+	for _, path := range strings.Split(staged, "\x00") {
+		if path != "" && !differ[path] {
+			same[path] = true
+		}
+	}
+	return same, nil
 }
 
 // pushedUnchecked is a push that went through, whose result on GitHub could not be confirmed afterwards.

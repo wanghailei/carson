@@ -461,6 +461,48 @@ func TestStartRefusesWhereMainWasDeletedAndGitHubsIsNotKnown(t *testing.T) {
 	}
 }
 
+// loseMain deletes local main where no reflog remembers it, as when reflogs are off or expired, and returns where main was.
+func (f *fixture) loseMain() string {
+	f.t.Helper()
+	last := f.short(f.local, "main")
+	f.git(f.local, "update-ref", "-d", "refs/heads/main")
+	f.git(f.local, "reflog", "expire", "--expire=all", "--all")
+	return last
+}
+
+// From wanghailei/carson#537: with main lost where no reflog remembers it and GitHub's main known here, main's own files, still staged
+// in the main working tree exactly as GitHub's main has them, were taken for someone's changes, and carson said to ask a person whose
+// they were. They are what arrives, and main is brought back from GitHub.
+func TestStartBringsBackFromGitHubAMainLostWithoutAReflog(t *testing.T) {
+	f := newFixture(t)
+	last := f.loseMain()
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Local main was 1 commit behind GitHub's and is brought forward to it.")
+	expectLine(t, out, "Started fix-login from local main at "+last+" in "+f.taskFolder("fix-login"))
+	if held := f.git(f.local, "status", "--porcelain"); held != "" {
+		t.Errorf("the main working tree holds changes: %q", held)
+	}
+}
+
+// From wanghailei/carson#537: a stash pushed and popped leaves commits no branch reaches, which must not be taken for a main lost; the
+// first task of a new repository, and another started after the stash, still start, and the first lands.
+func TestTheFirstTaskStartsAndLandsAfterAStashIsPushedAndPopped(t *testing.T) {
+	f := newEmptyFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.write(dir, "login.rb", "draft\n")
+	f.git(dir, "stash", "push", "-q")
+	f.git(dir, "stash", "pop", "-q")
+	f.git(dir, "commit", "-q", "-am", "draft login.rb")
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "dark-mode")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Started dark-mode in "+f.taskFolder("dark-mode")+", owned by Claude session 9cb74d03-a065. The repository has no commit yet, so the task starts empty; landing it makes main and pushes it to GitHub.")
+	out, code = f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD"))
+}
+
 // Two sessions starting one name aim at one folder; the winner's record must survive the loser's failed add.
 func TestAfterAFailedAddTheWinnersWorktreeInTheSameFolderIsNotTakenOver(t *testing.T) {
 	f := newFixture(t)
