@@ -40,11 +40,21 @@ func (m Machine) removeOrAbandon(args []string, abandoned bool) int {
 		fmt.Fprintln(m.Out, line)
 	}
 	if err != nil {
+		if errors.As(err, new(partly)) {
+			not = "Removed only in part: "
+		}
 		fmt.Fprintln(m.Out, not+err.Error())
 		return codeOf(err)
 	}
 	return done
 }
+
+// partly is a removal that stopped after part of it was done, its worktree removed and its branch kept, so it is said to be removed only
+// in part rather than not removed.
+type partly struct{ error }
+
+// Unwrap is the refusal inside, whose exit code stands.
+func (p partly) Unwrap() error { return p.error }
 
 func (m Machine) removeTask(name string, abandoned bool) ([]string, error) {
 	repo, err := m.repository()
@@ -275,7 +285,7 @@ func (r removal) remove(m Machine) ([]string, error) {
 		if r.byChanges != "" {
 			// git deletes the branch only at the tip whose changes were found on main; moved since, it may hold what main lacks.
 			if now, read := git(r.repo.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); read == nil && now != r.byChanges {
-				return said, refuse(failed, "its worktree at %s is removed, but branch %s has moved to %s since it was checked, so it was kept, not deleted. Run carson remove %s again to check it afresh.", r.task.path, name, r.repo.short(now), name)
+				return said, partly{refuse(failed, "its worktree at %s is removed, but branch %s has moved to %s since it was checked, so it was kept, not deleted. Run carson remove %s again to check it afresh.", r.task.path, name, r.repo.short(now), name)}
 			}
 		}
 		return said, refuse(failed, "its worktree at %s is removed, but branch %s could not be deleted (%s); it holds nothing main lacks. Run carson remove %s again once that is cleared.", r.task.path, name, reason(err), name)

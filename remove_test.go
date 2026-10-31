@@ -198,7 +198,7 @@ func TestRemoveSaysABranchThatMovedSinceItWasCheckedIsKept(t *testing.T) {
 	f.git(f.local, "commit", "-q", "-m", "Fix login (#12)")
 	out, code := f.runIn(inClaude, f.local, committing{stranger: claudeRunning, f: f, dir: dir}, "remove", "fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not removed: its worktree at "+dir+" is removed, but branch fix-login has moved to "+f.short(f.local, "fix-login")+" since it was checked, so it was kept, not deleted. Run carson remove fix-login again to check it afresh.")
+	expectLine(t, out, "Removed only in part: its worktree at "+dir+" is removed, but branch fix-login has moved to "+f.short(f.local, "fix-login")+" since it was checked, so it was kept, not deleted. Run carson remove fix-login again to check it afresh.")
 	if f.git(f.local, "branch", "--list", "fix-login") == "" {
 		t.Error("the branch was deleted")
 	}
