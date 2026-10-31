@@ -95,16 +95,35 @@ func run(command *exec.Cmd, args []string) (string, error) {
 	return strings.TrimRight(out.String(), "\n"), nil
 }
 
-// explanation is the line of git's error output that says what went wrong: the first that is an error, a fatal one, or a refusal
-// ("! [rejected]"), before any line naming the remote or hinting; else the first line.
+// explanation is the line of git's error output that says what went wrong: GitHub's word that it has no such repository, which git
+// follows with a line of its own that says only that the remote could not be read; else the first that is an error, a fatal one, or a
+// refusal ("! [rejected]"), before any line naming the remote or hinting; else the first line.
 func explanation(stderr string) string {
+	found := ""
 	for _, line := range strings.Split(stderr, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "error:") || strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "!") {
+		if strings.Contains(strings.ToLower(line), repositoryNotFound) {
 			return line
 		}
+		if found == "" && (strings.HasPrefix(line, "error:") || strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "!")) {
+			found = line
+		}
+	}
+	if found != "" {
+		return found
 	}
 	return firstLine(stderr)
+}
+
+// repositoryNotFound is what GitHub says, over SSH and over HTTPS alike, of a repository it does not have, or one this machine's key
+// may not see.
+const repositoryNotFound = "repository not found"
+
+// notFound is whether err is GitHub saying it has no such repository that this machine can see: one never made, renamed, or not shared
+// with this machine's key. A GitHub that cannot be reached says something else.
+func notFound(err error) bool {
+	var failure *gitError
+	return errors.As(err, &failure) && strings.Contains(strings.ToLower(failure.message), repositoryNotFound)
 }
 
 func firstLine(text string) string {

@@ -107,6 +107,15 @@ func TestStatusGitHubUnreachable(t *testing.T) {
 	}
 }
 
+// From wanghailei/carson#541: a repository GitHub does not have was said to be a GitHub that could not be reached.
+func TestStatusSaysGitHubHasNoSuchRepository(t *testing.T) {
+	f := newFixture(t)
+	address := f.noSuchRepositoryOnGitHub()
+	out, code := f.run(f.local, stranger{}, "status")
+	expectCode(t, code, 0)
+	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+". GitHub has no repository at "+address+" that this machine can see (ERROR: Repository not found.). Make it on GitHub, or remove the remote to keep main on this machine only (git remote remove github).")
+}
+
 func TestStatusBeforeTheFirstLanding(t *testing.T) {
 	f := newEmptyFixture(t)
 	dir := f.startTask("fix-login")

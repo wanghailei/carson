@@ -181,7 +181,9 @@ func (r *repository) mainAgainstGitHub() string {
 		if r.remote == "" {
 			return "main: no commit yet; landing the first task makes it."
 		}
-		if answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
+		if answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); notFound(err) {
+			return "main: no commit yet here. " + r.noRepository(err, "") + "."
+		} else if err != nil {
 			return fmt.Sprintf("main: no commit yet here. GitHub could not be reached (%s); whether it has a main is unknown.", reason(err))
 		} else if fields := strings.Fields(answer); len(fields) == 0 {
 			return "main: no commit yet, here or on GitHub; landing the first task makes it and pushes it."
@@ -198,6 +200,9 @@ func (r *repository) mainAgainstGitHub() string {
 		return here + ". No GitHub remote: main is on this machine only."
 	}
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
+	if notFound(err) {
+		return here + ". " + r.noRepository(err, "") + "."
+	}
 	if err != nil {
 		return fmt.Sprintf("%s. GitHub could not be reached (%s). How main stands against it is unknown.", here, reason(err))
 	}
@@ -228,6 +233,20 @@ func (r *repository) mainAgainstGitHub() string {
 	default:
 		return fmt.Sprintf("%s, %s behind GitHub. The next carson start or carson land brings it forward.", here, plural(behind, "commit"))
 	}
+}
+
+// noRepository says that GitHub has no repository at the remote's address that this machine can see, as GitHub answered err, and the
+// two ways on; then is the command to run after, or "".
+func (r *repository) noRepository(err error, then string) string {
+	address := "remote " + r.remote + "'s address"
+	if url, _ := git(r.top, "remote", "get-url", r.remote); url != "" {
+		address = url
+	}
+	said := fmt.Sprintf("GitHub has no repository at %s that this machine can see (%s). Make it on GitHub, or remove the remote to keep main on this machine only (git remote remove %s)", address, reason(err), r.remote)
+	if then != "" {
+		said += ", then run " + then
+	}
+	return said
 }
 
 // mainTreeBranch is the branch the main working tree has checked out, or "a detached HEAD".

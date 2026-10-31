@@ -99,6 +99,18 @@ func TestStartRefusesWhenGitHubCannotBeReached(t *testing.T) {
 	}
 }
 
+// From wanghailei/carson#541: a repository GitHub does not have was said to be a GitHub that could not be reached, to be tried again.
+func TestStartSaysGitHubHasNoSuchRepository(t *testing.T) {
+	f := newFixture(t)
+	address := f.noSuchRepositoryOnGitHub()
+	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not started: GitHub has no repository at "+address+" that this machine can see (ERROR: Repository not found.). Make it on GitHub, or remove the remote to keep main on this machine only (git remote remove github), then run carson start fix-login again. Nothing was changed.")
+	if f.exists(f.taskFolder("fix-login")) {
+		t.Error("a task was started")
+	}
+}
+
 func TestStartRefusesANameThatIsNotLowercaseWordsJoinedByHyphens(t *testing.T) {
 	f := newFixture(t)
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "Fix_Login")

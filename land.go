@@ -148,7 +148,11 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		return g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. Nothing was changed; %s. Switch the main working tree back to main, then run carson land %s again.", branch, g.state(), t.branch)
 	}
 	if r.remote != "" {
-		if g.githubMain, err = gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main"); err != nil {
+		g.githubMain, err = gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
+		if notFound(err) {
+			return g.stop(failed, "%s. Nothing was changed; %s.", r.noRepository(err, "carson land "+t.branch+" again"), g.state())
+		}
+		if err != nil {
 			return g.stop(failed, "GitHub could not be reached (%s). Nothing was changed; %s. Run carson land %s again when GitHub answers.", reason(err), g.state(), t.branch)
 		}
 	}

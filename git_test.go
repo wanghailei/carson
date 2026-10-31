@@ -23,6 +23,29 @@ func TestGitAnswerStandsWhenAChildHoldsThePipes(t *testing.T) {
 	}
 }
 
+// noSuchRepositoryOnGitHub points GitHub's remote at a repository GitHub does not have, reached over SSH, whose answer is GitHub's:
+// ssh, here a script, says the repository is not found and fails. It returns the remote's address.
+func (f *fixture) noSuchRepositoryOnGitHub() string {
+	f.t.Helper()
+	ssh := filepath.Join(f.root, "ssh")
+	if err := os.WriteFile(ssh, []byte("#!/bin/sh\necho 'ERROR: Repository not found.' >&2\nexit 1\n"), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	address := "git@github.com:someone/no-such-repo.git"
+	f.git(f.local, "remote", "set-url", "github", address)
+	f.git(f.local, "config", "core.sshCommand", ssh)
+	return address
+}
+
+// From wanghailei/carson#541: GitHub said the repository was not found, and git followed with a line of its own saying only that the
+// remote could not be read; carson kept git's line, and said GitHub could not be reached.
+func TestGitHubsWordThatTheRepositoryIsNotFoundIsKept(t *testing.T) {
+	said := "ERROR: Repository not found.\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n"
+	if got := explanation(said); got != "ERROR: Repository not found." {
+		t.Errorf("got %q; wanted GitHub's own line", got)
+	}
+}
+
 // Ctrl-C during a call to GitHub stops git and its helpers with it, rather than leaving them running after carson.
 func TestInterruptingACallToGitHubStopsItsHelpers(t *testing.T) {
 	f := newFixture(t)

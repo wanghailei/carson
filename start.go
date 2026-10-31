@@ -223,6 +223,9 @@ func (r *repository) latestMain(name string) ([]string, error) {
 		return []string{"No GitHub remote: the task starts from local main."}, nil
 	}
 	answer, err := gitNetwork(r.top, "ls-remote", r.remote, "refs/heads/main")
+	if notFound(err) {
+		return nil, refuse(failed, "%s. Nothing was changed.", r.noRepository(err, "carson start "+name+" again"))
+	}
 	if err != nil {
 		return nil, refuse(failed, "GitHub could not be reached (%s): the latest main cannot be known. Nothing was changed; run carson start %s again when GitHub answers.", reason(err), name)
 	}
