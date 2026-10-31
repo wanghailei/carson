@@ -114,7 +114,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 
-The tests named below pass: `bin/check` ran all 202 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543, carson#537 and carson#536.
+The tests named below pass: `bin/check` ran all 204 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543, carson#537 and carson#536.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -168,7 +168,7 @@ The tests named below pass: `bin/check` ran all 202 of Carson's tests on 2026-10
   - `carson status` shows every task under its owner, as live, ended or unknown.
   - `land`, `remove` and `abandon` act only for the owner.
   - `adopt` takes over only a task whose owner is seen to have ended.
-- **Tests.** TestStartMakesTheTaskWorktreeAndItsOwnerRecord, TestLandRefusesAnotherSessionsTask, TestRemoveRefusesAnotherSessionsTask, TestAdoptRefusesALiveOwnersTask, TestAdoptAnEndedAgentsTask, TestStatusGroupsTwoTasksOfOneSessionAndPutsUnownedLast.
+- **Tests.** TestStartMakesTheTaskWorktreeAndItsOwnerRecord, TestLandRefusesAnotherSessionsTask, TestRemoveRefusesAnotherSessionsTask, TestAdoptRefusesALiveOwnersTask, TestAdoptAnEndedAgentsTask, TestStatusGroupsTwoTasksOfOneSessionAndPutsUnownedLast, TestAdoptLeavesATaskWithNoAdministrativeFolderToAPerson, TestRemoveLeavesATaskWithNoAdministrativeFolderToAPerson.
 - **Holds.** Yes, for everything done through Carson. Raw git is S8.
 
 ### S4. Removed a worktree with a session inside it

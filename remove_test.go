@@ -210,6 +210,16 @@ func TestRemoveRefusesAWorktreeMadeOutsideCarson(t *testing.T) {
 	expectLine(t, out, "Not removed: fix-login was made outside carson, so whose it is cannot be told; a person must settle it; leave it until then.")
 }
 
+func TestRemoveLeavesATaskWithNoAdministrativeFolderToAPerson(t *testing.T) {
+	f := newFixture(t)
+	_, unrecorded := f.unrecordedTask("fix-login")
+	_, err := inThisSession.ownRecord(unrecorded, "removes it")
+	if err == nil || err.Error() != "the owner record of fix-login cannot be found: git keeps no administrative folder that points back to its worktree; a person must settle it; leave it until then." {
+		t.Fatalf("got %v", err)
+	}
+	expectCode(t, codeOf(err), 1)
+}
+
 func TestRemoveClearsALeftoverBranchWhoseWorkIsOnMain(t *testing.T) {
 	f := newFixture(t)
 	f.git(f.local, "branch", "fix-login")

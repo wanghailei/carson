@@ -71,6 +71,37 @@ func TestAdoptRefusesAWorktreeMadeOutsideCarson(t *testing.T) {
 	expectLine(t, out, "Not adopted: fix-login was made outside carson, so whose it is cannot be told; a person must settle it; leave it until then.")
 }
 
+// unrecordedTask is the task name as carson finds it when no administrative folder of git's points back to its worktree. No fixture
+// here makes git list such a worktree, so the task is staged: a worktree of the fixture as carson reads it, the administrative folder
+// carson found for it cleared.
+func (f *fixture) unrecordedTask(name string) (*repository, task) {
+	f.t.Helper()
+	f.worktree(name)
+	repo, err := openRepository(f.local)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	unrecorded, _, found := repo.task(name)
+	if !found {
+		f.t.Fatalf("carson finds no task %s", name)
+	}
+	unrecorded.admin = ""
+	return repo, unrecorded
+}
+
+// The machine of the test's own Claude session, for a command called directly.
+var inThisSession = Machine{Env: inClaude.get, PID: 900, Processes: claudeRunning}
+
+func TestAdoptLeavesATaskWithNoAdministrativeFolderToAPerson(t *testing.T) {
+	f := newFixture(t)
+	repo, unrecorded := f.unrecordedTask("fix-login")
+	_, err := inThisSession.takeOver(repo, unrecorded, "")
+	if err == nil || err.Error() != "the owner record of fix-login cannot be found: git keeps no administrative folder that points back to its worktree; a person must settle it; leave it until then." {
+		t.Fatalf("got %v", err)
+	}
+	expectCode(t, codeOf(err), 1)
+}
+
 func TestAdoptTakesUpAbandonedWork(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
