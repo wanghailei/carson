@@ -272,6 +272,12 @@ func (r removal) remove(m Machine) ([]string, error) {
 		deletion = []string{"update-ref", "-d", "refs/heads/" + name, r.byChanges}
 	}
 	if _, err := git(r.repo.top, deletion...); err != nil {
+		if r.byChanges != "" {
+			// git deletes the branch only at the tip whose changes were found on main; moved since, it may hold what main lacks.
+			if now, read := git(r.repo.top, "rev-parse", "--verify", "-q", "refs/heads/"+name); read == nil && now != r.byChanges {
+				return said, refuse(failed, "its worktree at %s is removed, but branch %s has moved to %s since it was checked, so it was kept, not deleted. Run carson remove %s again to check it afresh.", r.task.path, name, r.repo.short(now), name)
+			}
+		}
 		return said, refuse(failed, "its worktree at %s is removed, but branch %s could not be deleted (%s); it holds nothing main lacks. Run carson remove %s again once that is cleared.", r.task.path, name, reason(err), name)
 	}
 	worktree := "its worktree at " + r.task.path

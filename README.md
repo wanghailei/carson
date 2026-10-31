@@ -114,7 +114,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 
-The tests named below pass: `bin/check` ran all 205 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543, carson#537 and carson#536.
+The tests named below pass: `bin/check` ran all 206 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543, carson#537 and carson#536.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -278,10 +278,10 @@ This is a situation, not damage: a person works on the same repository from a se
   - 2026-09-19 (aix#174 to aix#176, aix#179, aix#183 to aix#185): six lessons on two more branches never landed.
 - **Root cause.** A session ended with its work committed but not landed, sometimes after a landing had failed, and nothing showed anyone the branches holding work `main` lacked.
 - **Prevention.**
-  - `carson remove` refuses a task whose work is not on `main`, so the task and its branch stay. A task landed by squash or rebase, each of whose commits `main` holds with exactly the same changes, every space alike, in other commits, has landed, and is removed (carson#536). `git cherry` is not taken as proof: it ignores whitespace, so a line indented otherwise than on `main`, which is other content in Python, YAML or a Makefile, would pass.
+  - `carson remove` refuses a task whose work is not on `main`, so the task and its branch stay. A task landed by squash or rebase, each of whose commits `main` holds with exactly the same changes, every space alike, in other commits, has landed, and is removed (carson#536). `git cherry` is not taken as proof: it ignores whitespace, so a line indented otherwise than on `main`, which is other content in Python, YAML or a Makefile, would pass. The branch is deleted only while it is still where it was checked; one that has moved since is kept, and `carson remove` says so.
   - `carson status` shows every task with the commits `main` lacks, under its owner, live or ended.
   - An ended owner's task can be taken up with `carson adopt` and landed.
-- **Tests.** TestRemoveRefusesWorkNotOnMain, TestRemoveRefusesATaskWithOneCommitWhoseChangesAreNotOnMain, TestRemoveRefusesATaskWhoseChangesMainHoldsOnlyWithOtherWhitespace, TestRemoveRemovesATaskLandedBySquash, TestRemoveRemovesATaskLandedByRebase, TestStatusLiveTaskAtWork, TestAdoptAnEndedAgentsTask.
+- **Tests.** TestRemoveRefusesWorkNotOnMain, TestRemoveRefusesATaskWithOneCommitWhoseChangesAreNotOnMain, TestRemoveRefusesATaskWhoseChangesMainHoldsOnlyWithOtherWhitespace, TestRemoveSaysABranchThatMovedSinceItWasCheckedIsKept, TestRemoveRemovesATaskLandedBySquash, TestRemoveRemovesATaskLandedByRebase, TestStatusLiveTaskAtWork, TestAdoptAnEndedAgentsTask.
 - **Holds.** Partly.
   - A branch that holds work `main` lacks but has no worktree is not shown: `carson status` lists only `abandoned/` branches.
   - No test shows an ended owner's unlanded task in `status`.

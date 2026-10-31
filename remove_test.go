@@ -19,6 +19,19 @@ type busy struct {
 
 func (b busy) Inside(dir string) ([]string, error) { return b.inside, b.err }
 
+// committing is a machine where, while carson looks for processes inside the worktree at dir, a commit is made there: the branch moves
+// past the tip carson has read.
+type committing struct {
+	stranger
+	f   *fixture
+	dir string
+}
+
+func (c committing) Inside(dir string) ([]string, error) {
+	c.f.commit(c.dir, "late.rb")
+	return nil, nil
+}
+
 func (f *fixture) remove(args ...string) (string, int) {
 	f.t.Helper()
 	return f.runIn(inClaude, f.local, claudeRunning, append([]string{"remove"}, args...)...)
@@ -173,6 +186,21 @@ func TestRemoveRefusesATaskWhoseChangesMainHoldsOnlyWithOtherWhitespace(t *testi
 	expectLine(t, out, "Not removed: fix-login holds 1 commit not on main. Land it with carson land fix-login, or abandon the task: carson abandon fix-login")
 	if !f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") == "" {
 		t.Error("the worktree or the branch was removed")
+	}
+}
+
+// From carson#536: when a branch landed by squash moved after the check, git kept it, and carson said it held nothing main lacks.
+func TestRemoveSaysABranchThatMovedSinceItWasCheckedIsKept(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.git(f.local, "merge", "-q", "--squash", "fix-login")
+	f.git(f.local, "commit", "-q", "-m", "Fix login (#12)")
+	out, code := f.runIn(inClaude, f.local, committing{stranger: claudeRunning, f: f, dir: dir}, "remove", "fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not removed: its worktree at "+dir+" is removed, but branch fix-login has moved to "+f.short(f.local, "fix-login")+" since it was checked, so it was kept, not deleted. Run carson remove fix-login again to check it afresh.")
+	if f.git(f.local, "branch", "--list", "fix-login") == "" {
+		t.Error("the branch was deleted")
 	}
 }
 
