@@ -46,6 +46,13 @@ func git(dir string, args ...string) (string, error) {
 	return run(exec.Command("git", append([]string{"-C", dir}, args...)...), args)
 }
 
+// gitWithInput runs git in dir as git does, with input on its standard input, for a command that reads what to work on from there.
+func gitWithInput(dir, input string, args ...string) (string, error) {
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Stdin = strings.NewReader(input)
+	return run(command, args)
+}
+
 // networkLimit is how long carson waits for GitHub before saying it gave no answer.
 var networkLimit = 30 * time.Second
 

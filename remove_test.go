@@ -157,6 +157,25 @@ func TestRemoveRefusesATaskWithOneCommitWhoseChangesAreNotOnMain(t *testing.T) {
 	}
 }
 
+// From carson#536: git cherry's patch-ids ignore whitespace, so a task whose change main held only indented otherwise, which is other
+// content in Python, YAML or a Makefile, was removed as landed, and its branch deleted.
+func TestRemoveRefusesATaskWhoseChangesMainHoldsOnlyWithOtherWhitespace(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, "config.yaml", "login:\n  retries: 3\n")
+	f.git(dir, "add", "config.yaml")
+	f.git(dir, "commit", "-q", "-m", "add config.yaml")
+	f.write(f.local, "config.yaml", "login:\n    retries: 3\n")
+	f.git(f.local, "add", "config.yaml")
+	f.git(f.local, "commit", "-q", "-m", "Add config.yaml (#12)")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not removed: fix-login holds 1 commit not on main. Land it with carson land fix-login, or abandon the task: carson abandon fix-login")
+	if !f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") == "" {
+		t.Error("the worktree or the branch was removed")
+	}
+}
+
 func TestRemoveKeepsIgnoredFiles(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")

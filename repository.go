@@ -79,8 +79,10 @@ func (r *repository) notOnMain(tip string) (int, error) {
 }
 
 // landedByChanges is whether main holds the changes of every commit at tip that it lacks, in other commits, as when a task lands by
-// rebase, or by squash of its one commit: git cherry compares each commit's changes with main's, and marks one main holds with "-".
-// One mark for each commit main lacks, each of them "-", is the proof; anything less is not.
+// rebase, or by squash of its one commit. The proof is that each commit main lacks makes, byte for byte, the changes of its own commit
+// on main's side: its verbatim patch-id is one of theirs, each of theirs answering for one of its. git cherry is no proof, since its
+// patch-ids ignore whitespace: a line indented otherwise than on main, which is other content in Python, YAML or a Makefile, would
+// pass. A merge, or a commit that changes nothing, has no patch-id, so a task holding one is never proved.
 func (r *repository) landedByChanges(tip string) (bool, error) {
 	if r.noMainYet() {
 		return false, nil
@@ -89,20 +91,53 @@ func (r *repository) landedByChanges(tip string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	out, err := git(r.top, "cherry", "main", tip)
+	own, err := r.patchIDs("main.." + tip)
 	if err != nil {
 		return false, err
 	}
-	marks := lines(out)
-	if ahead == 0 || len(marks) != ahead {
+	if ahead == 0 || len(own) != ahead {
 		return false, nil
 	}
-	for _, mark := range marks {
-		if !strings.HasPrefix(mark, "- ") {
+	mains, err := r.patchIDs(tip + "..main")
+	if err != nil {
+		return false, err
+	}
+	onMain := map[string]int{}
+	for _, id := range mains {
+		onMain[id]++
+	}
+	for _, id := range own {
+		if onMain[id] == 0 {
 			return false, nil
 		}
+		onMain[id]--
 	}
 	return true, nil
+}
+
+// patchIDs are the verbatim patch-ids of the commits of revisions, merges apart: each the hash of a commit's changes exactly as made,
+// every space kept, though not of the line numbers where they fall. A commit that changes nothing has none. diff-tree, not log, writes
+// the changes, since it reads none of the settings that change how a diff looks.
+func (r *repository) patchIDs(revisions string) ([]string, error) {
+	commits, err := git(r.top, "rev-list", "--no-merges", revisions)
+	if err != nil || commits == "" {
+		return nil, err
+	}
+	diffs, err := gitWithInput(r.top, commits+"\n", "diff-tree", "--stdin", "-r", "-p", "--full-index")
+	if err != nil || diffs == "" {
+		return nil, err
+	}
+	// git's last newline, which run drops, is part of the last line, and so of the verbatim patch-id of the last commit.
+	out, err := gitWithInput(r.top, diffs+"\n", "patch-id", "--verbatim")
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, line := range lines(out) {
+		id, _, _ := strings.Cut(line, " ")
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func (r *repository) count(revisions string) (int, error) {
