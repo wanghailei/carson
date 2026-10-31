@@ -78,6 +78,33 @@ func (r *repository) notOnMain(tip string) (int, error) {
 	return r.count("main.." + tip)
 }
 
+// landedByChanges is whether main holds the changes of every commit at tip that it lacks, in other commits, as when a task lands by
+// rebase, or by squash of its one commit: git cherry compares each commit's changes with main's, and marks one main holds with "-".
+// One mark for each commit main lacks, each of them "-", is the proof; anything less is not.
+func (r *repository) landedByChanges(tip string) (bool, error) {
+	if r.noMainYet() {
+		return false, nil
+	}
+	ahead, err := r.count("main.." + tip)
+	if err != nil {
+		return false, err
+	}
+	out, err := git(r.top, "cherry", "main", tip)
+	if err != nil {
+		return false, err
+	}
+	marks := lines(out)
+	if ahead == 0 || len(marks) != ahead {
+		return false, nil
+	}
+	for _, mark := range marks {
+		if !strings.HasPrefix(mark, "- ") {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func (r *repository) count(revisions string) (int, error) {
 	out, err := git(r.top, "rev-list", "--count", revisions)
 	if err != nil {

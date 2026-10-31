@@ -99,6 +99,7 @@ type removal struct {
 	gone        bool     // the worktree's folder is gone
 	ahead       int      // commits the branch holds that main lacks
 	uncommitted []string // what the worktree holds that its commit does not, ignored files apart
+	byChanges   string   // the branch's tip, when main holds the changes of each of its commits in other commits; "" otherwise
 }
 
 // checkRemoval checks, before anything is changed, that the task may be removed, or with abandoned, kept on a branch and its worktree
@@ -177,7 +178,15 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 	case len(r.uncommitted) > 0:
 		return removal{}, refuse(refused, "%s holds %s — %s. Commit it and land it, or abandon the task: carson abandon %s", name, plural(len(r.uncommitted), "uncommitted file"), strings.Join(r.uncommitted, ", "), name)
 	case r.ahead > 0:
-		return removal{}, refuse(refused, "%s holds %s not on main. Land it with carson land %s, or abandon the task: carson abandon %s", name, plural(r.ahead, "commit"), name, name)
+		// A squash or a rebase lands a task's changes in commits of main's own, so its branch is no ancestor of main, yet it has landed.
+		landed, err := repo.landedByChanges(t.head)
+		if err != nil {
+			return removal{}, refuse(failed, "what %s holds against main cannot be read (%s). Nothing was changed; run %s once that is cleared.", name, reason(err), again)
+		}
+		if !landed {
+			return removal{}, refuse(refused, "%s holds %s not on main. Land it with carson land %s, or abandon the task: carson abandon %s", name, plural(r.ahead, "commit"), name, name)
+		}
+		r.byChanges = t.head
 	}
 	return r, nil
 }
@@ -256,7 +265,13 @@ func (r removal) remove(m Machine) ([]string, error) {
 	if r.task.noCommitYet() {
 		return append([]string{fmt.Sprintf("Removed %s: its worktree at %s, which held no commit. It was owned by %s.", name, r.task.path, ownerName(r.record))}, said...), nil
 	}
-	if _, err := git(r.repo.top, "branch", "-d", name); err != nil {
+	deletion := []string{"branch", "-d", name}
+	if r.byChanges != "" {
+		// git's safe delete measures by ancestry, which a squash or rebase leaves behind; the branch is deleted only while it is still at
+		// the tip whose changes checkRemoval found on main.
+		deletion = []string{"update-ref", "-d", "refs/heads/" + name, r.byChanges}
+	}
+	if _, err := git(r.repo.top, deletion...); err != nil {
 		return said, refuse(failed, "its worktree at %s is removed, but branch %s could not be deleted (%s); it holds nothing main lacks. Run carson remove %s again once that is cleared.", r.task.path, name, reason(err), name)
 	}
 	worktree := "its worktree at " + r.task.path
@@ -264,7 +279,10 @@ func (r removal) remove(m Machine) ([]string, error) {
 		worktree += ", whose folder was already gone"
 	}
 	branch := "its branch, which held nothing main lacks"
-	if r.record.Landed != "" {
+	switch {
+	case r.byChanges != "":
+		branch = "its branch, whose changes are on main in other commits, as after a squash or rebase"
+	case r.record.Landed != "":
 		branch = "its branch, landed on main at " + r.repo.short(r.record.Landed)
 	}
 	result := fmt.Sprintf("Removed %s: %s, and %s. It was owned by %s.", name, worktree, branch, ownerName(r.record))

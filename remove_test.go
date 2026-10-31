@@ -110,6 +110,53 @@ func TestRemoveRefusesWorkNotOnMain(t *testing.T) {
 	expectLine(t, out, "Not removed: fix-login holds 1 commit not on main. Land it with carson land fix-login, or abandon the task: carson abandon fix-login")
 }
 
+// From wanghailei/carson#536: a task landed by squash or rebase, as GitHub's merge buttons land one, holds commits main has only as
+// other commits with the same changes; remove refused it as work not on main, and only a person could clear it.
+func TestRemoveRemovesATaskLandedBySquash(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.commit(f.local, "other.txt")
+	f.git(f.local, "merge", "-q", "--squash", "fix-login")
+	f.git(f.local, "commit", "-q", "-m", "Fix login (#12)")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, whose changes are on main in other commits, as after a squash or rebase. It was owned by Claude session 9cb74d03-a065.")
+	if f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") != "" {
+		t.Error("the worktree or the branch is still there")
+	}
+}
+
+func TestRemoveRemovesATaskLandedByRebase(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.commit(dir, "session.rb")
+	f.commit(f.local, "other.txt")
+	f.git(f.local, "cherry-pick", "main..fix-login")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 0)
+	expectLine(t, out, "Removed fix-login: its worktree at "+dir+", and its branch, whose changes are on main in other commits, as after a squash or rebase.")
+	if f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") != "" {
+		t.Error("the worktree or the branch is still there")
+	}
+}
+
+func TestRemoveRefusesATaskWithOneCommitWhoseChangesAreNotOnMain(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.commit(dir, "session.rb")
+	f.commit(f.local, "other.txt")
+	f.git(f.local, "cherry-pick", "fix-login~1")
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not removed: fix-login holds 2 commits not on main. Land it with carson land fix-login, or abandon the task: carson abandon fix-login")
+	if !f.exists(dir) || f.git(f.local, "branch", "--list", "fix-login") == "" {
+		t.Error("the worktree or the branch was removed")
+	}
+}
+
 func TestRemoveKeepsIgnoredFiles(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
