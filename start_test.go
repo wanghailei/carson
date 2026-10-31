@@ -105,7 +105,8 @@ func TestStartSaysGitHubHasNoSuchRepository(t *testing.T) {
 	address := f.noSuchRepositoryOnGitHub()
 	out, code := f.runIn(inClaude, f.local, claudeRunning, "start", "fix-login")
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not started: GitHub has no repository at "+address+" that this machine can see (ERROR: Repository not found.). Make it on GitHub, or remove the remote to keep main on this machine only (git remote remove github), then run carson start fix-login again. Nothing was changed.")
+	expectLine(t, out, "Not started: GitHub has no repository at "+address+" that this machine can see (ERROR: Repository not found.); a person must settle it, by making the repository on GitHub or by deciding to keep main on this machine only; run carson start fix-login again once it is settled. Nothing was changed.")
+	expectNoLine(t, out, "git remote")
 	if f.exists(f.taskFolder("fix-login")) {
 		t.Error("a task was started")
 	}

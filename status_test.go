@@ -113,7 +113,8 @@ func TestStatusSaysGitHubHasNoSuchRepository(t *testing.T) {
 	address := f.noSuchRepositoryOnGitHub()
 	out, code := f.run(f.local, stranger{}, "status")
 	expectCode(t, code, 0)
-	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+". GitHub has no repository at "+address+" that this machine can see (ERROR: Repository not found.). Make it on GitHub, or remove the remote to keep main on this machine only (git remote remove github).")
+	expectLine(t, out, "main: at "+f.git(f.local, "rev-parse", "--short", "main")+". GitHub has no repository at "+address+" that this machine can see (ERROR: Repository not found.); a person must settle it, by making the repository on GitHub or by deciding to keep main on this machine only.")
+	expectNoLine(t, out, "git remote")
 }
 
 func TestStatusBeforeTheFirstLanding(t *testing.T) {

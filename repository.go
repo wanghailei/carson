@@ -262,16 +262,17 @@ func (r *repository) mainAgainstGitHub() string {
 	}
 }
 
-// noRepository says that GitHub has no repository at the remote's address that this machine can see, as GitHub answered err, and the
-// two ways on; then is the command to run after, or "".
+// noRepository says that GitHub has no repository at the remote's address that this machine can see, as GitHub answered err, and that
+// a person must settle it: whether to make the repository or keep main on this machine only is not an agent's to decide, nor is
+// changing remotes its to do. then is the command to run once it is settled, or "".
 func (r *repository) noRepository(err error, then string) string {
 	address := "remote " + r.remote + "'s address"
 	if url, _ := git(r.top, "remote", "get-url", r.remote); url != "" {
 		address = url
 	}
-	said := fmt.Sprintf("GitHub has no repository at %s that this machine can see (%s). Make it on GitHub, or remove the remote to keep main on this machine only (git remote remove %s)", address, reason(err), r.remote)
+	said := fmt.Sprintf("GitHub has no repository at %s that this machine can see (%s); a person must settle it, by making the repository on GitHub or by deciding to keep main on this machine only", address, reason(err))
 	if then != "" {
-		said += ", then run " + then
+		said += "; run " + then + " once it is settled"
 	}
 	return said
 }
