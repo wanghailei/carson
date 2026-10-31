@@ -445,6 +445,9 @@ func (r *repository) state(t task) string {
 		}
 		return fmt.Sprintf("its folder is gone; branch %s holds %s not on main.", t.branch, plural(ahead, "commit"))
 	}
+	if gone := brokenLink(t.path); gone != "" {
+		return fmt.Sprintf("linked to %s, which is gone, as when the repository's folder is moved or renamed; link it back with: carson adopt %s.", gone, t.name())
+	}
 	if t.prunable != "" {
 		return fmt.Sprintf("git cannot find its checkout (%s); what the folder holds is unknown.", t.prunable)
 	}

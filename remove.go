@@ -117,6 +117,9 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 	if err != nil {
 		return removal{}, err
 	}
+	if err := linkGone(t.path, name); err != nil {
+		return removal{}, err
+	}
 	if on != "" {
 		return removal{}, offBranch(t, on, command+" "+name)
 	}
@@ -183,7 +186,7 @@ func (m Machine) checkRemoval(repo *repository, t task, on string, abandoned boo
 // that owner is live. verb is what only the owner does: "lands it", "removes it".
 func (m Machine) ownRecord(t task, verb string) (Record, error) {
 	if t.admin == "" {
-		return Record{}, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree. Run git worktree repair in the main working tree, then carson again.", t.branch)
+		return Record{}, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree; "+settled+".", t.branch)
 	}
 	record, found, err := readOwner(t.admin)
 	if err != nil {

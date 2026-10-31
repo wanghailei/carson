@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -140,7 +141,7 @@ const (
 func (m Machine) repository() (*repository, error) {
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
-		return nil, refuse(failed, notARepository, m.Dir)
+		return nil, m.notOpened()
 	}
 	if err != nil {
 		return nil, refuse(failed, unreadableRepository, reason(err))
@@ -149,6 +150,17 @@ func (m Machine) repository() (*repository, error) {
 		return nil, refuse(failed, "%s. Nothing was changed.", missing)
 	}
 	return repo, nil
+}
+
+// notOpened says why git could not open a repository where carson runs: it runs in a task's worktree whose link to its repository is
+// gone — the worktree named after its task, as carson names it — or not inside a git repository at all.
+func (m Machine) notOpened() error {
+	if worktree := worktreeAbove(m.Dir); worktree != "" {
+		if err := linkGone(worktree, filepath.Base(worktree)); err != nil {
+			return err
+		}
+	}
+	return refuse(failed, notARepository, m.Dir)
 }
 
 // oneTask reads a command's arguments: one task's name, and no options.

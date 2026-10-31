@@ -57,6 +57,9 @@ func (m Machine) taskNamed(name, verb string) (*repository, task, Record, error)
 	if err != nil {
 		return nil, task{}, Record{}, err
 	}
+	if err := linkGone(t.path, name); err != nil {
+		return nil, task{}, Record{}, err
+	}
 	if on != "" {
 		return nil, task{}, Record{}, offBranch(t, on, "carson land "+name)
 	}

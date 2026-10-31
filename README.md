@@ -96,7 +96,7 @@ The real-world damage agents have done while working in shared git repositories.
 
 **April to August is thin.** Only three incidents fall in those five months: two in July (S8) and one in August (S1). Every issue from that time has now been read. The agents' session transcripts from that time no longer exist, so damage that was never written up as an issue cannot be found.
 
-### Status on 2026-10-19
+### Status on 2026-10-31
 
 | | Scenario | Prevented by | Holds |
 |---|---|---|---|
@@ -112,7 +112,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S10 | Made worktrees outside Carson | Carson, Claude Code's worktree hooks | Partly: a raw `git worktree add` is open in the gate |
 | S11 | Work reached GitHub's `main` from another machine | Carson | Yes |
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
-| S13 | Moved a repository's folder, stranding its tasks | Carson | Partly: only `carson adopt` names the cause |
+| S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 
 The tests named below pass: `bin/check` ran all 190 of Carson's tests on 2026-10-19, with S13's change.
 
@@ -292,9 +292,9 @@ This is a situation, not damage: a person moves or renames a repository's folder
 
 - **What happened.** 2026-10-18 (carson#542): a person renamed a repository's folder while five finished tasks waited to land. Each worktree's `.git` file still named the old folder, so git could open none of them. `carson status` showed each as "state unknown (fatal: not a git repository: (null))", `carson abandon` refused, and `carson adopt` took one over without a word. AGT's gate refused git's own `git worktree repair` as Carson's work, and the five tasks waited a day.
 - **Root cause.** git links a worktree both ways: the repository's side names the worktree, and the worktree's `.git` file names the repository's administrative folder for it, by its full path. A move keeps the first and breaks the second, and nothing in Carson looked at the link.
-- **Prevention.** `carson adopt` links a task's worktree back to its repository when the folder its `.git` file names is gone, before it takes the task over, and for a task already yours too. It writes only that task's link, from the repository's side: git's own repair, run from the repository, relinks every worktree there, other agents' tasks among them. When it cannot, it says why and changes nothing.
-- **Tests.** TestAdoptRelinksAnEndedAgentsTaskAfterTheRepositoryMoved, TestAdoptRelinksATaskAlreadyYoursAfterTheRepositoryMoved, TestAdoptRelinksALandedTaskSoThatItIsRemoved, TestAdoptRelinksOnlyTheTaskItAdopts, TestAdoptSaysWhyAWorktreeCannotBeRelinkedAndChangesNothing, TestAdoptRelinksWithoutWritingThroughAFileInTheWay, TestWriteLinkLeavesNothingBesideWhenItCannotBePutInPlace.
-- **Holds.** Partly: `carson status`, `land`, `remove` and `abandon`, meeting such a worktree, still say only "not a git repository", and do not name `carson adopt`.
+- **Prevention.** `carson adopt` links a task's worktree back to its repository when the folder its `.git` file names is gone, before it takes the task over, and for a task already yours too. It writes only that task's link, from the repository's side: git's own repair, run from the repository, relinks every worktree there, other agents' tasks among them. When it cannot, it says why and changes nothing. `carson status`, `land`, `remove` and `abandon`, meeting such a worktree, say so, name the folder its link points to, and point to `carson adopt` (carson#543).
+- **Tests.** TestAdoptRelinksAnEndedAgentsTaskAfterTheRepositoryMoved, TestAdoptRelinksATaskAlreadyYoursAfterTheRepositoryMoved, TestAdoptRelinksALandedTaskSoThatItIsRemoved, TestAdoptRelinksOnlyTheTaskItAdopts, TestAdoptSaysWhyAWorktreeCannotBeRelinkedAndChangesNothing, TestAdoptRelinksWithoutWritingThroughAFileInTheWay, TestWriteLinkLeavesNothingBesideWhenItCannotBePutInPlace, TestStatusNamesAdoptForATaskAfterTheRepositoryMoved, TestLandNamesAdoptAfterTheRepositoryMoved, TestRemoveNamesAdoptAfterTheRepositoryMoved, TestRemoveAbandonedNamesAdoptAfterTheRepositoryMoved.
+- **Holds.** Yes.
 
 ### Open
 
@@ -306,7 +306,6 @@ This is a situation, not damage: a person moves or renames a repository's folder
    - Refuse a raw `git worktree add`, pointing to `carson start` and `carson adopt`.
    - Refuse a raw `git merge --ff-only` in the main working tree, pointing to `carson land`.
 3. **S12: show unlanded branches.** `carson status` lists every branch that holds work `main` lacks but has no worktree, and names `carson adopt`. A test shows an ended owner's unlanded task.
-4. **S13: name the cause and the way on (carson#543).** `carson status`, `land`, `remove` and `abandon`, meeting a worktree linked to a folder that is gone, say so and name `carson adopt`.
 
 ### Considered and left out
 

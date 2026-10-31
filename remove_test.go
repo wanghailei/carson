@@ -40,6 +40,39 @@ func (f *fixture) mergedTask(name string) string {
 	return dir
 }
 
+// linkedToGone is what carson says of the task's worktree at dir, still linked to the repository's folder before it moved, old.
+func linkedToGone(dir, old string) string {
+	name := filepath.Base(dir)
+	return name + "'s worktree at " + dir + " is linked to " + filepath.Join(old, ".git", "worktrees", name) + ", which is gone, as when the repository's folder is moved or renamed. Nothing was changed; link it back from the repository's folder with: carson adopt " + name
+}
+
+// From wanghailei/carson#543: after the repository's folder moved, remove said only that git could not read the worktree, with no
+// cause and no way on.
+func TestRemoveNamesAdoptAfterTheRepositoryMoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.mergedTask("fix-login")
+	old := f.moveRepository()
+	out, code := f.remove("fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not removed: "+linkedToGone(dir, old))
+	if !f.exists(dir) {
+		t.Error("the worktree was removed")
+	}
+}
+
+func TestRemoveAbandonedNamesAdoptAfterTheRepositoryMoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	old := f.moveRepository()
+	out, code := f.abandon("fix-login")
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not abandoned: "+linkedToGone(dir, old))
+	if f.git(f.local, "branch", "--list", "abandoned/fix-login") != "" {
+		t.Error("the task was abandoned")
+	}
+}
+
 func TestRemoveRemovesAMergedTask(t *testing.T) {
 	f := newFixture(t)
 	dir := f.mergedTask("fix-login")

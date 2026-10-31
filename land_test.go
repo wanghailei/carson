@@ -188,6 +188,26 @@ func TestLandRefusesATaskMadeOutsideCarson(t *testing.T) {
 	expectLine(t, out, "Not landed: fix-login was made outside carson, so whose it is cannot be told; a person must settle it; leave it until then.")
 }
 
+// From wanghailei/carson#543: after the repository's folder moved, land run in the task's worktree said the folder was not inside a git
+// repository, with no cause and no way on.
+func TestLandNamesAdoptAfterTheRepositoryMoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	old := f.moveRepository()
+	main := f.git(f.local, "rev-parse", "main")
+	// Run in the worktree, in a folder inside it, and in the repository.
+	os.MkdirAll(filepath.Join(dir, "sub"), 0o755)
+	for _, here := range []string{dir, filepath.Join(dir, "sub"), f.local} {
+		out, code := f.runIn(inClaude, here, claudeRunning, "land", "fix-login")
+		expectCode(t, code, 1)
+		expectLine(t, out, "Not landed: "+linkedToGone(dir, old))
+	}
+	if f.git(f.local, "rev-parse", "main") != main {
+		t.Error("main moved")
+	}
+}
+
 func TestLandRefusesWhenGitHubCannotBeReached(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")

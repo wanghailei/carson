@@ -216,6 +216,20 @@ func TestStatusWorktreeFolderGone(t *testing.T) {
 	expectLine(t, out, "vanished at "+dir+": its folder is gone; branch vanished holds 1 commit not on main.")
 }
 
+// From wanghailei/carson#543: after the repository's folder moved, status showed each task as "state unknown (fatal: not a git
+// repository)", and run in a task's worktree said it was not inside a git repository, with no cause and no way on.
+func TestStatusNamesAdoptForATaskAfterTheRepositoryMoved(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	old := f.moveRepository()
+	out, code := f.run(f.local, stranger{}, "status")
+	expectCode(t, code, 0)
+	expectLine(t, out, "fix-login at "+dir+": linked to "+filepath.Join(old, ".git", "worktrees", "fix-login")+", which is gone, as when the repository's folder is moved or renamed; link it back with: carson adopt fix-login.")
+	out, code = f.run(dir, stranger{}, "status")
+	expectCode(t, code, 1)
+	expectLine(t, out, linkedToGone(dir, old))
+}
+
 func TestBareCarsonPrintsItsFourCommands(t *testing.T) {
 	f := newFixture(t)
 	out, code := f.run(f.local, stranger{})

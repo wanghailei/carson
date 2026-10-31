@@ -19,7 +19,7 @@ func status(m Machine, args []string) int {
 	}
 	repo, err := openRepository(m.Dir)
 	if errors.Is(err, errNotARepository) {
-		fmt.Fprintf(m.Out, notARepository+"\n", m.Dir)
+		fmt.Fprintln(m.Out, m.notOpened().Error())
 		return failed
 	}
 	if err != nil {

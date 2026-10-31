@@ -47,7 +47,7 @@ func (m Machine) adoptTask(name string) ([]string, error) {
 func (m Machine) takeOver(repo *repository, t task, on string) ([]string, error) {
 	name := t.branch
 	if t.admin == "" {
-		return nil, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree. Run git worktree repair in the main working tree, then carson adopt %s again.", name, name)
+		return nil, refuse(failed, "the owner record of %s cannot be found: git keeps no administrative folder that points back to its worktree; "+settled+".", name)
 	}
 	record, found, err := readOwner(t.admin)
 	switch {
@@ -225,6 +225,32 @@ func brokenLink(worktree string) string {
 		return ""
 	}
 	return named
+}
+
+// linkGone refuses a task's worktree whose .git file names a git folder that is gone, and says the way back, carson adopt, which
+// relinks only the task it adopts; nil when the link is whole. git itself, asked about such a worktree, says only that it is not a git
+// repository.
+func linkGone(worktree, name string) error {
+	gone := brokenLink(worktree)
+	if gone == "" {
+		return nil
+	}
+	return refuse(failed, "%s's worktree at %s is linked to %s, which is gone, as when the repository's folder is moved or renamed. Nothing was changed; link it back from the repository's folder with: carson adopt %s", name, worktree, gone, name)
+}
+
+// worktreeAbove is the nearest folder at or above dir that holds a .git, or "" when there is none: where carson runs inside a worktree
+// git cannot open, the worktree.
+func worktreeAbove(dir string) string {
+	for {
+		if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 // adoptedWithoutFolder says what an adopted task whose worktree folder is gone holds, and the one way on: to keep its commits as
