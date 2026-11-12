@@ -621,3 +621,24 @@ func TestLandRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T)
 		t.Errorf("not said that the task carries GitHub's main, or its own commits miscounted:\n%s", out)
 	}
 }
+
+// The land checks of 5.4.0 were taken out in 5.5.0: carson land judges no commit's message, and runs only the repository's own
+// bin/check. A machine's ~/.carson/config.json keeps its Carson 4 settings, with no land key, and the landing is as in 5.3.1.
+func TestLandLandsACommitThatBundlesTwoChangesWithAConfigurationThatHasNoLandKey(t *testing.T) {
+	f := newFixture(t)
+	os.MkdirAll(filepath.Join(f.root, ".carson"), 0o755)
+	f.write(f.root, ".carson/config.json", `{"govern": {"repos": ["`+f.local+`"]}, "git": {"remote": "github"}}`+"\n")
+	dir := f.startTask("sign-in")
+	f.write(dir, "login.rb", "signs a user in\n")
+	f.write(dir, "logout.rb", "signs a user out\n")
+	f.git(dir, "add", "login.rb", "logout.rb")
+	f.git(dir, "commit", "-q", "-m", "Add login and logout")
+	tip := f.git(dir, "rev-parse", "HEAD")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	short := f.short(dir, "HEAD")
+	expectLine(t, out, "Landed sign-in on main by fast-forward at "+short+" (1 commit) and pushed; GitHub's main is "+short+". No checks declared (no bin/check). Remove it with: carson remove sign-in (from outside its worktree).")
+	if f.git(f.local, "rev-parse", "main") != tip || f.git(f.github, "rev-parse", "main") != tip {
+		t.Error("main, here or on GitHub, is not the task's tip")
+	}
+}
