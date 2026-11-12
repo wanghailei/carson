@@ -134,6 +134,251 @@ func TestLandSaysTheChecksPassed(t *testing.T) {
 	}
 }
 
+// configure writes carson's configuration, ~/.carson/config.json, in the test's home.
+func (f *fixture) configure(content string) {
+	f.t.Helper()
+	os.MkdirAll(filepath.Join(f.root, ".carson"), 0o755)
+	if err := os.WriteFile(filepath.Join(f.root, ".carson", "config.json"), []byte(content), 0o644); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// landCheck puts a land check, script, at ~/checks/<name> in the test's home, and lists it alone in carson's configuration; it returns
+// the check as the configuration lists it.
+func (f *fixture) landCheck(name, script string) string {
+	f.t.Helper()
+	listed := f.checkFile(name, script)
+	f.configure(`{"land": {"checks": ["` + listed + `"]}}`)
+	return listed
+}
+
+// checkFile puts script at ~/checks/<name> in the test's home, and returns it as carson's configuration would list it.
+func (f *fixture) checkFile(name, script string) string {
+	f.t.Helper()
+	os.MkdirAll(filepath.Join(f.root, "checks"), 0o755)
+	if err := os.WriteFile(filepath.Join(f.root, "checks", name), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+	return "~/checks/" + name
+}
+
+// calls is what the land checks wrote to ~/check-calls: the range each was given and the folder it ran in, a line each.
+func (f *fixture) calls() string {
+	f.t.Helper()
+	content, _ := os.ReadFile(filepath.Join(f.root, "check-calls"))
+	return string(content)
+}
+
+// oneChange stands in for a check of the master's rule that one change is one commit: it refuses a commit in its range whose subject
+// joins two changes with " and ", and notes the range and folder it ran with in ~/check-calls.
+const oneChange = `subjects=$(git log --format=%s "$1") || exit 2
+echo "$1 $(pwd -P)" >> "$HOME/check-calls"
+bundled=$(echo "$subjects" | grep ' and ')
+if [ -n "$bundled" ]; then echo "one commit holds two changes: $bundled"; exit 1; fi`
+
+// What every refusal over the land checks' configuration ends with: carson lands nothing it cannot check, and a person settles it.
+const unsettledCheck = ", and carson lands nothing it cannot check. Nothing was changed; a person must settle it; leave it until then, and run carson land fix-login again once it is settled."
+
+func TestLandRefusesATaskWhoseCommitsALandCheckFails(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.write(dir, "login.rb", "login\n")
+	f.write(dir, "logout.rb", "logout\n")
+	f.git(dir, "add", ".")
+	f.git(dir, "commit", "-q", "-m", "Add login and logout")
+	f.check(dir, "echo bin/check ran first; exit 1") // the land checks run before the repository's own
+	main := f.git(f.local, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: the land check "+listed+" main..fix-login, from ~/.carson/config.json, failed (exit 1). Its output ends:")
+	expectLine(t, out, "one commit holds two changes: Add login and logout")
+	if !strings.Contains(out, "Fix what "+listed+" reports in fix-login's commits, then run carson land fix-login again.") {
+		t.Errorf("no way on after a failed land check:\n%s", out)
+	}
+	if f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != main {
+		t.Error("main moved, here or on GitHub, although a land check failed")
+	}
+}
+
+func TestLandRunsTheLandChecksOnTheTasksOwnCommitsInItsWorktree(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.check(dir, "exit 0")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	short := f.short(dir, "HEAD")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+". Checks: "+listed+" and bin/check passed.")
+	if calls := f.calls(); calls != "main..fix-login "+dir+"\n" {
+		t.Errorf("the land check was run with %q, not on main..fix-login in the task's worktree", calls)
+	}
+}
+
+// The first task of a repository with no commit has every commit it holds to check: the land checks are given the task alone.
+func TestLandOfTheFirstTaskGivesTheLandChecksTheWholeTask(t *testing.T) {
+	f := newEmptyFixture(t)
+	listed := f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit) and pushed; GitHub's main is "+f.short(dir, "HEAD")+". Checks: "+listed+" passed; the repository declares none of its own (no bin/check).")
+	if calls := f.calls(); calls != "fix-login "+dir+"\n" {
+		t.Errorf("the land check was run with %q, not on fix-login alone", calls)
+	}
+}
+
+// A landing whose range against main is empty — the task landed on local main, and only its push failed — is pushed by the next run
+// without any land check asked about a range with nothing in it.
+func TestLandOfATaskAlreadyOnMainIsPushedWithTheLandChecksConfigured(t *testing.T) {
+	f := newFixture(t)
+	f.landCheck("not-empty", `[ "$(git rev-list --count "$1")" -gt 0 ] || { echo "nothing in $1 to check"; exit 1; }`)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.git(f.local, "config", "remote.github.pushurl", filepath.Join(f.root, "no-push.git"))
+	if _, code := f.land(dir); code != 1 {
+		t.Fatal("the first landing's push did not fail")
+	}
+	f.git(f.local, "config", "--unset", "remote.github.pushurl")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "fix-login had already landed on local main at "+f.short(dir, "HEAD")+"; pushed it now.")
+	if f.git(f.github, "rev-parse", "main") != f.git(dir, "rev-parse", "HEAD") {
+		t.Error("GitHub's main is not the task's tip")
+	}
+}
+
+func TestLandRefusesWhenALandCheckChangesTheTask(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("untidy", "echo left > left.txt")
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	main := f.git(f.local, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not landed: the land check "+listed+" main..fix-login, from ~/.carson/config.json, changed the task: it left 1 change in the worktree; the landing stops, since the checks must leave the task as they found it.")
+	if f.git(f.local, "rev-parse", "main") != main {
+		t.Error("main moved")
+	}
+}
+
+// expectNothingChanged fails unless the task and local main are where they were: a land check that cannot be run refuses the landing
+// before anything changes, even when GitHub's main has moved on and a landing would bring both up to it.
+func (f *fixture) expectNothingChanged(dir, task, main string) {
+	f.t.Helper()
+	if f.git(dir, "rev-parse", "HEAD") != task || f.git(f.local, "rev-parse", "main") != main {
+		f.t.Error("the task or main changed, though the landing was refused")
+	}
+}
+
+func TestLandRunsEveryLandCheckInTurnBeforeBinCheck(t *testing.T) {
+	f := newFixture(t)
+	first := f.checkFile("first", `echo first >> "$HOME/check-calls"`)
+	second := f.checkFile("second", `echo second >> "$HOME/check-calls"`)
+	f.configure(`{"land": {"checks": ["` + first + `", "` + second + `"]}}`)
+	dir := f.startTask("fix-login")
+	f.check(dir, `echo bin/check >> "$HOME/check-calls"`)
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	if !strings.Contains(out, "Checks: "+first+", "+second+" and bin/check passed.") {
+		t.Errorf("the checks that passed are not all said:\n%s", out)
+	}
+	if calls := f.calls(); calls != "first\nsecond\nbin/check\n" {
+		t.Errorf("the checks ran as %q, not each land check in turn and then bin/check", calls)
+	}
+}
+
+func TestLandRefusesWhenALandCheckIsMissing(t *testing.T) {
+	f := newFixture(t)
+	present := f.checkFile("present", "exit 0")
+	f.configure(`{"land": {"checks": ["` + present + `", "~/checks/one-change"]}}`)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.otherMachine()
+	task, main := f.git(dir, "rev-parse", "HEAD"), f.git(f.local, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: the land check ~/checks/one-change, listed in ~/.carson/config.json, does not exist"+unsettledCheck)
+	f.expectNothingChanged(dir, task, main)
+}
+
+// Not executable is what carson's own user cannot run: no one may (0644), or others may but not its owner (0641).
+func TestLandRefusesWhenALandCheckIsNotExecutable(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("one-change", "exit 0")
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.otherMachine()
+	task, main := f.git(dir, "rev-parse", "HEAD"), f.git(f.local, "rev-parse", "main")
+	for _, mode := range []os.FileMode{0o644, 0o641} {
+		os.Chmod(filepath.Join(f.root, "checks", "one-change"), mode)
+		out, code := f.land(dir)
+		expectCode(t, code, 2)
+		expectLine(t, out, "Not landed: the land check "+listed+", listed in ~/.carson/config.json, is not an executable file"+unsettledCheck)
+		f.expectNothingChanged(dir, task, main)
+	}
+}
+
+// A land check is named by its full path, since the folders a bare name is looked for in differ from shell to shell.
+func TestLandRefusesALandCheckNotGivenByItsFullPath(t *testing.T) {
+	f := newFixture(t)
+	f.configure(`{"land": {"checks": ["check-commits"]}}`)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, `Not landed: the land check "check-commits", listed in ~/.carson/config.json, is not a full path starting / or ~/`+unsettledCheck)
+}
+
+func TestLandRefusesAConfigurationItCannotRead(t *testing.T) {
+	f := newFixture(t)
+	f.configure(`{"land": {"checks": "~/checks/one-change"}}`)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.otherMachine()
+	task, main := f.git(dir, "rev-parse", "HEAD"), f.git(f.local, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: ~/.carson/config.json is not JSON whose land.checks is a list of commands (")
+	if !strings.Contains(out, "so which land checks apply cannot be told"+unsettledCheck) {
+		t.Errorf("the refusal does not say why or what next:\n%s", out)
+	}
+	f.expectNothingChanged(dir, task, main)
+}
+
+// HOME names no folder when it is empty, or names one that is not there: either way the configuration, and the land checks it may
+// list, cannot be found.
+func TestLandRefusesWhenHOMEDoesNotNameAFolder(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	task, main := f.git(dir, "rev-parse", "HEAD"), f.git(f.local, "rev-parse", "main")
+	for _, home := range []string{"", filepath.Join(f.root, "no-such-home")} {
+		noHome := environment{"HOME": home}
+		for name, value := range inClaude {
+			noHome[name] = value
+		}
+		out, code := f.runIn(noHome, dir, claudeRunning, "land", "fix-login")
+		expectCode(t, code, 1)
+		expectLine(t, out, "Not landed: HOME does not name a folder, so carson's configuration, ~/.carson/config.json, cannot be read, and carson lands nothing it cannot check. Nothing was changed; set HOME to your home folder, then run carson land fix-login again.")
+		f.expectNothingChanged(dir, task, main)
+	}
+}
+
+// A configuration that lists no land checks — Carson 4's, as a machine may still keep it — leaves carson land as it was.
+func TestLandWithAConfigurationListingNoLandChecksIsAsBefore(t *testing.T) {
+	f := newFixture(t)
+	f.configure(`{"govern": {"repos": ["/Users/someone/Dev/notes"]}, "git": {"remote": "github"}}`)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	short := f.short(dir, "HEAD")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (1 commit) and pushed; GitHub's main is "+short+". No checks declared (no bin/check). Remove it with: carson remove fix-login (from outside its worktree).")
+}
+
 func TestLandWhosePushFailsSaysSoAndIsPushedByTheNextMerge(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")

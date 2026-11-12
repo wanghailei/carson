@@ -17,7 +17,7 @@ carson start xyz    a worktree and branch of its own, from the latest main, owne
       │
       │   the agent works and commits in ~/.worktrees/<repository>/xyz
       ▼
-carson land xyz     checked with bin/check, fast-forwarded onto main, pushed to GitHub
+carson land xyz     checked by the land checks and bin/check, fast-forwarded onto main, pushed to GitHub
       │
       ▼
 carson remove xyz   worktree and branch removed; ignored files kept
@@ -38,7 +38,7 @@ carson status       main, the main working tree, every task and whose it is
 
 ## Quickstart
 
-Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote and a `bin/check` in the repository are used when they are there.
+Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote and a `bin/check` in the repository are used when they are there, and so are the land checks in Carson's configuration.
 
 ```
 $ carson start xyz
@@ -67,6 +67,20 @@ $ cd ~/code/notes && carson remove xyz
 
 Exit codes: 0 done, as reported; 1 could not finish, and the message says what state things are left in; 2 refused.
 
+## Configuration
+
+Carson reads one file of its own, `~/.carson/config.json`, on each landing, and never writes it. Its one setting lists the land checks: commands `carson land` runs on every task, in every repository on the machine, before the repository's own `bin/check`. They check a rule that holds in every repository once, rather than by a copy in each repository's `bin/check`.
+
+```json
+{"land": {"checks": ["~/TAI/bin/check-commits"]}}
+```
+
+- Each check is named by its full path, or by one starting `~/`.
+- It runs in the task's worktree with one argument, the range of the task's own commits: `main..<task>`, or `<task>` alone for a repository's first task, before `main` has a commit.
+- A check that exits with anything but 0 stops the landing, and Carson shows the end of what it printed. So does a check that changes the task: like `bin/check`, it must leave the task as it found it.
+- A check that is missing or cannot be run refuses every landing before anything changes, and so does a file Carson cannot read: Carson lands nothing it cannot check. A person settles it.
+- With no file, or a file that lists no land checks, `carson land` runs only `bin/check`, as before.
+
 ## Building from source
 
     go build
@@ -84,7 +98,7 @@ The real-world damage agents have done while working in shared git repositories.
 3. **A test that recreates the scenario.** Every scenario gets one, and it fails without the feature.
 4. **Carson works while no scenario here happens again.** A new one gets its root cause found first, then a section here and a test, and only then a feature.
 
-**Where they come from.** The incidents run from 2026-03-04 to 2026-10-01.
+**Where they come from.** The incidents run from 2026-03-04 to 2026-11-12.
 
 - **The 2026-09-29 catalogue.** 162 failures were catalogued on that day, from Carson's issues, the issues of the repositories it served, its release notes, reviews and retrospectives, and the agents' own record of mistakes.
   - 32 of them show damage done by agents.
@@ -93,10 +107,11 @@ The real-world damage agents have done while working in shared git repositories.
   - 12 lie outside: documents, tests, and other acts of agents.
 - **A full reading on 2026-10-01.** Every issue in 14 repositories was read in full, 531 in all, because the catalogue had read some of them by keyword only. That found 8 incidents the catalogue missed, four of them the new scenario S12.
 - **Two seen on 2026-10-01:** S9 and S11.
+- **One seen on 2026-11-12:** S14.
 
 **April to August is thin.** Only three incidents fall in those five months: two in July (S8) and one in August (S1). Every issue from that time has now been read. The agents' session transcripts from that time no longer exist, so damage that was never written up as an issue cannot be found.
 
-### Status on 2026-10-31
+### Status on 2026-11-12
 
 | | Scenario | Prevented by | Holds |
 |---|---|---|---|
@@ -113,8 +128,9 @@ The real-world damage agents have done while working in shared git repositories.
 | S11 | Work reached GitHub's `main` from another machine | Carson | Yes |
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
+| S14 | Landed commits that break a rule every repository shares | Carson runs the configured land checks | Partly: only on a machine whose configuration lists the check |
 
-The tests named below pass: `bin/check` ran all 206 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543, carson#537 and carson#536.
+The tests named below pass: `bin/check` ran all 218 of Carson's tests on 2026-11-12, with the land checks for S14.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -296,6 +312,14 @@ This is a situation, not damage: a person moves or renames a repository's folder
 - **Prevention.** `carson adopt` links a task's worktree back to its repository when the folder its `.git` file names is gone, before it takes the task over, and for a task already yours too. It writes only that task's link, from the repository's side: git's own repair, run from the repository, relinks every worktree there, other agents' tasks among them. When it cannot, it says why and changes nothing. `carson status`, `land`, `remove` and `abandon`, meeting such a worktree, say so, name the folder its link points to, and point to `carson adopt` (carson#543).
 - **Tests.** TestAdoptRelinksAnEndedAgentsTaskAfterTheRepositoryMoved, TestAdoptRelinksATaskAlreadyYoursAfterTheRepositoryMoved, TestAdoptRelinksALandedTaskSoThatItIsRemoved, TestAdoptRelinksOnlyTheTaskItAdopts, TestAdoptSaysWhyAWorktreeCannotBeRelinkedAndChangesNothing, TestAdoptRelinksWithoutWritingThroughAFileInTheWay, TestWriteLinkLeavesNothingBesideWhenItCannotBePutInPlace, TestStatusNamesAdoptForATaskAfterTheRepositoryMoved, TestLandNamesAdoptAfterTheRepositoryMoved, TestRemoveNamesAdoptAfterTheRepositoryMoved, TestRemoveAbandonedNamesAdoptAfterTheRepositoryMoved.
 - **Holds.** Yes.
+
+### S14. Landed commits that break a rule every repository shares
+
+- **What happened.** 2026-11-12 (Mindmap): the person found a management error in Mindmap's work and ruled that one change is one commit. The rule had to be given twice, so Mindmap was given a check of its own, `bin/check-commits`, run by its `bin/check`. That check protected Mindmap alone: `carson land` ran only each repository's own `bin/check`, and landed a repository with none after saying "No checks declared (no bin/check)".
+- **Root cause.** A rule that holds in every repository could be checked only by a copy in each repository's `bin/check`, and Carson ran nothing else.
+- **Prevention.** `carson land` runs the land checks listed in `~/.carson/config.json` on the task's own commits, before the repository's `bin/check` (see Configuration). A failing check stops the landing. A check that is missing or cannot be run, or a file Carson cannot read, refuses every landing before anything changes.
+- **Tests.** TestLandRefusesATaskWhoseCommitsALandCheckFails, TestLandRunsTheLandChecksOnTheTasksOwnCommitsInItsWorktree, TestLandRunsEveryLandCheckInTurnBeforeBinCheck, TestLandOfTheFirstTaskGivesTheLandChecksTheWholeTask, TestLandOfATaskAlreadyOnMainIsPushedWithTheLandChecksConfigured, TestLandRefusesWhenALandCheckChangesTheTask, TestLandRefusesWhenALandCheckIsMissing, TestLandRefusesWhenALandCheckIsNotExecutable, TestLandRefusesALandCheckNotGivenByItsFullPath, TestLandRefusesAConfigurationItCannotRead, TestLandRefusesWhenHOMEDoesNotNameAFolder, TestLandWithAConfigurationListingNoLandChecksIsAsBefore.
+- **Holds.** Partly: only on a machine whose `~/.carson/config.json` lists the check.
 
 ### Open
 
