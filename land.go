@@ -441,12 +441,19 @@ func (g *landing) run(s step) ([]string, int, bool) {
 	return said, code, false
 }
 
-// checks are the checks this landing runs on the task: the land checks on its own commits — main..<task>, or the task alone while
-// main has no commit — then the repository's bin/check.
+// checks are the checks this landing runs on the task: the land checks on the commits it brings to GitHub, then the repository's
+// bin/check. Those commits start at GitHub's main as bringMainCurrent has just fetched it, under the remote's own name, such as
+// refs/remotes/github/main..refs/heads/<task>. Local main is not that start: when the two mains have diverged, the task carries GitHub's
+// commits through the join, and main..<task> would hold them, judging work another machine landed as this task's. With no GitHub main,
+// they start at local main; and while main has no commit either, they are the task alone. Each end is named in full, since git finds a
+// tag or a branch by a short name before the remote's main or the task: a tag github/main at the task's tip would leave nothing to check.
 func (g *landing) checks(landChecks []landCheck) checks {
-	commits := "main.." + g.task.branch
-	if !g.repo.hasBranch("main") {
-		commits = g.task.branch
+	commits := "refs/heads/" + g.task.branch
+	switch {
+	case g.githubMain != "":
+		commits = "refs/remotes/" + g.repo.remote + "/main.." + commits
+	case g.repo.hasBranch("main"):
+		commits = "refs/heads/main.." + commits
 	}
 	var c checks
 	for _, each := range landChecks {

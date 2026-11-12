@@ -191,7 +191,7 @@ func TestLandRefusesATaskWhoseCommitsALandCheckFails(t *testing.T) {
 	main := f.git(f.local, "rev-parse", "main")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: the land check "+listed+" main..fix-login, from ~/.carson/config.json, failed (exit 1). Its output ends:")
+	expectLine(t, out, "Not landed: the land check "+listed+" refs/remotes/github/main..refs/heads/fix-login, from ~/.carson/config.json, failed (exit 1). Its output ends:")
 	expectLine(t, out, "one commit holds two changes: Add login and logout")
 	if !strings.Contains(out, "Fix what "+listed+" reports in fix-login's commits, then run carson land fix-login again.") {
 		t.Errorf("no way on after a failed land check:\n%s", out)
@@ -211,8 +211,132 @@ func TestLandRunsTheLandChecksOnTheTasksOwnCommitsInItsWorktree(t *testing.T) {
 	expectCode(t, code, 0)
 	short := f.short(dir, "HEAD")
 	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+". Checks: "+listed+" and bin/check passed.")
-	if calls := f.calls(); calls != "main..fix-login "+dir+"\n" {
-		t.Errorf("the land check was run with %q, not on main..fix-login in the task's worktree", calls)
+	if calls := f.calls(); calls != "refs/remotes/github/main..refs/heads/fix-login "+dir+"\n" {
+		t.Errorf("the land check was run with %q, not on refs/remotes/github/main..refs/heads/fix-login in the task's worktree", calls)
+	}
+}
+
+// otherMachineLandsABundle pushes to GitHub, from the other machine, a commit the oneChange check refuses, and returns it.
+func (f *fixture) otherMachineLandsABundle() string {
+	f.t.Helper()
+	other := f.otherClone()
+	f.write(other, "a.txt", "a\n")
+	f.write(other, "b.txt", "b\n")
+	f.git(other, "add", ".")
+	f.git(other, "commit", "-q", "-m", "Add a and b")
+	f.git(other, "push", "-q", "origin", "main")
+	return f.git(other, "rev-parse", "HEAD")
+}
+
+// The land checks judge the commits this landing brings to GitHub: the range starts at GitHub's main as just fetched, by the remote's
+// own name, never at a local main that lacks what another machine landed.
+func TestLandWhoseLocalMainIsBehindChecksFromTheRemotesMainNotACommitLandedOnlyThere(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "remote", "rename", "github", "upstream")
+	f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	theirs := f.otherMachineLandsABundle()
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	if calls := f.calls(); calls != "refs/remotes/upstream/main..refs/heads/fix-login "+dir+"\n" {
+		t.Errorf("the land check was run with %q, not on refs/remotes/upstream/main..refs/heads/fix-login in the task's worktree", calls)
+	}
+	if f.git(f.github, "rev-parse", "main") != f.git(dir, "rev-parse", "HEAD") {
+		t.Errorf("GitHub's main is not the task's tip:\n%s", out)
+	}
+	f.git(f.github, "merge-base", "--is-ancestor", theirs, "main") // fails the test when GitHub's main lost the other machine's commit
+}
+
+func TestLandWhoseLocalMainHasDivergedChecksFromTheRemotesMainNotACommitLandedOnlyThere(t *testing.T) {
+	f := newFixture(t)
+	f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.commit(f.local, "merged-here.txt") // landed here, not yet pushed
+	theirs := f.otherMachineLandsABundle()
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	if calls := f.calls(); calls != "refs/remotes/github/main..refs/heads/fix-login "+dir+"\n" {
+		t.Errorf("the land check was run with %q, not on refs/remotes/github/main..refs/heads/fix-login in the task's worktree:\n%s", calls, out)
+	}
+	if f.git(f.github, "rev-parse", "main") != f.git(dir, "rev-parse", "HEAD") {
+		t.Errorf("GitHub's main is not the task's tip:\n%s", out)
+	}
+	f.git(f.github, "merge-base", "--is-ancestor", theirs, "main") // fails the test when GitHub's main lost the other machine's commit
+}
+
+func TestLandWhoseLocalMainHasDivergedStillRefusesTheTasksOwnBundledCommit(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.write(dir, "login.rb", "login\n")
+	f.write(dir, "logout.rb", "logout\n")
+	f.git(dir, "add", ".")
+	f.git(dir, "commit", "-q", "-m", "Add login and logout")
+	f.commit(f.local, "merged-here.txt") // landed here, not yet pushed
+	f.otherMachine()
+	main, theirs := f.git(f.local, "rev-parse", "main"), f.git(f.github, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: the land check "+listed+" refs/remotes/github/main..refs/heads/fix-login, from ~/.carson/config.json, failed (exit 1). Its output ends:")
+	expectLine(t, out, "one commit holds two changes: Add login and logout")
+	if f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != theirs {
+		t.Error("main moved, here or on GitHub, although a land check failed")
+	}
+}
+
+// From the audit of d703863: git finds a tag, or a local branch, by a name before it finds the remote's main by it, so a range given by
+// short names may hold other commits than the task's — none at all when a tag github/main stands at the task's tip.
+func TestLandChecksTheTasksCommitsWhenATagIsNamedLikeTheRemotesMain(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.write(dir, "login.rb", "login\n")
+	f.write(dir, "logout.rb", "logout\n")
+	f.git(dir, "add", ".")
+	f.git(dir, "commit", "-q", "-m", "Add login and logout")
+	f.git(f.local, "tag", "github/main", "fix-login")
+	main := f.git(f.local, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: the land check "+listed+" refs/remotes/github/main..refs/heads/fix-login, from ~/.carson/config.json, failed (exit 1). Its output ends:")
+	if f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != main {
+		t.Error("main moved, here or on GitHub, although the task's commit was not checked")
+	}
+}
+
+func TestLandChecksTheTasksCommitsWhenATagIsNamedLikeTheTask(t *testing.T) {
+	f := newFixture(t)
+	listed := f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.write(dir, "login.rb", "login\n")
+	f.write(dir, "logout.rb", "logout\n")
+	f.git(dir, "add", ".")
+	f.git(dir, "commit", "-q", "-m", "Add login and logout")
+	elsewhere := f.worktree("elsewhere")
+	f.commit(elsewhere, "notes.txt")
+	f.git(f.local, "tag", "fix-login", "elsewhere")
+	main := f.git(f.local, "rev-parse", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: the land check "+listed+" refs/remotes/github/main..refs/heads/fix-login, from ~/.carson/config.json, failed (exit 1). Its output ends:")
+	if f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != main {
+		t.Error("main moved, here or on GitHub, although the task's commit was not checked")
+	}
+}
+
+// With no GitHub remote there is no other main: the range starts at local main.
+func TestLandWithoutARemoteChecksTheTasksCommitsAgainstLocalMain(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "remote", "remove", "github")
+	f.landCheck("one-change", oneChange)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	out, code := f.land(dir)
+	expectCode(t, code, 0)
+	if calls := f.calls(); calls != "refs/heads/main..refs/heads/fix-login "+dir+"\n" {
+		t.Errorf("the land check was run with %q, not on refs/heads/main..refs/heads/fix-login in the task's worktree:\n%s", calls, out)
 	}
 }
 
@@ -225,7 +349,7 @@ func TestLandOfTheFirstTaskGivesTheLandChecksTheWholeTask(t *testing.T) {
 	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit) and pushed; GitHub's main is "+f.short(dir, "HEAD")+". Checks: "+listed+" passed; the repository declares none of its own (no bin/check).")
-	if calls := f.calls(); calls != "fix-login "+dir+"\n" {
+	if calls := f.calls(); calls != "refs/heads/fix-login "+dir+"\n" {
 		t.Errorf("the land check was run with %q, not on fix-login alone", calls)
 	}
 }
@@ -258,7 +382,7 @@ func TestLandRefusesWhenALandCheckChangesTheTask(t *testing.T) {
 	main := f.git(f.local, "rev-parse", "main")
 	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: the land check "+listed+" main..fix-login, from ~/.carson/config.json, changed the task: it left 1 change in the worktree; the landing stops, since the checks must leave the task as they found it.")
+	expectLine(t, out, "Not landed: the land check "+listed+" refs/remotes/github/main..refs/heads/fix-login, from ~/.carson/config.json, changed the task: it left 1 change in the worktree; the landing stops, since the checks must leave the task as they found it.")
 	if f.git(f.local, "rev-parse", "main") != main {
 		t.Error("main moved")
 	}

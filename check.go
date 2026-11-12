@@ -12,10 +12,10 @@ import (
 )
 
 // The checks carson land runs in the task's worktree before main moves: first the land checks carson's own configuration lists for
-// every repository on the machine, each given the range of the task's own commits, then the repository's bin/check. Each must exit 0
-// and leave the task as it found it. A land check is how a rule that holds in every repository — one change to a commit, say — is
-// checked once for all of them, rather than by a copy in each repository's bin/check that protects only that repository. carson knows
-// nothing of what a check looks at.
+// every repository on the machine, each given the range of the commits the landing brings to GitHub, then the repository's
+// bin/check. Each must exit 0 and leave the task as it found it. A land check is how a rule that holds in every repository — one
+// change to a commit, say — is checked once for all of them, rather than by a copy in each repository's bin/check that protects only
+// that repository. carson knows nothing of what a check looks at.
 
 // configurationFile is carson's configuration, by the name a person knows it. carson reads it on each landing and never writes it.
 const configurationFile = "~/.carson/config.json"
@@ -94,7 +94,7 @@ func findLandCheck(home, listed, task string) (landCheck, error) {
 	return landCheck{listed: listed, path: path}, nil
 }
 
-// on is the land check as it runs on a task's commits, given as a range git reads, such as main..fix-login.
+// on is the land check as it runs on a task's commits, given as a range git reads, such as refs/remotes/github/main..refs/heads/fix-login.
 func (c landCheck) on(commits, task string) check {
 	return check{
 		name:   c.listed,
