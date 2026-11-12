@@ -76,7 +76,7 @@ Carson reads one file of its own, `~/.carson/config.json`, on each landing, and 
 ```
 
 - Each check is named by its full path, or by one starting `~/`.
-- It runs in the task's worktree with one argument, the range of the commits the landing brings to GitHub: `refs/remotes/github/main..refs/heads/<task>`, from GitHub's `main` as `carson land` has just fetched it, named by the repository's own remote. So a commit another machine landed is never judged as the task's, even when this machine's `main` has fallen behind GitHub's or diverged from it. With no GitHub remote, or no `main` on GitHub yet, the range is `refs/heads/main..refs/heads/<task>`; for a repository's first task, before `main` has a commit, it is `refs/heads/<task>` alone. Each end is named in full, so a tag or branch that shares its short name cannot stand in for it.
+- It runs in the task's worktree with one argument, the range of the task's own commits: `main..<task>`, or `<task>` alone for a repository's first task, before `main` has a commit.
 - A check that exits with anything but 0 stops the landing, and Carson shows the end of what it printed. So does a check that changes the task: like `bin/check`, it must leave the task as it found it.
 - A check that is missing or cannot be run refuses every landing before anything changes, and so does a file Carson cannot read: Carson lands nothing it cannot check. A person settles it.
 - With no file, or a file that lists no land checks, `carson land` runs only `bin/check`, as before.
@@ -130,7 +130,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 | S14 | Landed commits that break a rule every repository shares | Carson runs the configured land checks | Partly: only on a machine whose configuration lists the check |
 
-The tests named below pass: `bin/check` ran all 224 of Carson's tests on 2026-11-12, with the land checks for S14.
+The tests named below pass: `bin/check` ran all 218 of Carson's tests on 2026-11-12, with the land checks for S14.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -317,8 +317,8 @@ This is a situation, not damage: a person moves or renames a repository's folder
 
 - **What happened.** 2026-11-12 (Mindmap): the person found a management error in Mindmap's work and ruled that one change is one commit. The rule had to be given twice, so Mindmap was given a check of its own, `bin/check-commits`, run by its `bin/check`. That check protected Mindmap alone: `carson land` ran only each repository's own `bin/check`, and landed a repository with none after saying "No checks declared (no bin/check)".
 - **Root cause.** A rule that holds in every repository could be checked only by a copy in each repository's `bin/check`, and Carson ran nothing else.
-- **Prevention.** `carson land` runs the land checks listed in `~/.carson/config.json` on the commits the landing brings to GitHub, from GitHub's `main` as just fetched, before the repository's `bin/check` (see Configuration). A failing check stops the landing. A check that is missing or cannot be run, or a file Carson cannot read, refuses every landing before anything changes.
-- **Tests.** TestLandRefusesATaskWhoseCommitsALandCheckFails, TestLandRunsTheLandChecksOnTheTasksOwnCommitsInItsWorktree, TestLandWhoseLocalMainIsBehindChecksFromTheRemotesMainNotACommitLandedOnlyThere, TestLandWhoseLocalMainHasDivergedChecksFromTheRemotesMainNotACommitLandedOnlyThere, TestLandWhoseLocalMainHasDivergedStillRefusesTheTasksOwnBundledCommit, TestLandWithoutARemoteChecksTheTasksCommitsAgainstLocalMain, TestLandChecksTheTasksCommitsWhenATagIsNamedLikeTheRemotesMain, TestLandChecksTheTasksCommitsWhenATagIsNamedLikeTheTask, TestLandRunsEveryLandCheckInTurnBeforeBinCheck, TestLandOfTheFirstTaskGivesTheLandChecksTheWholeTask, TestLandOfATaskAlreadyOnMainIsPushedWithTheLandChecksConfigured, TestLandRefusesWhenALandCheckChangesTheTask, TestLandRefusesWhenALandCheckIsMissing, TestLandRefusesWhenALandCheckIsNotExecutable, TestLandRefusesALandCheckNotGivenByItsFullPath, TestLandRefusesAConfigurationItCannotRead, TestLandRefusesWhenHOMEDoesNotNameAFolder, TestLandWithAConfigurationListingNoLandChecksIsAsBefore.
+- **Prevention.** `carson land` runs the land checks listed in `~/.carson/config.json` on the task's own commits, before the repository's `bin/check` (see Configuration). A failing check stops the landing. A check that is missing or cannot be run, or a file Carson cannot read, refuses every landing before anything changes.
+- **Tests.** TestLandRefusesATaskWhoseCommitsALandCheckFails, TestLandRunsTheLandChecksOnTheTasksOwnCommitsInItsWorktree, TestLandRunsEveryLandCheckInTurnBeforeBinCheck, TestLandOfTheFirstTaskGivesTheLandChecksTheWholeTask, TestLandOfATaskAlreadyOnMainIsPushedWithTheLandChecksConfigured, TestLandRefusesWhenALandCheckChangesTheTask, TestLandRefusesWhenALandCheckIsMissing, TestLandRefusesWhenALandCheckIsNotExecutable, TestLandRefusesALandCheckNotGivenByItsFullPath, TestLandRefusesAConfigurationItCannotRead, TestLandRefusesWhenHOMEDoesNotNameAFolder, TestLandWithAConfigurationListingNoLandChecksIsAsBefore.
 - **Holds.** Partly: only on a machine whose `~/.carson/config.json` lists the check.
 
 ### Open
