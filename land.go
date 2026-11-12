@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -145,11 +147,6 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	if err := t.readyToLand(); err != nil {
 		return g.stop(codeOf(err), "%s", err.Error())
 	}
-	// The land checks are found before anything changes, so a check that could not run refuses with the task as it was.
-	landChecks, err := m.landChecks(t.branch)
-	if err != nil {
-		return g.stop(codeOf(err), "%s", err.Error())
-	}
 	if branch := r.mainTreeBranch(); branch != "main" {
 		return g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. Nothing was changed; %s. Switch the main working tree back to main, then run carson land %s again.", branch, g.state(), t.branch)
 	}
@@ -209,9 +206,19 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		}
 	}
 	head, _ := git(t.path, "rev-parse", "HEAD")
-	checking := g.checks(landChecks)
-	if said, code, ok := g.runChecks(checking, stopped); !ok {
-		return said, code
+	branch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
+	checks, err := runChecks(t.path)
+	if stopped() {
+		return g.stop(failed, "interrupted during the checks. %s. Run carson land %s again.", g.state(), t.branch)
+	}
+	if err != nil && codeOf(err) == refused {
+		return g.stop(refused, "%s\n%s. Fix what bin/check reports, commit, then run carson land %s again.", err.Error(), g.state(), t.branch)
+	}
+	if err != nil {
+		return g.stop(codeOf(err), "%s\n%s. Run carson land %s again once that is cleared.", err.Error(), g.state(), t.branch)
+	}
+	if changed := g.checksChanged(head, branch); changed != "" {
+		return g.stop(failed, "bin/check changed the task: %s; the landing stops, since the checks must leave the task as they found it. Look at git status in %s's worktree, put it back, then run carson land %s again.", changed, t.branch, t.branch)
 	}
 	tip := head
 	if g.commits, err = r.ownCommits(tip); err != nil {
@@ -234,7 +241,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	shortTip := r.short(tip)
 	how := g.how(alreadyLanded)
 	if r.remote == "" {
-		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, checking.passed(), t.branch)
+		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, checks, t.branch)
 		return g.said, done
 	}
 	now, err := r.pushMain()
@@ -250,7 +257,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		g.note("Landed %s on local main at %s. Not on GitHub (%s). Run carson land %s again to push.", t.branch, shortTip, reason(err), t.branch)
 		return g.said, failed
 	}
-	g.note("Landed %s on main by fast-forward at %s (%s) and pushed; GitHub's main is %s. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, now, checking.passed(), t.branch)
+	g.note("Landed %s on main by fast-forward at %s (%s) and pushed; GitHub's main is %s. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, now, checks, t.branch)
 	return g.said, done
 }
 
@@ -441,48 +448,7 @@ func (g *landing) run(s step) ([]string, int, bool) {
 	return said, code, false
 }
 
-// checks are the checks this landing runs on the task: the land checks on its own commits — main..<task>, or the task alone while
-// main has no commit — then the repository's bin/check.
-func (g *landing) checks(landChecks []landCheck) checks {
-	commits := "main.." + g.task.branch
-	if !g.repo.hasBranch("main") {
-		commits = g.task.branch
-	}
-	var c checks
-	for _, each := range landChecks {
-		c.each = append(c.each, each.on(commits, g.task.branch))
-	}
-	if own, declared := repositoryCheck(g.task.path); declared {
-		c.each, c.repository = append(c.each, own), true
-	}
-	return c
-}
-
-// runChecks runs the checks in the task's worktree, in turn, and stops the landing at the first that fails, changes the task, or is
-// interrupted, saying the state the task is left in.
-func (g *landing) runChecks(c checks, stopped func() bool) ([]string, int, bool) {
-	t := g.task
-	head, _ := git(t.path, "rev-parse", "HEAD")
-	branch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
-	for _, each := range c.each {
-		err := each.run(t.path)
-		if stopped() {
-			said, code := g.stop(failed, "interrupted during the checks. %s. Run carson land %s again.", g.state(), t.branch)
-			return said, code, false
-		}
-		if err != nil {
-			said, code := g.stop(refused, "%s\n%s. %s, then run carson land %s again.", err.Error(), g.state(), each.fix, t.branch)
-			return said, code, false
-		}
-		if changed := g.checksChanged(head, branch); changed != "" {
-			said, code := g.stop(failed, "%s changed the task: %s; the landing stops, since the checks must leave the task as they found it. Look at git status in %s's worktree, put it back, then run carson land %s again.", each.called, changed, t.branch, t.branch)
-			return said, code, false
-		}
-	}
-	return nil, 0, true
-}
-
-// checksChanged says how a check changed the task, or "": the branch it is on, its commit, and the files it holds must be as before.
+// checksChanged says how bin/check changed the task, or "": the branch it is on, its commit, and the files it holds must be as before.
 func (g *landing) checksChanged(head, branch string) string {
 	t := g.task
 	nowBranch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
@@ -502,6 +468,33 @@ func (g *landing) checksChanged(head, branch string) string {
 		return fmt.Sprintf("it left %s in the worktree", plural(len(left), "change"))
 	}
 	return ""
+}
+
+// runChecks runs the repository's declared checks, bin/check, in the task's worktree, and says how they went.
+func runChecks(dir string) (string, error) {
+	path := filepath.Join(dir, "bin", "check")
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return "No checks declared (no bin/check).", nil
+	}
+	command := exec.Command(path)
+	command.Dir = dir
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return "Checks: bin/check passed.", nil
+	}
+	exit := err.Error()
+	var failure *exec.ExitError
+	if errors.As(err, &failure) {
+		exit = fmt.Sprintf("exit %d", failure.ExitCode())
+	}
+	tail := lines(strings.TrimRight(string(output), "\n"))
+	if len(tail) == 0 {
+		return "", refuse(refused, "bin/check failed (%s). It printed nothing.", exit)
+	}
+	if len(tail) > 20 {
+		tail = tail[len(tail)-20:]
+	}
+	return "", refuse(refused, "bin/check failed (%s). Its output ends:\n%s", exit, strings.Join(tail, "\n"))
 }
 
 // fastForward moves main to the task's tip in the main working tree, never over what that tree holds, and looks that it moved.
