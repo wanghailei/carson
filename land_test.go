@@ -36,7 +36,7 @@ func TestLandFastForwardsMainAndPushes(t *testing.T) {
 	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	short := f.short(dir, "HEAD")
-	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+". No checks declared (no bin/check). Remove it with: carson remove fix-login (from outside its worktree).")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (2 commits) and pushed; GitHub's main is "+short+". Remove it with: carson remove fix-login (from outside its worktree).")
 	if f.git(f.local, "rev-parse", "main") != tip || f.git(f.github, "rev-parse", "main") != tip {
 		t.Error("main, here or on GitHub, is not the task's tip")
 	}
@@ -96,41 +96,24 @@ func TestLandUndoesAConflictingRebase(t *testing.T) {
 	}
 }
 
-func (f *fixture) check(dir, script string) {
-	f.t.Helper()
+// On the master's order of 2026-11-17, carson land runs no check of the repository's: a bin/check there is left alone.
+func TestLandDoesNotRunTheRepositorysBinCheck(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	ran := filepath.Join(f.root, "check-ran")
 	os.MkdirAll(filepath.Join(dir, "bin"), 0o755)
-	if err := os.WriteFile(filepath.Join(dir, "bin", "check"), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
-		f.t.Fatal(err)
+	f.write(dir, "bin/check", "#!/bin/sh\ntouch "+ran+"\nexit 1\n")
+	if err := os.Chmod(filepath.Join(dir, "bin", "check"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	f.git(dir, "add", "bin/check")
 	f.git(dir, "commit", "-q", "-m", "add bin/check")
-}
-
-func TestLandStopsWhenTheChecksFail(t *testing.T) {
-	f := newFixture(t)
-	dir := f.startTask("fix-login")
-	f.check(dir, "echo 2 tests failed; exit 1")
-	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.land(dir)
-	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: bin/check failed (exit 1). Its output ends:")
-	if !strings.Contains(out, "Fix what bin/check reports, commit, then run carson land fix-login again.") {
-		t.Errorf("no way on after failed checks:\n%s", out)
-	}
-	expectLine(t, out, "2 tests failed")
-	if f.git(f.local, "rev-parse", "main") != main {
-		t.Error("main moved although the checks failed")
-	}
-}
-
-func TestLandSaysTheChecksPassed(t *testing.T) {
-	f := newFixture(t)
-	dir := f.startTask("fix-login")
-	f.check(dir, "exit 0")
 	out, code := f.land(dir)
 	expectCode(t, code, 0)
-	if !strings.Contains(out, "Checks: bin/check passed.") {
-		t.Errorf("the checks are not reported:\n%s", out)
+	short := f.short(dir, "HEAD")
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+short+" (1 commit) and pushed; GitHub's main is "+short+". Remove it with: carson remove fix-login (from outside its worktree).")
+	if f.exists(ran) {
+		t.Error("bin/check was run")
 	}
 }
 
@@ -411,33 +394,6 @@ func TestLandOfTheFirstTaskRunsAgainOnceAFileIsOutOfTheWayOfGitHubsMain(t *testi
 
 // Cases from the review of cca4a81, each staged there against the slice before it was fixed.
 
-func TestLandStopsWhenTheCheckMovesTheBranch(t *testing.T) {
-	f := newFixture(t)
-	dir := f.startTask("fix-login")
-	f.commit(dir, "login.rb")
-	f.check(dir, "git reset -q --hard main")
-	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.land(dir)
-	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: bin/check changed the task: fix-login moved from ")
-	if f.git(f.local, "rev-parse", "main") != main {
-		t.Error("main moved")
-	}
-}
-
-func TestLandStopsWhenTheCheckSwitchesBranch(t *testing.T) {
-	f := newFixture(t)
-	dir := f.startTask("fix-login")
-	f.check(dir, "git switch -q -c scratch && echo x > x.txt && git add x.txt && git commit -q -m scratch")
-	main := f.git(f.local, "rev-parse", "main")
-	out, code := f.land(dir)
-	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: bin/check changed the task: the worktree is now on scratch, not fix-login")
-	if f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != main {
-		t.Error("main moved, here or on GitHub")
-	}
-}
-
 func TestLandRetryAfterAFailedPushJoinsAGitHubThatMovedOn(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
@@ -481,20 +437,6 @@ func TestLandConflictJoiningGitHubSaysTheTaskWasRebased(t *testing.T) {
 	}
 }
 
-func TestLandFailedCheckAfterARebaseSaysSo(t *testing.T) {
-	f := newFixture(t)
-	dir := f.startTask("fix-login")
-	f.check(dir, "exit 1")
-	original := f.short(dir, "HEAD")
-	f.otherMachine()
-	out, code := f.land(dir)
-	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: bin/check failed (exit 1). It printed nothing.")
-	if !strings.Contains(out, "fix-login still holds its 1 commit, now rebased onto main (it was at "+original+" before carson).") {
-		t.Errorf("the rebase is not said:\n%s", out)
-	}
-}
-
 func TestGitGivesTheReasonNotTheURLLine(t *testing.T) {
 	f := newFixture(t)
 	_, err := git(f.local, "-c", `alias.reject=!printf 'To /x/github.git\n ! [rejected]        main -> main (fetch first)\nerror: failed to push some refs\n' >&2; exit 1`, "reject")
@@ -523,14 +465,17 @@ func TestLandWhosePushIsCutOffDoesNotClaimItFailed(t *testing.T) {
 func TestLandKeepsATaskThatCarriesAJoinUnflattened(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
-	f.check(dir, "exit 1")
+	f.commit(dir, "login.rb")
 	f.commit(f.local, "merged-here.txt")
 	f.otherMachine()
+	// A file in the main working tree stops the first landing after the task has joined GitHub's main.
+	f.write(f.local, "login.rb", "someone's draft\n")
 	if _, code := f.land(dir); code != 2 {
-		t.Fatal("the failing check did not stop the first merge")
+		t.Fatal("the file in the way did not stop the first landing")
 	}
-	f.write(filepath.Join(dir, "bin"), "check", "#!/bin/sh\nexit 0\n")
-	f.git(dir, "commit", "-q", "-am", "fix the check")
+	if err := os.Rename(filepath.Join(f.local, "login.rb"), filepath.Join(f.root, "login.rb")); err != nil {
+		t.Fatal(err)
+	}
 	f.commit(f.local, "merged-here-2.txt")
 	out, code := f.land(dir)
 	expectCode(t, code, 0)
@@ -539,21 +484,28 @@ func TestLandKeepsATaskThatCarriesAJoinUnflattened(t *testing.T) {
 	}
 }
 
-func TestLandInterruptedDuringTheCheckEndsInOneLineAndGivesBackTheLock(t *testing.T) {
+func TestLandInterruptedWhileBringingTheTaskUpToMainEndsInOneLineAndGivesBackTheLock(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
-	f.check(dir, "sleep 2")
-	main := f.git(f.local, "rev-parse", "main")
+	f.commit(dir, "login.rb")
+	f.otherMachine()
+	github := f.git(f.github, "rev-parse", "main")
+	// The repository's pre-rebase hook holds the rebase long enough for the interrupt to arrive during it.
+	hooks := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), "hooks")
+	os.MkdirAll(hooks, 0o755)
+	if err := os.WriteFile(filepath.Join(hooks, "pre-rebase"), []byte("#!/bin/sh\nsleep 2\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	go func() {
 		time.Sleep(700 * time.Millisecond)
 		syscall.Kill(os.Getpid(), syscall.SIGINT)
 	}()
 	out, code := f.land(dir)
 	expectCode(t, code, 1)
-	expectLine(t, out, "Not landed: interrupted during the checks.")
+	expectLine(t, out, "Not landed: interrupted while bringing fix-login up to main.")
 	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
-	if f.exists(lock) || f.git(f.local, "rev-parse", "main") != main {
-		t.Error("the lock is still held, or main moved")
+	if f.exists(lock) || f.git(f.local, "rev-parse", "main") != github || f.git(f.github, "rev-parse", "main") != github {
+		t.Error("the lock is still held, or the task reached main")
 	}
 }
 
@@ -583,15 +535,17 @@ func TestLandRefusesALockWhoseHolderCannotBeChecked(t *testing.T) {
 func TestLandOfATaskAlreadyOnMainSaysItHoldsNothingOfItsOwn(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
-	flag := filepath.Join(f.root, "fail-checks")
-	f.check(dir, "test ! -e "+flag)
+	f.commit(dir, "login.rb")
 	f.git(f.local, "config", "remote.github.pushurl", filepath.Join(f.root, "no-push.git"))
 	if _, code := f.land(dir); code != 1 {
 		t.Fatal("the first merge's push did not fail")
 	}
 	f.git(f.local, "config", "--unset", "remote.github.pushurl")
 	f.otherMachine()
-	os.WriteFile(flag, nil, 0o644)
+	// A file in the main working tree, where the other machine's commit would put one, stops the landing after the join.
+	for _, name := range strings.Fields(f.git(f.github, "diff", "--name-only", "main~1", "main")) {
+		f.write(f.local, name, "someone's draft\n")
+	}
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
 	if !strings.Contains(out, "fix-login holds nothing of its own that main lacks, with GitHub's main merged in") {
@@ -602,16 +556,18 @@ func TestLandOfATaskAlreadyOnMainSaysItHoldsNothingOfItsOwn(t *testing.T) {
 func TestLandRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
-	flag := filepath.Join(f.root, "fail-checks")
-	f.check(dir, "test ! -e "+flag)
 	f.commit(dir, "login.rb")
+	f.commit(dir, "login_test.rb")
 	f.commit(f.local, "merged-here.txt")
 	f.otherMachine()
-	os.WriteFile(flag, nil, 0o644)
+	// A file in the main working tree stops the first landing after the task has joined GitHub's main.
+	f.write(f.local, "login.rb", "someone's draft\n")
 	if _, code := f.land(dir); code != 2 {
-		t.Fatal("the failing check did not stop the first merge")
+		t.Fatal("the file in the way did not stop the first landing")
 	}
-	os.Remove(flag)
+	if err := os.Rename(filepath.Join(f.local, "login.rb"), filepath.Join(f.root, "login.rb")); err != nil {
+		t.Fatal(err)
+	}
 	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	if strings.Contains(out, "its commits are merged into fix-login first") {
@@ -622,8 +578,8 @@ func TestLandRerunOverAJoinAlreadyMadeCountsOnlyTheTasksOwnCommits(t *testing.T)
 	}
 }
 
-// The land checks of 5.4.0 were taken out in 5.5.0: carson land judges no commit's message, and runs only the repository's own
-// bin/check. A machine's ~/.carson/config.json keeps its Carson 4 settings, with no land key, and the landing is as in 5.3.1.
+// The land checks of 5.4.0 were taken out in 5.5.0: carson land judges no commit's message. A machine's ~/.carson/config.json keeps
+// its Carson 4 settings, with no land key, and the landing goes through.
 func TestLandLandsACommitThatBundlesTwoChangesWithAConfigurationThatHasNoLandKey(t *testing.T) {
 	f := newFixture(t)
 	os.MkdirAll(filepath.Join(f.root, ".carson"), 0o755)
@@ -637,7 +593,7 @@ func TestLandLandsACommitThatBundlesTwoChangesWithAConfigurationThatHasNoLandKey
 	out, code := f.land(dir)
 	expectCode(t, code, 0)
 	short := f.short(dir, "HEAD")
-	expectLine(t, out, "Landed sign-in on main by fast-forward at "+short+" (1 commit) and pushed; GitHub's main is "+short+". No checks declared (no bin/check). Remove it with: carson remove sign-in (from outside its worktree).")
+	expectLine(t, out, "Landed sign-in on main by fast-forward at "+short+" (1 commit) and pushed; GitHub's main is "+short+". Remove it with: carson remove sign-in (from outside its worktree).")
 	if f.git(f.local, "rev-parse", "main") != tip || f.git(f.github, "rev-parse", "main") != tip {
 		t.Error("main, here or on GitHub, is not the task's tip")
 	}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# The checks carson land runs before a task lands: formatting, vet and the tests. Go comes from mise where mise is installed (it pins
+# Carson's own checks, run by hand before a task lands and by bin/release: formatting, vet and the tests. Go comes from mise where mise is installed (it pins
 # the version in mise.toml), and from the PATH otherwise.
 set -e
 cd "$(dirname "$0")/.."

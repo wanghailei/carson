@@ -17,7 +17,7 @@ carson start xyz    a worktree and branch of its own, from the latest main, owne
       │
       │   the agent works and commits in ~/.worktrees/<repository>/xyz
       ▼
-carson land xyz     checked with bin/check, fast-forwarded onto main, pushed to GitHub
+carson land xyz     brought up to the latest main, fast-forwarded onto it, pushed to GitHub
       │
       ▼
 carson remove xyz   worktree and branch removed; ignored files kept
@@ -29,7 +29,7 @@ carson status       main, the main working tree, every task and whose it is
 
 ## Principles
 
-- **`main` only moves forward.** A task reaches it only by landing: brought up to the latest `main`, checked, fast-forwarded and pushed.
+- **`main` only moves forward.** A task reaches it only by landing: brought up to the latest `main`, fast-forwarded and pushed.
 - **One task, one worktree.** The main working tree holds `main` and nothing else.
 - **Only a task's owner lands, removes or abandons it.** Ownership is recorded when a task starts, and whether its owner is still running is always shown. An ended agent's task is adopted openly, never taken by guess.
 - **Nothing is destroyed.** Every check comes before any change; ignored files and abandoned work are kept.
@@ -38,7 +38,7 @@ carson status       main, the main working tree, every task and whose it is
 
 ## Quickstart
 
-Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote and a `bin/check` in the repository are used when they are there.
+Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote is used when it is there.
 
 ```
 $ carson start xyz
@@ -47,7 +47,7 @@ $ carson start xyz
 $ cd ~/.worktrees/code/notes/xyz      # work, test, commit
 
 $ carson land xyz
-⧓ Landed xyz on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Checks: bin/check passed. Remove it with: carson remove xyz (from outside its worktree).
+⧓ Landed xyz on main by fast-forward at 5dbc817 (1 commit) and pushed; GitHub's main is 5dbc817. Remove it with: carson remove xyz (from outside its worktree).
 
 $ cd ~/code/notes && carson remove xyz
 ⧓ Removed xyz: its worktree at ~/.worktrees/code/notes/xyz, and its branch, landed on main at 5dbc817. It was owned by Claude session 4e7a91d2-b1c0.
@@ -59,7 +59,7 @@ $ cd ~/code/notes && carson remove xyz
 |---|---|
 | `carson start <task>` | Starts a task from the latest `main`, in its own worktree, owned by the session running it. In a repository with no commit yet, the task starts empty, and landing it makes `main`. |
 | `carson status` | Shows `main` against GitHub's, the main working tree, every task with its owner, and abandoned work. Changes nothing. |
-| `carson land <task>` | Lands a finished task on `main`, checked and pushed. Runs from anywhere in the repository. |
+| `carson land <task>` | Lands a finished task on `main` and pushes `main` to GitHub. Runs from anywhere in the repository. |
 | `carson remove <task>` | Removes a landed task's worktree and branch. Runs from outside the worktree. |
 | `carson abandon <task>` | Keeps an unfinished task's work, uncommitted files committed, on `abandoned/<task>`, and removes its worktree. |
 | `carson adopt <task>` | Makes a task yours: abandoned work, a branch left without a worktree, or the task of an agent that has ended. After the repository's folder has moved, it links the task's worktree back to the repository, whether or not the task was yours already. |
@@ -96,7 +96,7 @@ The real-world damage agents have done while working in shared git repositories.
 
 **April to August is thin.** Only three incidents fall in those five months: two in July (S8) and one in August (S1). Every issue from that time has now been read. The agents' session transcripts from that time no longer exist, so damage that was never written up as an issue cannot be found.
 
-### Status on 2026-10-31
+### Status on 2026-11-17
 
 | | Scenario | Prevented by | Holds |
 |---|---|---|---|
@@ -105,7 +105,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S3 | Touched another agent's work | Carson | Yes |
 | S4 | Removed a worktree with a session inside it | Carson | Yes |
 | S5 | Lost its own unfinished work | Carson | Yes |
-| S6 | Landed content that destroyed work | Carson runs the repository's check | Partly: what the check looks at is the repository's |
+| S6 | Landed content that destroyed work | Nothing in Carson | No: `carson land` runs no check since 5.6.0 |
 | S7 | Two agents changed the same files, and one landing undid the other's | Carson | Yes |
 | S8 | Went around the rules with raw git | AGT's gate, GitHub's ruleset, Carson | Partly: three raw routes are open in the gate |
 | S9 | Landed without pushing | Carson | Partly: a raw fast-forward in the main working tree still lands without a push |
@@ -114,7 +114,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 
-The tests named below pass: `bin/check` ran all 206 of Carson's tests on 2026-10-31, with the changes for carson#541, carson#543, carson#537 and carson#536.
+The tests named below pass: `bin/check` ran all 203 of Carson's tests on 2026-11-17, with the `bin/check` step taken out of `carson land`.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -203,9 +203,9 @@ The tests named below pass: `bin/check` ran all 206 of Carson's tests on 2026-10
   - 2026-03-18 (ai#665): a file move kept 102 of 209 lines; 108 lines and five sections were lost without a word.
   - 2026-03-19 (ai#666): a glossary was deleted after only 5 of its 12 terms had been moved.
 - **Root cause.** The agent's change emptied, shrank or deleted a file that others needed, and nothing between the commit and `main` looked at the result.
-- **Prevention.** `carson land` runs the repository's `bin/check` on the exact commit that will land, before `main` moves; a failure stops the landing.
-- **Tests.** TestLandStopsWhenTheChecksFail, TestLandSaysTheChecksPassed.
-- **Holds.** Partly: Carson guarantees the check runs; whether an emptied file is caught depends on what the repository's check looks at.
+- **Prevention.** None in Carson. Until 5.5.0, `carson land` ran the repository's `bin/check` on the exact commit that would land, and a failure stopped the landing; 5.6.0 took that step out on the master's order of 2026-11-17. A repository's checks are now run by whoever lands the task, before landing.
+- **Tests.** TestLandDoesNotRunTheRepositorysBinCheck shows that the step is gone; no test shows a prevention.
+- **Holds.** No.
 
 ### S7. Two agents changed the same files, and one landing undid the other's
 
@@ -235,7 +235,7 @@ The tests named below pass: `bin/check` ran all 206 of Carson's tests on 2026-10
 - **Holds.** Partly. Three raw routes are still open in the gate:
   - `git push <remote> main` from a worktree;
   - `git worktree add` (S10);
-  - `git merge --ff-only` in the main working tree, which lands a task without its check or a push (S9).
+  - `git merge --ff-only` in the main working tree, which lands a task without a push (S9).
 
 ### S9. Landed without pushing
 

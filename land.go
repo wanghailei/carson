@@ -4,16 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 )
 
-// land lands a finished task on main, run from anywhere in the repository: the task brought up to the latest main, checked,
+// land lands a finished task on main, run from anywhere in the repository: the task brought up to the latest main,
 // fast-forwarded in the main working tree, and pushed, reporting what it observed after each step. Everything that can refuse without
 // a change refuses first. Ctrl-C is caught for the whole run: the step under way ends, and the run stops there with one line, the
 // landing lock given back.
@@ -205,22 +203,13 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 			g.note("GitHub's main had diverged; its commits are merged into %s first.", t.branch)
 		}
 	}
-	head, _ := git(t.path, "rev-parse", "HEAD")
-	branch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
-	checks, err := runChecks(t.path)
 	if stopped() {
-		return g.stop(failed, "interrupted during the checks. %s. Run carson land %s again.", g.state(), t.branch)
+		return g.stop(failed, "interrupted before main was fast-forwarded. %s. Run carson land %s again.", g.state(), t.branch)
 	}
-	if err != nil && codeOf(err) == refused {
-		return g.stop(refused, "%s\n%s. Fix what bin/check reports, commit, then run carson land %s again.", err.Error(), g.state(), t.branch)
-	}
+	tip, err := git(t.path, "rev-parse", "HEAD")
 	if err != nil {
-		return g.stop(codeOf(err), "%s\n%s. Run carson land %s again once that is cleared.", err.Error(), g.state(), t.branch)
+		return g.stop(failed, "the task's commit cannot be read (%s). %s. Run carson land %s again once that is cleared.", reason(err), g.state(), t.branch)
 	}
-	if changed := g.checksChanged(head, branch); changed != "" {
-		return g.stop(failed, "bin/check changed the task: %s; the landing stops, since the checks must leave the task as they found it. Look at git status in %s's worktree, put it back, then run carson land %s again.", changed, t.branch, t.branch)
-	}
-	tip := head
 	if g.commits, err = r.ownCommits(tip); err != nil {
 		return g.stop(failed, "what %s holds against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 	}
@@ -241,7 +230,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	shortTip := r.short(tip)
 	how := g.how(alreadyLanded)
 	if r.remote == "" {
-		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, checks, t.branch)
+		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, t.branch)
 		return g.said, done
 	}
 	now, err := r.pushMain()
@@ -257,7 +246,7 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 		g.note("Landed %s on local main at %s. Not on GitHub (%s). Run carson land %s again to push.", t.branch, shortTip, reason(err), t.branch)
 		return g.said, failed
 	}
-	g.note("Landed %s on main by fast-forward at %s (%s) and pushed; GitHub's main is %s. %s Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, now, checks, t.branch)
+	g.note("Landed %s on main by fast-forward at %s (%s) and pushed; GitHub's main is %s. Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, now, t.branch)
 	return g.said, done
 }
 
@@ -446,55 +435,6 @@ func (g *landing) run(s step) ([]string, int, bool) {
 	}
 	said, code := g.stop(refused, "%s conflicts in %s. The %s was undone; %s is %s. Run %s in %s's worktree, resolve, then run carson land %s again.", s.doing, files, s.name, t.branch, where, s.command, t.branch, t.branch)
 	return said, code, false
-}
-
-// checksChanged says how bin/check changed the task, or "": the branch it is on, its commit, and the files it holds must be as before.
-func (g *landing) checksChanged(head, branch string) string {
-	t := g.task
-	nowBranch, _ := git(t.path, "symbolic-ref", "--short", "-q", "HEAD")
-	nowHead, _ := git(t.path, "rev-parse", "HEAD")
-	left, err := changes(t.path)
-	switch {
-	case nowBranch != branch:
-		if nowBranch == "" {
-			nowBranch = "a detached HEAD"
-		}
-		return fmt.Sprintf("the worktree is now on %s, not %s, and %s is at %s", nowBranch, branch, branch, g.repo.short(head))
-	case nowHead != head:
-		return fmt.Sprintf("%s moved from %s to %s", branch, g.repo.short(head), g.repo.short(nowHead))
-	case err != nil:
-		return "what the worktree holds cannot be read (" + reason(err) + ")"
-	case len(left) > 0:
-		return fmt.Sprintf("it left %s in the worktree", plural(len(left), "change"))
-	}
-	return ""
-}
-
-// runChecks runs the repository's declared checks, bin/check, in the task's worktree, and says how they went.
-func runChecks(dir string) (string, error) {
-	path := filepath.Join(dir, "bin", "check")
-	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
-		return "No checks declared (no bin/check).", nil
-	}
-	command := exec.Command(path)
-	command.Dir = dir
-	output, err := command.CombinedOutput()
-	if err == nil {
-		return "Checks: bin/check passed.", nil
-	}
-	exit := err.Error()
-	var failure *exec.ExitError
-	if errors.As(err, &failure) {
-		exit = fmt.Sprintf("exit %d", failure.ExitCode())
-	}
-	tail := lines(strings.TrimRight(string(output), "\n"))
-	if len(tail) == 0 {
-		return "", refuse(refused, "bin/check failed (%s). It printed nothing.", exit)
-	}
-	if len(tail) > 20 {
-		tail = tail[len(tail)-20:]
-	}
-	return "", refuse(refused, "bin/check failed (%s). Its output ends:\n%s", exit, strings.Join(tail, "\n"))
 }
 
 // fastForward moves main to the task's tip in the main working tree, never over what that tree holds, and looks that it moved.
