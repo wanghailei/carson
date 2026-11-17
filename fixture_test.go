@@ -92,12 +92,14 @@ func (f *fixture) otherClone() string {
 	return other
 }
 
-// otherMachine pushes a commit to GitHub from the other machine.
-func (f *fixture) otherMachine() {
+// otherMachine pushes a commit to GitHub from the other machine, and returns the name of the file it adds.
+func (f *fixture) otherMachine() string {
 	f.t.Helper()
 	other := f.otherClone()
-	f.commit(other, fmt.Sprintf("other-%d.txt", len(f.git(other, "log", "--oneline"))))
+	name := fmt.Sprintf("other-%d.txt", len(f.git(other, "log", "--oneline")))
+	f.commit(other, name)
 	f.git(other, "push", "-q", "origin", "main")
+	return name
 }
 
 // worktree makes a worktree for task beside the repository, as carson start will, and returns its folder.

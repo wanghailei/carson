@@ -114,7 +114,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 
-The tests named below pass: `bin/check` ran all 203 of Carson's tests on 2026-11-17, with the `bin/check` step taken out of `carson land`.
+The tests named below pass: `bin/check` ran all 204 of Carson's tests on 2026-11-17, with the `bin/check` step taken out of `carson land`.
 
 ### S1. Worked from an old `main`, overwriting newer work
 

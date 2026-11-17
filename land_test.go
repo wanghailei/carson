@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -484,22 +484,42 @@ func TestLandKeepsATaskThatCarriesAJoinUnflattened(t *testing.T) {
 	}
 }
 
+// interruptDuring makes the repository's git hook named send carson a Ctrl-C and then hold its git step until the signal has arrived,
+// so the interrupt falls during that step whatever the machine's speed.
+func (f *fixture) interruptDuring(hook string) {
+	f.t.Helper()
+	hooks := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), "hooks")
+	os.MkdirAll(hooks, 0o755)
+	script := "#!/bin/sh\nkill -INT " + strconv.Itoa(os.Getpid()) + "\nsleep 1\n"
+	if err := os.WriteFile(filepath.Join(hooks, hook), []byte(script), 0o755); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func TestLandInterruptedWhileJoiningGitHubsMainEndsInOneLineAndGivesBackTheLock(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.commit(f.local, "merged-here.txt") // merged here, not yet pushed
+	f.otherMachine()
+	main, github := f.git(f.local, "rev-parse", "main"), f.git(f.github, "rev-parse", "main")
+	f.interruptDuring("pre-merge-commit")
+	out, code := f.land(dir)
+	expectCode(t, code, 1)
+	expectLine(t, out, "Not landed: interrupted before main was fast-forwarded. fix-login still holds its 1 commit, now rebased onto main, with GitHub's main merged in")
+	lock := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), landingLockFile)
+	if f.exists(lock) || f.git(f.local, "rev-parse", "main") != main || f.git(f.github, "rev-parse", "main") != github {
+		t.Error("the lock is still held, or main moved, here or on GitHub")
+	}
+}
+
 func TestLandInterruptedWhileBringingTheTaskUpToMainEndsInOneLineAndGivesBackTheLock(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.otherMachine()
 	github := f.git(f.github, "rev-parse", "main")
-	// The repository's pre-rebase hook holds the rebase long enough for the interrupt to arrive during it.
-	hooks := filepath.Join(f.git(f.local, "rev-parse", "--path-format=absolute", "--git-common-dir"), "hooks")
-	os.MkdirAll(hooks, 0o755)
-	if err := os.WriteFile(filepath.Join(hooks, "pre-rebase"), []byte("#!/bin/sh\nsleep 2\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		time.Sleep(700 * time.Millisecond)
-		syscall.Kill(os.Getpid(), syscall.SIGINT)
-	}()
+	f.interruptDuring("pre-rebase")
 	out, code := f.land(dir)
 	expectCode(t, code, 1)
 	expectLine(t, out, "Not landed: interrupted while bringing fix-login up to main.")
@@ -541,11 +561,8 @@ func TestLandOfATaskAlreadyOnMainSaysItHoldsNothingOfItsOwn(t *testing.T) {
 		t.Fatal("the first merge's push did not fail")
 	}
 	f.git(f.local, "config", "--unset", "remote.github.pushurl")
-	f.otherMachine()
 	// A file in the main working tree, where the other machine's commit would put one, stops the landing after the join.
-	for _, name := range strings.Fields(f.git(f.github, "diff", "--name-only", "main~1", "main")) {
-		f.write(f.local, name, "someone's draft\n")
-	}
+	f.write(f.local, f.otherMachine(), "someone's draft\n")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
 	if !strings.Contains(out, "fix-login holds nothing of its own that main lacks, with GitHub's main merged in") {
