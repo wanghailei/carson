@@ -60,12 +60,19 @@ $ cd ~/code/notes && carson remove xyz
 | `carson start <task>` | Starts a task from the latest `main`, in its own worktree, owned by the session running it. In a repository with no commit yet, the task starts empty, and landing it makes `main`. |
 | `carson status` | Shows `main` against GitHub's, the main working tree, every task with its owner, and abandoned work. Changes nothing. |
 | `carson land <task>` | Lands a finished task on `main` and pushes `main` to GitHub. Runs from anywhere in the repository. |
+| `carson land <task> --preserved <commit>` | Lands using the full commit ID that preserves every authorised overlapping file in the main working tree. |
 | `carson remove <task>` | Removes a landed task's worktree and branch. Runs from outside the worktree. |
 | `carson abandon <task>` | Keeps an unfinished task's work, uncommitted files committed, on `abandoned/<task>`, and removes its worktree. |
 | `carson adopt <task>` | Makes a task yours: abandoned work, a branch left without a worktree, or the task of an agent that has ended. After the repository's folder has moved, it links the task's worktree back to the repository, whether or not the task was yours already. |
 | `carson --version` | Says which version this is. |
 
 Exit codes: 0 done, as reported; 1 could not finish, and the message says what state things are left in; 2 refused.
+
+### Landing when local files overlap
+
+When an ordinary landing refuses because local files overlap, obtain permission from their owner or the person in charge before replacing them. In a separate worktree based on `main` or an ancestor, commit the exact bytes and Git modes of all and only the overlapping files that were authorised. Keep that commit on a local branch so the originals remain recoverable.
+
+Run `carson land <task> --preserved <commit>` with that commit's full ID. The overlap must consist of regular files present in both the preservation commit and the task tip. Carson checks that the contents and permissions still match the preservation commit, that no other overlap appeared, and that the main index has no staged changes. It leaves matching files in place, applies the reviewed versions of the other overlapping files, and then fast-forwards and pushes as usual. It stops for another review if updating the task changes its tip.
 
 ## Building from source
 
@@ -101,7 +108,7 @@ The real-world damage agents have done while working in shared git repositories.
 | | Scenario | Prevented by | Holds |
 |---|---|---|---|
 | S1 | Worked from an old `main`, overwriting newer work | Carson | Yes |
-| S2 | Damaged the main working tree, which everyone shares | AGT's gate, Carson | Partly: files left there still block a landing with no way through |
+| S2 | Damaged the main working tree, which everyone shares | AGT's gate, Carson | Yes for task landings: local overlaps refuse unless their authorised contents have been preserved |
 | S3 | Touched another agent's work | Carson | Yes |
 | S4 | Removed a worktree with a session inside it | Carson | Yes |
 | S5 | Lost its own unfinished work | Carson | Yes |
@@ -146,13 +153,10 @@ The tests named below pass: `bin/check` ran all 204 of Carson's tests on 2026-11
 - **Root cause.** The main working tree is shared, nothing there says whose a change is, and the rule against working there was only text.
 - **Prevention.**
   - AGT's gate refuses agents' edits, shell writes, commits, `checkout`, `clean`, and `stash drop` and `stash clear` there.
-  - Carson never fast-forwards over a file there.
+  - Carson refuses ordinary landings that would overwrite a local file. With `--preserved` it uses the approved contents in a commit to check every overlap before the fast-forward.
   - A note in the coding rules says `git rm --cached` protects only the tree where it ran.
-- **Tests.** TestLandRefusesToOverwriteAModifiedFileInTheMainTree, TestLandRefusesToOverwriteWhatTheMainTreeHolds, TestStartRefusesAFastForwardThatWouldOverwriteAnIgnoredFile; AGT's tests.
-- **Holds.** Partly.
-  - The damage itself is refused.
-  - A file left there by a route the gate cannot see, or by a person's own edit, still blocks every landing that would change it. Carson then says "ask a person whose they are": see Open.
-  - The files deleted after `git rm --cached` keep their last content in git's history; Carson does not stop that.
+- **Tests.** TestLandRefusesToOverwriteAModifiedFileInTheMainTree, TestLandRefusesToOverwriteWhatTheMainTreeHolds, TestStartRefusesAFastForwardThatWouldOverwriteAnIgnoredFile, TestWhenOverlapsArePreservedMainFastForwardsAndMatchingHooksStayInPlace, TestWhenTheSuppliedCommitDoesNotPreserveEveryOverlapLandingRefuses; AGT's tests.
+- **Holds.** The original overlapping content stays available in the preservation commit after an authorised task landing. If incoming GitHub changes already overlap local files while Carson is bringing local `main` up to date, Carson still refuses that earlier fast-forward. Files deleted after `git rm --cached` keep their last committed contents in Git's history.
 
 ### S3. Touched another agent's work
 
@@ -299,9 +303,7 @@ This is a situation, not damage: a person moves or renames a repository's folder
 
 ### Open
 
-1. **S2: files left in the main working tree that block a landing.**
-   - **Proposed, not yet decided.** When such files stand in the way of a fast-forward, Carson keeps them as abandoned work on a branch, `abandoned/main-tree-<date-time>`. `carson status` shows it, and `carson adopt` takes it up like any abandoned task. Carson then puts those paths back to `main` and lands. Nothing is lost, and nobody is asked.
-   - **The cost.** A person's own uncommitted edits, in a repository edited by hand, would leave the working tree and wait on that branch.
+1. **S2: incoming changes on GitHub's main block updating local main.** The preservation option covers the final task fast-forward. If local files overlap the earlier update from GitHub, Carson still refuses that update.
 2. **S8, S9, S10: three open routes in AGT's gate.**
    - Refuse a raw `git push <remote> main` from a worktree, pointing to `carson land`.
    - Refuse a raw `git worktree add`, pointing to `carson start` and `carson adopt`.

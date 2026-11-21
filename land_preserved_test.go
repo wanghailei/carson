@@ -10,7 +10,6 @@ import (
 
 type preservedLandingFixture struct {
 	*fixture
-	repo                   *repository
 	base, snapshot, target string
 	hooks                  []string
 }
@@ -53,11 +52,7 @@ func newPreservedLandingFixture(t *testing.T) preservedLandingFixture {
 	for _, name := range hooks {
 		f.write(f.local, name, name+"\n")
 	}
-	repo, err := openRepository(f.local)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return preservedLandingFixture{fixture: f, repo: repo, base: base, snapshot: snapshot, target: target, hooks: hooks}
+	return preservedLandingFixture{fixture: f, base: base, snapshot: snapshot, target: target, hooks: hooks}
 }
 
 func (f preservedLandingFixture) mainFile(name string) os.FileInfo {
@@ -69,9 +64,9 @@ func (f preservedLandingFixture) mainFile(name string) os.FileInfo {
 	return info
 }
 
-func (f preservedLandingFixture) landPreserved() error {
+func (f preservedLandingFixture) landPreserved(snapshot string) (string, int) {
 	f.t.Helper()
-	return f.repo.forwardPreserved(f.target, f.snapshot)
+	return f.runIn(inClaude, f.taskFolder("approved-task"), claudeRunning, "land", "approved-task", "--preserved", snapshot)
 }
 
 func TestWhenOverlapsArePreservedMainFastForwardsAndMatchingHooksStayInPlace(t *testing.T) {
@@ -82,17 +77,22 @@ func TestWhenOverlapsArePreservedMainFastForwardsAndMatchingHooksStayInPlace(t *
 	out, code := f.land(f.taskFolder("approved-task"))
 	expectCode(t, code, 2)
 	expectLine(t, out, "Not landed: fast-forwarding main would overwrite")
+	if !strings.Contains(out, "authorises replacing") || !strings.Contains(out, "carson land approved-task --preserved <commit>") {
+		t.Errorf("the refusal did not explain the authorised preservation path: %s", out)
+	}
 	held := make(map[string]os.FileInfo)
 	for _, name := range f.hooks {
 		held[name] = f.mainFile(name)
 	}
 
-	if err := f.landPreserved(); err != nil {
-		t.Fatal(err)
-	}
-
-	if main := f.git(f.local, "rev-parse", "main"); main != f.target {
-		t.Errorf("main = %s, want %s", main, f.target)
+	out, code = f.landPreserved(f.snapshot)
+	expectCode(t, code, 0)
+	expectLine(t, out, "The original overlapping files are kept in commit "+f.snapshot+".")
+	expectLine(t, out, "Landed approved-task on main by fast-forward at "+f.short(f.local, "main")+" (1 commit) and pushed; GitHub's main is "+f.short(f.local, "main")+".")
+	for _, repository := range []string{f.local, f.github} {
+		if main := f.git(repository, "rev-parse", "refs/heads/main"); main != f.target {
+			t.Errorf("%s main = %s, want %s", repository, main, f.target)
+		}
 	}
 	if status := f.git(f.local, "status", "--porcelain"); strings.TrimSpace(status) != "M first.txt" {
 		t.Errorf("the remaining local change = %q, want the unrelated edit alone", status)
@@ -112,10 +112,10 @@ func TestWhenAnOverlapHasChangedSincePreservationLandingRefusesWithoutChanges(t 
 	f := newPreservedLandingFixture(t)
 	f.write(f.local, "README.md", "edited after the preservation commit\n")
 
-	err := f.landPreserved()
-
-	if err == nil || !strings.Contains(err.Error(), "README.md") {
-		t.Fatalf("want refusal naming the changed file, got %v", err)
+	out, code := f.landPreserved(f.snapshot)
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "README.md") {
+		t.Fatalf("the refusal does not name README.md: %s", out)
 	}
 	f.checkRefusedWithoutChanges()
 	got, err := os.ReadFile(filepath.Join(f.local, "README.md"))
@@ -128,10 +128,10 @@ func TestWhenAnOverlapIsNotInThePreservedCommitLandingRefusesWithoutChanges(t *t
 	f := newPreservedLandingFixture(t)
 	f.write(f.local, "deliverable.md", "unrelated owner's untracked file\n")
 
-	err := f.landPreserved()
-
-	if err == nil || !strings.Contains(err.Error(), "deliverable.md") {
-		t.Fatalf("want refusal naming the additional overlap, got %v", err)
+	out, code := f.landPreserved(f.snapshot)
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "deliverable.md") {
+		t.Fatalf("the refusal does not name deliverable.md: %s", out)
 	}
 	f.checkRefusedWithoutChanges()
 }
@@ -142,10 +142,10 @@ func TestWhenTheIndexContainsAnUnrelatedChangeLandingRefusesWithoutUnstagingIt(t
 	f.git(f.local, "add", "first.txt")
 	before := f.git(f.local, "write-tree")
 
-	err := f.landPreserved()
-
-	if err == nil || !strings.Contains(err.Error(), "index") {
-		t.Fatalf("want refusal naming the index, got %v", err)
+	out, code := f.landPreserved(f.snapshot)
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "index") {
+		t.Fatalf("the refusal does not name index: %s", out)
 	}
 	if main := f.git(f.local, "rev-parse", "main"); main != f.base {
 		t.Errorf("main moved to %s despite the refusal", main)
@@ -155,10 +155,57 @@ func TestWhenTheIndexContainsAnUnrelatedChangeLandingRefusesWithoutUnstagingIt(t
 	}
 }
 
+func TestWhenTheSuppliedCommitDoesNotPreserveEveryOverlapLandingRefuses(t *testing.T) {
+	f := newPreservedLandingFixture(t)
+
+	out, code := f.landPreserved(f.target)
+
+	expectCode(t, code, 2)
+	if !strings.Contains(out, "deliverable.md") || !strings.Contains(out, "is not in the way of landing") {
+		t.Errorf("the refusal did not explain the unrelated path in the supplied commit: %s", out)
+	}
+	f.checkRefusedWithoutChanges()
+}
+
+func TestWhenThePreservedFlagHasNoCommitLandingShowsItsSyntax(t *testing.T) {
+	f := newPreservedLandingFixture(t)
+
+	out, code := f.runIn(inClaude, f.taskFolder("approved-task"), claudeRunning, "land", "approved-task", "--preserved")
+
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: give the full preservation commit ID as in carson land <task> --preserved <commit>.")
+	f.checkRefusedWithoutChanges()
+}
+
+func TestWhenUpdatingTheTaskChangesItsTipThePreservedLandingStopsForReview(t *testing.T) {
+	f := newPreservedLandingFixture(t)
+	f.otherMachine()
+	upstream := f.git(f.github, "rev-parse", "refs/heads/main")
+
+	out, code := f.landPreserved(f.snapshot)
+
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: the task's tip changed from")
+	for _, repository := range []string{f.local, f.github} {
+		if main := f.git(repository, "rev-parse", "refs/heads/main"); main != upstream {
+			t.Errorf("%s main = %s, want only the upstream update %s", repository, main, upstream)
+		}
+	}
+	if got := f.git(f.local, "diff", "--cached", "--name-only"); got != "" {
+		t.Errorf("files were staged despite the refusal: %s", got)
+	}
+	contents, err := os.ReadFile(filepath.Join(f.local, "README.md"))
+	if err != nil || string(contents) != "old uncommitted instructions\n\n" {
+		t.Errorf("the uncommitted README was changed, got %q (%v)", contents, err)
+	}
+}
+
 func (f preservedLandingFixture) checkRefusedWithoutChanges() {
 	f.t.Helper()
-	if main := f.git(f.local, "rev-parse", "main"); main != f.base {
-		f.t.Errorf("main moved to %s despite the refusal", main)
+	for _, repository := range []string{f.local, f.github} {
+		if main := f.git(repository, "rev-parse", "refs/heads/main"); main != f.base {
+			f.t.Errorf("%s main moved to %s despite the refusal", repository, main)
+		}
 	}
 	if staged := f.git(f.local, "diff", "--cached", "--name-only"); staged != "" {
 		f.t.Errorf("files were staged despite the refusal: %s", staged)
@@ -179,10 +226,10 @@ func TestWhenFastForwardFailsAfterPreparingPreservedFilesOriginalEditsRemain(t *
 	t.Setenv("CARSON_TEST_REAL_GIT", realGit)
 	t.Setenv("PATH", gitShim+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	err = f.landPreserved()
-
-	if err == nil || !strings.Contains(err.Error(), "simulated fast-forward refusal") {
-		t.Fatalf("want fast-forward refusal, got %v", err)
+	out, code := f.landPreserved(f.snapshot)
+	expectCode(t, code, 1)
+	if !strings.Contains(out, "simulated fast-forward refusal") {
+		t.Fatalf("the refusal does not mention the Git failure: %s", out)
 	}
 	f.checkRefusedWithoutChanges()
 	got, err := os.ReadFile(filepath.Join(f.local, "README.md"))

@@ -16,6 +16,15 @@ import (
 // a change refuses first. Ctrl-C is caught for the whole run: the step under way ends, and the run stops there with one line, the
 // landing lock given back.
 func land(m Machine, args []string) int {
+	var preserved string
+	if len(args) > 1 && args[1] == "--preserved" {
+		if len(args) != 3 || args[2] == "" || strings.HasPrefix(args[2], "-") {
+			fmt.Fprintln(m.Out, "Not landed: give the full preservation commit ID as in carson land <task> --preserved <commit>.")
+			return refused
+		}
+		preserved = args[2]
+		args = args[:1]
+	}
 	name, err := oneTask(args, "carson land")
 	if err != nil {
 		fmt.Fprintln(m.Out, "Not landed: "+err.Error())
@@ -34,7 +43,7 @@ func land(m Machine, args []string) int {
 		fmt.Fprintln(m.Out, "Not landed: "+err.Error())
 		return codeOf(err)
 	}
-	said, code := repo.landTask(m, t, record, interrupted)
+	said, code := repo.landTask(m, t, record, preserved, interrupted)
 	for _, line := range said {
 		fmt.Fprintln(m.Out, line)
 	}
@@ -129,7 +138,7 @@ func (g *landing) stop(code int, format string, args ...any) ([]string, int) {
 }
 
 // landTask carries out the landing, step by step, and returns what it says and the exit code.
-func (r *repository) landTask(m Machine, t task, record Record, interrupted context.Context) ([]string, int) {
+func (r *repository) landTask(m Machine, t task, record Record, preserved string, interrupted context.Context) ([]string, int) {
 	g := &landing{repo: r, task: t}
 	var err error
 	// The first task of a repository with no commit has no commit of its own until its work is committed.
@@ -213,7 +222,10 @@ func (r *repository) landTask(m Machine, t task, record Record, interrupted cont
 	if g.commits, err = r.ownCommits(tip); err != nil {
 		return g.stop(failed, "what %s holds against main cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 	}
-	if said, code, ok := g.fastForward(tip); !ok {
+	if preserved != "" && tip != g.original {
+		return g.stop(refused, "the task's tip changed from %s to %s while bringing it up to date. Its overlapping files were not prepared; %s. Review the new tip before landing with the preservation commit.", r.short(g.original), r.short(tip), g.state())
+	}
+	if said, code, ok := g.fastForward(tip, preserved); !ok {
 		if stopped() {
 			now, _ := git(r.top, "rev-parse", "main")
 			return g.stop(failed, "interrupted while fast-forwarding main; main is at %s, the task's tip is %s. %s. Run carson land %s again.", r.short(now), r.short(tip), g.state(), t.branch)
@@ -437,16 +449,26 @@ func (g *landing) run(s step) ([]string, int, bool) {
 	return said, code, false
 }
 
-// fastForward moves main to the task's tip in the main working tree, never over what that tree holds, and looks that it moved.
-func (g *landing) fastForward(tip string) ([]string, int, bool) {
+// fastForward moves main to the task's tip and checks that it moved. An ordinary landing refuses local overlaps; a preservation commit records exactly the authorised originals.
+func (g *landing) fastForward(tip, preserved string) ([]string, int, bool) {
 	r := g.repo
 	if branch := r.mainTreeBranch(); branch != "main" {
 		said, code := g.stop(refused, "the main working tree is on %s, not main, so main cannot be fast-forwarded there. %s. Switch the main working tree back to main, then run carson land %s again.", branch, g.state(), g.task.branch)
 		return said, code, false
 	}
-	inTheWay, err := r.forwardMain(tip)
+	var inTheWay []string
+	var err error
+	if preserved == "" {
+		inTheWay, err = r.forwardMain(tip)
+	} else {
+		err = r.forwardPreserved(tip, preserved)
+		if err != nil {
+			said, code := g.stop(codeOf(err), "could not land with preservation commit %s (%s). %s.", preserved, reason(err), g.state())
+			return said, code, false
+		}
+	}
 	if len(inTheWay) > 0 {
-		said, code := g.stop(refused, "fast-forwarding main would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s. Ask a person whose they are; once they are out of the main working tree, run carson land %s again.", strings.Join(inTheWay, ", "), g.state(), g.task.branch)
+		said, code := g.stop(refused, "fast-forwarding main would overwrite what the main working tree holds in %s. carson did not touch them and cannot tell whose they are. %s. Ask a person whose they are. If their owner or the person in charge authorises replacing those regular files, commit their exact originals in a separate worktree, then run carson land %s --preserved <commit>.", strings.Join(inTheWay, ", "), g.state(), g.task.branch)
 		return said, code, false
 	}
 	if err != nil {
@@ -456,6 +478,9 @@ func (g *landing) fastForward(tip string) ([]string, int, bool) {
 	if now, _ := git(r.top, "rev-parse", "main"); now != tip {
 		said, code := g.stop(failed, "main was fast-forwarded, but it is at %s, not the task's %s. Run carson status to see where things stand, and ask a person before landing again.", r.short(now), r.short(tip))
 		return said, code, false
+	}
+	if preserved != "" {
+		g.note("The original overlapping files are kept in commit %s.", preserved)
 	}
 	return nil, 0, true
 }

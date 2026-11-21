@@ -59,6 +59,7 @@ func ThisMachine(dir string, out io.Writer) Machine {
 const usage = `carson start <task>     start a task in its own worktree, from the latest main
 carson status           show main, the main working tree, every task and abandoned work; changes nothing
 carson land <task>      land a finished task on main, and push main to GitHub
+carson land <task> --preserved <commit>  land using the full commit ID that preserves every authorised overlapping file
 carson remove <task>    remove a landed task's worktree and branch, from outside its worktree
 carson abandon <task>   keep an unfinished task's work on a branch abandoned/<task>, and remove its worktree
 carson adopt <task>     make yours an ended agent's task, abandoned work, or a branch left without a worktree; relink a task whose repository's folder has moved
