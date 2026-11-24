@@ -1,10 +1,15 @@
 #!/bin/sh
 # Carson's own checks, run by hand before a task lands and by bin/release: formatting, vet and the tests.
 set -e
+if ! command -v mise >/dev/null; then
+	printf 'Cannot check Carson: install mise so the checks can use the latest Go.\n' >&2
+	exit 1
+fi
 cd "$(dirname "$0")/.."
 # Ask mise for the latest Go explicitly: its project config alone can reuse an older installed version.
-if command -v mise >/dev/null; then run="mise exec go@latest --"; else run=""; fi
-unformatted=$($run gofmt -l .)
-if [ -n "$unformatted" ]; then echo "Not formatted by gofmt: $unformatted"; exit 1; fi
-$run go vet ./...
-$run go test -count=1 ./...
+exec mise exec go@latest -- sh -e -c '
+	unformatted=$(gofmt -l .)
+	if [ -n "$unformatted" ]; then echo "Not formatted by gofmt: $unformatted"; exit 1; fi
+	go vet ./...
+	go test -count=1 ./...
+'

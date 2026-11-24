@@ -76,9 +76,11 @@ Run `carson land <task> --preserved <commit>` with that commit's full ID. The ov
 
 ## Building from source
 
-    go build
+With `mise` installed, build Carson with the latest Go release:
 
-`bin/check` runs the formatting check, vet and the tests.
+    mise exec go@latest -- go build
+
+`bin/check` uses the same Go toolchain to check formatting, run vet and run the tests.
 
 ## Scenarios
 
