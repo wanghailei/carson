@@ -32,9 +32,14 @@ for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
 	os="${target%/*}" arch="${target#*/}"
 	name="carson-$version-$os-$arch"
 	mkdir -p "$out/$name"
-	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 mise exec -- go build -trimpath -ldflags "-s -w" -o "$out/$name/carson" .
+	GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 mise exec go@latest -- go build -trimpath -ldflags "-s -w" -o "$out/$name/carson" .
 	cp LICENSE README.md "$out/$name/"
-	tar -C "$out" -czf "$out/$name.tar.gz" "$name"
+	members=("$name/" "$name/carson" "$name/LICENSE" "$name/README.md")
+	# mise only strips the outer directory automatically if it is the sole top-level entry.
+	# Disable macOS AppleDouble metadata and pack only the intended files, even in a reused staging directory.
+	COPYFILE_DISABLE=1 tar --format=ustar --no-recursion -C "$out" -czf "$out/$name.tar.gz" "${members[@]}"
+	contents="$(tar -tzf "$out/$name.tar.gz")"
+	[[ "$contents" == "$(printf '%s\n' "${members[@]}")" ]] || refuse "$name.tar.gz does not contain just carson, LICENSE and README.md inside $name; check tar and rerun."
 	say "built   $name.tar.gz"
 done
 (cd "$out" && shasum -a 256 carson-"$version"-*.tar.gz >checksums.txt)

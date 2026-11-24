@@ -1,9 +1,9 @@
 #!/bin/sh
-# Carson's own checks, run by hand before a task lands and by bin/release: formatting, vet and the tests. Go comes from mise where mise is installed (it pins
-# the version in mise.toml), and from the PATH otherwise.
+# Carson's own checks, run by hand before a task lands and by bin/release: formatting, vet and the tests.
 set -e
 cd "$(dirname "$0")/.."
-if command -v mise >/dev/null; then run="mise exec --"; else run=""; fi
+# Ask mise for the latest Go explicitly: its project config alone can reuse an older installed version.
+if command -v mise >/dev/null; then run="mise exec go@latest --"; else run=""; fi
 unformatted=$($run gofmt -l .)
 if [ -n "$unformatted" ]; then echo "Not formatted by gofmt: $unformatted"; exit 1; fi
 $run go vet ./...
