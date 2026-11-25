@@ -399,7 +399,9 @@ func (g *landing) bringTaskUpToMain() ([]string, int, bool) {
 // changes main already holds — one alike to a commit of main's, or one the rebase leaves changing nothing — and the landing would
 // carry the rest as if that were all (S14). The first kind is refused before rebasing, matched byte for byte, so it is not mistaken
 // for a conflict once main has moved past it. The rebase then reapplies every commit, since git's own matching ignores whitespace, and
-// keeps any it leaves empty, so the second kind is found, and the rebase undone.
+// keeps any it leaves empty, so the second kind is found, and the rebase undone. It moves no branch but the task's, whatever
+// rebase.updateRefs says, since the undo puts back only the task. Its conflict is named with the same rebase to run by hand: a plain
+// one would drop, not stop on, a commit that differs from one of main's only in whitespace.
 func (g *landing) rebase() ([]string, int, bool) {
 	r, t := g.repo, g.task
 	held, err := r.heldOnMain(t.branch)
@@ -416,7 +418,7 @@ func (g *landing) rebase() ([]string, int, bool) {
 		said, code := g.stop(failed, "%s's commits cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 		return said, code, false
 	}
-	if said, code, ok := g.run(step{name: "rebase", doing: "rebasing onto main (" + r.short("main") + ")", command: "git rebase main", args: []string{"rebase", "-q", "--reapply-cherry-picks", "--empty=keep", "main"}}); !ok {
+	if said, code, ok := g.run(step{name: "rebase", doing: "rebasing onto main (" + r.short("main") + ")", command: "git rebase --reapply-cherry-picks main", args: []string{"rebase", "-q", "--reapply-cherry-picks", "--empty=keep", "--no-update-refs", "main"}}); !ok {
 		return said, code, false
 	}
 	g.update = "rebased onto main"

@@ -91,15 +91,33 @@ func (r *repository) landedByChanges(tip string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	held, err := r.heldOnMain(tip)
+	own, err := r.patches("main.." + tip)
 	if err != nil {
 		return false, err
 	}
-	return ahead > 0 && len(held) == ahead, nil
+	if ahead == 0 || len(own) != ahead {
+		return false, nil
+	}
+	mains, err := r.patches(tip + "..main")
+	if err != nil {
+		return false, err
+	}
+	onMain := map[string]int{}
+	for _, p := range mains {
+		onMain[p.id]++
+	}
+	for _, p := range own {
+		if onMain[p.id] == 0 {
+			return false, nil
+		}
+		onMain[p.id]--
+	}
+	return true, nil
 }
 
-// heldOnMain is the commits at tip that main lacks whose changes main holds, byte for byte, in commits of its own, oldest first: each
-// commit's verbatim patch-id is one of main's, each of main's answering for one of tip's. A rebase onto main would drop them (S14).
+// heldOnMain is the commits at tip that main lacks whose changes main holds, byte for byte, in a commit of its own, oldest first. A
+// rebase onto main would drop them (S14). Unlike landedByChanges's proof, one commit of main's answers for every commit of tip's alike
+// to it, as git's rebase drops every one.
 func (r *repository) heldOnMain(tip string) ([]string, error) {
 	own, err := r.patches("main.." + tip)
 	if err != nil {
@@ -109,14 +127,13 @@ func (r *repository) heldOnMain(tip string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	onMain := map[string]int{}
+	onMain := map[string]bool{}
 	for _, p := range mains {
-		onMain[p.id]++
+		onMain[p.id] = true
 	}
 	var held []string
 	for _, p := range own {
-		if onMain[p.id] > 0 {
-			onMain[p.id]--
+		if onMain[p.id] {
 			held = append(held, p.commit)
 		}
 	}

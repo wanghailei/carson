@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -90,7 +91,7 @@ func TestLandUndoesAConflictingRebase(t *testing.T) {
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase main in fix-login's worktree, resolve, then run carson land fix-login again.")
+	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase --reapply-cherry-picks main in fix-login's worktree, resolve, then run carson land fix-login again.")
 	if f.git(dir, "rev-parse", "HEAD") != before || f.git(dir, "status", "--porcelain") != "" || f.exists(filepath.Join(f.git(dir, "rev-parse", "--absolute-git-dir"), "rebase-merge")) {
 		t.Error("the task is not as it was")
 	}
@@ -664,6 +665,57 @@ func TestLandRefusesToDropACommitWhoseChangesMainHoldsAndHasMovedPast(t *testing
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
 	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, `Not landed: main already holds the changes of 1 of fix-login's 2 commits — `+step+` "Step the version, fixes #193" — so rebasing onto main (`+f.short(f.local, "main")+`) would drop it.`)
+	// The way on that carson gives drops the step alone, and the rest lands.
+	f.git(dir, "rebase", "-q", "main")
+	if subjects := f.git(dir, "log", "--format=%s", "main..HEAD"); subjects != "add login.rb" {
+		t.Fatalf("git rebase main did not leave the task's other commit alone: %q", subjects)
+	}
+	out, code = f.land(dir)
+	expectCode(t, code, 0)
+	expectLine(t, out, "Landed fix-login on main by fast-forward at "+f.short(dir, "HEAD")+" (1 commit)")
+}
+
+// S14: git drops every commit of a task alike to one of main's, so a task that steps the version, steps it back and steps it again
+// has both steps named, though main stepped it once.
+func TestLandNamesEveryCommitAlikeToOneOfMains(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	var steps []string
+	for i, content := range []string{"version 2\n", "first.txt\n", "version 2\n"} {
+		f.write(dir, "first.txt", content)
+		f.git(dir, "commit", "-q", "-am", "Step "+strconv.Itoa(i+1))
+		steps = append(steps, f.short(dir, "HEAD"))
+	}
+	other := f.otherClone()
+	f.write(other, "first.txt", "version 2\n")
+	f.git(other, "commit", "-q", "-am", "Step the version")
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	f.dropRefused(dir, f.git(dir, "rev-parse", "HEAD"), f.git(other, "rev-parse", "HEAD"), out, code, `Not landed: main already holds the changes of 2 of fix-login's 3 commits — `+steps[0]+` "Step 1", `+steps[2]+` "Step 3" — so rebasing onto main (`+f.short(f.local, "main")+`) would drop them.`)
+}
+
+// S14: a refused rebase moves no branch but the task's, though git's rebase.updateRefs would move every branch pointing into it.
+func TestLandRefusingADropMovesNoOtherBranch(t *testing.T) {
+	f := newFixture(t)
+	f.git(f.local, "config", "rebase.updateRefs", "true")
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.git(dir, "branch", "backup")
+	backup := f.git(dir, "rev-parse", "backup")
+	f.write(dir, "first.txt", "version 2\n")
+	f.git(dir, "commit", "-q", "-am", "Step the version")
+	before := f.git(dir, "rev-parse", "HEAD")
+	other := f.otherClone()
+	f.write(other, "first.txt", "version 2\n")
+	f.write(other, "notes.txt", "what changed\n")
+	f.git(other, "add", "notes.txt")
+	f.git(other, "commit", "-q", "-am", "Step the version and note it")
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, "Not landed: main already holds the changes of 1 of fix-login's 2 commits")
+	if now := f.git(dir, "rev-parse", "backup"); now != backup {
+		t.Errorf("the branch backup moved from %s to %s", backup, now)
+	}
 }
 
 // S14: main holds the task's change inside a larger commit of its own, so the patches differ, and only the rebase shows that the
@@ -697,5 +749,10 @@ func TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace(t *testing.T
 	f.git(other, "commit", "-q", "-am", "Step the version")
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
-	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+".")
+	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase --reapply-cherry-picks main in fix-login's worktree, resolve, then run carson land fix-login again.")
+	// The rebase carson names meets the same conflict; git's plain rebase would drop the commit instead.
+	rebase := exec.Command("git", "-C", dir, "rebase", "-q", "--reapply-cherry-picks", "main")
+	if err := rebase.Run(); err == nil || f.git(dir, "diff", "--name-only", "--diff-filter=U") != "first.txt" {
+		t.Errorf("the rebase carson names does not stop on the conflict in first.txt (%v)", err)
+	}
 }

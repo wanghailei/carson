@@ -38,7 +38,7 @@ carson status       main, the main working tree, every task and whose it is
 
 ## Quickstart
 
-Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git`, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote is used when it is there.
+Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git` 2.39 or later, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote is used when it is there.
 
 ```
 $ carson start xyz
@@ -125,7 +125,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 | S14 | Landed a task without one of its commits, and said nothing | Carson | Yes for a task landed by rebase |
 
-The tests named below pass: `bin/check` ran all 218 of Carson's tests on 2026-11-25.
+The tests named below pass: `bin/check` ran all 220 of Carson's tests on 2026-11-25.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -309,9 +309,11 @@ This is a situation, not damage: a person moves or renames a repository's folder
 
 - **What happened.** 2026-11-25 (Marktone #193): two tasks each stepped Marktone's version from 0.81.0 to 0.81.1, and #183's landed first. Landing #193's, `carson land` rebased it onto the new `main`; git dropped its version step, whose changes `main` already held, and Carson landed the other six commits and reported success. The step carried "Fixes #193", so the issue stayed open, and the next landing, 0.81.2, carried #193's code unnamed. Only the next lander noticed.
 - **Root cause.** By default, git's rebase drops without a word a commit whose changes the new base already holds: one alike to a commit there, matched with whitespace ignored, or one the rebase leaves changing nothing. Carson counted the task's commits after the rebase, so its report showed no loss.
-- **Prevention.** Before rebasing, `carson land` refuses a task with a commit whose changes `main` holds byte for byte in a commit of its own, and names it. It then rebases reapplying every commit and keeping any left empty; if one is, the rebase is undone and the commit named. The refusal says to rebase by hand, which drops it, and to make its change again on top if still needed: a version step takes the next version. A commit differing from `main`'s only in whitespace is rebased, not dropped. Like `carson remove`, this needs git 2.39 or later, for `git patch-id --verbatim`.
-- **Tests.** TestLandRefusesToDropACommitWhoseChangesMainAlreadyHolds, TestLandRefusesToDropACommitWhoseChangesMainHoldsAndHasMovedPast, TestLandRefusesToDropACommitTheRebaseWouldEmpty, TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace.
-- **Holds.** Yes for a task landed by rebase. A task carrying a merge is brought up to `main` by merging, which keeps every commit: a commit there whose changes `main` already holds lands, changing nothing.
+- **Prevention.** Before rebasing, `carson land` refuses a task with a commit whose changes `main` holds byte for byte in a commit of its own, and names it. It then rebases reapplying every commit and keeping any left empty; if one is, the rebase is undone and the commit named. The refusal says to rebase by hand, which drops it, and to make its change again on top if still needed: a version step takes the next version. A commit differing from `main`'s only in whitespace is rebased, not dropped, and a conflict is named with the same rebase to run by hand, `git rebase --reapply-cherry-picks main`, since a plain one would drop that commit. The rebase moves no other branch, whatever `rebase.updateRefs` says. Like `carson remove`, this needs git 2.39 or later, for `git patch-id --verbatim`.
+- **Tests.** TestLandRefusesToDropACommitWhoseChangesMainAlreadyHolds, TestLandRefusesToDropACommitWhoseChangesMainHoldsAndHasMovedPast, TestLandRefusesToDropACommitTheRebaseWouldEmpty, TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace, TestLandNamesEveryCommitAlikeToOneOfMains, TestLandRefusingADropMovesNoOtherBranch.
+- **Holds.** Yes for a task landed by rebase, with two gaps.
+  - A task carrying a merge is brought up to `main` by merging, which keeps every commit: a commit there whose changes `main` already holds lands, changing nothing.
+  - Carson finishes its undo when interrupted, but one killed outright between the end of its rebase and the undo leaves the task rebased, emptied commit and all; the next landing finds the task on `main` and does not check it again.
 
 ### Open
 
