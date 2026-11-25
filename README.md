@@ -64,6 +64,7 @@ $ cd ~/code/notes && carson remove xyz
 | `carson remove <task>` | Removes a landed task's worktree and branch. Runs from outside the worktree. |
 | `carson abandon <task>` | Keeps an unfinished task's work, uncommitted files committed, on `abandoned/<task>`, and removes its worktree. |
 | `carson adopt <task>` | Makes a task yours: abandoned work, a branch left without a worktree, or the task of an agent that has ended. After the repository's folder has moved, it links the task's worktree back to the repository, whether or not the task was yours already. |
+| `carson update` | Updates a standalone installation to the latest stable release. No repository needed. |
 | `carson --version` | Says which version this is. |
 
 Exit codes: 0 done, as reported; 1 could not finish, and the message says what state things are left in; 2 refused.
@@ -73,6 +74,12 @@ Exit codes: 0 done, as reported; 1 could not finish, and the message says what s
 When an ordinary landing refuses because local files overlap, obtain permission from their owner or the person in charge before replacing them. In a separate worktree based on `main` or an ancestor, commit the exact bytes and Git modes of all and only the overlapping files that were authorised. Keep that commit on a local branch so the originals remain recoverable.
 
 Run `carson land <task> --preserved <commit>` with that commit's full ID. The overlap must consist of regular files present in both the preservation commit and the task tip. Carson checks that the contents and permissions still match the preservation commit, that no other overlap appeared, and that the main index has no staged changes. It leaves matching files in place, applies the reviewed versions of the other overlapping files, and then fast-forwards and pushes as usual. It stops for another review if updating the task changes its tip.
+
+### Updating Carson
+
+Run `carson update` from any directory. For a standalone binary in `~/.local/bin` or `~/bin`, Carson verifies the GitHub download before replacing the binary and prints where it kept the previous one. If you already have the latest release or a newer version, it changes nothing.
+
+If you installed Carson with mise, run `mise upgrade --bump github:wanghailei/carson` instead. For any other package manager, update Carson through that manager. If your standalone copy predates the `update` command, replace it once with the latest build from the [releases](https://github.com/wanghailei/carson/releases).
 
 ## Building from source
 

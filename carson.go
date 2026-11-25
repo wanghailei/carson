@@ -63,6 +63,7 @@ carson land <task> --preserved <commit>  land using the full commit ID that pres
 carson remove <task>    remove a landed task's worktree and branch, from outside its worktree
 carson abandon <task>   keep an unfinished task's work on a branch abandoned/<task>, and remove its worktree
 carson adopt <task>     make yours an ended agent's task, abandoned work, or a branch left without a worktree; relink a task whose repository's folder has moved
+carson update           update a standalone Carson to the latest stable release; no repository needed
 carson --version        show carson's version
 `
 
@@ -96,6 +97,8 @@ func Main(args []string, machine Machine) int {
 		return abandon(machine, args[1:])
 	case "adopt":
 		return adopt(machine, args[1:])
+	case "update":
+		return (updater{current: Version, env: machine.Env, executable: os.Executable, releases: githubReleases()}).run(args[1:], machine.Out)
 	default:
 		fmt.Fprintf(machine.Out, "No command %q. Carson's commands:\n%s", args[0], usage)
 		return refused
