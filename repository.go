@@ -91,35 +91,46 @@ func (r *repository) landedByChanges(tip string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	own, err := r.patchIDs("main.." + tip)
+	held, err := r.heldOnMain(tip)
 	if err != nil {
 		return false, err
 	}
-	if ahead == 0 || len(own) != ahead {
-		return false, nil
-	}
-	mains, err := r.patchIDs(tip + "..main")
-	if err != nil {
-		return false, err
-	}
-	onMain := map[string]int{}
-	for _, id := range mains {
-		onMain[id]++
-	}
-	for _, id := range own {
-		if onMain[id] == 0 {
-			return false, nil
-		}
-		onMain[id]--
-	}
-	return true, nil
+	return ahead > 0 && len(held) == ahead, nil
 }
 
-// patchIDs are the verbatim patch-ids of the commits of revisions, merges apart: each the hash of a commit's changes exactly as made,
-// every space kept, though not of the line numbers where they fall. A commit that changes nothing has none. diff-tree, not log, writes
-// the changes, since it reads none of the settings that change how a diff looks.
-func (r *repository) patchIDs(revisions string) ([]string, error) {
-	commits, err := git(r.top, "rev-list", "--no-merges", revisions)
+// heldOnMain is the commits at tip that main lacks whose changes main holds, byte for byte, in commits of its own, oldest first: each
+// commit's verbatim patch-id is one of main's, each of main's answering for one of tip's. A rebase onto main would drop them (S14).
+func (r *repository) heldOnMain(tip string) ([]string, error) {
+	own, err := r.patches("main.." + tip)
+	if err != nil {
+		return nil, err
+	}
+	mains, err := r.patches(tip + "..main")
+	if err != nil {
+		return nil, err
+	}
+	onMain := map[string]int{}
+	for _, p := range mains {
+		onMain[p.id]++
+	}
+	var held []string
+	for _, p := range own {
+		if onMain[p.id] > 0 {
+			onMain[p.id]--
+			held = append(held, p.commit)
+		}
+	}
+	return held, nil
+}
+
+// patch is a commit and its verbatim patch-id.
+type patch struct{ id, commit string }
+
+// patches are the verbatim patch-ids of the commits of revisions, oldest first, merges apart: each the hash of a commit's changes
+// exactly as made, every space kept, though not of the line numbers where they fall. A commit that changes nothing has none. diff-tree,
+// not log, writes the changes, since it reads none of the settings that change how a diff looks.
+func (r *repository) patches(revisions string) ([]patch, error) {
+	commits, err := git(r.top, "rev-list", "--reverse", "--no-merges", revisions)
 	if err != nil || commits == "" {
 		return nil, err
 	}
@@ -132,12 +143,22 @@ func (r *repository) patchIDs(revisions string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
+	var found []patch
 	for _, line := range lines(out) {
-		id, _, _ := strings.Cut(line, " ")
-		ids = append(ids, id)
+		id, commit, _ := strings.Cut(line, " ")
+		found = append(found, patch{id, commit})
 	}
-	return ids, nil
+	return found, nil
+}
+
+// changesNothing is whether commit leaves its parent's files as they were.
+func (r *repository) changesNothing(commit string) (bool, error) {
+	trees, err := git(r.top, "rev-parse", commit+"^{tree}", commit+"^^{tree}")
+	if err != nil {
+		return false, err
+	}
+	both := lines(trees)
+	return len(both) == 2 && both[0] == both[1], nil
 }
 
 func (r *repository) count(revisions string) (int, error) {

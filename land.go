@@ -385,15 +385,113 @@ func (g *landing) bringTaskUpToMain() ([]string, int, bool) {
 		return nil, 0, true
 	}
 	merges, _ := git(t.path, "rev-list", "--merges", "main.."+t.branch)
-	operation, update := step{name: "rebase", doing: "rebasing onto main (" + r.short("main") + ")", command: "git rebase main", args: []string{"rebase", "-q", "main"}}, "rebased onto main"
-	if merges != "" {
-		operation, update = step{name: "merge", doing: "merging main (" + r.short("main") + ")", command: "git merge main", args: []string{"merge", "-q", "--no-edit", "main"}}, "with main merged in"
+	if merges == "" {
+		return g.rebase()
 	}
-	if said, code, ok := g.run(operation); !ok {
+	if said, code, ok := g.run(step{name: "merge", doing: "merging main (" + r.short("main") + ")", command: "git merge main", args: []string{"merge", "-q", "--no-edit", "main"}}); !ok {
 		return said, code, false
 	}
-	g.update = update
+	g.update = "with main merged in"
 	return nil, 0, true
+}
+
+// rebase rebases the task onto main, dropping none of its commits. By default git's rebase drops, without a word, a commit whose
+// changes main already holds — one alike to a commit of main's, or one the rebase leaves changing nothing — and the landing would
+// carry the rest as if that were all (S14). The first kind is refused before rebasing, matched byte for byte, so it is not mistaken
+// for a conflict once main has moved past it. The rebase then reapplies every commit, since git's own matching ignores whitespace, and
+// keeps any it leaves empty, so the second kind is found, and the rebase undone.
+func (g *landing) rebase() ([]string, int, bool) {
+	r, t := g.repo, g.task
+	held, err := r.heldOnMain(t.branch)
+	if err != nil {
+		said, code := g.stop(failed, "which of %s's commits main already holds cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
+		return said, code, false
+	}
+	if len(held) > 0 {
+		return g.wouldDrop(held, g.state())
+	}
+	before, _ := git(t.path, "rev-parse", "HEAD")
+	originals, err := git(t.path, "rev-list", "--reverse", "main..HEAD")
+	if err != nil {
+		said, code := g.stop(failed, "%s's commits cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
+		return said, code, false
+	}
+	if said, code, ok := g.run(step{name: "rebase", doing: "rebasing onto main (" + r.short("main") + ")", command: "git rebase main", args: []string{"rebase", "-q", "--reapply-cherry-picks", "--empty=keep", "main"}}); !ok {
+		return said, code, false
+	}
+	g.update = "rebased onto main"
+	emptied, err := g.emptied(lines(originals))
+	if err == nil && len(emptied) == 0 {
+		return nil, 0, true
+	}
+	// The rebase lost or emptied a commit, or which it did cannot be told: the task goes back to where carson found it.
+	if _, undo := git(t.path, "reset", "-q", "--keep", before); undo != nil {
+		said, code := g.stop(failed, "rebasing onto main changed what %s's commits make, and putting %s back at %s failed (%s). Look at git status in %s's worktree before running carson land %s again.", t.branch, t.branch, r.short(before), reason(undo), t.branch, t.branch)
+		return said, code, false
+	}
+	g.update = ""
+	undone := fmt.Sprintf("The rebase was undone; %s is as it was, at %s", t.branch, r.short(before))
+	if err != nil {
+		said, code := g.stop(failed, "whether rebasing onto main dropped any of %s's commits cannot be told (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), undone, t.branch)
+		return said, code, false
+	}
+	return g.wouldDrop(emptied, undone)
+}
+
+// emptied is the task's commits, of originals, oldest first, that the rebase left changing nothing though they changed something
+// before. A rebase that kept every commit pairs each original with its rebased one, in order; fewer means one was lost.
+func (g *landing) emptied(originals []string) ([]string, error) {
+	r := g.repo
+	rebased, err := git(g.task.path, "rev-list", "--reverse", "main..HEAD")
+	if err != nil {
+		return nil, err
+	}
+	now := lines(rebased)
+	if len(now) != len(originals) {
+		return nil, fmt.Errorf("it held %s, and holds %d now", plural(len(originals), "commit"), len(now))
+	}
+	var emptied []string
+	for i, original := range originals {
+		empty, err := r.changesNothing(now[i])
+		if err != nil {
+			return nil, err
+		}
+		if !empty {
+			continue
+		}
+		wasEmpty, err := r.changesNothing(original)
+		if err != nil {
+			return nil, err
+		}
+		if !wasEmpty {
+			emptied = append(emptied, original)
+		}
+	}
+	return emptied, nil
+}
+
+// wouldDrop refuses the landing, naming the task's commits whose changes main already holds, which a rebase onto main would drop;
+// state says where the task is left. The way on is the rebase by hand, which drops them, and each change made again if still needed.
+func (g *landing) wouldDrop(commits []string, state string) ([]string, int, bool) {
+	r, t := g.repo, g.task
+	named := make([]string, len(commits))
+	for i, commit := range commits {
+		subject, _ := git(r.top, "show", "-s", "--format=%s", commit)
+		named[i] = r.short(commit) + ` "` + subject + `"`
+	}
+	which := fmt.Sprintf("%d of %s's %s", len(commits), t.branch, plural(g.commits, "commit"))
+	switch {
+	case len(commits) == g.commits && g.commits == 1:
+		which = t.branch + "'s commit"
+	case len(commits) == g.commits:
+		which = fmt.Sprintf("each of %s's %d commits", t.branch, g.commits)
+	}
+	it, its := "it", "its"
+	if len(commits) > 1 {
+		it, its = "them", "their"
+	}
+	said, code := g.stop(refused, "main already holds the changes of %s — %s — so rebasing onto main (%s) would drop %s. %s. Run git rebase main in %s's worktree, which drops %s; make %s changes again on top if they are still needed (a version step takes the next version), then run carson land %s again.", which, strings.Join(named, ", "), r.short("main"), it, state, t.branch, it, its, t.branch)
+	return said, code, false
 }
 
 // joinGitHub merges GitHub's main into the task, when the two mains have diverged, so the task carries both (§3.4 of the design).

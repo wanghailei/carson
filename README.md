@@ -93,7 +93,7 @@ The real-world damage agents have done while working in shared git repositories.
 3. **A test that recreates the scenario.** Every scenario gets one, and it fails without the feature.
 4. **Carson works while no scenario here happens again.** A new one gets its root cause found first, then a section here and a test, and only then a feature.
 
-**Where they come from.** The incidents run from 2026-03-04 to 2026-10-01.
+**Where they come from.** The incidents run from 2026-03-04 to 2026-11-25.
 
 - **The 2026-09-29 catalogue.** 162 failures were catalogued on that day, from Carson's issues, the issues of the repositories it served, its release notes, reviews and retrospectives, and the agents' own record of mistakes.
   - 32 of them show damage done by agents.
@@ -102,10 +102,11 @@ The real-world damage agents have done while working in shared git repositories.
   - 12 lie outside: documents, tests, and other acts of agents.
 - **A full reading on 2026-10-01.** Every issue in 14 repositories was read in full, 531 in all, because the catalogue had read some of them by keyword only. That found 8 incidents the catalogue missed, four of them the new scenario S12.
 - **Two seen on 2026-10-01:** S9 and S11.
+- **One seen on 2026-11-25:** S14.
 
 **April to August is thin.** Only three incidents fall in those five months: two in July (S8) and one in August (S1). Every issue from that time has now been read. The agents' session transcripts from that time no longer exist, so damage that was never written up as an issue cannot be found.
 
-### Status on 2026-11-17
+### Status on 2026-11-25
 
 | | Scenario | Prevented by | Holds |
 |---|---|---|---|
@@ -122,8 +123,9 @@ The real-world damage agents have done while working in shared git repositories.
 | S11 | Work reached GitHub's `main` from another machine | Carson | Yes |
 | S12 | Left finished work on a branch that never landed | Carson | Partly: a branch without a worktree is not shown |
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
+| S14 | Landed a task without one of its commits, and said nothing | Carson | Yes for a task landed by rebase |
 
-The tests named below pass: `bin/check` ran all 204 of Carson's tests on 2026-11-17, with the `bin/check` step taken out of `carson land`.
+The tests named below pass: `bin/check` ran all 218 of Carson's tests on 2026-11-25.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -302,6 +304,14 @@ This is a situation, not damage: a person moves or renames a repository's folder
 - **Prevention.** `carson adopt` links a task's worktree back to its repository when the folder its `.git` file names is gone, before it takes the task over, and for a task already yours too. It writes only that task's link, from the repository's side: git's own repair, run from the repository, relinks every worktree there, other agents' tasks among them. When it cannot, it says why and changes nothing. `carson status`, `land`, `remove` and `abandon`, meeting such a worktree, say so, name the folder its link points to, and point to `carson adopt` (carson#543).
 - **Tests.** TestAdoptRelinksAnEndedAgentsTaskAfterTheRepositoryMoved, TestAdoptRelinksATaskAlreadyYoursAfterTheRepositoryMoved, TestAdoptRelinksALandedTaskSoThatItIsRemoved, TestAdoptRelinksOnlyTheTaskItAdopts, TestAdoptSaysWhyAWorktreeCannotBeRelinkedAndChangesNothing, TestAdoptRelinksWithoutWritingThroughAFileInTheWay, TestWriteLinkLeavesNothingBesideWhenItCannotBePutInPlace, TestStatusNamesAdoptForATaskAfterTheRepositoryMoved, TestLandNamesAdoptAfterTheRepositoryMoved, TestRemoveNamesAdoptAfterTheRepositoryMoved, TestRemoveAbandonedNamesAdoptAfterTheRepositoryMoved.
 - **Holds.** Yes.
+
+### S14. Landed a task without one of its commits, and said nothing
+
+- **What happened.** 2026-11-25 (Marktone #193): two tasks each stepped Marktone's version from 0.81.0 to 0.81.1, and #183's landed first. Landing #193's, `carson land` rebased it onto the new `main`; git dropped its version step, whose changes `main` already held, and Carson landed the other six commits and reported success. The step carried "Fixes #193", so the issue stayed open, and the next landing, 0.81.2, carried #193's code unnamed. Only the next lander noticed.
+- **Root cause.** By default, git's rebase drops without a word a commit whose changes the new base already holds: one alike to a commit there, matched with whitespace ignored, or one the rebase leaves changing nothing. Carson counted the task's commits after the rebase, so its report showed no loss.
+- **Prevention.** Before rebasing, `carson land` refuses a task with a commit whose changes `main` holds byte for byte in a commit of its own, and names it. It then rebases reapplying every commit and keeping any left empty; if one is, the rebase is undone and the commit named. The refusal says to rebase by hand, which drops it, and to make its change again on top if still needed: a version step takes the next version. A commit differing from `main`'s only in whitespace is rebased, not dropped. Like `carson remove`, this needs git 2.39 or later, for `git patch-id --verbatim`.
+- **Tests.** TestLandRefusesToDropACommitWhoseChangesMainAlreadyHolds, TestLandRefusesToDropACommitWhoseChangesMainHoldsAndHasMovedPast, TestLandRefusesToDropACommitTheRebaseWouldEmpty, TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace.
+- **Holds.** Yes for a task landed by rebase. A task carrying a merge is brought up to `main` by merging, which keeps every commit: a commit there whose changes `main` already holds lands, changing nothing.
 
 ### Open
 

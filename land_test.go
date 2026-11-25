@@ -615,3 +615,87 @@ func TestLandLandsACommitThatBundlesTwoChangesWithAConfigurationThatHasNoLandKey
 		t.Error("main, here or on GitHub, is not the task's tip")
 	}
 }
+
+// dropRefused checks a landing that refused to drop a commit whose changes main already holds: carson names the commit, and the
+// task and GitHub's main are as they were.
+func (f *fixture) dropRefused(dir, before, githubMain, out string, code int, want string) {
+	f.t.Helper()
+	expectCode(f.t, code, 2)
+	expectLine(f.t, out, want)
+	if f.git(dir, "rev-parse", "HEAD") != before || f.git(dir, "status", "--porcelain") != "" || f.exists(filepath.Join(f.git(dir, "rev-parse", "--absolute-git-dir"), "rebase-merge")) {
+		f.t.Error("the task is not as it was")
+	}
+	if f.git(f.github, "rev-parse", "main") != githubMain {
+		f.t.Error("GitHub's main moved")
+	}
+}
+
+// S14: two tasks stepped the version alike; the first landed. The second's step is not dropped by the rebase, as git's does by
+// default, but named, and the landing refused.
+func TestLandRefusesToDropACommitWhoseChangesMainAlreadyHolds(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.write(dir, "first.txt", "version 2\n")
+	f.git(dir, "commit", "-q", "-am", "Step the version, fixes #193")
+	before, step := f.git(dir, "rev-parse", "HEAD"), f.short(dir, "HEAD")
+	other := f.otherClone()
+	f.write(other, "first.txt", "version 2\n")
+	f.git(other, "commit", "-q", "-am", "Step the version for #183")
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, `Not landed: main already holds the changes of 1 of fix-login's 2 commits — `+step+` "Step the version, fixes #193" — so rebasing onto main (`+f.short(f.local, "main")+`) would drop it. fix-login still holds its 2 commits. Run git rebase main in fix-login's worktree, which drops it; make its changes again on top if they are still needed (a version step takes the next version), then run carson land fix-login again.`)
+}
+
+// S14: main moved on past the step the task repeats, as when a third task stepped the version again. The step is named, not
+// reported as a conflict, since git rebase main by hand drops it cleanly.
+func TestLandRefusesToDropACommitWhoseChangesMainHoldsAndHasMovedPast(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.write(dir, "first.txt", "version 2\n")
+	f.git(dir, "commit", "-q", "-am", "Step the version, fixes #193")
+	before, step := f.git(dir, "rev-parse", "HEAD"), f.short(dir, "HEAD")
+	other := f.otherClone()
+	for _, version := range []string{"2", "3"} {
+		f.write(other, "first.txt", "version "+version+"\n")
+		f.git(other, "commit", "-q", "-am", "Step the version to "+version)
+	}
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, `Not landed: main already holds the changes of 1 of fix-login's 2 commits — `+step+` "Step the version, fixes #193" — so rebasing onto main (`+f.short(f.local, "main")+`) would drop it.`)
+}
+
+// S14: main holds the task's change inside a larger commit of its own, so the patches differ, and only the rebase shows that the
+// task's commit would change nothing. The rebase is undone, and the commit named.
+func TestLandRefusesToDropACommitTheRebaseWouldEmpty(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, "first.txt", "version 2\n")
+	f.git(dir, "commit", "-q", "-am", "Step the version")
+	before, step := f.git(dir, "rev-parse", "HEAD"), f.short(dir, "HEAD")
+	other := f.otherClone()
+	f.write(other, "first.txt", "version 2\n")
+	f.write(other, "notes.txt", "what changed\n")
+	f.git(other, "add", "notes.txt")
+	f.git(other, "commit", "-q", "-am", "Step the version and note it")
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, `Not landed: main already holds the changes of fix-login's commit — `+step+` "Step the version" — so rebasing onto main (`+f.short(f.local, "main")+`) would drop it. The rebase was undone; fix-login is as it was, at `+step+`. Run git rebase main in fix-login's worktree, which drops it; make its changes again on top if they are still needed (a version step takes the next version), then run carson land fix-login again.`)
+}
+
+// S14: the task's line differs from main's only by its indentation, which is other content in Python, YAML or a Makefile. git's own
+// matching of commits, which ignores whitespace, would drop it as already on main; it is rebased, and its conflict named.
+func TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.write(dir, "first.txt", "\tversion 2\n")
+	f.git(dir, "commit", "-q", "-am", "Step the version, indented")
+	before := f.git(dir, "rev-parse", "HEAD")
+	other := f.otherClone()
+	f.write(other, "first.txt", "version 2\n")
+	f.git(other, "commit", "-q", "-am", "Step the version")
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	f.dropRefused(dir, before, f.git(other, "rev-parse", "HEAD"), out, code, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+".")
+}
