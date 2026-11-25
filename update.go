@@ -53,11 +53,11 @@ func (u updater) upgrade(path string, installed os.FileInfo) (version, backup st
 	if slices.Compare(latest.version[:], current[:]) <= 0 {
 		return latest.number(), "", nil
 	}
-	archive, name, err := u.releases.download(latest)
+	download, err := u.releases.download(latest)
 	if err != nil {
 		return "", "", err
 	}
-	backup, err = replaceInstallation(path, installed, archive, name+"/carson")
+	backup, err = replaceInstallation(path, installed, download)
 	return latest.number(), backup, err
 }
 
@@ -105,7 +105,7 @@ func (u updater) miseInstallation(path string) bool {
 	return err == nil && filepath.IsAbs(installs) && strings.HasPrefix(path, installs+string(filepath.Separator))
 }
 
-func replaceInstallation(path string, installed os.FileInfo, archive []byte, member string) (backup string, err error) {
+func replaceInstallation(path string, installed os.FileInfo, download releaseDownload) (backup string, err error) {
 	stage, err := os.MkdirTemp(filepath.Dir(path), ".carson-update-")
 	if err != nil {
 		return "", fmt.Errorf("cannot stage an update beside the installed binary: %w", err)
@@ -116,7 +116,7 @@ func replaceInstallation(path string, installed os.FileInfo, archive []byte, mem
 		}
 	}()
 	candidate := filepath.Join(stage, "carson")
-	if err := stageBinary(candidate, installed.Mode().Perm(), archive, member); err != nil {
+	if err := download.stage(candidate, installed.Mode().Perm()); err != nil {
 		return "", err
 	}
 
@@ -144,22 +144,4 @@ func replaceInstallation(path string, installed os.FileInfo, archive []byte, mem
 		return "", fmt.Errorf("cannot replace the installed binary: %w", err)
 	}
 	return saved, nil
-}
-
-func stageBinary(path string, mode os.FileMode, archive []byte, member string) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if err := extractReleaseBinary(file, archive, member); err != nil {
-		return err
-	}
-	if err := file.Chmod(mode); err != nil {
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		return err
-	}
-	return file.Close()
 }

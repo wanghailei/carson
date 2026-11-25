@@ -4,7 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
+	"debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +14,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -87,8 +92,14 @@ func parseReleaseVersion(number string) ([3]uint64, error) {
 	return version, nil
 }
 
-func (s releaseSource) download(release githubRelease) (archive []byte, name string, err error) {
-	name = fmt.Sprintf("carson-%s-%s-%s", release.number(), runtime.GOOS, runtime.GOARCH)
+type releaseDownload struct {
+	archive []byte
+	member  string
+	version string
+}
+
+func (s releaseSource) download(release githubRelease) (releaseDownload, error) {
+	name := fmt.Sprintf("carson-%s-%s-%s", release.number(), runtime.GOOS, runtime.GOARCH)
 	filename := name + ".tar.gz"
 	for _, asset := range release.Assets {
 		if asset.Name != filename {
@@ -97,19 +108,69 @@ func (s releaseSource) download(release githubRelease) (archive []byte, name str
 		digest, tagged := strings.CutPrefix(asset.Digest, "sha256:")
 		expected, err := hex.DecodeString(digest)
 		if !tagged || err != nil || len(expected) != sha256.Size {
-			return nil, "", fmt.Errorf("GitHub has no valid SHA-256 digest for %s", filename)
+			return releaseDownload{}, fmt.Errorf("GitHub has no valid SHA-256 digest for %s", filename)
 		}
 		archive, err := s.fetch(s.downloads+release.Tag+"/"+filename, maxUpdateArchive)
 		if err != nil {
-			return nil, "", fmt.Errorf("cannot download %s: %w", filename, err)
+			return releaseDownload{}, fmt.Errorf("cannot download %s: %w", filename, err)
 		}
 		actual := sha256.Sum256(archive)
 		if !bytes.Equal(actual[:], expected) {
-			return nil, "", fmt.Errorf("%s does not match its SHA-256 digest", filename)
+			return releaseDownload{}, fmt.Errorf("%s does not match its SHA-256 digest", filename)
 		}
-		return archive, name, nil
+		return releaseDownload{archive: archive, member: name + "/carson", version: release.number()}, nil
 	}
-	return nil, "", fmt.Errorf("Carson %s has no build for %s/%s", release.number(), runtime.GOOS, runtime.GOARCH)
+	return releaseDownload{}, fmt.Errorf("Carson %s has no build for %s/%s", release.number(), runtime.GOOS, runtime.GOARCH)
+}
+
+func (d releaseDownload) stage(path string, mode os.FileMode) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	if err := extractReleaseBinary(file, d.archive, d.member); err != nil {
+		return err
+	}
+	if err := file.Chmod(mode); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return d.checkExecutable(path)
+}
+
+func (d releaseDownload) checkExecutable(path string) error {
+	info, err := buildinfo.ReadFile(path)
+	if err != nil {
+		return errors.New("the release member is not a native Go executable")
+	}
+	var operatingSystem, architecture string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "GOOS":
+			operatingSystem = setting.Value
+		case "GOARCH":
+			architecture = setting.Value
+		}
+	}
+	if operatingSystem != runtime.GOOS || architecture != runtime.GOARCH {
+		return fmt.Errorf("the release binary is not built for %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+	// A matching archive digest does not prove that the packaged command runs or reports the published version.
+	updateContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(updateContext, path, "--version")
+	command.Dir = filepath.Dir(path)
+	output, err := command.Output()
+	if err != nil || strings.TrimSpace(string(output)) != Badge+" carson "+d.version {
+		return fmt.Errorf("the release binary did not report the expected version %s", d.version)
+	}
+	return nil
 }
 
 func (s releaseSource) fetch(address string, limit int64) ([]byte, error) {
