@@ -1,6 +1,6 @@
 // Command carson is a git tool for coding agents that work in the same repositories at once. It starts, shows, lands, removes, abandons
 // and adopts tasks, each in its own worktree, so that local main only moves forward, and only by a finished task landing. It keeps no
-// state of its own beyond one owner record per worktree, runs only when called, and reports what it observed, not what it attempted.
+// repository state beyond one owner record per worktree, runs only when called, and reports what it observed, not what it attempted.
 package main
 
 import (

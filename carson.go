@@ -98,7 +98,7 @@ func Main(args []string, machine Machine) int {
 	case "adopt":
 		return adopt(machine, args[1:])
 	case "update":
-		return (updater{current: Version, env: machine.Env, executable: os.Executable, releases: githubReleases()}).run(args[1:], machine.Out)
+		return (updater{env: machine.Env, executable: os.Executable, releases: githubReleases()}).run(args[1:], machine.Out)
 	default:
 		fmt.Fprintf(machine.Out, "No command %q. Carson's commands:\n%s", args[0], usage)
 		return refused

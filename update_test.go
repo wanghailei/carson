@@ -45,7 +45,10 @@ func TestWhenANewerStableReleaseExistsCarsonInstallsItAndKeepsThePreviousBinary(
 	if !saved {
 		t.Fatalf("no backup location in %q", out.String())
 	}
-	assertBinary(t, strings.TrimSpace(backup), "old binary")
+	assertBinary(t, strings.TrimSpace(backup), testInstalledVersion("5.9.0"))
+	if target, err := os.Readlink(installed); err != nil || target != filepath.Join(testStandaloneFolder(u), "current") {
+		t.Fatalf("the launcher was replaced: %q, %v", target, err)
+	}
 }
 
 func TestWhenTheInstalledVersionIsNotOlderCarsonLeavesItInPlace(t *testing.T) {
@@ -148,6 +151,24 @@ func TestWhenGitHubCannotProvideTrustedReleaseInformationCarsonLeavesTheInstalla
 	}
 }
 
+func TestWhenTheReleaseDownloadFailsCarsonLeavesTheInstallationInPlace(t *testing.T) {
+	u, installed := testInstallation(t)
+	name := "carson-5.10.0-" + runtime.GOOS + "-" + runtime.GOARCH
+	digest := "sha256:" + strings.Repeat("0", 64)
+	u.releases = testRelease(t, "v5.10.0", name, nil, digest, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	u.releases.downloads = server.URL + "/download/"
+
+	var out bytes.Buffer
+	if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), "cannot download "+name+".tar.gz: GitHub returned HTTP 503") {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertUnchangedInstallation(t, installed)
+}
+
 func redirectTo(w http.ResponseWriter, target string) {
 	w.Header().Set("Location", target)
 	w.WriteHeader(http.StatusFound)
@@ -160,7 +181,10 @@ func TestWhenMiseOwnsTheInstallationCarsonShowsTheMiseUpdateCommand(t *testing.T
 	if err := os.MkdirAll(filepath.Dir(managed), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(installed, managed); err != nil {
+	if err := os.WriteFile(managed, []byte("managed binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(installed); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(managed, installed); err != nil {
@@ -173,19 +197,19 @@ func TestWhenMiseOwnsTheInstallationCarsonShowsTheMiseUpdateCommand(t *testing.T
 	if code != refused || !strings.Contains(out.String(), "mise upgrade --bump github:wanghailei/carson") {
 		t.Fatalf("exit %d, output %q", code, out.String())
 	}
-	assertBinary(t, managed, "old binary")
+	assertBinary(t, managed, "managed binary")
 	if target, err := os.Readlink(installed); err != nil || target != managed {
 		t.Fatalf("the installed link changed: %q, %v", target, err)
 	}
 }
 
 func TestWhenHomebrewOwnsTheInstallationCarsonShowsTheHomebrewUpdateCommand(t *testing.T) {
-	u, installed := testInstallation(t)
+	u, _ := testInstallation(t)
 	managed := filepath.Join(u.env("HOME"), "brew", "Cellar", "carson", "5.9.0", "bin", "carson")
 	if err := os.MkdirAll(filepath.Dir(managed), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(installed, managed); err != nil {
+	if err := os.WriteFile(managed, []byte("managed binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	u.executable = func() (string, error) { return managed, nil }
@@ -196,33 +220,90 @@ func TestWhenHomebrewOwnsTheInstallationCarsonShowsTheHomebrewUpdateCommand(t *t
 	if code != refused || !strings.Contains(out.String(), "brew upgrade carson") {
 		t.Fatalf("exit %d, output %q", code, out.String())
 	}
-	assertUnchangedInstallation(t, managed)
+	assertBinary(t, managed, "managed binary")
 }
 
-func TestWhenTheInstallationIsNotInAKnownStandaloneLocationCarsonDoesNotReplaceIt(t *testing.T) {
-	u, installed := testInstallation(t)
-	elsewhere := filepath.Join(u.env("HOME"), "custom", "carson")
-	if err := os.MkdirAll(filepath.Dir(elsewhere), 0o700); err != nil {
+func TestWhenACopyInThePersonalBinDirectoryWasNotSetUpForUpdatesCarsonLeavesItAlone(t *testing.T) {
+	home := t.TempDir()
+	installed := filepath.Join(home, ".local", "bin", "carson")
+	if err := os.MkdirAll(filepath.Dir(installed), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(installed, elsewhere); err != nil {
+	if err := os.WriteFile(installed, []byte("unregistered binary"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	u.executable = func() (string, error) { return elsewhere, nil }
+	u := updater{env: environment{"HOME": home}.get, executable: func() (string, error) { return installed, nil }}
+	u.releases = testRelease(t, "v5.10.0", "", nil, "", nil)
 
 	var out bytes.Buffer
 	code := u.run(nil, &out)
 
-	if code != refused || !strings.Contains(out.String(), "use the method you installed Carson with") {
+	if code != refused || !strings.Contains(out.String(), "this copy is not set up for standalone updates") {
 		t.Fatalf("exit %d, output %q", code, out.String())
 	}
-	assertUnchangedInstallation(t, elsewhere)
+	assertBinary(t, installed, "unregistered binary")
 }
 
-func TestWhenTheInstallationChangesDuringDownloadCarsonDoesNotOverwriteIt(t *testing.T) {
+func TestWhenTheStandaloneFolderIsNotPrivateCarsonLeavesItAlone(t *testing.T) {
+	u, installed := testInstallation(t)
+	if err := os.Chmod(testStandaloneFolder(u), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if code := u.run(nil, &out); code != refused || !strings.Contains(out.String(), "the standalone folder is not private") {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertUnchangedInstallation(t, installed)
+}
+
+func TestWhenTheActiveLinkNamesAnOutsideBinaryCarsonLeavesItAlone(t *testing.T) {
+	u, installed := testInstallation(t)
+	folder := testStandaloneFolder(u)
+	original := filepath.Join(folder, "version-original/carson")
+	u.executable = func() (string, error) { return original, nil }
+	outside := filepath.Join(u.env("HOME"), "other-carson")
+	if err := os.WriteFile(outside, []byte("outside binary"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(folder, "current")
+	if err := os.Remove(current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, current); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), "no valid active version") {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertBinary(t, installed, "outside binary")
+	assertBinary(t, original, testInstalledVersion("5.9.0"))
+}
+
+func TestWhenTheActiveBinaryCannotReportItsVersionCarsonLeavesItAlone(t *testing.T) {
+	for _, contents := range []string{"not executable", "#!/bin/sh\necho wrong command\n"} {
+		t.Run(strings.SplitN(contents, "\n", 2)[0], func(t *testing.T) {
+			u, installed := testInstallation(t)
+			active := filepath.Join(testStandaloneFolder(u), "version-original/carson")
+			if err := os.WriteFile(active, []byte(contents), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), "cannot read the active Carson version") {
+				t.Fatalf("exit %d, output %q", code, out.String())
+			}
+			assertBinary(t, installed, contents)
+		})
+	}
+}
+
+func TestWhenTheLauncherChangesDuringDownloadCarsonDoesNotOverwriteIt(t *testing.T) {
 	u, installed := testInstallation(t)
 	name := "carson-5.10.0-" + runtime.GOOS + "-" + runtime.GOARCH
-	archive := testArchive(t, name+"/carson", testReleaseExecutable(t, "5.10.0"))
+	newBinary := testReleaseExecutable(t, "5.10.0")
+	archive := testArchive(t, name+"/carson", newBinary)
 	other := filepath.Join(u.env("HOME"), "another-carson")
 	if err := os.WriteFile(other, []byte("another update"), 0o700); err != nil {
 		t.Fatal(err)
@@ -234,11 +315,90 @@ func TestWhenTheInstallationChangesDuringDownloadCarsonDoesNotOverwriteIt(t *tes
 	var out bytes.Buffer
 	code := u.run(nil, &out)
 
-	if code != failed || !strings.Contains(out.String(), "installation changed while downloading") {
+	if code != done || !strings.Contains(out.String(), "Updated Carson from 5.9.0 to 5.10.0.") {
 		t.Fatalf("exit %d, output %q", code, out.String())
 	}
 	assertBinary(t, installed, "another update")
-	assertOnlyBinary(t, installed)
+	assertBinary(t, filepath.Join(testStandaloneFolder(u), "current"), newBinary)
+}
+
+func TestWhenThePrivateActiveLinkChangesDuringDownloadCarsonDoesNotSwitchItBack(t *testing.T) {
+	u, installed := testInstallation(t)
+	folder := testStandaloneFolder(u)
+	name := "carson-5.10.0-" + runtime.GOOS + "-" + runtime.GOARCH
+	archive := testArchive(t, name+"/carson", testReleaseExecutable(t, "5.10.0"))
+	next := "version-newer/carson"
+	if err := os.Mkdir(filepath.Dir(filepath.Join(folder, next)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, next), []byte(testInstalledVersion("5.11.0")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	replacement := filepath.Join(folder, "other-link")
+	if err := os.Symlink(next, replacement); err != nil {
+		t.Fatal(err)
+	}
+	u.releases = testRelease(t, "v5.10.0", name, archive, fmt.Sprintf("sha256:%x", sha256.Sum256(archive)), func() error {
+		return os.Rename(replacement, filepath.Join(folder, "current"))
+	})
+
+	var out bytes.Buffer
+	if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), "the active version link changed during the update") {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertBinary(t, installed, testInstalledVersion("5.11.0"))
+	assertBinary(t, filepath.Join(folder, "version-original/carson"), testInstalledVersion("5.9.0"))
+}
+
+func TestWhenACarsonProcessIsOlderThanTheActiveInstallationTheUpdateUsesTheActiveVersion(t *testing.T) {
+	u, installed := testInstallation(t)
+	folder := testStandaloneFolder(u)
+	next := "version-newer/carson"
+	if err := os.Mkdir(filepath.Join(folder, "version-newer"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(folder, next), []byte(testInstalledVersion("5.10.0")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(folder, "current")
+	if err := os.Remove(current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(next, current); err != nil {
+		t.Fatal(err)
+	}
+	u.executable = func() (string, error) { return filepath.Join(folder, "version-original/carson"), nil }
+	u.releases = testRelease(t, "v5.9.0", "", nil, "", nil)
+
+	var out bytes.Buffer
+	code := u.run(nil, &out)
+
+	if code != done || !strings.Contains(out.String(), "Installed Carson: 5.10.0; latest stable release: 5.9.0.") {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertBinary(t, installed, testInstalledVersion("5.10.0"))
+}
+
+func TestWhenAnotherUpdateOwnsTheInstallationCarsonDoesNotStartASecondUpdate(t *testing.T) {
+	u, installed := testInstallation(t)
+	name := "carson-5.10.0-" + runtime.GOOS + "-" + runtime.GOARCH
+	newBinary := testReleaseExecutable(t, "5.10.0")
+	archive := testArchive(t, name+"/carson", newBinary)
+	second := u
+	second.releases = testRelease(t, "v5.9.0", "", nil, "", nil)
+	u.releases = testRelease(t, "v5.10.0", name, archive, fmt.Sprintf("sha256:%x", sha256.Sum256(archive)), func() error {
+		var out bytes.Buffer
+		if code := second.run(nil, &out); code != refused || !strings.Contains(out.String(), "another Carson update is running") {
+			return fmt.Errorf("concurrent update: exit %d, output %q", code, out.String())
+		}
+		return nil
+	})
+
+	var out bytes.Buffer
+	if code := u.run(nil, &out); code != done {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertBinary(t, installed, newBinary)
 }
 
 func testInstallation(t *testing.T) (updater, string) {
@@ -248,13 +408,31 @@ func testInstallation(t *testing.T) (updater, string) {
 	if err := os.MkdirAll(filepath.Dir(installed), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(installed, []byte("old binary"), 0o700); err != nil {
+	u := updater{env: environment{"HOME": home}.get, executable: func() (string, error) { return installed, nil }}
+	folder := testStandaloneFolder(u)
+	original := "version-original/carson"
+	if err := os.MkdirAll(filepath.Join(folder, "version-original"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	return updater{
-		current: "5.9.0", env: environment{"HOME": home}.get,
-		executable: func() (string, error) { return installed, nil },
-	}, installed
+	if err := os.WriteFile(filepath.Join(folder, original), []byte(testInstalledVersion("5.9.0")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(folder, "current")
+	if err := os.Symlink(original, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(current, installed); err != nil {
+		t.Fatal(err)
+	}
+	return u, installed
+}
+
+func testStandaloneFolder(u updater) string {
+	return filepath.Join(u.env("HOME"), ".local", "share", "carson")
+}
+
+func testInstalledVersion(version string) string {
+	return "#!/bin/sh\nprintf '%s\\n' '" + Badge + " carson " + version + "'\n"
 }
 
 func testRelease(t *testing.T, tag, name string, archive []byte, digest string, beforeDownload func() error) releaseSource {
@@ -333,8 +511,15 @@ func testArchiveEntry(t *testing.T, header *tar.Header, contents string) []byte 
 
 func assertUnchangedInstallation(t *testing.T, installed string) {
 	t.Helper()
-	assertBinary(t, installed, "old binary")
-	assertOnlyBinary(t, installed)
+	assertBinary(t, installed, testInstalledVersion("5.9.0"))
+	current, err := os.Readlink(installed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(current))
+	if err != nil || len(entries) != 2 || entries[0].Name() != "current" || entries[1].Name() != "version-original" {
+		t.Fatalf("unexpected files in the installation folder: %v, %v", entries, err)
+	}
 }
 
 func assertBinary(t *testing.T, installed, want string) {
@@ -346,13 +531,5 @@ func assertBinary(t *testing.T, installed, want string) {
 	info, err := os.Stat(installed)
 	if err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("%s did not keep its executable permissions: %v, %v", installed, info, err)
-	}
-}
-
-func assertOnlyBinary(t *testing.T, installed string) {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Dir(installed))
-	if err != nil || len(entries) != 1 || entries[0].Name() != "carson" {
-		t.Fatalf("unexpected files in the installation folder: %v, %v", entries, err)
 	}
 }

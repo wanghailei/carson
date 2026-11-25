@@ -162,15 +162,26 @@ func (d releaseDownload) checkExecutable(path string) error {
 		return fmt.Errorf("the release binary is not built for %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
 	// A matching archive digest does not prove that the packaged command runs or reports the published version.
-	updateContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	command := exec.CommandContext(updateContext, path, "--version")
-	command.Dir = filepath.Dir(path)
-	output, err := command.Output()
-	if err != nil || strings.TrimSpace(string(output)) != Badge+" carson "+d.version {
+	if version, err := binaryVersion(path); err != nil || version != d.version {
 		return fmt.Errorf("the release binary did not report the expected version %s", d.version)
 	}
 	return nil
+}
+
+func binaryVersion(path string) (string, error) {
+	deadline, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(deadline, path, "--version")
+	command.Dir = filepath.Dir(path)
+	output, err := command.Output()
+	if err != nil {
+		return "", err
+	}
+	version, recognised := strings.CutPrefix(strings.TrimSpace(string(output)), Badge+" carson ")
+	if !recognised {
+		return "", errors.New("the binary did not report a Carson version")
+	}
+	return version, nil
 }
 
 func (s releaseSource) fetch(address string, limit int64) ([]byte, error) {

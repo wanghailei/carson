@@ -33,12 +33,14 @@ carson status       main, the main working tree, every task and whose it is
 - **One task, one worktree.** The main working tree holds `main` and nothing else.
 - **Only a task's owner lands, removes or abandons it.** Ownership is recorded when a task starts, and whether its owner is still running is always shown. An ended agent's task is adopted openly, never taken by guess.
 - **Nothing is destroyed.** Every check comes before any change; ignored files and abandoned work are kept.
-- **Carson runs only when called,** and keeps no state beyond one owner record per worktree.
+- **Carson runs only when called,** and keeps no repository state beyond one owner record per worktree.
 - **Every message says what happened and what to do next,** and "unknown" when Carson cannot tell. Each line Carson writes starts with ⧓, so its words stand out in an agent's conversation.
 
 ## Quickstart
 
 Download the build for your system — macOS or Linux, arm64 or amd64 — from the [releases](https://github.com/wanghailei/carson/releases), unpack it, and put `carson` on your PATH, for example in `~/.local/bin`. Carson needs `git` 2.39 or later, and `lsof` for `carson remove` and `carson abandon`: it ships with macOS, and on Linux is one package — `sudo pacman -S lsof` or your package manager's equal. A GitHub remote is used when it is there.
+
+For a standalone copy you can upgrade in one command, follow [Updating Carson](#updating-carson) before putting it on your PATH.
 
 ```
 $ carson start xyz
@@ -77,9 +79,40 @@ Run `carson land <task> --preserved <commit>` with that commit's full ID. The ov
 
 ### Updating Carson
 
-Run `carson update` from any directory. For a standalone binary in `~/.local/bin` or `~/bin`, Carson verifies the GitHub download before replacing the binary and prints where it kept the previous one. If you already have the latest release or a newer version, it changes nothing.
+After the one-time standalone setup below, run `carson update` from any directory. Carson verifies the GitHub download, checks that the new binary runs, then switches to it. It tells you where the previous binary is. If you already have the latest release or a newer version, it changes nothing.
 
-If you installed Carson with mise, run `mise upgrade --bump github:wanghailei/carson` instead. For any other package manager, update Carson through that manager. If your standalone copy predates the `update` command, replace it once with the latest build from the [releases](https://github.com/wanghailei/carson/releases).
+If you installed Carson with mise, run `mise upgrade --bump github:wanghailei/carson` instead. If you used another package manager, use that manager to update Carson.
+
+**One-time standalone setup.** Download and unpack a [release](https://github.com/wanghailei/carson/releases) whose `carson --help` lists `update`. If `~/.local/bin/carson` already holds your old standalone copy, move it aside first so you can recover it. The setup does not take over an existing launcher.
+
+Run this from the unpacked folder:
+
+```sh
+(
+	set -eu
+	bin="$HOME/.local/bin"
+	store="$HOME/.local/share/carson"
+	if [ -e "$bin/carson" ] || [ -L "$bin/carson" ]; then
+		printf '%s\n' "$bin/carson already exists; this setup did not touch it." >&2
+		exit 1
+	fi
+	if ! ./carson --help | grep -q 'carson update '; then
+		printf '%s\n' 'Run this from an unpacked Carson release that includes the update command.' >&2
+		exit 1
+	fi
+	mkdir -p "$bin" "${store%/*}"
+	mkdir -m 700 "$store"
+	mkdir -m 700 "$store/version-initial"
+	install -m 700 ./carson "$store/version-initial/carson"
+	ln -s version-initial/carson "$store/current"
+	ln -s "$store/current" "$bin/carson"
+	"$bin/carson" --version
+)
+```
+
+Make sure `~/.local/bin` is on your PATH, then use `carson update` for future upgrades.
+
+**The case this solves.** A standalone copy still reported `5.6.0` after `5.6.1` was published. It had no package manager and no command to upgrade it, so its user had to find, check and replace the binary by hand. The tests cover both upgrading in one command and keeping the previous binary if the download cannot be verified.
 
 ## Building from source
 
