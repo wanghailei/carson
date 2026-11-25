@@ -53,6 +53,13 @@ func gitWithInput(dir, input string, args ...string) (string, error) {
 	return run(command, args)
 }
 
+// gitWithEnvironment runs git in dir as git does, with the variables of environment added to carson's own.
+func gitWithEnvironment(dir string, environment []string, args ...string) (string, error) {
+	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	command.Env = append(os.Environ(), environment...)
+	return run(command, args)
+}
+
 // networkLimit is how long carson waits for GitHub before saying it gave no answer.
 var networkLimit = 30 * time.Second
 
@@ -82,7 +89,7 @@ func gitNetwork(dir string, args ...string) (string, error) {
 
 func run(command *exec.Cmd, args []string) (string, error) {
 	// git never asks for a password here: a remote that wants one fails at once instead of waiting for an answer no one will type.
-	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	command.Env = append(command.Environ(), "GIT_TERMINAL_PROMPT=0")
 	// A process git started may keep the output pipes open after git has finished; carson waits a second for it, no longer.
 	command.WaitDelay = time.Second
 	var out, errs bytes.Buffer

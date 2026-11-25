@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 )
@@ -102,13 +103,18 @@ func sameOwner(a, b Record) bool {
 type landing struct {
 	repo       *repository
 	task       task
-	original   string // the task's commit before carson touched it
-	githubMain string // GitHub's answer for its main, as ls-remote gives it; "" when GitHub has none
-	commits    int    // the commits the task holds that main lacks
-	update     string // how it was brought up to main: "rebased onto main", "with main merged in", or ""
-	joined     bool   // GitHub's main merged in
+	original   string    // the task's commit before carson touched it
+	githubMain string    // GitHub's answer for its main, as ls-remote gives it; "" when GitHub has none
+	commits    int       // the commits the task holds that main lacks
+	update     string    // how it was brought up to main: "rebased onto main", "with main merged in", or ""
+	joined     bool      // GitHub's main merged in
+	emptied    []emptied // the task's commits the rebase left changing nothing, to be named once they have landed
 	said       []string
 }
+
+// emptied is a commit of the task's that the rebase left changing nothing, since main already held its changes: as it was, and as
+// it lands.
+type emptied struct{ original, landed string }
 
 // state says what the task holds now: "fix-login still holds its 2 commits, now rebased onto main (it was at 1a2b3c4 before carson)".
 func (g *landing) state() string {
@@ -243,23 +249,50 @@ func (r *repository) landTask(m Machine, t task, record Record, preserved string
 	how := g.how(alreadyLanded)
 	if r.remote == "" {
 		g.note("Landed %s on main by fast-forward at %s (%s). No GitHub remote: main is on this machine only. Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, t.branch)
-		return g.said, done
+		return g.finish(done)
 	}
 	now, err := r.pushMain()
 	var unchecked pushedUnchecked
 	switch {
 	case wasCut(err):
 		g.note("Landed %s on local main at %s. Whether it reached GitHub is unknown (%s). Run carson land %s again to push or confirm it.", t.branch, shortTip, reason(err), t.branch)
-		return g.said, failed
+		return g.finish(failed)
 	case errors.As(err, &unchecked):
 		g.note("Landed %s on local main at %s and pushed, but %s. Run carson land %s again to check it.", t.branch, shortTip, unchecked.why, t.branch)
-		return g.said, failed
+		return g.finish(failed)
 	case err != nil:
 		g.note("Landed %s on local main at %s. Not on GitHub (%s). Run carson land %s again to push.", t.branch, shortTip, reason(err), t.branch)
-		return g.said, failed
+		return g.finish(failed)
 	}
 	g.note("Landed %s on main by fast-forward at %s (%s) and pushed; GitHub's main is %s. Remove it with: carson remove %s (from outside its worktree).", t.branch, shortTip, how, now, t.branch)
-	return g.said, done
+	return g.finish(done)
+}
+
+// finish ends a landing that reached main, naming the task's commits that landed changing nothing, so whoever landed it can make
+// again what still needs making: above all a version step, whose message, and any "Fixes" in it, has landed with no new version.
+func (g *landing) finish(code int) ([]string, int) {
+	if len(g.emptied) == 0 {
+		return g.said, code
+	}
+	r, t := g.repo, g.task
+	named := make([]string, len(g.emptied))
+	for i, e := range g.emptied {
+		subject, _ := git(r.top, "show", "-s", "--format=%s", e.original)
+		named[i] = fmt.Sprintf(`%s "%s" (on main as %s)`, r.short(e.original), subject, r.short(e.landed))
+	}
+	which := fmt.Sprintf("%d of %s's %s", len(g.emptied), t.branch, plural(g.commits, "commit"))
+	switch {
+	case len(g.emptied) == g.commits && g.commits == 1:
+		which = t.branch + "'s commit"
+	case len(g.emptied) == g.commits:
+		which = fmt.Sprintf("each of %s's %d commits", t.branch, g.commits)
+	}
+	its, was := "its", "it was"
+	if len(g.emptied) > 1 {
+		its, was = "their", "one was"
+	}
+	g.note("%s landed changing nothing, as main already held %s changes: %s. If %s a version step, step the version again in a new task.", which, its, strings.Join(named, ", "), was)
+	return g.said, code
 }
 
 // how says what the landing carried: "2 commits, rebased onto main first", or, for a task already on local main, what joined it.
@@ -395,13 +428,13 @@ func (g *landing) bringTaskUpToMain() ([]string, int, bool) {
 	return nil, 0, true
 }
 
-// rebase rebases the task onto main, dropping none of its commits. By default git's rebase drops, without a word, a commit whose
-// changes main already holds — one alike to a commit of main's, or one the rebase leaves changing nothing — and the landing would
-// carry the rest as if that were all (S14). The first kind is refused before rebasing, matched byte for byte, so it is not mistaken
-// for a conflict once main has moved past it. The rebase then reapplies every commit, since git's own matching ignores whitespace, and
-// keeps any it leaves empty, so the second kind is found, and the rebase undone. It moves no branch but the task's, whatever
-// rebase.updateRefs says, since the undo puts back only the task. Its conflict is named with the same rebase to run by hand: a plain
-// one would drop, not stop on, a commit that differs from one of main's only in whitespace.
+// rebase rebases the task onto main, every commit of it landing. By default git's rebase drops, without a word, a commit whose changes
+// main already holds — one alike to a commit of main's, or one the rebase leaves changing nothing — and the landing would carry the
+// rest as if that were all (S14). Here every commit is replayed on the new main, and one left changing nothing is kept, with its
+// message, and named once it has landed. git's own matching, which ignores whitespace, decides nothing. A commit alike, byte for byte,
+// to one of main's is replayed keeping main's side where the two meet, so a main that has moved on past it — a version stepped again
+// — is no conflict. No branch moves but the task's, whatever rebase.updateRefs says. A conflict is named with the same rebase to run
+// by hand: a plain one would drop, not stop on, a commit that differs from one of main's only in whitespace.
 func (g *landing) rebase() ([]string, int, bool) {
 	r, t := g.repo, g.task
 	held, err := r.heldOnMain(t.branch)
@@ -409,40 +442,62 @@ func (g *landing) rebase() ([]string, int, bool) {
 		said, code := g.stop(failed, "which of %s's commits main already holds cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 		return said, code, false
 	}
-	if len(held) > 0 {
-		return g.wouldDrop(held, g.state())
-	}
 	before, _ := git(t.path, "rev-parse", "HEAD")
 	originals, err := git(t.path, "rev-list", "--reverse", "main..HEAD")
 	if err != nil {
 		said, code := g.stop(failed, "%s's commits cannot be read (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), g.state(), t.branch)
 		return said, code, false
 	}
-	if said, code, ok := g.run(step{name: "rebase", doing: "rebasing onto main (" + r.short("main") + ")", command: "git rebase --reapply-cherry-picks main", args: []string{"rebase", "-q", "--reapply-cherry-picks", "--empty=keep", "--no-update-refs", "main"}}); !ok {
+	plan, err := t.writePlan(lines(originals), held)
+	if err != nil {
+		said, code := g.stop(failed, "the rebase's plan could not be written (%s). %s. Run carson land %s again once that is cleared.", reason(err), g.state(), t.branch)
+		return said, code, false
+	}
+	defer os.Remove(plan)
+	// git runs the sequence editor on the plan it would follow; this one puts carson's in its place.
+	editor := "GIT_SEQUENCE_EDITOR=cp '" + plan + "'"
+	if said, code, ok := g.run(step{name: "rebase", doing: "rebasing onto main (" + r.short("main") + ")", command: "git rebase --reapply-cherry-picks main", environment: []string{editor}, args: []string{"rebase", "-q", "-i", "--reapply-cherry-picks", "--empty=keep", "--no-update-refs", "main"}}); !ok {
 		return said, code, false
 	}
 	g.update = "rebased onto main"
-	emptied, err := g.emptied(lines(originals))
-	if err == nil && len(emptied) == 0 {
+	if g.emptied, err = g.emptiedBy(lines(originals)); err == nil {
 		return nil, 0, true
 	}
-	// The rebase lost or emptied a commit, or which it did cannot be told: the task goes back to where carson found it.
+	// Which commits the rebase left changing nothing cannot be told, so they could not be named: the task goes back as it was.
 	if _, undo := git(t.path, "reset", "-q", "--keep", before); undo != nil {
-		said, code := g.stop(failed, "rebasing onto main changed what %s's commits make, and putting %s back at %s failed (%s). Look at git status in %s's worktree before running carson land %s again.", t.branch, t.branch, r.short(before), reason(undo), t.branch, t.branch)
+		said, code := g.stop(failed, "what rebasing onto main made of %s's commits cannot be read (%s), and putting %s back at %s failed (%s). Look at git status in %s's worktree before running carson land %s again.", t.branch, reason(err), t.branch, r.short(before), reason(undo), t.branch, t.branch)
 		return said, code, false
 	}
 	g.update = ""
-	undone := fmt.Sprintf("The rebase was undone; %s is as it was, at %s", t.branch, r.short(before))
-	if err != nil {
-		said, code := g.stop(failed, "whether rebasing onto main dropped any of %s's commits cannot be told (%s). %s. Run carson land %s again once that is cleared.", t.branch, reason(err), undone, t.branch)
-		return said, code, false
-	}
-	return g.wouldDrop(emptied, undone)
+	said, code := g.stop(failed, "what rebasing onto main made of %s's commits cannot be read (%s). The rebase was undone; %s is as it was, at %s. Run carson land %s again once that is cleared.", t.branch, reason(err), t.branch, r.short(before), t.branch)
+	return said, code, false
 }
 
-// emptied is the task's commits, of originals, oldest first, that the rebase left changing nothing though they changed something
+// writePlan writes the rebase's plan into the task's git folder, and returns where: each of commits picked, oldest first, save those
+// main already holds alike, each cherry-picked keeping main's side where the two meet, and kept though it changes nothing.
+func (t task) writePlan(commits, held []string) (string, error) {
+	gitdir, err := git(t.path, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	if strings.Contains(gitdir, "'") {
+		return "", fmt.Errorf("the task's git folder, %s, has a quotation mark in its name", gitdir)
+	}
+	var plan strings.Builder
+	for _, commit := range commits {
+		if slices.Contains(held, commit) {
+			fmt.Fprintf(&plan, "exec git cherry-pick --strategy-option=ours --keep-redundant-commits %s\n", commit)
+		} else {
+			fmt.Fprintf(&plan, "pick %s\n", commit)
+		}
+	}
+	path := filepath.Join(gitdir, "carson-rebase-plan")
+	return path, os.WriteFile(path, []byte(plan.String()), 0o644)
+}
+
+// emptiedBy is the task's commits, of originals, oldest first, that the rebase left changing nothing though they changed something
 // before. A rebase that kept every commit pairs each original with its rebased one, in order; fewer means one was lost.
-func (g *landing) emptied(originals []string) ([]string, error) {
+func (g *landing) emptiedBy(originals []string) ([]emptied, error) {
 	r := g.repo
 	rebased, err := git(g.task.path, "rev-list", "--reverse", "main..HEAD")
 	if err != nil {
@@ -452,7 +507,7 @@ func (g *landing) emptied(originals []string) ([]string, error) {
 	if len(now) != len(originals) {
 		return nil, fmt.Errorf("it held %s, and holds %d now", plural(len(originals), "commit"), len(now))
 	}
-	var emptied []string
+	var found []emptied
 	for i, original := range originals {
 		empty, err := r.changesNothing(now[i])
 		if err != nil {
@@ -466,34 +521,10 @@ func (g *landing) emptied(originals []string) ([]string, error) {
 			return nil, err
 		}
 		if !wasEmpty {
-			emptied = append(emptied, original)
+			found = append(found, emptied{original, now[i]})
 		}
 	}
-	return emptied, nil
-}
-
-// wouldDrop refuses the landing, naming the task's commits whose changes main already holds, which a rebase onto main would drop;
-// state says where the task is left. The way on is the rebase by hand, which drops them, and each change made again if still needed.
-func (g *landing) wouldDrop(commits []string, state string) ([]string, int, bool) {
-	r, t := g.repo, g.task
-	named := make([]string, len(commits))
-	for i, commit := range commits {
-		subject, _ := git(r.top, "show", "-s", "--format=%s", commit)
-		named[i] = r.short(commit) + ` "` + subject + `"`
-	}
-	which := fmt.Sprintf("%d of %s's %s", len(commits), t.branch, plural(g.commits, "commit"))
-	switch {
-	case len(commits) == g.commits && g.commits == 1:
-		which = t.branch + "'s commit"
-	case len(commits) == g.commits:
-		which = fmt.Sprintf("each of %s's %d commits", t.branch, g.commits)
-	}
-	it, its := "it", "its"
-	if len(commits) > 1 {
-		it, its = "them", "their"
-	}
-	said, code := g.stop(refused, "main already holds the changes of %s — %s — so rebasing onto main (%s) would drop %s. %s. Run git rebase main in %s's worktree, which drops %s; make %s changes again on top if they are still needed (a version step takes the next version), then run carson land %s again.", which, strings.Join(named, ", "), r.short("main"), it, state, t.branch, it, its, t.branch)
-	return said, code, false
+	return found, nil
 }
 
 // joinGitHub merges GitHub's main into the task, when the two mains have diverged, so the task carries both (§3.4 of the design).
@@ -516,6 +547,7 @@ func (g *landing) joinGitHub() ([]string, int, bool) {
 // step is a rebase or merge carson runs in the task's worktree.
 type step struct {
 	name, doing, command string
+	environment          []string // variables the step's git runs with, beside carson's own
 	args                 []string
 }
 
@@ -524,7 +556,7 @@ type step struct {
 func (g *landing) run(s step) ([]string, int, bool) {
 	t := g.task
 	before, _ := git(t.path, "rev-parse", "HEAD")
-	_, err := git(t.path, s.args...)
+	_, err := gitWithEnvironment(t.path, s.environment, s.args...)
 	if err == nil {
 		return nil, 0, true
 	}

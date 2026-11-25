@@ -148,7 +148,7 @@ The real-world damage agents have done while working in shared git repositories.
   - 12 lie outside: documents, tests, and other acts of agents.
 - **A full reading on 2026-10-01.** Every issue in 14 repositories was read in full, 531 in all, because the catalogue had read some of them by keyword only. That found 8 incidents the catalogue missed, four of them the new scenario S12.
 - **Two seen on 2026-10-01:** S9 and S11.
-- **One seen on 2026-11-25:** S14.
+- **Two seen on 2026-11-25:** both S14.
 
 **April to August is thin.** Only three incidents fall in those five months: two in July (S8) and one in August (S1). Every issue from that time has now been read. The agents' session transcripts from that time no longer exist, so damage that was never written up as an issue cannot be found.
 
@@ -171,7 +171,7 @@ The real-world damage agents have done while working in shared git repositories.
 | S13 | Moved a repository's folder, stranding its tasks | Carson | Yes |
 | S14 | Landed a task without one of its commits, and said nothing | Carson | Yes for a task landed by rebase |
 
-The tests named below pass: `bin/check` ran all 220 of Carson's tests on 2026-11-25.
+The tests named below pass: `bin/check` ran all 238 of Carson's tests on 2026-11-25.
 
 ### S1. Worked from an old `main`, overwriting newer work
 
@@ -353,13 +353,11 @@ This is a situation, not damage: a person moves or renames a repository's folder
 
 ### S14. Landed a task without one of its commits, and said nothing
 
-- **What happened.** 2026-11-25 (Marktone #193): two tasks each stepped Marktone's version from 0.81.0 to 0.81.1, and #183's landed first. Landing #193's, `carson land` rebased it onto the new `main`; git dropped its version step, whose changes `main` already held, and Carson landed the other six commits and reported success. The step carried "Fixes #193", so the issue stayed open, and the next landing, 0.81.2, carried #193's code unnamed. Only the next lander noticed.
+- **What happened.** 2026-11-25 (Marktone #193): two tasks each stepped Marktone's version from 0.81.0 to 0.81.1, and #183's landed first. Landing #193's, `carson land` rebased it onto the new `main`; git dropped its version step, whose changes `main` already held, and Carson landed the other six commits and reported success. The step carried "Fixes #193", so the issue stayed open, and the next landing, 0.81.2, carried #193's code unnamed. Only the next lander noticed. The same day, about 14:00, #197's step from 0.83.1 to 0.83.2 was dropped the same way, landing after #188's.
 - **Root cause.** By default, git's rebase drops without a word a commit whose changes the new base already holds: one alike to a commit there, matched with whitespace ignored, or one the rebase leaves changing nothing. Carson counted the task's commits after the rebase, so its report showed no loss.
-- **Prevention.** Before rebasing, `carson land` refuses a task with a commit whose changes `main` holds byte for byte in a commit of its own, and names it. It then rebases reapplying every commit and keeping any left empty; if one is, the rebase is undone and the commit named. The refusal says to rebase by hand, which drops it, and to make its change again on top if still needed: a version step takes the next version. A commit differing from `main`'s only in whitespace is rebased, not dropped, and a conflict is named with the same rebase to run by hand, `git rebase --reapply-cherry-picks main`, since a plain one would drop that commit. The rebase moves no other branch, whatever `rebase.updateRefs` says. Like `carson remove`, this needs git 2.39 or later, for `git patch-id --verbatim`.
-- **Tests.** TestLandRefusesToDropACommitWhoseChangesMainAlreadyHolds, TestLandRefusesToDropACommitWhoseChangesMainHoldsAndHasMovedPast, TestLandRefusesToDropACommitTheRebaseWouldEmpty, TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace, TestLandNamesEveryCommitAlikeToOneOfMains, TestLandRefusingADropMovesNoOtherBranch.
-- **Holds.** Yes for a task landed by rebase, with two gaps.
-  - A task carrying a merge is brought up to `main` by merging, which keeps every commit: a commit there whose changes `main` already holds lands, changing nothing.
-  - Carson finishes its undo when interrupted, but one killed outright between the end of its rebase and the undo leaves the task rebased, emptied commit and all; the next landing finds the task on `main` and does not check it again.
+- **Prevention.** `carson land` lands every commit of the task and says which changed nothing. It replays each commit on the new `main` and keeps one left changing nothing, with its message and any "Fixes" in it; after the landing it names each such commit and says to step the version again in a new task if it was a version step. A commit alike, byte for byte, to one of `main`'s keeps `main`'s side where the two meet, so a `main` that has moved on past it, as when a third task stepped the version again, is no conflict. Whether a commit still changes something is decided by the replay, not by its likeness to a commit of `main`'s, so a task that steps the version, steps it back and steps it again lands at the version it meant. A commit differing from `main`'s only in whitespace is replayed, not dropped, and a conflict is named with the same rebase to run by hand, `git rebase --reapply-cherry-picks main`, since a plain one would drop that commit. The rebase moves no other branch, whatever `rebase.updateRefs` says. Like `carson remove`, this needs git 2.39 or later, for `git patch-id --verbatim`.
+- **Tests.** TestLandLandsACommitWhoseChangesMainAlreadyHoldsAndSaysSo, TestLandLandsACommitWhoseChangesMainHoldsAndHasMovedPast, TestLandLandsACommitTheRebaseLeavesEmptyAndSaysSo, TestLandReplaysEveryCommitOnTheNewMain, TestLandMovesNoOtherBranch, TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace.
+- **Holds.** Yes for a task landed by rebase. A task carrying a merge is brought up to `main` by merging, which keeps every commit: a commit there whose changes `main` already holds lands, changing nothing, and is not named.
 
 ### Open
 
