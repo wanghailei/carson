@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -37,19 +38,27 @@ func (u updater) run(args []string, out io.Writer) int {
 }
 
 func (u updater) upgrade(folder string, out io.Writer) error {
-	lock, err := lockInstallation(folder)
+	root, err := os.OpenRoot(folder)
+	if err != nil {
+		return fmt.Errorf("cannot open the standalone installation: %w", err)
+	}
+	defer root.Close()
+	lock, err := lockInstallation(root)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
 	// The running process may be older than the version already selected. Check the active binary under the installation lock.
-	previous, err := activeBinary(folder)
+	previous, err := activeBinary(root)
 	if err != nil {
 		return err
 	}
 	installed, err := binaryVersion(filepath.Join(folder, previous))
 	if err != nil {
 		return fmt.Errorf("cannot read the active Carson version: %w", err)
+	}
+	if err := sameInstallation(root); err != nil {
+		return err
 	}
 	current, err := parseReleaseVersion(installed)
 	if err != nil {
@@ -67,7 +76,7 @@ func (u updater) upgrade(folder string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := activateRelease(folder, previous, download); err != nil {
+	if err := activateRelease(root, previous, download); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Updated Carson from %s to %s.\nPrevious binary kept at %s\n", installed, latest.number(), filepath.Join(folder, previous))
@@ -121,15 +130,15 @@ func standaloneBinary(relative string) bool {
 	return found && binary == "carson" && strings.HasPrefix(folder, "version-") && folder != "version-"
 }
 
-func lockInstallation(folder string) (*os.File, error) {
-	directory, err := os.Open(folder)
+func lockInstallation(root *os.Root) (*os.File, error) {
+	directory, err := root.Open(".")
 	if err != nil {
 		return nil, fmt.Errorf("cannot open the standalone installation: %w", err)
 	}
 	info, err := directory.Stat()
 	if err != nil || !info.IsDir() || !ownedByUser(info) || info.Mode().Perm()&0o077 != 0 {
 		directory.Close()
-		return nil, refuse(refused, "the standalone folder is not private and owned by you; check %s", folder)
+		return nil, refuse(refused, "the standalone folder is not private and owned by you; check %s", root.Name())
 	}
 	// All versions lock the same directory, not the binary or pointer that changes when an update succeeds.
 	if err := syscall.Flock(int(directory.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
@@ -146,47 +155,65 @@ func ownedByUser(info os.FileInfo) bool {
 	return info.Sys().(*syscall.Stat_t).Uid == uint32(os.Geteuid())
 }
 
-func activeBinary(folder string) (string, error) {
-	target, err := os.Readlink(filepath.Join(folder, "current"))
+// Writes use the held directory, not its spelling. The name still has to point there when executing a binary by path.
+func sameInstallation(root *os.Root) error {
+	opened, openErr := root.Stat(".")
+	atPath, pathErr := os.Stat(root.Name())
+	if openErr != nil || pathErr != nil || !os.SameFile(opened, atPath) {
+		return fmt.Errorf("the standalone folder moved during the update")
+	}
+	return nil
+}
+
+func activeBinary(root *os.Root) (string, error) {
+	if err := sameInstallation(root); err != nil {
+		return "", err
+	}
+	target, err := root.Readlink("current")
 	if err != nil || !standaloneBinary(target) {
-		return "", fmt.Errorf("the standalone installation has no valid active version at %s", folder)
+		return "", fmt.Errorf("the standalone installation has no valid active version at %s", root.Name())
 	}
-	path := filepath.Join(folder, target)
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil || resolved != path {
-		return "", fmt.Errorf("the active version does not point to a binary in the standalone folder")
+	versionFolder, err := root.Lstat(filepath.Dir(target))
+	if err != nil || !versionFolder.IsDir() {
+		return "", fmt.Errorf("the active version does not point to a version folder in the standalone installation")
 	}
-	info, err := os.Lstat(path)
+	info, err := root.Lstat(target)
 	if err != nil || !info.Mode().IsRegular() || !ownedByUser(info) {
 		return "", fmt.Errorf("the active version is not a regular binary you own")
 	}
 	return target, nil
 }
 
-func activateRelease(folder, previous string, download releaseDownload) error {
-	stage, err := os.MkdirTemp(folder, "version-"+download.version+"-")
-	if err != nil {
+func activateRelease(root *os.Root, previous string, download releaseDownload) error {
+	if err := sameInstallation(root); err != nil {
+		return err
+	}
+	stage := "version-" + download.version + "-" + rand.Text()
+	if err := root.Mkdir(stage, 0o700); err != nil {
 		return fmt.Errorf("cannot stage the release in the standalone folder: %w", err)
 	}
 	activated := false
 	defer func() {
 		if !activated {
-			os.RemoveAll(stage)
+			root.RemoveAll(stage)
 		}
 	}()
-	if err := download.stage(filepath.Join(stage, "carson"), 0o700); err != nil {
+	binary := filepath.Join(stage, "carson")
+	if err := download.stage(root, binary); err != nil {
 		return err
 	}
 	pending := filepath.Join(stage, "current")
-	if err := os.Symlink(filepath.Join(filepath.Base(stage), "carson"), pending); err != nil {
+	if err := root.Symlink(binary, pending); err != nil {
 		return fmt.Errorf("cannot prepare the active version link: %w", err)
 	}
-	current := filepath.Join(folder, "current")
-	if target, err := os.Readlink(current); err != nil || target != previous {
+	if err := sameInstallation(root); err != nil {
+		return err
+	}
+	if target, err := root.Readlink("current"); err != nil || target != previous {
 		return fmt.Errorf("the active version link changed during the update")
 	}
 	// Only this private symlink is replaced. The launcher and every previously installed executable keep their own paths.
-	if err := os.Rename(pending, current); err != nil {
+	if err := root.Rename(pending, "current"); err != nil {
 		return fmt.Errorf("cannot activate the release: %w", err)
 	}
 	activated = true

@@ -96,6 +96,10 @@ Run this from the unpacked folder:
 		printf '%s\n' "$bin/carson already exists; this setup did not touch it." >&2
 		exit 1
 	fi
+	if [ -e "$store" ] || [ -L "$store" ]; then
+		printf '%s\n' "$store already exists; see the interrupted setup instructions below." >&2
+		exit 1
+	fi
 	if ! ./carson --help | grep -q 'carson update '; then
 		printf '%s\n' 'Run this from an unpacked Carson release that includes the update command.' >&2
 		exit 1
@@ -109,6 +113,8 @@ Run this from the unpacked folder:
 	"$bin/carson" --version
 )
 ```
+
+If setup was interrupted before the launcher was created, move the `~/.local/share/carson` folder from that attempt aside, then rerun the block. The setup leaves existing folders alone; don't move a folder you did not create for this setup.
 
 Make sure `~/.local/bin` is on your PATH, then use `carson update` for future upgrades.
 

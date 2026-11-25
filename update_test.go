@@ -4,10 +4,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,15 +31,18 @@ func TestWhenUpdateIsRequestedWithAnArgumentCarsonShowsHowToRunIt(t *testing.T) 
 
 func TestWhenANewerStableReleaseExistsCarsonInstallsItAndKeepsThePreviousBinary(t *testing.T) {
 	u, installed := testInstallation(t)
-	name := "carson-5.10.0-" + runtime.GOOS + "-" + runtime.GOARCH
-	newBinary := testReleaseExecutable(t, "5.10.0")
-	archive := testArchive(t, name+"/carson", newBinary)
-	u.releases = testRelease(t, "v5.10.0", name, archive, fmt.Sprintf("sha256:%x", sha256.Sum256(archive)), nil)
+	original := testInstalledVersion("0.0.0")
+	if err := os.WriteFile(installed, []byte(original), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	name := "carson-" + Version + "-" + runtime.GOOS + "-" + runtime.GOARCH
+	archive, newBinary := testPackagedRelease(t, name)
+	u.releases = testReleaseThroughAssetRedirect(t, "v"+Version, name, archive)
 
 	var out bytes.Buffer
 	code := u.run(nil, &out)
 
-	if code != done || !strings.Contains(out.String(), "Updated Carson from 5.9.0 to 5.10.0.") {
+	if code != done || !strings.Contains(out.String(), "Updated Carson from 0.0.0 to "+Version+".") {
 		t.Fatalf("exit %d, output %q", code, out.String())
 	}
 	assertBinary(t, installed, newBinary)
@@ -45,7 +50,7 @@ func TestWhenANewerStableReleaseExistsCarsonInstallsItAndKeepsThePreviousBinary(
 	if !saved {
 		t.Fatalf("no backup location in %q", out.String())
 	}
-	assertBinary(t, strings.TrimSpace(backup), testInstalledVersion("5.9.0"))
+	assertBinary(t, strings.TrimSpace(backup), original)
 	if target, err := os.Readlink(installed); err != nil || target != filepath.Join(testStandaloneFolder(u), "current") {
 		t.Fatalf("the launcher was replaced: %q, %v", target, err)
 	}
@@ -74,6 +79,7 @@ func TestWhenTheReleaseCannotBeVerifiedCarsonLeavesTheInstalledBinaryInPlace(t *
 	otherMember := testArchive(t, name+"/../../carson", "not the release binary")
 	badArchive := []byte("not a gzip archive")
 	wrongVersion := testArchive(t, name+"/carson", testReleaseExecutable(t, "5.10.1"))
+	noUpdater := testArchive(t, name+"/carson", testNativeRelease(t, "5.10.0", ""))
 	link := testArchiveEntry(t, &tar.Header{Name: name + "/carson", Linkname: "../../elsewhere", Typeflag: tar.TypeSymlink}, "")
 	for _, scenario := range []struct {
 		label   string
@@ -87,6 +93,7 @@ func TestWhenTheReleaseCannotBeVerifiedCarsonLeavesTheInstalledBinaryInPlace(t *
 		{"wrong archive member", "v5.10.0", otherMember, fmt.Sprintf("sha256:%x", sha256.Sum256(otherMember)), "release archive contains no Carson binary"},
 		{"not a native binary", "v5.10.0", archive, fmt.Sprintf("sha256:%x", sha256.Sum256(archive)), "not a native Go executable"},
 		{"binary reports another version", "v5.10.0", wrongVersion, fmt.Sprintf("sha256:%x", sha256.Sum256(wrongVersion)), "did not report the expected version 5.10.0"},
+		{"binary has no updater", "v5.10.0", noUpdater, fmt.Sprintf("sha256:%x", sha256.Sum256(noUpdater)), "does not offer carson update"},
 		{"corrupt archive", "v5.10.0", badArchive, fmt.Sprintf("sha256:%x", sha256.Sum256(badArchive)), "cannot read the release archive"},
 		{"link in place of the binary", "v5.10.0", link, fmt.Sprintf("sha256:%x", sha256.Sum256(link)), "does not contain a valid regular Carson binary"},
 		{"prerelease version", "v5.10.0-rc.1", nil, "", "not a stable Carson version"},
@@ -258,28 +265,46 @@ func TestWhenTheStandaloneFolderIsNotPrivateCarsonLeavesItAlone(t *testing.T) {
 }
 
 func TestWhenTheActiveLinkNamesAnOutsideBinaryCarsonLeavesItAlone(t *testing.T) {
-	u, installed := testInstallation(t)
-	folder := testStandaloneFolder(u)
-	original := filepath.Join(folder, "version-original/carson")
-	u.executable = func() (string, error) { return original, nil }
-	outside := filepath.Join(u.env("HOME"), "other-carson")
-	if err := os.WriteFile(outside, []byte("outside binary"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	current := filepath.Join(folder, "current")
-	if err := os.Remove(current); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, current); err != nil {
-		t.Fatal(err)
-	}
+	for _, scenario := range []struct {
+		name    string
+		linked  bool
+		message string
+	}{
+		{"absolute path", false, "no valid active version"},
+		{"linked version folder", true, "does not point to a version folder in the standalone installation"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			u, installed := testInstallation(t)
+			folder := testStandaloneFolder(u)
+			original := filepath.Join(folder, "version-original/carson")
+			u.executable = func() (string, error) { return original, nil }
+			outside := filepath.Join(u.env("HOME"), "carson")
+			if err := os.WriteFile(outside, []byte("outside binary"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			target := outside
+			if scenario.linked {
+				if err := os.Symlink(filepath.Dir(outside), filepath.Join(folder, "version-linked")); err != nil {
+					t.Fatal(err)
+				}
+				target = "version-linked/carson"
+			}
+			current := filepath.Join(folder, "current")
+			if err := os.Remove(current); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, current); err != nil {
+				t.Fatal(err)
+			}
 
-	var out bytes.Buffer
-	if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), "no valid active version") {
-		t.Fatalf("exit %d, output %q", code, out.String())
+			var out bytes.Buffer
+			if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), scenario.message) {
+				t.Fatalf("exit %d, output %q", code, out.String())
+			}
+			assertBinary(t, installed, "outside binary")
+			assertBinary(t, original, testInstalledVersion("5.9.0"))
+		})
 	}
-	assertBinary(t, installed, "outside binary")
-	assertBinary(t, original, testInstalledVersion("5.9.0"))
 }
 
 func TestWhenTheActiveBinaryCannotReportItsVersionCarsonLeavesItAlone(t *testing.T) {
@@ -320,6 +345,40 @@ func TestWhenTheLauncherChangesDuringDownloadCarsonDoesNotOverwriteIt(t *testing
 	}
 	assertBinary(t, installed, "another update")
 	assertBinary(t, filepath.Join(testStandaloneFolder(u), "current"), newBinary)
+}
+
+func TestWhenTheStandaloneStoreIsReplacedDuringDownloadCarsonDoesNotChangeTheNewStore(t *testing.T) {
+	u, installed := testInstallation(t)
+	folder := testStandaloneFolder(u)
+	name := "carson-5.10.0-" + runtime.GOOS + "-" + runtime.GOARCH
+	archive := testArchive(t, name+"/carson", testReleaseExecutable(t, "5.10.0"))
+	previous := "version-original/carson"
+	newStore := folder + "-replacement"
+	oldStore := folder + "-moved"
+	if err := os.MkdirAll(filepath.Dir(filepath.Join(newStore, previous)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newStore, previous), []byte(testInstalledVersion("5.11.0")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(previous, filepath.Join(newStore, "current")); err != nil {
+		t.Fatal(err)
+	}
+	u.releases = testRelease(t, "v5.10.0", name, archive, fmt.Sprintf("sha256:%x", sha256.Sum256(archive)), func() error {
+		if err := os.Rename(folder, oldStore); err != nil {
+			return err
+		}
+		return os.Rename(newStore, folder)
+	})
+
+	var out bytes.Buffer
+	if code := u.run(nil, &out); code != failed || !strings.Contains(out.String(), "the standalone folder moved during the update") {
+		t.Fatalf("exit %d, output %q", code, out.String())
+	}
+	assertBinary(t, installed, testInstalledVersion("5.11.0"))
+	assertBinary(t, filepath.Join(oldStore, "current"), testInstalledVersion("5.9.0"))
+	assertOnlyOriginalVersion(t, folder)
+	assertOnlyOriginalVersion(t, oldStore)
 }
 
 func TestWhenThePrivateActiveLinkChangesDuringDownloadCarsonDoesNotSwitchItBack(t *testing.T) {
@@ -465,12 +524,90 @@ func testRelease(t *testing.T, tag, name string, archive []byte, digest string, 
 	return releaseSource{client: server.Client(), latest: server.URL + "/latest", downloads: server.URL + "/download/"}
 }
 
+// bin/release runs the tests before publishing. Exercise the real command built and packed the same way as the native release.
+func testPackagedRelease(t *testing.T, name string) ([]byte, string) {
+	t.Helper()
+	out := t.TempDir()
+	staging := filepath.Join(out, name)
+	if err := os.Mkdir(staging, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(staging, "carson")
+	build := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w", "-o", binary, ".")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build release executable: %v\n%s", err, output)
+	}
+	for _, file := range []string{"README.md", "LICENSE"} {
+		contents, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(staging, file), contents, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if output, err := exec.Command("bash", "bin/release-archive.bash", out, name).CombinedOutput(); err != nil {
+		t.Fatalf("package release executable: %v\n%s", err, output)
+	}
+	archive, err := os.ReadFile(filepath.Join(out, name+".tar.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return archive, string(contents)
+}
+
+func testReleaseThroughAssetRedirect(t *testing.T, tag, name string, archive []byte) releaseSource {
+	t.Helper()
+	const assets = "release-assets.githubusercontent.com"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/latest":
+			fmt.Fprintf(w, `{"tag_name":%q,"assets":[{"name":%q,"digest":"sha256:%x"}]}`, tag, name+".tar.gz", sha256.Sum256(archive))
+		case r.URL.Path == "/download/"+tag+"/"+name+".tar.gz":
+			redirectTo(w, "https://"+assets+"/archive")
+		case r.Host == assets && r.URL.Path == "/archive":
+			w.Write(archive)
+		default:
+			t.Errorf("unexpected TLS release request: %s %s", r.Host, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client := server.Client()
+	client.CheckRedirect = githubRedirect
+	transport := client.Transport.(*http.Transport)
+	address := server.Listener.Addr().String()
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both test hosts are served by the same local TLS server and checked against its certificate, not by the Internet.
+	transport.TLSClientConfig.ServerName = host
+	transport.DialContext = func(ctx context.Context, network, destination string) (net.Conn, error) {
+		if destination != address && destination != assets+":443" {
+			return nil, fmt.Errorf("unexpected TLS release destination: %s", destination)
+		}
+		return new(net.Dialer).DialContext(ctx, network, address)
+	}
+	return releaseSource{client: client, latest: server.URL + "/latest", downloads: server.URL + "/download/"}
+}
+
 func testReleaseExecutable(t *testing.T, version string) string {
+	t.Helper()
+	return testNativeRelease(t, version, Badge+" carson update     update the standalone installation")
+}
+
+func testNativeRelease(t *testing.T, version, help string) string {
 	t.Helper()
 	dir := t.TempDir()
 	source := filepath.Join(dir, "main.go")
 	binary := filepath.Join(dir, "carson")
-	program := "package main\nimport \"fmt\"\nfunc main() { fmt.Println(" + strconv.Quote(Badge+" carson "+version) + ") }\n"
+	program := "package main\nimport (\"fmt\"; \"os\")\nfunc main() { if os.Args[1] == \"--help\" { fmt.Println(" + strconv.Quote(help) + "); return }; fmt.Println(" + strconv.Quote(Badge+" carson "+version) + ") }\n"
 	if err := os.WriteFile(source, []byte(program), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +653,12 @@ func assertUnchangedInstallation(t *testing.T, installed string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(filepath.Dir(current))
+	assertOnlyOriginalVersion(t, filepath.Dir(current))
+}
+
+func assertOnlyOriginalVersion(t *testing.T, folder string) {
+	t.Helper()
+	entries, err := os.ReadDir(folder)
 	if err != nil || len(entries) != 2 || entries[0].Name() != "current" || entries[1].Name() != "version-original" {
 		t.Fatalf("unexpected files in the installation folder: %v, %v", entries, err)
 	}

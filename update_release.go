@@ -123,8 +123,8 @@ func (s releaseSource) download(release githubRelease) (releaseDownload, error) 
 	return releaseDownload{}, fmt.Errorf("Carson %s has no build for %s/%s", release.number(), runtime.GOOS, runtime.GOARCH)
 }
 
-func (d releaseDownload) stage(path string, mode os.FileMode) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+func (d releaseDownload) stage(root *os.Root, path string) error {
+	file, err := root.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (d releaseDownload) stage(path string, mode os.FileMode) error {
 	if err := extractReleaseBinary(file, d.archive, d.member); err != nil {
 		return err
 	}
-	if err := file.Chmod(mode); err != nil {
+	if err := file.Chmod(0o700); err != nil {
 		return err
 	}
 	if err := file.Sync(); err != nil {
@@ -141,7 +141,10 @@ func (d releaseDownload) stage(path string, mode os.FileMode) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return d.checkExecutable(path)
+	if err := sameInstallation(root); err != nil {
+		return err
+	}
+	return d.checkExecutable(filepath.Join(root.Name(), path))
 }
 
 func (d releaseDownload) checkExecutable(path string) error {
@@ -165,15 +168,27 @@ func (d releaseDownload) checkExecutable(path string) error {
 	if version, err := binaryVersion(path); err != nil || version != d.version {
 		return fmt.Errorf("the release binary did not report the expected version %s", d.version)
 	}
-	return nil
+	help, err := runBinary(path, "--help")
+	if err == nil {
+		for _, line := range strings.Split(string(help), "\n") {
+			if strings.HasPrefix(line, Badge+" carson update ") {
+				return nil
+			}
+		}
+	}
+	return errors.New("the release binary does not offer carson update")
+}
+
+func runBinary(path, option string) ([]byte, error) {
+	deadline, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	command := exec.CommandContext(deadline, path, option)
+	command.Dir = filepath.Dir(path)
+	return command.Output()
 }
 
 func binaryVersion(path string) (string, error) {
-	deadline, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	command := exec.CommandContext(deadline, path, "--version")
-	command.Dir = filepath.Dir(path)
-	output, err := command.Output()
+	output, err := runBinary(path, "--version")
 	if err != nil {
 		return "", err
 	}
