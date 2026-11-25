@@ -115,9 +115,10 @@ func (r *repository) landedByChanges(tip string) (bool, error) {
 	return true, nil
 }
 
-// heldOnMain is the commits at tip that main lacks whose changes main holds, byte for byte, in a commit of its own, oldest first. A
-// rebase onto main would drop them (S14). Unlike landedByChanges's proof, one commit of main's answers for every commit of tip's alike
-// to it, as git's rebase drops every one.
+// heldOnMain is the commits at tip that main lacks which make, in the same place, exactly the change of a commit of main's, oldest
+// first. A patch-id alike only nominates one: patch-ids leave out where in a file a change falls, so the same edit made elsewhere, among
+// lines that read the same, would pass. The two changes are then compared whole, where they fall included. One commit of main's
+// answers for every commit of tip's alike to it, as git's rebase would drop every one (S14).
 func (r *repository) heldOnMain(tip string) ([]string, error) {
 	own, err := r.patches("main.." + tip)
 	if err != nil {
@@ -127,17 +128,44 @@ func (r *repository) heldOnMain(tip string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	onMain := map[string]bool{}
+	onMain := map[string][]string{}
 	for _, p := range mains {
-		onMain[p.id] = true
+		onMain[p.id] = append(onMain[p.id], p.commit)
 	}
 	var held []string
 	for _, p := range own {
-		if onMain[p.id] {
-			held = append(held, p.commit)
+		for _, candidate := range onMain[p.id] {
+			same, err := r.sameChange(p.commit, candidate)
+			if err != nil {
+				return nil, err
+			}
+			if same {
+				held = append(held, p.commit)
+				break
+			}
 		}
 	}
 	return held, nil
+}
+
+// sameChange is whether two commits make the same change in the same places: their diffs alike, line numbers included, save the
+// lines naming the files' contents before and after, which differ when the rest of a file does.
+func (r *repository) sameChange(one, other string) (bool, error) {
+	var diffs [2]string
+	for i, commit := range []string{one, other} {
+		out, err := git(r.top, "diff-tree", "-p", "--no-commit-id", commit)
+		if err != nil {
+			return false, err
+		}
+		var kept []string
+		for _, line := range strings.Split(out, "\n") {
+			if !strings.HasPrefix(line, "index ") {
+				kept = append(kept, line)
+			}
+		}
+		diffs[i] = strings.Join(kept, "\n")
+	}
+	return diffs[0] == diffs[1], nil
 }
 
 // patch is a commit and its verbatim patch-id.
@@ -168,14 +196,33 @@ func (r *repository) patches(revisions string) ([]patch, error) {
 	return found, nil
 }
 
-// changesNothing is whether commit leaves its parent's files as they were.
-func (r *repository) changesNothing(commit string) (bool, error) {
-	trees, err := git(r.top, "rev-parse", commit+"^{tree}", commit+"^^{tree}")
-	if err != nil {
-		return false, err
+// changingNothing is the commits at tip that main lacks, merges apart, oldest first, that leave their parent's files as they were.
+func (r *repository) changingNothing(tip string) ([]string, error) {
+	revisions := tip
+	if !r.noMainYet() {
+		revisions = "main.." + tip
 	}
-	both := lines(trees)
-	return len(both) == 2 && both[0] == both[1], nil
+	commits, err := git(r.top, "rev-list", "--reverse", "--no-merges", revisions)
+	if err != nil {
+		return nil, err
+	}
+	var found []string
+	for _, commit := range lines(commits) {
+		empty, err := r.changesNothing(commit)
+		if err != nil {
+			return nil, err
+		}
+		if empty {
+			found = append(found, commit)
+		}
+	}
+	return found, nil
+}
+
+// changesNothing is whether commit leaves its parent's files as they were; a first commit, with no parent, is held to no files.
+func (r *repository) changesNothing(commit string) (bool, error) {
+	changed, err := git(r.top, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit)
+	return err == nil && changed == "", err
 }
 
 func (r *repository) count(revisions string) (int, error) {

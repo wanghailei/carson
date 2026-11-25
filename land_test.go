@@ -91,7 +91,7 @@ func TestLandUndoesAConflictingRebase(t *testing.T) {
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase --reapply-cherry-picks main in fix-login's worktree, resolve, then run carson land fix-login again.")
+	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase --reapply-cherry-picks --empty=keep main in fix-login's worktree, resolve, then run carson land fix-login again.")
 	if f.git(dir, "rev-parse", "HEAD") != before || f.git(dir, "status", "--porcelain") != "" || f.exists(filepath.Join(f.git(dir, "rev-parse", "--absolute-git-dir"), "rebase-merge")) {
 		t.Error("the task is not as it was")
 	}
@@ -636,8 +636,7 @@ func TestLandLandsACommitWhoseChangesMainAlreadyHoldsAndSaysSo(t *testing.T) {
 	dir := f.startTask("fix-login")
 	f.commit(dir, "login.rb")
 	f.write(dir, "first.txt", "version 2\n")
-	f.git(dir, "commit", "-q", "-am", "Step the version, fixes #193")
-	step := f.short(dir, "HEAD")
+	f.git(dir, "commit", "-q", "-am", "Step the version", "-m", "Fixes #193")
 	other := f.otherClone()
 	f.write(other, "first.txt", "version 2\n")
 	f.git(other, "commit", "-q", "-am", "Step the version for #183")
@@ -646,9 +645,62 @@ func TestLandLandsACommitWhoseChangesMainAlreadyHoldsAndSaysSo(t *testing.T) {
 	tip := f.short(dir, "HEAD")
 	f.landedSaying(dir, out, code,
 		"Landed fix-login on main by fast-forward at "+tip+" (2 commits, rebased onto main first) and pushed",
-		`1 of fix-login's 2 commits landed changing nothing, as main already held its changes: `+step+` "Step the version, fixes #193" (on main as `+tip+`). If it was a version step, step the version again in a new task.`)
-	if subject := f.git(f.github, "log", "-1", "--format=%s", "main"); subject != "Step the version, fixes #193" {
-		t.Errorf("the step did not reach GitHub's main: %q", subject)
+		`1 of fix-login's 2 commits landed changing nothing: `+tip+` "Step the version". If it was a version step, main already held that step: step the version again in a new task.`)
+	if message := f.git(f.github, "log", "-1", "--format=%B", "main"); message != "Step the version\n\nFixes #193" {
+		t.Errorf("the step's message did not reach GitHub's main whole: %q", message)
+	}
+	if f.git(f.github, "rev-parse", "main^{tree}") != f.git(f.github, "rev-parse", "main~1^{tree}") {
+		t.Error("the step changed something on main")
+	}
+}
+
+// S14: a landing refused after the rebase, here by a file in the main working tree, names the commit that changes nothing when it
+// is run again, though the rebase is not.
+func TestLandRunAgainNamesACommitTheEarlierRebaseLeftEmpty(t *testing.T) {
+	f := newFixture(t)
+	dir := f.startTask("fix-login")
+	f.commit(dir, "login.rb")
+	f.write(dir, "first.txt", "version 2\n")
+	f.git(dir, "commit", "-q", "-am", "Step the version")
+	other := f.otherClone()
+	f.write(other, "first.txt", "version 2\n")
+	f.git(other, "commit", "-q", "-am", "Step the version for #183")
+	f.git(other, "push", "-q", "origin", "main")
+	f.write(f.local, "login.rb", "someone's draft\n")
+	if _, code := f.land(dir); code != 2 {
+		t.Fatal("the file in the way did not stop the first landing")
+	}
+	if err := os.Rename(filepath.Join(f.local, "login.rb"), filepath.Join(f.root, "login.rb")); err != nil {
+		t.Fatal(err)
+	}
+	out, code := f.land(dir)
+	f.landedSaying(dir, out, code, `1 of fix-login's 2 commits landed changing nothing: `+f.short(dir, "HEAD")+` "Step the version".`)
+}
+
+// S14: main made the task's change too, but elsewhere in the file, where the lines around it read the same, and then changed the
+// task's place otherwise. The change is not main's, though its patch-id is alike: the conflict is named, and nothing is lost.
+func TestLandDoesNotTakeAChangeMadeElsewhereForTheTasks(t *testing.T) {
+	f := newFixture(t)
+	block := "keep\nkeep\nkeep\nvalue = 1\nkeep\nkeep\nkeep\n"
+	f.write(f.local, "settings.txt", "start\n"+block+"middle\n"+block+"end\n")
+	f.git(f.local, "add", "settings.txt")
+	f.git(f.local, "commit", "-q", "-m", "Add settings")
+	f.git(f.local, "push", "-q", "github", "main")
+	dir := f.startTask("fix-login")
+	f.write(dir, "settings.txt", "start\n"+strings.Replace(block, "value = 1", "value = 2", 1)+"middle\n"+block+"end\n")
+	f.git(dir, "commit", "-q", "-am", "Set the first value")
+	before := f.git(dir, "rev-parse", "HEAD")
+	other := f.otherClone()
+	f.write(other, "settings.txt", "start\n"+block+"middle\n"+strings.Replace(block, "value = 1", "value = 2", 1)+"end\n")
+	f.git(other, "commit", "-q", "-am", "Set the second value")
+	f.write(other, "settings.txt", "start\n"+strings.Replace(block, "value = 1", "value = 3", 1)+"middle\n"+strings.Replace(block, "value = 1", "value = 2", 1)+"end\n")
+	f.git(other, "commit", "-q", "-am", "Set the first value otherwise")
+	f.git(other, "push", "-q", "origin", "main")
+	out, code := f.land(dir)
+	expectCode(t, code, 2)
+	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in settings.txt.")
+	if f.git(dir, "rev-parse", "HEAD") != before {
+		t.Error("the task is not as it was")
 	}
 }
 
@@ -660,15 +712,16 @@ func TestLandLandsACommitWhoseChangesMainHoldsAndHasMovedPast(t *testing.T) {
 	f.commit(dir, "login.rb")
 	f.write(dir, "first.txt", "version 2\n")
 	f.git(dir, "commit", "-q", "-am", "Step the version, fixes #193")
-	step := f.short(dir, "HEAD")
 	other := f.otherClone()
 	for _, version := range []string{"2", "3"} {
 		f.write(other, "first.txt", "version "+version+"\n")
 		f.git(other, "commit", "-q", "-am", "Step the version to "+version)
 	}
 	f.git(other, "push", "-q", "origin", "main")
+	// git's check that a plan drops no commit holds the plan that keeps main's side to account too.
+	f.git(f.local, "config", "rebase.missingCommitsCheck", "error")
 	out, code := f.land(dir)
-	f.landedSaying(dir, out, code, `1 of fix-login's 2 commits landed changing nothing, as main already held its changes: `+step+` "Step the version, fixes #193" (on main as `+f.short(dir, "HEAD")+`).`)
+	f.landedSaying(dir, out, code, `1 of fix-login's 2 commits landed changing nothing: `+f.short(dir, "HEAD")+` "Step the version, fixes #193".`)
 	if version := f.git(f.local, "show", "main:first.txt"); version != "version 3" {
 		t.Errorf("main's version is %q, not main's own version 3", version)
 	}
@@ -681,7 +734,6 @@ func TestLandLandsACommitTheRebaseLeavesEmptyAndSaysSo(t *testing.T) {
 	dir := f.startTask("fix-login")
 	f.write(dir, "first.txt", "version 2\n")
 	f.git(dir, "commit", "-q", "-am", "Step the version")
-	step := f.short(dir, "HEAD")
 	other := f.otherClone()
 	f.write(other, "first.txt", "version 2\n")
 	f.write(other, "notes.txt", "what changed\n")
@@ -689,7 +741,7 @@ func TestLandLandsACommitTheRebaseLeavesEmptyAndSaysSo(t *testing.T) {
 	f.git(other, "commit", "-q", "-am", "Step the version and note it")
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
-	f.landedSaying(dir, out, code, `fix-login's commit landed changing nothing, as main already held its changes: `+step+` "Step the version" (on main as `+f.short(dir, "HEAD")+`).`)
+	f.landedSaying(dir, out, code, `fix-login's commit landed changing nothing: `+f.short(dir, "HEAD")+` "Step the version".`)
 }
 
 // S14: whether a commit still changes something is decided by replaying it on the new main, not by its likeness to a commit of
@@ -698,18 +750,16 @@ func TestLandLandsACommitTheRebaseLeavesEmptyAndSaysSo(t *testing.T) {
 func TestLandReplaysEveryCommitOnTheNewMain(t *testing.T) {
 	f := newFixture(t)
 	dir := f.startTask("fix-login")
-	var steps []string
 	for i, content := range []string{"version 2\n", "first.txt\n", "version 2\n"} {
 		f.write(dir, "first.txt", content)
 		f.git(dir, "commit", "-q", "-am", "Step "+strconv.Itoa(i+1))
-		steps = append(steps, f.short(dir, "HEAD"))
 	}
 	other := f.otherClone()
 	f.write(other, "first.txt", "version 2\n")
 	f.git(other, "commit", "-q", "-am", "Step the version")
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
-	f.landedSaying(dir, out, code, `1 of fix-login's 3 commits landed changing nothing, as main already held its changes: `+steps[0]+` "Step 1" (on main as `+f.short(dir, "HEAD~2")+`).`)
+	f.landedSaying(dir, out, code, `1 of fix-login's 3 commits landed changing nothing: `+f.short(dir, "HEAD~2")+` "Step 1".`)
 	if version := f.git(f.local, "show", "main:first.txt"); version != "version 2" {
 		t.Errorf("main's version is %q, not the task's version 2", version)
 	}
@@ -746,13 +796,24 @@ func TestLandDoesNotDropACommitThatDiffersFromMainsOnlyInWhitespace(t *testing.T
 	f.git(other, "push", "-q", "origin", "main")
 	out, code := f.land(dir)
 	expectCode(t, code, 2)
-	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase --reapply-cherry-picks main in fix-login's worktree, resolve, then run carson land fix-login again.")
+	expectLine(t, out, "Not landed: rebasing onto main ("+f.short(f.local, "main")+") conflicts in first.txt. The rebase was undone; fix-login is as it was, at "+f.short(dir, "HEAD")+". Run git rebase --reapply-cherry-picks --empty=keep main in fix-login's worktree, resolve, then run carson land fix-login again.")
 	if f.git(dir, "rev-parse", "HEAD") != before || f.git(dir, "status", "--porcelain") != "" {
 		t.Error("the task is not as it was")
 	}
 	// The rebase carson names meets the same conflict; git's plain rebase would drop the commit instead.
-	rebase := exec.Command("git", "-C", dir, "rebase", "-q", "--reapply-cherry-picks", "main")
+	rebase := exec.Command("git", "-C", dir, "rebase", "-q", "--reapply-cherry-picks", "--empty=keep", "main")
 	if err := rebase.Run(); err == nil || f.git(dir, "diff", "--name-only", "--diff-filter=U") != "first.txt" {
 		t.Errorf("the rebase carson names does not stop on the conflict in first.txt (%v)", err)
+	}
+}
+
+// S14: the rebase's plan is named to the shell, so a folder's name with a quotation mark in it, as in Pat's projects, reaches it
+// as it is.
+func TestShellQuotedIsReadLiterally(t *testing.T) {
+	for _, text := range []string{"/Users/pat/Pat's projects/.git/carson-rebase-plan", "it's 'quoted'", "$HOME `date`"} {
+		out, err := exec.Command("sh", "-c", "printf %s "+shellQuoted(text)).Output()
+		if err != nil || string(out) != text {
+			t.Errorf("the shell read %q as %q (%v)", text, out, err)
+		}
 	}
 }
